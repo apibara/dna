@@ -1,8 +1,5 @@
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        let result = 2 + 2;
-        assert_eq!(result, 4);
-    }
-}
+mod block;
+mod error;
+pub mod ethereum;
+
+pub use block::{BlockHeader, BlockHeaderProvider};
