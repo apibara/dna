@@ -7,4 +7,6 @@ edition = "2021"
 apibara = { path = "../apibara" }
 anyhow = "1.0"
 ethers = "0.6.2"
+futures = "0.3.21"
 tokio = { version = "1.18", features = ["full"] }
+tracing-subscriber = { version = "0.3.11", features = ["std", "env-filter"] }

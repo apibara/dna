@@ -6,6 +6,8 @@ edition = "2021"
 [dependencies]
 async-trait = "0.1.53"
 chrono = "0.4.19"
-ethers = "0.6.2"
+ethers = { version = "0.6.2", features = ["ws"] }
 futures = "0.3.21"
+hex = "0.4.3"
 thiserror = "1.0"
+tracing = "0.1.34"

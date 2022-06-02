@@ -1,38 +1,35 @@
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use ethers::prelude::{Http, Provider};
+use ethers::prelude::{Provider, Ws};
+use futures::StreamExt;
+use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 use apibara::ethereum::EthereumBlockHeaderProvider;
-use apibara::BlockHeaderProvider;
+use apibara::HeadTracker;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let provider = Provider::<Http>::try_from("http://localhost:8545")
+    tracing_subscriber::registry()
+        .with(fmt::layer())
+        .with(EnvFilter::from_default_env())
+        .init();
+
+    let provider = Provider::<Ws>::connect("ws://localhost:8546")
+        .await
         .context("failed to create ethereum provider")?;
     let provider = Arc::new(provider);
     let block_header_provider = EthereumBlockHeaderProvider::new(provider);
 
-    let genesis = block_header_provider
-        .get_block_by_number(0)
-        .await
-        .context("failed to fetch genesis block")?;
+    let mut head_tracker = HeadTracker::new(block_header_provider);
 
-    println!("genesis = {:?}", genesis);
+    println!("Started head tracker");
 
-    let head = block_header_provider
-        .get_head_block()
-        .await
-        .context("failed to fetch head block")?;
+    let mut head_stream = head_tracker.start().await?;
 
-    println!("head = {:?}", head);
-
-    let by_hash = block_header_provider
-        .get_block_by_hash(&head.hash)
-        .await
-        .context("failed to fetch block by hash")?;
-
-    println!("by_hash = {:?}", by_hash);
+    while let Some(message) = head_stream.next().await {
+        println!("message = {:?}", message);
+    }
 
     Ok(())
 }

@@ -1,44 +1,46 @@
-use async_trait::async_trait;
 use super::error::Result;
-use chrono::{NaiveDateTime};
+use async_trait::async_trait;
+use chrono::NaiveDateTime;
+use futures::stream::BoxStream;
+use std::fmt;
+
+#[derive(Clone, PartialEq)]
+pub struct BlockHash(pub(crate) [u8; 32]);
 
 /// Block header information needed to track information about the chain head.
-#[derive(Debug)]
-pub struct BlockHeader<BlockHash> {
+#[derive(Debug, Clone)]
+pub struct BlockHeader {
     pub hash: BlockHash,
     pub parent_hash: Option<BlockHash>,
     pub number: u64,
     pub timestamp: NaiveDateTime,
 }
 
-pub enum BlockStreamMessage<BlockHash> {
-    NewBlock(BlockHeader<BlockHash>),
-    Rollback(u64),
-}
-
-pub type BlockStream<BlockHash> = dyn futures::Stream<Item = BlockStreamMessage<BlockHash>>;
+pub type BlockHeaderStream<'a> = BoxStream<'a, BlockHeader>;
 
 #[async_trait]
 pub trait BlockHeaderProvider {
-    type BlockHash;
+    /// Get the most recent (head) block.
+    async fn get_head_block(&self) -> Result<BlockHeader>;
 
-    async fn get_head_block(&self) -> Result<BlockHeader<Self::BlockHash>>;
-    async fn get_block_by_hash(&self, hash: &Self::BlockHash) -> Result<Option<BlockHeader<Self::BlockHash>>>;
-    async fn get_block_by_number(&self, number: u64) -> Result<Option<BlockHeader<Self::BlockHash>>>;
+    /// Get a specific block by its hash.
+    async fn get_block_by_hash(&self, hash: &BlockHash) -> Result<Option<BlockHeader>>;
+
+    async fn subscribe_blocks<'a>(&'a self) -> Result<BlockHeaderStream<'a>>;
 }
 
-pub struct InMemoryBlockStream();
+fn hash_to_hex(h: &BlockHash) -> String {
+    hex::encode(h.0.as_ref())
+}
 
-/*/
-impl<BlockHash> futures::Stream for InMemoryBlockStream {
-    type Item = BlockStreamMessage<BlockHash>;
-
-    fn poll_next(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Option<Self::Item>> {
-        todo!()
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        todo!()
+impl fmt::Display for BlockHash {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "0x{}", hash_to_hex(self))
     }
 }
-*/
+
+impl fmt::Debug for BlockHash {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "BlockHash({})", self)
+    }
+}

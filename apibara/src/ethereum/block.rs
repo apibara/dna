@@ -1,45 +1,58 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use ethers::prelude::{Block, Middleware, H256};
+use ethers::prelude::{Block, Middleware, PubsubClient, H256};
+use futures::StreamExt;
 
-use crate::block::{BlockHeader, BlockHeaderProvider};
+use crate::block::{BlockHash, BlockHeader, BlockHeaderProvider, BlockHeaderStream};
 use crate::error::{ApibaraError, Result};
 use crate::ethereum::error::EthereumError;
 
-#[derive(Debug)]
-pub struct EthereumBlockHash(pub(crate) [u8; 32]);
-
-pub struct EthereumBlockHeaderProvider<M: Middleware> {
+pub struct EthereumBlockHeaderProvider<M: Middleware>
+where
+    M::Provider: PubsubClient,
+{
     client: Arc<M>,
 }
 
-impl<M: Middleware> EthereumBlockHeaderProvider<M> {
+impl<M> EthereumBlockHeaderProvider<M>
+where
+    M: Middleware,
+    M::Provider: PubsubClient,
+{
     pub fn new(client: Arc<M>) -> Self {
         EthereumBlockHeaderProvider { client }
     }
 }
 
 #[async_trait]
-impl<M: Middleware> BlockHeaderProvider for EthereumBlockHeaderProvider<M> {
-    type BlockHash = EthereumBlockHash;
+impl<M> BlockHeaderProvider for EthereumBlockHeaderProvider<M>
+where
+    M: Middleware,
+    M::Provider: PubsubClient,
+{
+    async fn get_head_block(&self) -> Result<BlockHeader> {
+        let block_number = self
+            .client
+            .get_block_number()
+            .await
+            .map_err(|_| ApibaraError::EthereumProviderError(EthereumError::ProviderError))?;
+        let block = self
+            .client
+            .get_block(block_number)
+            .await
+            .map_err(|_| ApibaraError::EthereumProviderError(EthereumError::ProviderError))?
+            .ok_or(ApibaraError::HeadBlockNotFound)?;
 
-    async fn get_head_block(&self) -> Result<BlockHeader<Self::BlockHash>> {
-        let block_number = self.client.get_block_number().await.map_err(|_| {
-            ApibaraError::EthereumProviderError(EthereumError::ProviderError)
-        })?;
-        self.get_block_by_number(block_number.as_u64())
-            .await?
-            .ok_or(ApibaraError::HeadBlockNotFound)
+        ethers_block_to_block_header(block).map_err(ApibaraError::EthereumProviderError)
     }
 
-    async fn get_block_by_hash(
-        &self,
-        hash: &Self::BlockHash,
-    ) -> Result<Option<BlockHeader<Self::BlockHash>>> {
-        let block = self.client.get_block(H256(hash.0)).await.map_err(|_| {
-            ApibaraError::EthereumProviderError(EthereumError::ProviderError)
-        })?;
+    async fn get_block_by_hash(&self, hash: &BlockHash) -> Result<Option<BlockHeader>> {
+        let block = self
+            .client
+            .get_block(H256(hash.0))
+            .await
+            .map_err(|_| ApibaraError::EthereumProviderError(EthereumError::ProviderError))?;
 
         match block {
             None => Ok(None),
@@ -48,27 +61,21 @@ impl<M: Middleware> BlockHeaderProvider for EthereumBlockHeaderProvider<M> {
                 .map_err(ApibaraError::EthereumProviderError),
         }
     }
-
-    async fn get_block_by_number(
-        &self,
-        number: u64,
-    ) -> Result<Option<BlockHeader<Self::BlockHash>>> {
-        let block = self.client.get_block(number).await.map_err(|_| {
-            ApibaraError::EthereumProviderError(EthereumError::ProviderError)
-        })?;
-
-        match block {
-            None => Ok(None),
-            Some(block) => ethers_block_to_block_header(block)
-                .map(Some)
-                .map_err(ApibaraError::EthereumProviderError),
-        }
+    async fn subscribe_blocks<'a>(&'a self) -> Result<BlockHeaderStream<'a>> {
+        let stream = self
+            .client
+            .subscribe_blocks()
+            .await
+            .map_err(|_| ApibaraError::EthereumProviderError(EthereumError::ProviderError))?;
+        let transformed_stream =
+            Box::pin(stream.map(|block| ethers_block_to_block_header(block).unwrap()));
+        Ok(transformed_stream)
     }
 }
 
 fn ethers_block_to_block_header(
     block: Block<H256>,
-) -> std::result::Result<BlockHeader<EthereumBlockHash>, EthereumError> {
+) -> std::result::Result<BlockHeader, EthereumError> {
     let hash = block
         .hash
         .map(ethereum_block_hash)
@@ -95,6 +102,6 @@ fn ethers_block_to_block_header(
     })
 }
 
-fn ethereum_block_hash(hash: H256) -> EthereumBlockHash {
-    EthereumBlockHash(hash.0)
+fn ethereum_block_hash(hash: H256) -> BlockHash {
+    BlockHash(hash.0)
 }
