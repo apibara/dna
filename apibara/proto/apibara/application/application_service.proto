@@ -1,0 +1,31 @@
+syntax = "proto3";
+
+package apibara.application.v1alpha1;
+
+service ApplicationManager {
+  rpc SubscribeLogs(SubscribeLogsRequest) returns (stream SubscribeLogsResponse);
+}
+
+message LogFilter {
+  uint64 from_block = 1;
+  bytes address = 2;
+  repeated Topic topics = 3;
+}
+
+message Topic {
+  oneof kind {
+    bytes value = 1;
+    Choice choice = 2;
+  }
+}
+
+message Choice {
+  repeated bytes choices = 1;
+}
+
+message SubscribeLogsRequest {
+  LogFilter filter = 1;
+}
+
+message SubscribeLogsResponse {
+}

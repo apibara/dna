@@ -1,12 +1,8 @@
-use std::sync::Arc;
-
-use anyhow::{Context, Result};
-use ethers::prelude::{Provider, Ws};
-use futures::StreamExt;
+use anyhow::Result;
+use tracing::info;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
-use apibara::ethereum::EthereumBlockHeaderProvider;
-use apibara::HeadTracker;
+use apibara::server;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -15,21 +11,9 @@ async fn main() -> Result<()> {
         .with(EnvFilter::from_default_env())
         .init();
 
-    let provider = Provider::<Ws>::connect("ws://localhost:8546")
-        .await
-        .context("failed to create ethereum provider")?;
-    let provider = Arc::new(provider);
-    let block_header_provider = EthereumBlockHeaderProvider::new(provider);
+    let (server_handle, server_addr) = server::start_server()?;
 
-    let mut head_tracker = HeadTracker::new(block_header_provider);
-
-    println!("Started head tracker");
-
-    let mut head_stream = head_tracker.start().await?;
-
-    while let Some(message) = head_stream.next().await {
-        println!("message = {:?}", message);
-    }
-
+    info!("gRPC server started: {:?}", server_addr);
+    server_handle.await?;
     Ok(())
 }

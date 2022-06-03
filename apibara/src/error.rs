@@ -8,6 +8,8 @@ pub enum ApibaraError {
     EthereumProviderError(EthereumError),
     #[error("current head block not found")]
     HeadBlockNotFound,
+    #[error("grpc server error")]
+    RpcServerError,
 }
 
 pub type Result<T> = std::result::Result<T, ApibaraError>;
