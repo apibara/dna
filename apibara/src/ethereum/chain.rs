@@ -5,7 +5,7 @@ use futures::StreamExt;
 
 use crate::chain::{BlockHash, BlockHeader, ChainProvider, BlockHeaderStream};
 
-pub struct EthereumChainProvider<M: Middleware>
+pub struct EthereumChainProvider<M: Middleware + 'static>
 where
     M::Provider: PubsubClient,
 {
@@ -14,7 +14,7 @@ where
 
 impl<M> EthereumChainProvider<M>
 where
-    M: Middleware,
+    M: Middleware + 'static,
     M::Provider: PubsubClient,
 {
     pub fn new(client: M) -> Self {
@@ -25,7 +25,7 @@ where
 #[async_trait]
 impl<M> ChainProvider for EthereumChainProvider<M>
 where
-    M: Middleware,
+    M: Middleware + 'static,
     M::Provider: PubsubClient,
     <M as Middleware>::Error: 'static
 {

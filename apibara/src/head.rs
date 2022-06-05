@@ -14,12 +14,12 @@ pub enum BlockStreamMessage {
 /// messages to signal either a new block, or
 /// a chain rollback.
 pub struct HeadTracker<P: ChainProvider> {
-    provider: P,
+    provider: Arc<P>,
 }
 
 impl<P: ChainProvider> HeadTracker<P> {
     /// Create a new head tracker.
-    pub fn new(provider: P) -> HeadTracker<P> {
+    pub fn new(provider: Arc<P>) -> HeadTracker<P> {
         HeadTracker { provider }
     }
 
