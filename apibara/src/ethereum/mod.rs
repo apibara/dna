@@ -1,5 +1,3 @@
-mod block;
-mod error;
+mod chain;
 
-pub use block::EthereumBlockHeaderProvider;
-pub use error::EthereumError;
+pub use chain::EthereumChainProvider;

@@ -1,10 +1,8 @@
+use anyhow::Result;
 use futures::{stream::BoxStream, StreamExt};
 use std::sync::{Arc, Mutex};
 
-use crate::{
-    block::{BlockHeader, BlockHeaderProvider},
-    error::Result,
-};
+use crate::chain::{BlockHeader, ChainProvider};
 
 #[derive(Debug)]
 pub enum BlockStreamMessage {
@@ -15,11 +13,11 @@ pub enum BlockStreamMessage {
 /// Track the current blockchain head, creating
 /// messages to signal either a new block, or
 /// a chain rollback.
-pub struct HeadTracker<P: BlockHeaderProvider> {
+pub struct HeadTracker<P: ChainProvider> {
     provider: P,
 }
 
-impl<P: BlockHeaderProvider> HeadTracker<P> {
+impl<P: ChainProvider> HeadTracker<P> {
     /// Create a new head tracker.
     pub fn new(provider: P) -> HeadTracker<P> {
         HeadTracker { provider }

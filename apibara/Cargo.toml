@@ -5,12 +5,12 @@ edition = "2021"
 
 [dependencies]
 async-trait = "0.1.53"
+anyhow = "1.0"
 chrono = "0.4.19"
 ethers = { version = "0.6.2", features = ["ws"] }
 futures = "0.3.21"
 hex = "0.4.3"
 prost = "0.10"
-thiserror = "1.0"
 tonic = "0.7"
 tokio-stream = "0.1.8"
 tokio = { version = "1.18", features = ["full"] }

@@ -1,9 +1,12 @@
-use super::error::Result;
+//! Blockchain-related traits and types.
+use anyhow::Result;
 use async_trait::async_trait;
 use chrono::NaiveDateTime;
 use futures::stream::BoxStream;
 use std::fmt;
 
+
+/// Chain block hash.
 #[derive(Clone, PartialEq)]
 pub struct BlockHash(pub(crate) [u8; 32]);
 
@@ -18,8 +21,9 @@ pub struct BlockHeader {
 
 pub type BlockHeaderStream<'a> = BoxStream<'a, BlockHeader>;
 
+/// Provide information about blocks and events/logs on a chain.
 #[async_trait]
-pub trait BlockHeaderProvider {
+pub trait ChainProvider {
     /// Get the most recent (head) block.
     async fn get_head_block(&self) -> Result<BlockHeader>;
 
@@ -27,10 +31,6 @@ pub trait BlockHeaderProvider {
     async fn get_block_by_hash(&self, hash: &BlockHash) -> Result<Option<BlockHeader>>;
 
     async fn subscribe_blocks<'a>(&'a self) -> Result<BlockHeaderStream<'a>>;
-}
-
-fn hash_to_hex(h: &BlockHash) -> String {
-    hex::encode(h.0.as_ref())
 }
 
 impl fmt::Display for BlockHash {
@@ -43,4 +43,8 @@ impl fmt::Debug for BlockHash {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "BlockHash({})", self)
     }
+}
+
+fn hash_to_hex(h: &BlockHash) -> String {
+    hex::encode(h.0.as_ref())
 }
