@@ -1,8 +1,47 @@
-use anyhow::Result;
-use futures::{stream::BoxStream, StreamExt};
-use std::sync::{Arc, Mutex};
+use anyhow::{Context, Error, Result};
+use futures::{Future, Stream, StreamExt};
+use std::{
+    pin::Pin,
+    sync::{Arc, Mutex},
+    task::{self, Poll},
+};
+use tokio::{sync::mpsc, task::JoinHandle};
+use tracing::error;
 
 use crate::chain::{BlockHeader, ChainProvider};
+
+pub async fn start<P>(provider: Arc<P>) -> Result<HeadTracker>
+where
+    P: ChainProvider + Send + Sync + 'static,
+{
+    let current = provider
+        .get_head_block()
+        .await
+        .context("could not fetch initial block")?;
+
+    // Work around lifetime of provider and subscription.
+    let (block_stream_tx, block_stream_rx) = mpsc::channel(64);
+    let block_stream_handle = tokio::spawn({
+        let provider = provider.clone();
+        async move {
+            if let Ok(mut block_stream) = provider.blocks_subscription().await {
+                while let Some(block) = block_stream.next().await {
+                    if let Err(_) = block_stream_tx.send(block).await {
+                        return ();
+                    }
+                }
+            } else {
+                return ();
+            }
+        }
+    });
+
+    Ok(HeadTracker {
+        current,
+        block_stream_handle,
+        block_stream_rx,
+    })
+}
 
 #[derive(Debug)]
 pub enum BlockStreamMessage {
@@ -13,35 +52,30 @@ pub enum BlockStreamMessage {
 /// Track the current blockchain head, creating
 /// messages to signal either a new block, or
 /// a chain rollback.
-pub struct HeadTracker<P: ChainProvider> {
-    provider: Arc<P>,
+pub struct HeadTracker {
+    block_stream_handle: JoinHandle<()>,
+    block_stream_rx: mpsc::Receiver<BlockHeader>,
+    current: BlockHeader,
 }
 
-impl<P: ChainProvider> HeadTracker<P> {
-    /// Create a new head tracker.
-    pub fn new(provider: Arc<P>) -> HeadTracker<P> {
-        HeadTracker { provider }
-    }
+impl Stream for HeadTracker {
+    type Item = BlockStreamMessage;
 
-    /// Initialize the head tracker.
-    ///
-    /// 1. Fetch current head
-    /// 2. Fetch `n` most recent blocks
-    /// 3. Start streaming blocks
-    pub async fn start(&mut self) -> Result<BoxStream<'_, BlockStreamMessage>> {
-        let stream = self.provider.subscribe_blocks().await?;
-        let current = self.provider.get_head_block().await?;
-
-        let state = Arc::new(Mutex::new(HeadTrackerState { current }));
-        let transformed_stream = Box::pin(stream.scan(state, |state, block| {
-            let state = state.clone();
-            async move {
-                // TODO: what to do if cannot get lock?
-                let mut state = state.lock().unwrap();
-
-                if state.is_clean_apply(&block) {
-                    state.update_current(block.clone());
-                    Some(BlockStreamMessage::NewBlock(block))
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<Option<Self::Item>> {
+        match Pin::new(&mut self.block_stream_handle).poll(cx) {
+            Poll::Ready(_) => return Poll::Ready(None),
+            Poll::Pending => {}
+        }
+        match Pin::new(&mut self.block_stream_rx).poll_recv(cx) {
+            Poll::Pending => Poll::Pending,
+            Poll::Ready(None) => {
+                error!("head tracker stream ended");
+                Poll::Ready(None)
+            }
+            Poll::Ready(Some(block)) => {
+                if is_clean_apply(&self.current, &block) {
+                    self.current = block.clone();
+                    Poll::Ready(Some(BlockStreamMessage::NewBlock(block)))
                 } else {
                     // TODO: handle reorg better
                     // this code assumes that node gives us a (new) valid head and
@@ -60,36 +94,24 @@ impl<P: ChainProvider> HeadTracker<P> {
                     // NB(a) - NB(b) - R(c) - R(b) - NB(d)
                     //
                     // Somehow we need to generate two events in one step.
-                    state.update_current(block.clone());
-                    Some(BlockStreamMessage::Rollback(block))
+                    self.current = block.clone();
+                    Poll::Ready(Some(BlockStreamMessage::Rollback(block)))
                 }
             }
-        }));
-        Ok(transformed_stream)
+        }
     }
 }
 
-#[derive(Debug)]
-struct HeadTrackerState {
-    current: BlockHeader,
-}
-
-impl HeadTrackerState {
-    pub fn is_clean_apply(&self, block: &BlockHeader) -> bool {
-        // current head and block have the same height
-        if block.number == self.current.number {
-            return block.hash == self.current.hash;
-        }
-        if block.number == self.current.number + 1 {
-            return match &block.parent_hash {
-                None => false,
-                Some(hash) => hash == &self.current.hash,
-            };
-        }
-        false
+fn is_clean_apply(current: &BlockHeader, new: &BlockHeader) -> bool {
+    // current head and block have the same height
+    if new.number == current.number {
+        return new.hash == current.hash;
     }
-
-    pub fn update_current(&mut self, new_head: BlockHeader) {
-        self.current = new_head;
+    if new.number == current.number + 1 {
+        return match &new.parent_hash {
+            None => false,
+            Some(hash) => hash == &current.hash,
+        };
     }
+    false
 }

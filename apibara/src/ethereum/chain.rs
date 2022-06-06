@@ -1,9 +1,17 @@
-use async_trait::async_trait;
 use anyhow::{Context, Error, Result};
-use ethers::prelude::{Block, Middleware, PubsubClient, H256};
-use futures::StreamExt;
+use async_trait::async_trait;
+use ethers::{
+    prelude::{Block, Middleware, PubsubClient, H256},
+    utils::WEI_IN_ETHER,
+};
+use futures::{future, Future, Stream, StreamExt};
+use std::{
+    pin::Pin,
+    task::{self, Poll},
+};
+use tokio::{sync::mpsc, task::JoinHandle};
 
-use crate::chain::{BlockHash, BlockHeader, ChainProvider, BlockHeaderStream};
+use crate::chain::{BlockEvents, BlockHash, BlockHeader, BlockHeaderStream, ChainProvider};
 
 pub struct EthereumChainProvider<M: Middleware + 'static>
 where
@@ -25,9 +33,9 @@ where
 #[async_trait]
 impl<M> ChainProvider for EthereumChainProvider<M>
 where
-    M: Middleware + 'static,
+    M: Middleware + Clone + 'static,
     M::Provider: PubsubClient,
-    <M as Middleware>::Error: 'static
+    <M as Middleware>::Error: 'static,
 {
     async fn get_head_block(&self) -> Result<BlockHeader> {
         let block_number = self
@@ -54,25 +62,38 @@ where
 
         match block {
             None => Ok(None),
-            Some(block) => ethers_block_to_block_header(block)
-                .map(Some)
+            Some(block) => ethers_block_to_block_header(block).map(Some),
         }
     }
-    async fn subscribe_blocks<'a>(&'a self) -> Result<BlockHeaderStream<'a>> {
-        let stream = self
+
+    async fn blocks_subscription(&self) -> Result<BlockHeaderStream> {
+        let original_stream = self
             .client
             .subscribe_blocks()
             .await
             .context("failed to subscribe eth blocks")?;
-        let transformed_stream =
-            Box::pin(stream.map(|block| ethers_block_to_block_header(block).unwrap()));
-        Ok(transformed_stream)
+
+        let transformed_stream = original_stream
+            .map(ethers_block_to_block_header)
+            .take_while(|r| future::ready(Result::is_ok(r)))
+            .map(|r| r.unwrap()); // safe because we stop while all ok
+        Ok(Box::pin(transformed_stream))
+    }
+
+    async fn get_events_by_block_range(
+        &self,
+        from_block: u64,
+        to_block: u64,
+    ) -> Result<BlockEvents> {
+        todo!()
+    }
+
+    async fn get_events_by_block_hash(&self, hash: &BlockHash) -> Result<BlockEvents> {
+        todo!()
     }
 }
 
-fn ethers_block_to_block_header(
-    block: Block<H256>,
-) -> Result<BlockHeader> {
+fn ethers_block_to_block_header(block: Block<H256>) -> Result<BlockHeader> {
     let hash = block
         .hash
         .map(ethereum_block_hash)
