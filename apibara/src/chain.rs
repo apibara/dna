@@ -51,7 +51,7 @@ pub enum Topic {
 #[derive(Debug, Clone)]
 pub struct EventFilter {
     /// Filter by the contract emitting the event.
-    pub address: Option<Address>,
+    pub address: Vec<Address>,
     /// Filter by topics.
     pub topics: Vec<Topic>,
 }
@@ -75,6 +75,7 @@ pub trait ChainProvider {
         &self,
         from_block: u64,
         to_block: u64,
+        filters: &[EventFilter],
     ) -> Pin<Box<dyn Future<Output = Result<Vec<BlockEvents>>> + Send>>;
 
     /// Get events in the specified block.
@@ -84,13 +85,13 @@ pub trait ChainProvider {
 impl EventFilter {
     pub fn new() -> EventFilter {
         EventFilter {
-            address: None,
+            address: Vec::new(),
             topics: Vec::new(),
         }
     }
 
-    pub fn with_address(mut self, address: Address) -> Self {
-        self.address = Some(address);
+    pub fn add_address(mut self, address: Address) -> Self {
+        self.address.push(address);
         self
     }
 

@@ -38,7 +38,7 @@ async fn main() -> Result<()> {
 
     let indexer_config = IndexerConfig {
         from_block: 5_000_000,
-        filter: EventFilter::new().add_topic(transfer_event),
+        filters: vec![EventFilter::new().add_topic(transfer_event)],
     };
     let (client, indexer_stream) = indexer::start(provider.clone(), indexer_config);
 

@@ -1,8 +1,8 @@
-use anyhow::{Context, Error, Result};
+use anyhow::{Context, Result};
 use futures::{Future, Stream, StreamExt};
 use std::{
     pin::Pin,
-    sync::{Arc, Mutex},
+    sync::Arc,
     task::{self, Poll},
 };
 use tokio::{sync::mpsc, task::JoinHandle};

@@ -24,7 +24,7 @@ const BLOCK_EVENTS_MAX_RANGE: u64 = 50;
 #[derive(Debug, Clone)]
 pub struct IndexerConfig {
     pub from_block: u64,
-    pub filter: EventFilter,
+    pub filters: Vec<EventFilter>,
 }
 
 pub fn start<P: ChainProvider>(
@@ -33,7 +33,7 @@ pub fn start<P: ChainProvider>(
 ) -> (IndexerClient, IndexerStream<P>) {
     let (tx, rx) = mpsc::channel(64);
     let client = IndexerClient { tx };
-    let stream = IndexerStream::new(rx, provider, config.from_block, config.filter);
+    let stream = IndexerStream::new(rx, provider, config.from_block, config.filters);
     (client, stream)
 }
 
@@ -68,7 +68,7 @@ struct IndexerStreamState<P: ChainProvider> {
     sync_block: u64,
     next_sync_block: u64,
     current_head: Option<BlockHeader>,
-    filter: EventFilter,
+    filters: Vec<EventFilter>,
     loaded_block_events: VecDeque<BlockEvents>,
     get_events_by_block_fut: Option<Pin<Box<dyn Future<Output = Result<Vec<BlockEvents>>> + Send>>>,
 }
@@ -83,7 +83,7 @@ impl<P: ChainProvider> IndexerStream<P> {
         rx: mpsc::Receiver<IndexerClientStreamMessage>,
         provider: Arc<P>,
         from_block: u64,
-        filter: EventFilter,
+        filters: Vec<EventFilter>,
     ) -> IndexerStream<P> {
         // u64::MAX means starting from block 0
         let sync_block = if from_block == 0 {
@@ -96,7 +96,7 @@ impl<P: ChainProvider> IndexerStream<P> {
             sync_block,
             next_sync_block: u64::MAX,
             current_head: None,
-            filter,
+            filters,
             loaded_block_events: VecDeque::new(),
             get_events_by_block_fut: None,
         };
@@ -182,10 +182,11 @@ impl<P: ChainProvider> Stream for IndexerStream<P> {
                         );
                         trace!("get events in range [{}, {}]", from_block, to_block);
                         self.state.next_sync_block = to_block;
-                        let fut = self
-                            .state
-                            .provider
-                            .get_events_by_block_range(from_block, to_block);
+                        let fut = self.state.provider.get_events_by_block_range(
+                            from_block,
+                            to_block,
+                            &self.state.filters,
+                        );
                         // schedule polling immediately after this
                         cx.waker().wake_by_ref();
                         Some(fut)
