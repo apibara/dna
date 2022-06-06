@@ -1,8 +1,9 @@
 //! Produce a stream of events/logs.
 use anyhow::{Context, Error, Result};
-use futures::Stream;
+use futures::{Future, Stream};
 use once_cell::sync::Lazy;
 use std::{
+    collections::VecDeque,
     pin::Pin,
     sync::Arc,
     task::{self, Poll},
@@ -12,19 +13,27 @@ use tokio::{
     sync::{mpsc, oneshot},
     time::timeout,
 };
-use tracing::{debug, error, info};
+use tracing::{debug, error, trace};
 
-use crate::chain::{BlockEvents, BlockHash, BlockHeader, ChainProvider};
+use crate::chain::{BlockEvents, BlockHeader, ChainProvider, EventFilter};
 
 static CLIENT_SERVER_MESSAGE_TIMEOUT: Lazy<Duration> = Lazy::new(|| Duration::from_millis(5000));
 
+const BLOCK_EVENTS_MAX_RANGE: u64 = 50;
+
+#[derive(Debug, Clone)]
+pub struct IndexerConfig {
+    pub from_block: u64,
+    pub filter: EventFilter,
+}
+
 pub fn start<P: ChainProvider>(
     provider: Arc<P>,
-    from_block: u64,
+    config: IndexerConfig,
 ) -> (IndexerClient, IndexerStream<P>) {
     let (tx, rx) = mpsc::channel(64);
     let client = IndexerClient { tx };
-    let stream = IndexerStream::new(rx, provider, from_block);
+    let stream = IndexerStream::new(rx, provider, config.from_block, config.filter);
     (client, stream)
 }
 
@@ -54,11 +63,14 @@ impl IndexerClient {
     }
 }
 
-#[derive(Debug)]
 struct IndexerStreamState<P: ChainProvider> {
     provider: Arc<P>,
     sync_block: u64,
+    next_sync_block: u64,
     current_head: Option<BlockHeader>,
+    filter: EventFilter,
+    loaded_block_events: VecDeque<BlockEvents>,
+    get_events_by_block_fut: Option<Pin<Box<dyn Future<Output = Result<Vec<BlockEvents>>> + Send>>>,
 }
 
 pub struct IndexerStream<P: ChainProvider> {
@@ -71,6 +83,7 @@ impl<P: ChainProvider> IndexerStream<P> {
         rx: mpsc::Receiver<IndexerClientStreamMessage>,
         provider: Arc<P>,
         from_block: u64,
+        filter: EventFilter,
     ) -> IndexerStream<P> {
         // u64::MAX means starting from block 0
         let sync_block = if from_block == 0 {
@@ -81,7 +94,11 @@ impl<P: ChainProvider> IndexerStream<P> {
         let state = IndexerStreamState {
             provider,
             sync_block,
+            next_sync_block: u64::MAX,
             current_head: None,
+            filter,
+            loaded_block_events: VecDeque::new(),
+            get_events_by_block_fut: None,
         };
         IndexerStream { rx, state }
     }
@@ -111,13 +128,75 @@ impl<P: ChainProvider> Stream for IndexerStream<P> {
             };
         }
 
-        // TODO:
-        let e = BlockEvents {
-            number: 0,
-            hash: BlockHash([0; 32]),
-            events: Vec::new(),
+        // send loaded elements if any
+        if let Some(next_block) = self.state.loaded_block_events.pop_front() {
+            trace!("send loaded block events");
+            return Poll::Ready(Some(next_block));
+        }
+
+        let new_get_events_by_block_fut =
+            if let Some(mut get_events_by_block_fut) = self.state.get_events_by_block_fut.take() {
+                trace!("poll get_events_by_block_fut");
+                match get_events_by_block_fut.as_mut().poll(cx) {
+                    Poll::Ready(Ok(block_events)) => {
+                        // TODO: properly advance sync state
+                        for event in block_events {
+                            self.state.loaded_block_events.push_back(event);
+                        }
+                        trace!("new sync block {}", self.state.next_sync_block);
+                        self.state.sync_block = self.state.next_sync_block;
+                        // signal to create new request
+                        None
+                    }
+                    Poll::Ready(Err(err)) => {
+                        // TODO: retry
+                        error!("error fetching block events in range: {:?}", err);
+                        return Poll::Ready(None);
+                    }
+                    Poll::Pending => Some(get_events_by_block_fut),
+                }
+            } else {
+                // signal to create new request
+                None
+            };
+
+        self.state.get_events_by_block_fut = match new_get_events_by_block_fut {
+            Some(fut) => Some(fut),
+            None => {
+                trace!("create get_events_by_block_fut");
+                if let Some(current_head) = self.state.current_head.as_ref() {
+                    if current_head.number - 1 == self.state.sync_block {
+                        // get by hash
+                        error!("get by hash not implemented");
+                        todo!()
+                    } else {
+                        // get by range
+                        let from_block = if self.state.sync_block == u64::MAX {
+                            0
+                        } else {
+                            self.state.sync_block + 1
+                        };
+                        let to_block = std::cmp::min(
+                            from_block + BLOCK_EVENTS_MAX_RANGE - 1,
+                            current_head.number - 1,
+                        );
+                        trace!("get events in range [{}, {}]", from_block, to_block);
+                        self.state.next_sync_block = to_block;
+                        let fut = self
+                            .state
+                            .provider
+                            .get_events_by_block_range(from_block, to_block);
+                        // schedule polling immediately after this
+                        cx.waker().wake_by_ref();
+                        Some(fut)
+                    }
+                } else {
+                    None
+                }
+            }
         };
-        // Poll::Ready(Some(e))
+
+        // nothing left to do
         Poll::Pending
     }
 }

@@ -7,10 +7,10 @@ use tracing::{debug, error, info};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 use apibara::{
-    chain::BlockEvents,
+    chain::{BlockEvents, EventFilter, Topic},
     ethereum::EthereumChainProvider,
     head::{self, BlockStreamMessage},
-    indexer::{self, IndexerClient},
+    indexer::{self, IndexerClient, IndexerConfig},
 };
 
 #[tokio::main]
@@ -32,7 +32,15 @@ async fn main() -> Result<()> {
         .context("failed to start head tracker stream")?;
 
     info!("creating indexer stream");
-    let (client, indexer_stream) = indexer::start(provider.clone(), 0);
+    let transfer_event =
+        Topic::value_from_hex("0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef")
+            .context("failed to parse transfer event topic")?;
+
+    let indexer_config = IndexerConfig {
+        from_block: 5_000_000,
+        filter: EventFilter::new().add_topic(transfer_event),
+    };
+    let (client, indexer_stream) = indexer::start(provider.clone(), indexer_config);
 
     let indexer_stream_handle = run_indexer_stream(Box::pin(indexer_stream));
     let head_stream_handle = run_head_stream(Box::pin(head_stream), client);
@@ -50,11 +58,16 @@ async fn main() -> Result<()> {
 
 fn run_indexer_stream<S>(mut stream: Pin<Box<S>>) -> JoinHandle<()>
 where
-    S: Stream<Item = BlockEvents> + Send + Sync + 'static,
+    S: Stream<Item = BlockEvents> + Send + 'static,
 {
     tokio::spawn(async move {
         while let Some(message) = stream.next().await {
-            info!("indexer {:?}", message);
+            info!(
+                "indexer {} {}: {}",
+                message.number,
+                message.hash,
+                message.events.len()
+            );
         }
     })
 }
@@ -73,7 +86,6 @@ where
                         .await
                         .context("failed to update head after new block")
                         .unwrap();
-                    debug!("done");
                 }
                 BlockStreamMessage::Rollback(head) => {
                     debug!("rollback {} {}", head.number, head.hash);
@@ -82,7 +94,6 @@ where
                         .await
                         .context("failed to update head after rollback")
                         .unwrap();
-                    debug!("done");
                 }
             }
         }

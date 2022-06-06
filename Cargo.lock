@@ -58,6 +58,7 @@ dependencies = [
  "ethers",
  "futures",
  "hex",
+ "itertools",
  "once_cell",
  "prost",
  "tokio",
