@@ -73,8 +73,8 @@ impl Serialize for BlockNumber {
     {
         match self {
             BlockNumber::Number(num) => serializer.serialize_u64(*num),
-            BlockNumber::Latest => serializer.serialize_str(&"latest"),
-            BlockNumber::Pending => serializer.serialize_str(&"pending"),
+            BlockNumber::Latest => serializer.serialize_str("latest"),
+            BlockNumber::Pending => serializer.serialize_str("pending"),
         }
     }
 }
@@ -86,8 +86,8 @@ impl Serialize for BlockHash {
     {
         match self {
             BlockHash::Hash(hash) => serializer.serialize_str(&format!("{:#064x}", hash)),
-            BlockHash::Latest => serializer.serialize_str(&"latest"),
-            BlockHash::Pending => serializer.serialize_str(&"pending"),
+            BlockHash::Latest => serializer.serialize_str("latest"),
+            BlockHash::Pending => serializer.serialize_str("pending"),
         }
     }
 }
