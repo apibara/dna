@@ -150,7 +150,7 @@ impl<P: ChainProvider> Stream for IndexerStream<P> {
                     }
                     Poll::Ready(Err(err)) => {
                         // TODO: retry
-                        error!("error fetching block events in range: {:?}", err);
+                        error!("error fetching block events: {:?}", err);
                         return Poll::Ready(None);
                     }
                     Poll::Pending => Some(get_events_by_block_fut),
@@ -164,11 +164,24 @@ impl<P: ChainProvider> Stream for IndexerStream<P> {
             Some(fut) => Some(fut),
             None => {
                 trace!("create get_events_by_block_fut");
-                if let Some(current_head) = self.state.current_head.as_ref() {
-                    if current_head.number - 1 == self.state.sync_block {
+                let current_head = self.state.current_head.clone();
+                let sync_block = self.state.sync_block;
+                // TODO: support reorg detection?
+                if let Some(current_head) = current_head {
+                    if sync_block != u64::MAX && current_head.number <= sync_block {
+                        trace!("skip {} {}", current_head.number, sync_block);
+                        None
+                    } else if current_head.number - 1 == sync_block {
                         // get by hash
-                        error!("get by hash not implemented");
-                        todo!()
+                        trace!("get events by hash {:?}", current_head.hash);
+                        self.state.next_sync_block = current_head.number;
+                        let fut = self.state.provider.get_events_by_block_hash(
+                            &current_head.hash,
+                            &self.state.filters,
+                        );
+                        // schedule polling immediately after this
+                        cx.waker().wake_by_ref();
+                        Some(fut)
                     } else {
                         // get by range
                         let from_block = if self.state.sync_block == u64::MAX {

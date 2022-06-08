@@ -1,5 +1,6 @@
 //! Crate to request data from the StarkNet RPC server.
 use anyhow::{Context, Result};
+use chrono::{NaiveDateTime, naive::serde::ts_seconds};
 use jsonrpsee_core::{client::ClientT, rpc_params};
 use jsonrpsee_http_client::{HttpClient, HttpClientBuilder};
 use serde::{Deserialize, Serialize};
@@ -28,8 +29,11 @@ pub struct Block {
     #[serde_as(as = "UfeHex")]
     pub parent_hash: FieldElement,
     pub block_number: u64,
+    #[serde(with = "ts_seconds")]
+    pub accepted_time: NaiveDateTime,
 }
 
+#[derive(Debug, Clone)]
 pub struct RpcProvider {
     client: HttpClient,
 }
@@ -57,7 +61,7 @@ impl RpcProvider {
             .client
             .request("starknet_getBlockByHash", rpc_params![&hash, "TXN_HASH"])
             .await
-            .context("failed to fetch block by hash")?;
+            .context(format!("failed to fetch block by hash: {:?}", hash))?;
         Ok(block)
     }
 }

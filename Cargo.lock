@@ -67,6 +67,8 @@ dependencies = [
  "itertools",
  "once_cell",
  "prost",
+ "starknet",
+ "starknet-rpc",
  "tokio",
  "tokio-stream",
  "tonic",
@@ -82,6 +84,7 @@ dependencies = [
  "apibara",
  "ethers",
  "futures",
+ "starknet-rpc",
  "tokio",
  "tracing",
  "tracing-subscriber",
@@ -508,6 +511,7 @@ dependencies = [
  "libc",
  "num-integer",
  "num-traits",
+ "serde",
  "time",
  "winapi",
 ]
@@ -2977,6 +2981,7 @@ name = "starknet-rpc"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "jsonrpsee-core",
  "jsonrpsee-http-client",
  "serde",

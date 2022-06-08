@@ -79,7 +79,11 @@ pub trait ChainProvider {
     ) -> Pin<Box<dyn Future<Output = Result<Vec<BlockEvents>>> + Send>>;
 
     /// Get events in the specified block.
-    async fn get_events_by_block_hash(&self, hash: &BlockHash) -> Result<Vec<BlockEvents>>;
+    fn get_events_by_block_hash(
+        &self,
+        hash: &BlockHash,
+        filters: &[EventFilter],
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<BlockEvents>>> + Send>>;
 }
 
 impl EventFilter {

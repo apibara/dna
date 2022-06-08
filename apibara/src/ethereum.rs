@@ -9,8 +9,9 @@ use crate::chain::{
     EventFilter, Topic, TopicValue,
 };
 
-pub struct EthereumChainProvider<M: Middleware + 'static>
+pub struct EthereumChainProvider<M>
 where
+    M: Middleware + 'static,
     M::Provider: PubsubClient,
 {
     client: Arc<M>,
@@ -94,6 +95,7 @@ where
                 }
             }
         }
+
         Box::pin(get_all_events_by_block_range(
             self.client.clone(),
             from_block,
@@ -102,7 +104,11 @@ where
         ))
     }
 
-    async fn get_events_by_block_hash(&self, _hash: &BlockHash) -> Result<Vec<BlockEvents>> {
+    fn get_events_by_block_hash(
+        &self,
+        _hash: &BlockHash,
+        _filters: &[EventFilter],
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<BlockEvents>>> + Send>> {
         todo!()
     }
 }

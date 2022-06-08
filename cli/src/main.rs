@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
-use ethers::prelude::{Provider, Ws};
 use futures::{Stream, StreamExt};
+use starknet_rpc::RpcProvider;
 use std::{pin::Pin, sync::Arc};
 use tokio::task::JoinHandle;
 use tracing::{debug, error, info};
@@ -8,9 +8,9 @@ use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 use apibara::{
     chain::{BlockEvents, EventFilter, Topic},
-    ethereum::EthereumChainProvider,
     head::{self, BlockStreamMessage},
     indexer::{self, IndexerClient, IndexerConfig},
+    starknet::StarkNetChainProvider,
 };
 
 #[tokio::main]
@@ -20,11 +20,10 @@ async fn main() -> Result<()> {
         .with(EnvFilter::from_default_env())
         .init();
 
-    let provider = Provider::<Ws>::connect("ws://localhost:8546")
-        .await
-        .context("failed to connect to ws")?;
+    let provider = RpcProvider::new("http://localhost:9545")
+        .context("failed to create starknet rpc provider")?;
 
-    let provider = Arc::new(EthereumChainProvider::new(provider.clone()));
+    let provider = Arc::new(StarkNetChainProvider::new(provider.clone()));
 
     info!("creating head stream");
     let head_stream = head::start(provider.clone())
@@ -37,7 +36,7 @@ async fn main() -> Result<()> {
             .context("failed to parse transfer event topic")?;
 
     let indexer_config = IndexerConfig {
-        from_block: 5_000_000,
+        from_block: 0,
         filters: vec![EventFilter::new().add_topic(transfer_event)],
     };
     let (client, indexer_stream) = indexer::start(provider.clone(), indexer_config);
