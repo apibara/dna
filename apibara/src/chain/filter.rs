@@ -13,8 +13,36 @@ pub enum Topic {
 /// Describe how to filter events.
 #[derive(Debug, Clone)]
 pub struct EventFilter {
-    /// Filter by the contract emitting the event.
+    /// Filter by the contracts emitting the event.
     pub address: Vec<Address>,
     /// Filter by topics.
     pub topics: Vec<Topic>,
+}
+
+impl EventFilter {
+    /// Create a new (empty) event filter.
+    pub fn empty() -> Self {
+        EventFilter {
+            address: Vec::new(),
+            topics: Vec::new(),
+        }
+    }
+
+    /// Filter events emitted by this address.
+    pub fn add_address(mut self, address: Address) -> Self {
+        self.address.push(address);
+        self
+    }
+
+    /// Filter events that match this topic.
+    pub fn add_topic(mut self, topic: impl Into<Topic>) -> Self {
+        self.topics.push(topic.into());
+        self
+    }
+}
+
+impl From<TopicValue> for Topic {
+    fn from(value: TopicValue) -> Self {
+        Topic::Value(value)
+    }
 }

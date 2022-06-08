@@ -1,6 +1,12 @@
-use anyhow::{Context, Result};
-use starknet_rpc::RpcProvider;
+use anyhow::Result;
+use std::str::FromStr;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
+
+use apibara::{
+    application::{Application, ApplicationId},
+    chain::{EventFilter, TopicValue},
+    indexer::IndexerConfig,
+};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -8,9 +14,17 @@ async fn main() -> Result<()> {
         .with(fmt::layer())
         .with(EnvFilter::from_default_env())
         .init();
+    // setup indexer
+    let transfer_topic =
+        TopicValue::from_str("0x02CFB12FF9E08412EC5009C65EA06E727119AD948D25C8A8CC2C86FEC4ADEE70")?;
+    let filter = EventFilter::empty().add_topic(transfer_topic);
+    let indexer_config = IndexerConfig::new(0).add_filter(filter);
 
-    let _provider = RpcProvider::new("http://localhost:9545")
-        .context("failed to create starknet rpc provider")?;
+    // create application
+    let application_id = ApplicationId::new("test-app2")?;
+    let application = Application::new(application_id, indexer_config);
+
+    application.run().await?;
 
     Ok(())
 }

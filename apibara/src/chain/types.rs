@@ -1,14 +1,19 @@
 //! Types common to all chains.
+use anyhow::Result;
 use chrono::NaiveDateTime;
-use std::fmt;
+use std::{fmt, str::FromStr};
 
 /// Chain block hash.
 #[derive(Clone, PartialEq)]
-pub struct BlockHash(pub(crate) Vec<u8>);
+pub struct BlockHash(Vec<u8>);
 
 /// Chain address.
 #[derive(Clone)]
-pub struct Address(pub(crate) Vec<u8>);
+pub struct Address(Vec<u8>);
+
+/// Data associated with an event.
+#[derive(Clone)]
+pub struct TopicValue(Vec<u8>);
 
 /// Block header information needed to track information about the chain head.
 #[derive(Debug, Clone)]
@@ -22,10 +27,6 @@ pub struct BlockHeader {
     /// Time the block was finalized.
     pub timestamp: NaiveDateTime,
 }
-
-/// Data associated with an event.
-#[derive(Clone)]
-pub struct TopicValue(pub(crate) Vec<u8>);
 
 /// A blockchain event.
 #[derive(Debug)]
@@ -49,6 +50,66 @@ pub struct BlockEvents {
     pub hash: BlockHash,
     /// The events.
     pub events: Vec<Event>,
+}
+
+impl BlockHash {
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+impl Address {
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+impl TopicValue {
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+impl FromStr for BlockHash {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Self::from(hex_to_vec(s)?))
+    }
+}
+
+impl From<Vec<u8>> for BlockHash {
+    fn from(data: Vec<u8>) -> Self {
+        BlockHash(data)
+    }
+}
+
+impl FromStr for Address {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Self::from(hex_to_vec(s)?))
+    }
+}
+
+impl From<Vec<u8>> for Address {
+    fn from(data: Vec<u8>) -> Self {
+        Address(data)
+    }
+}
+
+impl FromStr for TopicValue {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Self::from(hex_to_vec(s)?))
+    }
+}
+
+impl From<Vec<u8>> for TopicValue {
+    fn from(data: Vec<u8>) -> Self {
+        TopicValue(data)
+    }
 }
 
 impl fmt::Display for BlockHash {
@@ -84,6 +145,14 @@ impl fmt::Display for Address {
 impl fmt::Debug for Address {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Address({})", self)
+    }
+}
+
+fn hex_to_vec(data: &str) -> Result<Vec<u8>> {
+    if let Some(data) = data.strip_prefix("0x") {
+        Ok(hex::decode(data)?)
+    } else {
+        Ok(hex::decode(data)?)
     }
 }
 

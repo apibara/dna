@@ -1,11 +1,11 @@
 //! Abstraction over chain providers.
-//! 
+//!
 //! Chain providers are used to fetch and subscribe to
 //! blockchain data.
 use anyhow::Result;
 use async_trait::async_trait;
 
-use crate::chain::types::{BlockHeader, BlockHash};
+use crate::chain::types::{BlockHash, BlockHeader};
 
 /// Provide information about blocks and events/logs on a chain.
 #[async_trait]

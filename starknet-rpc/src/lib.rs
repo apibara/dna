@@ -1,6 +1,6 @@
 //! Crate to request data from the StarkNet RPC server.
 use anyhow::{Context, Result};
-use chrono::{NaiveDateTime, naive::serde::ts_seconds};
+use chrono::{naive::serde::ts_seconds, NaiveDateTime};
 use jsonrpsee_core::{client::ClientT, rpc_params};
 use jsonrpsee_http_client::{HttpClient, HttpClientBuilder};
 use serde::{Deserialize, Serialize};
