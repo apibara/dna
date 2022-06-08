@@ -1,5 +1,6 @@
 [workspace]
 members = [
     "cli",
-    "apibara"
+    "apibara",
+    "starknet-rpc"
 ]
