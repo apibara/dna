@@ -53,6 +53,10 @@ pub struct BlockEvents {
 }
 
 impl BlockHash {
+    pub fn from_bytes(data: &[u8]) -> Self {
+        BlockHash(data.to_vec())
+    }
+
     pub fn as_bytes(&self) -> &[u8] {
         &self.0
     }

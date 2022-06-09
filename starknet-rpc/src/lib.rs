@@ -56,13 +56,14 @@ impl RpcProvider {
         Ok(block)
     }
 
-    pub async fn get_block_by_hash(&self, hash: &BlockHash) -> Result<Block> {
+    pub async fn get_block_by_hash(&self, hash: &BlockHash) -> Result<Option<Block>> {
+        // TODO: wait until they fix the json rpc endpoint to include null return values
         let block = self
             .client
             .request("starknet_getBlockByHash", rpc_params![&hash, "TXN_HASH"])
             .await
             .context(format!("failed to fetch block by hash: {:?}", hash))?;
-        Ok(block)
+        Ok(Some(block))
     }
 }
 

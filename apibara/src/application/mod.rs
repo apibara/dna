@@ -1,9 +1,16 @@
 //! Applications that handle on-chain and off-chain data.
-use anyhow::{Error, Result};
+use anyhow::{Context, Error, Result};
+use futures::StreamExt;
 use once_cell::sync::Lazy;
 use regex::Regex;
+use std::sync::Arc;
+use tracing::info;
 
-use crate::indexer::IndexerConfig;
+use crate::{
+    chain::starknet::StarkNetProvider,
+    head_tracker::{HeadTracker, Message as HeadMessage},
+    indexer::IndexerConfig,
+};
 
 // The application id must be kebab-case
 // must start with an alphabetic character
@@ -40,6 +47,36 @@ impl Application {
     }
 
     pub async fn run(&self) -> Result<()> {
-        futures::future::pending().await
+        // TODO: create provider based on user configuration.
+        let provider = Arc::new(StarkNetProvider::new("http://localhost:9545")?);
+        let head_tracker = HeadTracker::new(provider.clone());
+        let (head_tracker_handle, head_stream) = head_tracker
+            .start()
+            .await
+            .context("failed to start head tracker")?;
+
+        tokio::pin!(head_stream);
+        tokio::pin!(head_tracker_handle);
+
+        loop {
+            tokio::select! {
+                _ = &mut head_tracker_handle => {
+                    return Err(Error::msg("head tracker service stopped"))
+                }
+                msg = head_stream.next() => {
+                    match msg {
+                        Some(HeadMessage::NewBlock(block)) => {
+                            info!("⛏️ {} {}", block.number, block.hash);
+                        }
+                        Some(HeadMessage::Reorg(block)) => {
+                            info!("🤕 {} {}", block.number, block.hash);
+                        }
+                        None => {
+                            return Err(Error::msg("head stream interrupted"))
+                        }
+                    }
+                }
+            }
+        }
     }
 }

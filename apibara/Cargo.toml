@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 async-trait = "0.1.53"
 anyhow = "1.0"
+backoff = { version = "0.4.0", features = ["tokio"] }
 chrono = "0.4.19"
 ethers = { version = "0.6.2", features = ["ws"] }
 futures = "0.3.21"
