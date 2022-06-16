@@ -14,7 +14,7 @@ pub enum Topic {
 #[derive(Debug, Clone)]
 pub struct EventFilter {
     /// Filter by the contracts emitting the event.
-    pub address: Vec<Address>,
+    pub address: Option<Address>,
     /// Filter by topics.
     pub topics: Vec<Topic>,
 }
@@ -23,14 +23,14 @@ impl EventFilter {
     /// Create a new (empty) event filter.
     pub fn empty() -> Self {
         EventFilter {
-            address: Vec::new(),
+            address: None,
             topics: Vec::new(),
         }
     }
 
     /// Filter events emitted by this address.
-    pub fn add_address(mut self, address: Address) -> Self {
-        self.address.push(address);
+    pub fn with_address(mut self, address: Address) -> Self {
+        self.address = Some(address);
         self
     }
 

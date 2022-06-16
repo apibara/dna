@@ -28,15 +28,23 @@ pub struct BlockHeader {
     pub timestamp: NaiveDateTime,
 }
 
+// TODO: decode data in the server process so that all clients have
+// access to decoded data.
+//
+// Also smooths out differences between different chains.
+//
+// Include a parametrized field with the raw address, then json encode
+// it when sending to client.
 /// A blockchain event.
 #[derive(Debug)]
 pub struct Event {
+    // TODO: add transaction hash
     /// Event source address.
     pub address: Address,
     /// Indexed events.
     pub topics: Vec<TopicValue>,
     /// Event data.
-    pub data: Vec<u8>,
+    pub data: Vec<TopicValue>,
     /// Event index in the block.
     pub block_index: usize,
 }
@@ -102,6 +110,12 @@ impl From<Vec<u8>> for Address {
     }
 }
 
+impl From<&[u8]> for Address {
+    fn from(data: &[u8]) -> Self {
+        Address(data.to_vec())
+    }
+}
+
 impl FromStr for TopicValue {
     type Err = anyhow::Error;
 
@@ -113,6 +127,12 @@ impl FromStr for TopicValue {
 impl From<Vec<u8>> for TopicValue {
     fn from(data: Vec<u8>) -> Self {
         TopicValue(data)
+    }
+}
+
+impl From<&[u8]> for TopicValue {
+    fn from(data: &[u8]) -> Self {
+        TopicValue(data.to_vec())
     }
 }
 

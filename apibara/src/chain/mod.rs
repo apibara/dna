@@ -6,4 +6,4 @@ mod types;
 
 pub use filter::{EventFilter, Topic};
 pub use provider::ChainProvider;
-pub use types::{Address, BlockEvents, BlockHash, BlockHeader, TopicValue};
+pub use types::{Address, BlockEvents, BlockHash, BlockHeader, Event, TopicValue};

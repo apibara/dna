@@ -42,9 +42,18 @@ impl<P: ChainProvider> HeadTracker<P> {
         Ok((join_handle, stream))
     }
 
-    async fn run_loop(self, _tx: mpsc::Sender<Message>) -> Result<()> {
+    async fn run_loop(self, tx: mpsc::Sender<Message>) -> Result<()> {
         let mut block_buffer = self.build_chain_reorg_buffer().await?;
         let mut block_stream = self.provider.subscribe_blocks()?;
+
+        // send first block
+        match block_buffer.front() {
+            None => return Err(Error::msg("head tracker buffer is empty")),
+            Some(block) => {
+                tx.send(Message::NewBlock(block.clone())).await?;
+            }
+        }
+
         while let Some(block) = block_stream.next().await {
             debug!(
                 "received new block {} {} (p: {:?})",
@@ -53,6 +62,7 @@ impl<P: ChainProvider> HeadTracker<P> {
             let prev_head = match block_buffer.front() {
                 None => return Err(Error::msg("head tracker buffer is empty")),
                 Some(prev_head) if prev_head.hash == block.hash => {
+                    debug!("skip: block already seen");
                     // stream sent the same block twice
                     continue;
                 }
@@ -68,12 +78,15 @@ impl<P: ChainProvider> HeadTracker<P> {
             {
                 debug!("clean head application");
                 // push to the _front_ of the queue
-                block_buffer.push_front(block);
+                block_buffer.push_front(block.clone());
 
                 // only empty buffer every now and then
                 while block_buffer.len() > 2 * self.reorg_buffer_size {
                     block_buffer.pop_back();
                 }
+
+                // send new head
+                tx.send(Message::NewBlock(block)).await?;
             } else if block.number > prev_head.number + 1 {
                 panic!("head application with gaps not handled");
             } else {

@@ -5,7 +5,10 @@ use jsonrpsee_core::{client::ClientT, rpc_params};
 use jsonrpsee_http_client::{HttpClient, HttpClientBuilder};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
-use starknet::core::{serde::unsigned_field_element::UfeHex, types::FieldElement};
+use starknet::core::{
+    serde::unsigned_field_element::{UfeHex, UfeHexOption},
+    types::FieldElement,
+};
 
 #[derive(Debug, Clone)]
 pub enum BlockNumber {
@@ -38,6 +41,44 @@ pub struct RpcProvider {
     client: HttpClient,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct EventPage {
+    pub events: Vec<Event>,
+    pub page_number: u64,
+    pub is_last_page: bool,
+}
+
+#[serde_as]
+#[derive(Debug, Deserialize)]
+pub struct Event {
+    #[serde_as(as = "Vec<UfeHex>")]
+    pub data: Vec<FieldElement>,
+    #[serde_as(as = "Vec<UfeHex>")]
+    pub keys: Vec<FieldElement>,
+    #[serde_as(as = "UfeHex")]
+    pub from_address: FieldElement,
+    #[serde_as(as = "UfeHex")]
+    pub block_hash: FieldElement,
+    pub block_number: u64,
+    #[serde_as(as = "UfeHex")]
+    pub transaction_hash: FieldElement,
+}
+
+#[serde_as]
+#[derive(Debug, Serialize)]
+pub struct GetEventsRequest {
+    #[serde(rename = "fromBlock")]
+    pub from_block: Option<u64>,
+    #[serde(rename = "toBlock")]
+    pub to_block: Option<u64>,
+    #[serde_as(as = "UfeHexOption")]
+    pub address: Option<FieldElement>,
+    #[serde_as(as = "Vec<UfeHex>")]
+    pub keys: Vec<FieldElement>,
+    pub page_size: usize,
+    pub page_number: usize,
+}
+
 impl RpcProvider {
     pub fn new(url: impl AsRef<str>) -> Result<RpcProvider> {
         let client = HttpClientBuilder::default().build(url)?;
@@ -64,6 +105,34 @@ impl RpcProvider {
             .await
             .context(format!("failed to fetch block by hash: {:?}", hash))?;
         Ok(Some(block))
+    }
+
+    pub async fn get_events(
+        &self,
+        from_block: Option<u64>,
+        to_block: Option<u64>,
+        address: Option<FieldElement>,
+        topics: Vec<FieldElement>,
+        page_number: usize,
+        page_size: usize,
+    ) -> Result<EventPage> {
+        let request = GetEventsRequest {
+            from_block,
+            to_block,
+            address,
+            keys: topics,
+            page_number,
+            page_size,
+        };
+        let events = self
+            .client
+            .request("starknet_getEvents", rpc_params![request])
+            .await
+            .context(format!(
+                "failed to fetch events in range {:?} {:?}",
+                from_block, to_block
+            ))?;
+        Ok(events)
     }
 }
 

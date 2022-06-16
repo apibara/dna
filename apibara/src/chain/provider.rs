@@ -7,7 +7,10 @@ use async_trait::async_trait;
 use futures::Stream;
 use std::pin::Pin;
 
-use crate::chain::types::{BlockHash, BlockHeader};
+use crate::chain::{
+    filter::EventFilter,
+    types::{BlockEvents, BlockHash, BlockHeader},
+};
 
 /// Provide information about blocks and events/logs on a chain.
 #[async_trait]
@@ -19,4 +22,11 @@ pub trait ChainProvider: Send + Sync + 'static {
     async fn get_block_by_hash(&self, hash: &BlockHash) -> Result<Option<BlockHeader>>;
 
     fn subscribe_blocks(&self) -> Result<Pin<Box<dyn Stream<Item = BlockHeader> + Send>>>;
+
+    async fn get_events_in_range(
+        &self,
+        from_block: u64,
+        to_block: u64,
+        filter: &EventFilter,
+    ) -> Result<Vec<BlockEvents>>;
 }

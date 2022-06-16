@@ -4,13 +4,16 @@ use async_trait::async_trait;
 use backoff::ExponentialBackoff;
 use futures::Stream;
 use starknet::core::types::FieldElement;
-use starknet_rpc::{Block as SNBlock, BlockHash as SNBlockHash, RpcProvider};
-use std::{pin::Pin, sync::Arc, time::Duration};
+use starknet_rpc::{Block as SNBlock, BlockHash as SNBlockHash, Event as SNEvent, RpcProvider};
+use std::{collections::HashMap, pin::Pin, sync::Arc, time::Duration};
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::{debug, error, trace};
 
-use crate::chain::{BlockHash, BlockHeader, ChainProvider};
+use crate::chain::{
+    Address, BlockEvents, BlockHash, BlockHeader, ChainProvider, Event, EventFilter, Topic,
+    TopicValue,
+};
 
 #[derive(Debug)]
 pub struct StarkNetProvider {
@@ -106,6 +109,89 @@ impl ChainProvider for StarkNetProvider {
         let stream = Box::pin(ReceiverStream::new(rx));
         Ok(stream)
     }
+
+    async fn get_events_in_range(
+        &self,
+        from_block: u64,
+        to_block: u64,
+        filter: &EventFilter,
+    ) -> Result<Vec<BlockEvents>> {
+        let address: Option<FieldElement> =
+            filter.address.as_ref().map(|a| a.try_into()).transpose()?;
+        let mut topics: Vec<FieldElement> = Vec::new();
+        for topic in &filter.topics {
+            let topic = topic.try_into()?;
+            topics.push(topic);
+        }
+
+        let mut block_events = BlockEventsBuilder::new();
+        let mut page_number = 0;
+        // TODO: need to keep events sorted
+        loop {
+            let page = self
+                .client
+                .get_events(
+                    Some(from_block),
+                    Some(to_block),
+                    address,
+                    topics.clone(),
+                    page_number,
+                    100,
+                )
+                .await
+                .context("failed to fetch starknet events")?;
+
+            for event in &page.events {
+                let block_hash = event.block_hash.into();
+                block_events.add_event(event.block_number, block_hash, event.into());
+            }
+
+            page_number += 1;
+            if page.is_last_page {
+                break;
+            }
+        }
+
+        block_events.build()
+    }
+}
+
+#[derive(Debug, Default)]
+struct BlockEventsBuilder {
+    hashes: HashMap<u64, BlockHash>,
+    events: HashMap<u64, Vec<Event>>,
+}
+
+impl BlockEventsBuilder {
+    pub fn new() -> Self {
+        Default::default()
+    }
+
+    /// Add `event` to the events in that block.
+    pub fn add_event(&mut self, block_number: u64, block_hash: BlockHash, event: Event) {
+        let events_in_block = self.events.entry(block_number).or_default();
+        events_in_block.push(event);
+        self.hashes.entry(block_number).or_insert(block_hash);
+    }
+
+    /// Return a vector of `BlockEvents` with the accumulated events.
+    pub fn build(self) -> Result<Vec<BlockEvents>> {
+        let mut result = Vec::new();
+        for (block_number, events) in self.events {
+            let block_hash = self
+                .hashes
+                .get(&block_number)
+                .ok_or_else(|| Error::msg("block missing hash"))?
+                .to_owned();
+            let block_with_events = BlockEvents {
+                number: block_number,
+                hash: block_hash,
+                events,
+            };
+            result.push(block_with_events);
+        }
+        Ok(result)
+    }
 }
 
 impl From<SNBlock> for BlockHeader {
@@ -121,7 +207,75 @@ impl From<SNBlock> for BlockHeader {
     }
 }
 
+impl From<&SNEvent> for Event {
+    fn from(e: &SNEvent) -> Self {
+        let address = e.from_address.to_bytes_be().as_ref().into();
+        let topics = e
+            .keys
+            .iter()
+            .map(|t| t.to_bytes_be().as_ref().into())
+            .collect();
+
+        let data = e
+            .data
+            .iter()
+            .map(|d| d.to_bytes_be().as_ref().into())
+            .collect();
+
+        // at the moment, starknet events don't have a block index.
+        Event {
+            address,
+            topics,
+            data,
+            block_index: 0,
+        }
+    }
+}
+
+impl From<FieldElement> for BlockHash {
+    fn from(fe: FieldElement) -> Self {
+        BlockHash::from_bytes(&fe.to_bytes_be())
+    }
+}
+
 impl TryInto<FieldElement> for &BlockHash {
+    type Error = Error;
+
+    fn try_into(self) -> Result<FieldElement, Self::Error> {
+        if self.as_bytes().len() == 32 {
+            let mut buff: [u8; 32] = Default::default();
+            buff.copy_from_slice(self.as_bytes());
+            return Ok(FieldElement::from_bytes_be(&buff)?);
+        }
+        Err(Error::msg(""))
+    }
+}
+
+impl TryInto<FieldElement> for &Address {
+    type Error = Error;
+
+    fn try_into(self) -> Result<FieldElement, Self::Error> {
+        if self.as_bytes().len() == 32 {
+            let mut buff: [u8; 32] = Default::default();
+            buff.copy_from_slice(self.as_bytes());
+            return Ok(FieldElement::from_bytes_be(&buff)?);
+        }
+        Err(Error::msg(""))
+    }
+}
+
+impl TryInto<FieldElement> for &Topic {
+    type Error = Error;
+
+    fn try_into(self) -> Result<FieldElement, Self::Error> {
+        match self {
+            Topic::Value(ref value) => value.try_into(),
+            Topic::Choice(_) => Err(Error::msg("choice not supported on starknet")),
+        }
+    }
+}
+
+impl TryInto<FieldElement> for &TopicValue {
     type Error = Error;
 
     fn try_into(self) -> Result<FieldElement, Self::Error> {
