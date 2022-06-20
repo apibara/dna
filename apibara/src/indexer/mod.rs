@@ -4,7 +4,7 @@ use futures::{future, StreamExt};
 use std::{collections::HashMap, sync::Arc};
 use tokio::{sync::mpsc, task::JoinHandle};
 use tokio_stream::wrappers::ReceiverStream;
-use tracing::info;
+use tracing::{error, info};
 
 use crate::{
     chain::{BlockEvents, BlockHeader, ChainProvider, EventFilter},
@@ -133,6 +133,7 @@ impl<P: ChainProvider> IndexerLoop<P> {
 
                 // TODO: check return value and wrap error
                 _ = &mut head_tracker_handle => {
+                    error!("head tracker service stopped");
                     return Err(Error::msg("head tracker service stopped"))
                 }
                 Some(msg) = head_stream.next() => {
@@ -140,12 +141,12 @@ impl<P: ChainProvider> IndexerLoop<P> {
                         HeadMessage::NewBlock(block) => {
                             info!("⛏️ {} {}", block.number, block.hash);
                             self.update_with_new_block(block.clone())?;
-                            //stream_tx.send(Message::NewBlock(block)).await?;
+                            self.stream_tx.send(Message::NewBlock(block)).await?;
                         }
                         HeadMessage::Reorg(block) => {
                             info!("🤕 {} {}", block.number, block.hash);
                             self.update_with_reorg_block(block.clone())?;
-                            //stream_tx.send(Message::Reorg(block)).await?;
+                            self.stream_tx.send(Message::Reorg(block)).await?;
                         }
                     }
                 }

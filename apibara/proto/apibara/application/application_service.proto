@@ -10,7 +10,7 @@ service ApplicationManager {
   rpc ListApplication(ListApplicationRequest) returns (ListApplicationResponse);
   rpc DeleteApplication(DeleteApplicationRequest) returns (DeleteApplicationResponse);
 
-  rpc ConnectIndexer(stream IndexerRequest) returns (stream IndexerResponse);
+  rpc ConnectIndexer(stream ConnectIndexerRequest) returns (stream ConnectIndexerResponse);
 }
 
 // Represent the application's state.
@@ -58,7 +58,7 @@ message DeleteApplicationResponse {
 
 message BlockHeader {
   bytes hash = 1;
-  bytes parent_hash = 2;
+  optional bytes parent_hash = 2;
   uint64 number = 3;
   google.protobuf.Timestamp timestamp = 4;
 }
@@ -66,13 +66,22 @@ message BlockHeader {
 message Event {
 }
 
+message ConnectApplication {
+  string id = 1;
+}
+
+message ApplicationConnected {
+  Application application = 1;
+}
+
 message AckBlock {
   bytes hash = 1;
 }
 
-message IndexerRequest {
+message ConnectIndexerRequest {
   oneof message {
-    AckBlock ack = 1;
+    ConnectApplication connect = 1;
+    AckBlock ack = 3;
   }
 }
 
@@ -90,10 +99,11 @@ message NewEvents {
   repeated Event events = 3;
 }
 
-message IndexerResponse {
+message ConnectIndexerResponse {
   oneof message {
-    NewBlock new_block = 1;
-    Reorg reorg = 2;
-    NewEvents new_events = 3;
+    ApplicationConnected connected = 1;
+    NewBlock new_block = 2;
+    Reorg reorg = 3;
+    NewEvents new_events = 4;
   }
 }

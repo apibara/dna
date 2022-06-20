@@ -11,7 +11,7 @@ use tokio::{
     task::JoinHandle,
 };
 use tokio_stream::wrappers::ReceiverStream;
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 
 mod persistence;
 
@@ -70,9 +70,7 @@ impl Application {
             MongoPersistence::new_with_uri("mongodb://apibara:apibara@localhost:27017").await?;
         // TODO: don't reset state at every restart.
         // should use this to start the indexer component at the right block.
-        if persistence.get_state(&self.id).await?.is_some() {
-            persistence.delete_state(&self.id).await?;
-        }
+        if persistence.get_state(&self.id).await?.is_some() {}
 
         // TODO: create provider based on user configuration.
         let provider = Arc::new(StarkNetProvider::new("http://192.168.8.100:9545")?);
@@ -186,6 +184,7 @@ impl<P: ChainProvider> ApplicationIndexer<P> {
             loop {
                 tokio::select! {
                     _ = &mut handle => {
+                        error!("indexer stream stopped");
                         return Err(Error::msg("indexer stream stopped"));
                     }
                     Some(msg) = stream.next() => {

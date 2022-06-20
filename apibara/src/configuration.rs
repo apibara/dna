@@ -4,7 +4,7 @@ use std::path::Path;
 
 use anyhow::Result;
 use figment::{
-    providers::{Serialized, Toml, Format},
+    providers::{Format, Serialized, Toml},
     Figment,
 };
 use serde::{Deserialize, Serialize};
