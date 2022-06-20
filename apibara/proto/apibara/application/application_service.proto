@@ -1,31 +1,99 @@
 syntax = "proto3";
 
+import "google/protobuf/timestamp.proto";
+
 package apibara.application.v1alpha1;
 
 service ApplicationManager {
-  rpc SubscribeLogs(SubscribeLogsRequest) returns (stream SubscribeLogsResponse);
+  rpc CreateApplication(CreateApplicationRequest) returns (CreateApplicationResponse);
+  rpc GetApplication(GetApplicationRequest) returns (GetApplicationResponse);
+  rpc ListApplication(ListApplicationRequest) returns (ListApplicationResponse);
+  rpc DeleteApplication(DeleteApplicationRequest) returns (DeleteApplicationResponse);
+
+  rpc ConnectIndexer(stream IndexerRequest) returns (stream IndexerResponse);
 }
 
-message LogFilter {
-  uint64 from_block = 1;
-  bytes address = 2;
-  repeated Topic topics = 3;
+// Represent the application's state.
+message Application {
+  // The unique application id.
+  string id = 1;
+  // The latest block the application inedxed.
+  optional uint64 indexed_to_block = 2;
+  // The block from which to start indexing.
+  uint64 index_from_block = 3;
+  // TODO: add chain id
 }
 
-message Topic {
-  oneof kind {
-    bytes value = 1;
-    Choice choice = 2;
+message CreateApplicationRequest {
+  string id = 1;
+  uint64 index_from_block = 2;
+}
+
+message CreateApplicationResponse {
+  Application application = 1;
+}
+
+message GetApplicationRequest {
+  string id = 1;
+}
+
+message GetApplicationResponse {
+  Application application = 1;
+}
+
+message ListApplicationRequest {
+}
+
+message ListApplicationResponse {
+  repeated Application applications = 1;
+}
+
+message DeleteApplicationRequest {
+  string id = 1;
+}
+
+message DeleteApplicationResponse {
+  Application application = 1;
+}
+
+message BlockHeader {
+  bytes hash = 1;
+  bytes parent_hash = 2;
+  uint64 number = 3;
+  google.protobuf.Timestamp timestamp = 4;
+}
+
+message Event {
+}
+
+message AckBlock {
+  bytes hash = 1;
+}
+
+message IndexerRequest {
+  oneof message {
+    AckBlock ack = 1;
   }
 }
 
-message Choice {
-  repeated bytes choices = 1;
+message NewBlock {
+  BlockHeader new_head = 1;
 }
 
-message SubscribeLogsRequest {
-  LogFilter filter = 1;
+message Reorg {
+  BlockHeader new_head = 1;
 }
 
-message SubscribeLogsResponse {
+message NewEvents {
+  bytes block_hash = 1;
+  uint64 block_number = 2;
+  repeated Event events = 3;
+}
+
+message IndexerResponse {
+  oneof message {
+    NewBlock new_block = 1;
+    Reorg reorg = 2;
+    NewEvents new_events = 3;
+  }
 }

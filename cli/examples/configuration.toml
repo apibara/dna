@@ -1,0 +1,2 @@
+[admin.storage]
+connection_string = "mongodb://apibara:apibara@localhost:27017"

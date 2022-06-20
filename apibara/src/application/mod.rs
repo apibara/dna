@@ -15,7 +15,7 @@ use tracing::{debug, info, warn};
 
 mod persistence;
 
-pub use persistence::{ApplicationId, ApplicationPersistence, MongoPersistence};
+pub use persistence::{ApplicationId, ApplicationPersistence, MongoPersistence, State};
 
 use crate::{
     chain::{starknet::StarkNetProvider, BlockHeader, ChainProvider},

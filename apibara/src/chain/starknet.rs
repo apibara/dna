@@ -93,6 +93,7 @@ impl ChainProvider for StarkNetProvider {
 
                             if should_send {
                                 prev_block = Some(block.clone());
+                                // TODO: add backpressure
                                 debug!("sending new head {} {}", block.number, block.hash);
                                 if let Err(err) = tx.send(block.clone()).await {
                                     error!("starknet block poll error sending block: {:?}", err);
