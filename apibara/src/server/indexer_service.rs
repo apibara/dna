@@ -2,23 +2,200 @@ mod pb {
     tonic::include_proto!("apibara.application.v1alpha1");
 }
 
+use std::{pin::Pin, sync::Arc};
+
 use anyhow::Error;
 use futures::Stream;
-use std::{pin::Pin, str::FromStr, sync::Arc, time::Duration};
-use tokio::{
-    sync::mpsc::{self, error::TrySendError},
-    task::JoinHandle,
-};
-use tokio_stream::{wrappers::ReceiverStream, StreamExt};
-use tonic::{Code, Request, Response, Status, Streaming};
+use tokio_stream::StreamExt;
+use tonic::{Request, Response, Status, Streaming};
 use tracing::debug;
 
 use crate::{
-    application::{Application, ApplicationId, ApplicationPersistence, State},
-    chain::{BlockHash, BlockHeader, Event, EventFilter, TopicValue},
-    indexer::IndexerConfig,
-    indexer::Message as IndexerMessage,
+    chain::ChainProvider,
+    indexer::{
+        ClientToIndexerMessage as IndexerClientMessage, IndexerManager, IndexerPersistence,
+        Message as IndexerMessage, State as IndexerState,
+    },
+    persistence::Id,
 };
+
+use self::pb::{
+    connect_indexer_response::Message as ConnectIndexerResponseMessage,
+    indexer_manager_server::{IndexerManager as IndexerManagerTrait, IndexerManagerServer},
+    ConnectIndexerRequest, ConnectIndexerResponse, CreateIndexerRequest, CreateIndexerResponse,
+    DeleteIndexerRequest, DeleteIndexerResponse, GetIndexerRequest, GetIndexerResponse,
+    ListIndexerRequest, ListIndexerResponse,
+};
+
+pub struct IndexerManagerService<P: ChainProvider, IP: IndexerPersistence> {
+    provider: Arc<P>,
+    indexer_manager: IndexerManager<IP>,
+}
+
+type TonicResult<T> = Result<Response<T>, Status>;
+
+impl<P: ChainProvider, IP: IndexerPersistence> IndexerManagerService<P, IP> {
+    pub fn new(provider: Arc<P>, indexer_persistence: Arc<IP>) -> Self {
+        let indexer_manager = IndexerManager::new(indexer_persistence);
+
+        IndexerManagerService {
+            provider,
+            indexer_manager,
+        }
+    }
+
+    pub fn into_service(self) -> IndexerManagerServer<IndexerManagerService<P, IP>> {
+        IndexerManagerServer::new(self)
+    }
+}
+
+#[tonic::async_trait]
+impl<P: ChainProvider, IP: IndexerPersistence> IndexerManagerTrait
+    for IndexerManagerService<P, IP>
+{
+    async fn create_indexer(
+        &self,
+        request: Request<CreateIndexerRequest>,
+    ) -> TonicResult<CreateIndexerResponse> {
+        let message: CreateIndexerRequest = request.into_inner();
+        debug!("create indexer: {:?}", message);
+        let id: Id = message.id.parse().map_err(RequestError)?;
+
+        let indexer = self
+            .indexer_manager
+            .create_indexer(&id, message.index_from_block)
+            .await
+            .map_err(RequestError)?;
+
+        let response = CreateIndexerResponse {
+            indexer: Some(indexer.into()),
+        };
+
+        Ok(Response::new(response))
+    }
+
+    async fn get_indexer(
+        &self,
+        request: Request<GetIndexerRequest>,
+    ) -> TonicResult<GetIndexerResponse> {
+        let message: GetIndexerRequest = request.into_inner();
+        debug!("get indexer: {:?}", message);
+        let id: Id = message.id.parse().map_err(RequestError)?;
+
+        let indexer = self
+            .indexer_manager
+            .get_indexer(&id)
+            .await
+            .map_err(RequestError)?
+            .map(Into::into);
+
+        let response = GetIndexerResponse { indexer };
+
+        Ok(Response::new(response))
+    }
+
+    async fn delete_indexer(
+        &self,
+        request: Request<DeleteIndexerRequest>,
+    ) -> TonicResult<DeleteIndexerResponse> {
+        let message: DeleteIndexerRequest = request.into_inner();
+        debug!("delete indexer: {:?}", message);
+        let id: Id = message.id.parse().map_err(RequestError)?;
+
+        let deleted = self
+            .indexer_manager
+            .delete_indexer(&id)
+            .await
+            .map_err(RequestError)?
+            .into();
+
+        let response = DeleteIndexerResponse {
+            indexer: Some(deleted),
+        };
+
+        Ok(Response::new(response))
+    }
+
+    async fn list_indexer(
+        &self,
+        _request: Request<ListIndexerRequest>,
+    ) -> TonicResult<ListIndexerResponse> {
+        todo!()
+    }
+
+    type ConnectIndexerStream =
+        Pin<Box<dyn Stream<Item = Result<ConnectIndexerResponse, Status>> + Send + 'static>>;
+
+    async fn connect_indexer(
+        &self,
+        request: Request<Streaming<ConnectIndexerRequest>>,
+    ) -> TonicResult<Self::ConnectIndexerStream> {
+        debug!("connect indexer");
+
+        let request_stream = request.into_inner().map(|m| match m {
+            Ok(m) => m.try_into(),
+            Err(err) => Err(Error::msg(err.to_string())),
+        });
+
+        let indexer_stream = self
+            .indexer_manager
+            .connect_indexer(Box::pin(request_stream), self.provider.clone())
+            .await
+            .map_err(RequestError)?;
+
+        let response_stream: Pin<
+            Box<dyn Stream<Item = Result<ConnectIndexerResponse, Status>> + Send>,
+        > = Box::pin(indexer_stream.map(|m| match m {
+            Err(err) => Err(RequestError(err))?,
+            Ok(message) => {
+                let message = message.into();
+                let response = ConnectIndexerResponse {
+                    message: Some(message),
+                };
+                Ok(response)
+            }
+        }));
+
+        let response = Response::new(response_stream);
+
+        Ok(response)
+    }
+}
+
+struct RequestError(anyhow::Error);
+
+impl From<RequestError> for Status {
+    fn from(err: RequestError) -> Self {
+        Status::internal(err.0.to_string())
+    }
+}
+
+#[allow(clippy::from_over_into)]
+impl Into<pb::Indexer> for IndexerState {
+    fn into(self) -> pb::Indexer {
+        pb::Indexer {
+            id: self.id.into_string(),
+            indexed_to_block: self.indexed_to_block,
+            index_from_block: self.index_from_block,
+        }
+    }
+}
+
+impl Into<ConnectIndexerResponseMessage> for IndexerMessage {
+    fn into(self) -> ConnectIndexerResponseMessage {
+        todo!()
+    }
+}
+
+impl TryFrom<ConnectIndexerRequest> for IndexerClientMessage {
+    type Error = anyhow::Error;
+
+    fn try_from(request: ConnectIndexerRequest) -> Result<Self, Self::Error> {
+        todo!()
+    }
+}
+
+/*
 
 use self::pb::{
     application_manager_server::{ApplicationManager, ApplicationManagerServer},
@@ -29,24 +206,6 @@ use self::pb::{
     DeleteApplicationResponse, GetApplicationRequest, GetApplicationResponse,
     ListApplicationRequest, ListApplicationResponse, NewBlock, NewEvents, Reorg,
 };
-
-type TonicResult<T> = Result<Response<T>, Status>;
-
-pub struct ApplicationManagerService {
-    application_persistence: Arc<dyn ApplicationPersistence>,
-}
-
-impl ApplicationManagerService {
-    pub fn new(application_persistence: Arc<dyn ApplicationPersistence>) -> Self {
-        ApplicationManagerService {
-            application_persistence,
-        }
-    }
-
-    pub fn into_service(self) -> ApplicationManagerServer<ApplicationManagerService> {
-        ApplicationManagerServer::new(self)
-    }
-}
 
 #[tonic::async_trait]
 impl ApplicationManager for ApplicationManagerService {
@@ -276,7 +435,9 @@ impl ApplicationManager for ApplicationManagerService {
                     indexer_msg = indexer_stream.next() => {
                         debug!("indexer message {:?}", indexer_msg);
                         match indexer_msg {
-                            None => {},
+                            None => {
+                                break
+                            },
                             Some(indexer_msg) => {
                                 let message = indexer_msg.into();
                                 let response = ConnectIndexerResponse{
@@ -286,18 +447,24 @@ impl ApplicationManager for ApplicationManagerService {
                             }
                         }
                     }
-                    /*
                     client_msg = request_stream.next() => {
                         debug!("client message {:?}", client_msg);
-                        break
+                        match client_msg {
+                            None => {}
+                            Some(Ok(client_msg)) => {
+                                ()
+                            }
+                            Some(Err(err)) => {
+                                return Err(Error::msg(err.code().description()).context("received error message from client"))
+                            }
+                        }
                     }
-                    */
                     _ = &mut application_handle => {
                         return Err(Error::msg("application service stopped"))
                     }
                 }
             }
-            // Ok(())
+            Ok(())
         });
 
         let response_stream = ReceiverStream::new(response_rx);
@@ -368,6 +535,23 @@ impl Into<ConnectIndexerResponseMessage> for IndexerMessage {
 
 impl Into<pb::Event> for Event {
     fn into(self) -> pb::Event {
-        pb::Event {}
+        let data = self.data.into_iter().map(Into::into).collect();
+        let topics = self.topics.into_iter().map(Into::into).collect();
+        pb::Event {
+            address: self.address.to_vec(),
+            block_index: self.block_index as u64,
+            data,
+            topics,
+        }
     }
 }
+
+impl Into<pb::TopicValue> for TopicValue {
+    fn into(self) -> pb::TopicValue {
+        pb::TopicValue {
+            value: self.to_vec(),
+        }
+    }
+}
+
+*/

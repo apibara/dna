@@ -1,35 +1,38 @@
 //! Apibara gRPC server.
 
-mod application_service;
+mod indexer_service;
+
+use std::{net::SocketAddr, sync::Arc};
 
 use anyhow::Result;
-use std::{net::SocketAddr, sync::Arc};
 use tonic::transport::Server as TonicServer;
 use tracing::info;
 
-use crate::application::ApplicationPersistence;
+use crate::{chain::starknet::StarkNetProvider, indexer::IndexerPersistence};
 
-use self::application_service::ApplicationManagerService;
+use self::indexer_service::IndexerManagerService;
 
-pub struct Server {
-    application_persistence: Arc<dyn ApplicationPersistence>,
+pub struct Server<IP: IndexerPersistence> {
+    indexer_persistence: Arc<IP>,
 }
 
-impl Server {
-    pub fn new(application_persistence: Arc<dyn ApplicationPersistence>) -> Server {
+impl<IP: IndexerPersistence> Server<IP> {
+    pub fn new(indexer_persistence: Arc<IP>) -> Server<IP> {
         Server {
-            application_persistence,
+            indexer_persistence,
         }
     }
 
     pub async fn serve(self, addr: SocketAddr) -> Result<()> {
-        let application_manager =
-            ApplicationManagerService::new(self.application_persistence.clone());
+        // TODO: provider manager
+        let provider = StarkNetProvider::new("http://localhost:9545")?;
+        let indexer_manager =
+            IndexerManagerService::new(Arc::new(provider), self.indexer_persistence.clone());
 
         info!(addr=?addr, "starting apibara server");
 
         let _ = TonicServer::builder()
-            .add_service(application_manager.into_service())
+            .add_service(indexer_manager.into_service())
             .serve(addr)
             .await?;
 

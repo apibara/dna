@@ -1,0 +1,117 @@
+syntax = "proto3";
+
+import "google/protobuf/timestamp.proto";
+
+package apibara.application.v1alpha1;
+
+service IndexerManager {
+  rpc CreateIndexer(CreateIndexerRequest) returns (CreateIndexerResponse);
+  rpc GetIndexer(GetIndexerRequest) returns (GetIndexerResponse);
+  rpc ListIndexer(ListIndexerRequest) returns (ListIndexerResponse);
+  rpc DeleteIndexer(DeleteIndexerRequest) returns (DeleteIndexerResponse);
+
+  rpc ConnectIndexer(stream ConnectIndexerRequest) returns (stream ConnectIndexerResponse);
+}
+
+// Represent the indexer's state.
+message Indexer {
+  // TODO: add chain id, application id
+  // The unique indexer id.
+  string id = 1;
+  // The latest block the indexer inedxed.
+  optional uint64 indexed_to_block = 2;
+  // The block from which to start indexing.
+  uint64 index_from_block = 3;
+}
+
+message CreateIndexerRequest {
+  string id = 1;
+  uint64 index_from_block = 2;
+}
+
+message CreateIndexerResponse {
+  Indexer indexer = 1;
+}
+
+message GetIndexerRequest {
+  string id = 1;
+}
+
+message GetIndexerResponse {
+  Indexer indexer = 1;
+}
+
+message ListIndexerRequest {
+}
+
+message ListIndexerResponse {
+  repeated Indexer indexers = 1;
+}
+
+message DeleteIndexerRequest {
+  string id = 1;
+}
+
+message DeleteIndexerResponse {
+  Indexer indexer = 1;
+}
+
+message BlockHeader {
+  bytes hash = 1;
+  optional bytes parent_hash = 2;
+  uint64 number = 3;
+  google.protobuf.Timestamp timestamp = 4;
+}
+
+message TopicValue {
+  bytes value = 1;
+}
+
+message Event {
+  bytes address = 1;
+  uint64 block_index = 2;
+  repeated TopicValue topics = 3;
+  repeated TopicValue data = 4;
+}
+
+message ConnectIndexer {
+  string id = 1;
+}
+
+message IndexerConnected {
+  Indexer indexer = 1;
+}
+
+message AckBlock {
+  bytes hash = 1;
+}
+
+message ConnectIndexerRequest {
+  oneof message {
+    ConnectIndexer connect = 1;
+    AckBlock ack = 3;
+  }
+}
+
+message NewBlock {
+  BlockHeader new_head = 1;
+}
+
+message Reorg {
+  BlockHeader new_head = 1;
+}
+
+message NewEvents {
+  bytes block_hash = 1;
+  uint64 block_number = 2;
+  repeated Event events = 3;
+}
+
+message ConnectIndexerResponse {
+  oneof message {
+    IndexerConnected connected = 1;
+    NewBlock new_block = 2;
+    Reorg reorg = 3;
+    NewEvents new_events = 4;
+  }
+}

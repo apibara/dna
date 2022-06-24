@@ -78,11 +78,19 @@ impl Address {
     pub fn as_bytes(&self) -> &[u8] {
         &self.0
     }
+
+    pub fn to_vec(&self) -> Vec<u8> {
+        self.0.clone()
+    }
 }
 
 impl TopicValue {
     pub fn as_bytes(&self) -> &[u8] {
         &self.0
+    }
+
+    pub fn to_vec(&self) -> Vec<u8> {
+        self.0.clone()
     }
 }
 
