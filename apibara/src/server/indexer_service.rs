@@ -8,10 +8,12 @@ use anyhow::Error;
 use futures::Stream;
 use tokio_stream::StreamExt;
 use tonic::{Request, Response, Status, Streaming};
-use tracing::{debug, info};
+use tracing::debug;
 
 use crate::{
-    chain::{BlockHash, BlockHeader, ChainProvider, Event, TopicValue},
+    chain::{
+        Address, BlockHash, BlockHeader, ChainProvider, Event, EventFilter, Topic, TopicValue,
+    },
     indexer::{
         ClientToIndexerMessage as IndexerClientMessage, IndexerManager, IndexerPersistence,
         Message as IndexerMessage, State as IndexerState,
@@ -62,9 +64,11 @@ impl<P: ChainProvider, IP: IndexerPersistence> IndexerManagerTrait
         debug!("create indexer: {:?}", message);
         let id: Id = message.id.parse().map_err(RequestError)?;
 
+        let filters = message.filters.into_iter().map(Into::into).collect();
+
         let indexer = self
             .indexer_manager
-            .create_indexer(&id, message.index_from_block)
+            .create_indexer(&id, filters, message.index_from_block)
             .await
             .map_err(RequestError)?;
 
@@ -119,9 +123,22 @@ impl<P: ChainProvider, IP: IndexerPersistence> IndexerManagerTrait
 
     async fn list_indexer(
         &self,
-        _request: Request<ListIndexerRequest>,
+        request: Request<ListIndexerRequest>,
     ) -> TonicResult<ListIndexerResponse> {
-        todo!()
+        let _message: ListIndexerRequest = request.into_inner();
+        debug!("list indexer");
+        let indexers = self
+            .indexer_manager
+            .list_indexer()
+            .await
+            .map_err(RequestError)?
+            .into_iter()
+            .map(Into::into)
+            .collect();
+
+        let response = ListIndexerResponse { indexers };
+
+        Ok(Response::new(response))
     }
 
     type ConnectIndexerStream =
@@ -178,6 +195,31 @@ impl Into<pb::Indexer> for IndexerState {
             id: self.id.into_string(),
             indexed_to_block: self.indexed_to_block,
             index_from_block: self.index_from_block,
+            filters: self.filters.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+#[allow(clippy::from_over_into)]
+impl Into<pb::EventFilter> for EventFilter {
+    fn into(self) -> pb::EventFilter {
+        let address = self.address.map(|a| a.to_vec()).unwrap_or_default();
+        let topics = self.topics.into_iter().map(Into::into).collect();
+        pb::EventFilter { address, topics }
+    }
+}
+
+#[allow(clippy::from_over_into)]
+impl Into<pb::Topic> for Topic {
+    fn into(self) -> pb::Topic {
+        match self {
+            Topic::Value(topic) => pb::Topic {
+                choices: vec![topic.into()],
+            },
+            Topic::Choice(choices) => {
+                let choices = choices.into_iter().map(Into::into).collect();
+                pb::Topic { choices }
+            }
         }
     }
 }
@@ -199,6 +241,7 @@ impl Into<pb::BlockHeader> for BlockHeader {
     }
 }
 
+#[allow(clippy::from_over_into)]
 impl Into<pb::Event> for Event {
     fn into(self) -> pb::Event {
         let data = self.data.into_iter().map(Into::into).collect();
@@ -212,6 +255,7 @@ impl Into<pb::Event> for Event {
     }
 }
 
+#[allow(clippy::from_over_into)]
 impl Into<pb::TopicValue> for TopicValue {
     fn into(self) -> pb::TopicValue {
         pb::TopicValue {
@@ -220,6 +264,7 @@ impl Into<pb::TopicValue> for TopicValue {
     }
 }
 
+#[allow(clippy::from_over_into)]
 impl Into<ConnectIndexerResponseMessage> for IndexerMessage {
     fn into(self) -> ConnectIndexerResponseMessage {
         match self {
@@ -269,5 +314,34 @@ impl TryFrom<ConnectIndexerRequest> for IndexerClientMessage {
                 Ok(IndexerClientMessage::AckBlock(hash))
             }
         }
+    }
+}
+
+impl From<pb::EventFilter> for EventFilter {
+    fn from(ef: pb::EventFilter) -> Self {
+        let address = if ef.address.is_empty() {
+            None
+        } else {
+            Some(Address::from_bytes(&ef.address))
+        };
+        let topics = ef.topics.into_iter().map(Into::into).collect();
+        EventFilter { address, topics }
+    }
+}
+
+impl From<pb::Topic> for Topic {
+    fn from(mut t: pb::Topic) -> Self {
+        if t.choices.len() == 1 {
+            Topic::Value(t.choices.remove(0).into())
+        } else {
+            let choices = t.choices.into_iter().map(Into::into).collect();
+            Topic::Choice(choices)
+        }
+    }
+}
+
+impl From<pb::TopicValue> for TopicValue {
+    fn from(tv: pb::TopicValue) -> Self {
+        TopicValue::from_bytes(&tv.value)
     }
 }

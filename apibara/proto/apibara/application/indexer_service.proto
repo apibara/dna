@@ -13,6 +13,27 @@ service IndexerManager {
   rpc ConnectIndexer(stream ConnectIndexerRequest) returns (stream ConnectIndexerResponse);
 }
 
+// Filter events based on address and topics.
+message EventFilter {
+  // Address of the contract emitting the event.
+  bytes address = 1;
+
+  // Filter topics.
+  repeated Topic topics = 2;
+}
+
+// Event topic.
+message Topic {
+  // Topic possible values. The values are OR of each other.
+  repeated TopicValue choices = 1;
+}
+
+// Topic value.
+message TopicValue {
+  // Value encoded as bytes.
+  bytes value = 1;
+}
+
 // Represent the indexer's state.
 message Indexer {
   // TODO: add chain id, application id
@@ -22,11 +43,14 @@ message Indexer {
   optional uint64 indexed_to_block = 2;
   // The block from which to start indexing.
   uint64 index_from_block = 3;
+  // Filters that produce the events this indexer ingests.
+  repeated EventFilter filters = 4;
 }
 
 message CreateIndexerRequest {
   string id = 1;
   uint64 index_from_block = 2;
+  repeated EventFilter filters = 3;
 }
 
 message CreateIndexerResponse {
@@ -61,10 +85,6 @@ message BlockHeader {
   optional bytes parent_hash = 2;
   uint64 number = 3;
   google.protobuf.Timestamp timestamp = 4;
-}
-
-message TopicValue {
-  bytes value = 1;
 }
 
 message Event {

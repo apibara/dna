@@ -4,13 +4,15 @@ use anyhow::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
-use crate::persistence::Id;
+use crate::{chain::EventFilter, persistence::Id};
 
 /// Indexer state.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct State {
     /// Unique id.
     pub id: Id,
+    /// Event filters.
+    pub filters: Vec<EventFilter>,
     /// Number of blocks to fetch in one call.
     pub block_batch_size: usize,
     /// Starting block.
@@ -30,6 +32,9 @@ pub trait IndexerPersistence: Send + Sync + 'static {
 
     /// Delete the specified indexer.
     async fn delete_indexer(&self, id: &Id) -> Result<()>;
+
+    /// List all indexers.
+    async fn list_indexer(&self) -> Result<Vec<State>>;
 
     /// Update the specified indexer's `indexed_to_block` to the given block.
     ///

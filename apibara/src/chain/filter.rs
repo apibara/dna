@@ -1,8 +1,10 @@
 //! Filter on chain events.
+use serde::{Deserialize, Serialize};
+
 use crate::chain::types::{Address, TopicValue};
 
 /// An event topic.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Topic {
     /// A single value.
     Value(TopicValue),
@@ -11,7 +13,7 @@ pub enum Topic {
 }
 
 /// Describe how to filter events.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EventFilter {
     /// Filter by the contracts emitting the event.
     pub address: Option<Address>,

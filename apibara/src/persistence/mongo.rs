@@ -2,8 +2,9 @@
 
 use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use async_trait::async_trait;
+use futures::TryStreamExt;
 use mongodb::{
     bson::{doc, Bson},
     Client, Collection,
@@ -64,6 +65,19 @@ impl IndexerPersistence for MongoPersistence {
             .delete_one(doc! { "id": id }, None)
             .await?;
         Ok(())
+    }
+
+    async fn list_indexer(&self) -> Result<Vec<IndexerState>> {
+        debug!("mongo list indexer");
+        let indexers = self
+            .indexers_collection()
+            .find(doc! {}, None)
+            .await
+            .context("failed to fetch indexers")?
+            .try_collect::<Vec<IndexerState>>()
+            .await
+            .context("failed to collect mongo cursor")?;
+        Ok(indexers)
     }
 
     async fn update_indexer_block(&self, id: &Id, new_indexed_block: u64) -> Result<()> {

@@ -9,10 +9,10 @@ use anyhow::{Context, Error, Result};
 use futures::{future, Stream, StreamExt};
 use tokio::{sync::mpsc, task::JoinHandle};
 use tokio_stream::wrappers::ReceiverStream;
-use tracing::{debug, error, info};
+use tracing::{error, info};
 
 use crate::{
-    chain::{BlockEvents, BlockHash, BlockHeader, ChainProvider, EventFilter},
+    chain::{BlockEvents, BlockHash, BlockHeader, ChainProvider},
     head_tracker::{HeadTracker, Message as HeadMessage},
     persistence::Id,
 };
@@ -125,7 +125,9 @@ where
             .persistence
             .get_indexer(&self.indexer_id)
             .await?
-            .ok_or(Error::msg("indexer not found"))?;
+            .ok_or_else(|| Error::msg("indexer not found"))?;
+
+        let filters = initial_state.filters.clone();
 
         self.stream_tx
             .send(Ok(Message::Connected(initial_state)))
@@ -133,8 +135,7 @@ where
 
         let loop_sleep_duration = Duration::from_millis(500);
 
-        let filters: Vec<EventFilter> = Vec::new();
-        let mut waiting_for_ack: Option<BlockHash> = None;
+        let mut waiting_for_ack: Option<(BlockHash, u64)> = None;
         let mut block_batch = VecDeque::new();
         loop {
             tokio::select! {
@@ -164,59 +165,96 @@ where
                     }
                 }
 
-                Some(msg) = self.client_stream.next(), if waiting_for_ack.is_some() => {
-                    todo!()
+                None = self.client_stream.next(), if waiting_for_ack.is_none() => {
+                    // not expecting a message from stream
+                    return Err(Error::msg("connection closed"))
                 }
 
                 _ = future::ready(()) => {
-                    // no new head or message from the client.
-                    // continue by sending new events to the client.
+                    // no new head message.
                 }
             }
 
-            match self.head {
-                None => continue,
-                Some(ref head) => {
-                    if head.number < self.next_block_number {
-                        info!(head=?head.number, "at head of chain");
-                        tokio::time::sleep(loop_sleep_duration).await;
-                        continue;
-                    }
-                    // can now send the next events to the client
-                    info!("house keeping done. send next block events");
-                    if block_batch.is_empty() {
-                        let (start, end) = self.next_block_events_query()?;
-                        info!("get events: [{}, {}]", start, end);
+            match waiting_for_ack {
+                None => {
+                    match self.head {
+                        None => continue,
+                        Some(ref head) => {
+                            if head.number < self.next_block_number {
+                                info!(head=?head.number, "at head of chain");
+                                tokio::time::sleep(loop_sleep_duration).await;
+                                continue;
+                            }
+                            // can now send the next events to the client
+                            if block_batch.is_empty() {
+                                let (start, end) = self.next_block_events_query()?;
+                                info!("get events: [{}, {}]", start, end);
 
-                        // TODO: join block events by different filters
-                        if filters.len() > 1 {
-                            return Err(Error::msg("support only one filter for now"));
-                        }
+                                // TODO: join block events by different filters
+                                if filters.len() > 1 {
+                                    return Err(Error::msg("support only one filter for now"));
+                                }
 
-                        for filter in &filters {
-                            let block_events = self
-                                .provider
-                                .get_events_in_range(start, end, filter)
-                                .await
-                                .context("failed to fetch events")?;
-                            block_batch.extend(block_events.into_iter());
-                        }
-                        self.update_next_block(end + 1);
-                    }
+                                for filter in &filters {
+                                    let block_events = self
+                                        .provider
+                                        .get_events_in_range(start, end, filter)
+                                        .await
+                                        .context("failed to fetch events")?;
+                                    block_batch.extend(block_events.into_iter());
+                                }
+                                self.update_next_block(end + 1);
+                            }
 
-                    match block_batch.pop_front() {
-                        None => {
-                            // no events in this block range
-                        }
-                        Some(block_events) => {
-                            waiting_for_ack = Some(block_events.hash.clone());
+                            match block_batch.pop_front() {
+                                None => {
+                                    // no events in this block range
+                                    // TODO: can safely update the indexed range to include
+                                    // the batch end block.
+                                }
+                                Some(block_events) => {
+                                    waiting_for_ack =
+                                        Some((block_events.hash.clone(), block_events.number));
 
-                            self.stream_tx
-                                .send(Ok(Message::NewEvents(block_events)))
-                                .await?;
+                                    self.stream_tx
+                                        .send(Ok(Message::NewEvents(block_events)))
+                                        .await?;
+                                }
+                            }
                         }
                     }
                 }
+                Some((ref block_hash, block_number)) => match self.client_stream.next().await {
+                    None => {
+                        error!("closed stream");
+                        return Err(Error::msg("stream closed"));
+                    }
+                    Some(Err(err)) => {
+                        error!("received error from client: {:?}", err);
+                        return Err(err);
+                    }
+                    Some(Ok(msg)) => match msg {
+                        ClientToIndexerMessage::Connect(_) => {
+                            self.stream_tx
+                                .send(Err(Error::msg("unexpected Connect message received")))
+                                .await?;
+                            return Ok(());
+                        }
+                        ClientToIndexerMessage::AckBlock(acked_block_hash) => {
+                            if &acked_block_hash != block_hash {
+                                self.stream_tx
+                                    .send(Err(Error::msg("invalid block acked")))
+                                    .await?;
+                                return Ok(());
+                            }
+                            waiting_for_ack = None;
+
+                            self.persistence
+                                .update_indexer_block(&self.indexer_id, block_number)
+                                .await?;
+                        }
+                    },
+                },
             }
         }
     }

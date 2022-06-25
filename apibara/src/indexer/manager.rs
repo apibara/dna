@@ -3,7 +3,10 @@ use std::{pin::Pin, sync::Arc};
 use anyhow::{Error, Result};
 use futures::{Stream, StreamExt};
 
-use crate::{chain::ChainProvider, persistence::Id};
+use crate::{
+    chain::{ChainProvider, EventFilter},
+    persistence::Id,
+};
 
 use super::{start_indexer, ClientToIndexerMessage, IndexerPersistence, Message, State};
 
@@ -19,7 +22,12 @@ impl<IP: IndexerPersistence> IndexerManager<IP> {
         Self { persistence }
     }
 
-    pub async fn create_indexer(&self, id: &Id, index_from_block: u64) -> Result<State> {
+    pub async fn create_indexer(
+        &self,
+        id: &Id,
+        filters: Vec<EventFilter>,
+        index_from_block: u64,
+    ) -> Result<State> {
         let existing = self.persistence.get_indexer(id).await?;
 
         // TODO: should return already exists error type
@@ -30,6 +38,7 @@ impl<IP: IndexerPersistence> IndexerManager<IP> {
         let state = State {
             id: id.clone(),
             index_from_block,
+            filters,
             block_batch_size: DEFAULT_BLOCK_BATCH_SIZE,
             indexed_to_block: None,
         };
@@ -43,12 +52,16 @@ impl<IP: IndexerPersistence> IndexerManager<IP> {
         self.persistence.get_indexer(id).await
     }
 
+    pub async fn list_indexer(&self) -> Result<Vec<State>> {
+        self.persistence.list_indexer().await
+    }
+
     pub async fn delete_indexer(&self, id: &Id) -> Result<State> {
         let existing = self.persistence.get_indexer(id).await?;
 
         // TODO: should return not found error type
         match existing {
-            None => return Err(Error::msg("not found")),
+            None => Err(Error::msg("not found")),
             Some(existing) => {
                 self.persistence.delete_indexer(id).await?;
                 Ok(existing)
@@ -68,12 +81,15 @@ impl<IP: IndexerPersistence> IndexerManager<IP> {
         // first message MUST be a connect message
         // when we receive that message, use the provided indexer id
         // value to lookup the indexer state and resume indexing from there.
-        let message = client_stream.next().await.ok_or(Error::msg(""))??;
+        let message = client_stream
+            .next()
+            .await
+            .ok_or_else(|| Error::msg("client did not send connect message"))??;
         let indexer_state = if let ClientToIndexerMessage::Connect(indexer_id) = message {
             self.persistence
                 .get_indexer(&indexer_id)
                 .await?
-                .ok_or(Error::msg("indexer not found"))?
+                .ok_or_else(|| Error::msg("indexer not found"))?
         } else {
             return Err(Error::msg("must send Connect message first"));
         };

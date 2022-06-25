@@ -1,18 +1,20 @@
 //! Types common to all chains.
+use std::{fmt, str::FromStr};
+
 use anyhow::Result;
 use chrono::NaiveDateTime;
-use std::{fmt, str::FromStr};
+use serde::{Deserialize, Serialize};
 
 /// Chain block hash.
 #[derive(Clone, PartialEq)]
 pub struct BlockHash(Vec<u8>);
 
 /// Chain address.
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Address(Vec<u8>);
 
 /// Data associated with an event.
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct TopicValue(Vec<u8>);
 
 /// Block header information needed to track information about the chain head.
@@ -75,6 +77,10 @@ impl BlockHash {
 }
 
 impl Address {
+    pub fn from_bytes(data: &[u8]) -> Self {
+        Address(data.to_vec())
+    }
+
     pub fn as_bytes(&self) -> &[u8] {
         &self.0
     }
@@ -85,6 +91,10 @@ impl Address {
 }
 
 impl TopicValue {
+    pub fn from_bytes(data: &[u8]) -> Self {
+        TopicValue(data.to_vec())
+    }
+
     pub fn as_bytes(&self) -> &[u8] {
         &self.0
     }
