@@ -25,7 +25,7 @@ impl<IP: IndexerPersistence> Server<IP> {
 
     pub async fn serve(self, addr: SocketAddr) -> Result<()> {
         // TODO: provider manager
-        let provider = StarkNetProvider::new("http://localhost:9545")?;
+        let provider = StarkNetProvider::new("http://192.168.8.100:9545")?;
         let indexer_manager =
             IndexerManagerService::new(Arc::new(provider), self.indexer_persistence.clone());
 
