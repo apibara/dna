@@ -191,6 +191,9 @@ impl BlockEventsBuilder {
             };
             result.push(block_with_events);
         }
+
+        result.sort_by(|a, b| a.number.cmp(&b.number));
+
         Ok(result)
     }
 }
@@ -280,11 +283,13 @@ impl TryInto<FieldElement> for &TopicValue {
     type Error = Error;
 
     fn try_into(self) -> Result<FieldElement, Self::Error> {
-        if self.as_bytes().len() == 32 {
+        let bytes = self.as_bytes();
+        let bytes_len = bytes.len();
+        if bytes_len <= 32 {
             let mut buff: [u8; 32] = Default::default();
-            buff.copy_from_slice(self.as_bytes());
+            buff[32 - bytes_len..32].copy_from_slice(bytes);
             return Ok(FieldElement::from_bytes_be(&buff)?);
         }
-        Err(Error::msg(""))
+        Err(Error::msg("invalid field element length"))
     }
 }
