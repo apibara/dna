@@ -8,7 +8,7 @@ use anyhow::Error;
 use futures::Stream;
 use tokio_stream::StreamExt;
 use tonic::{Request, Response, Status, Streaming};
-use tracing::debug;
+use tracing::{debug, error};
 
 use crate::{
     chain::{
@@ -66,17 +66,25 @@ impl<P: ChainProvider, IP: IndexerPersistence> IndexerManagerTrait
 
         let filters = message.filters.into_iter().map(Into::into).collect();
 
-        let indexer = self
+        let res = self
             .indexer_manager
             .create_indexer(&id, filters, message.index_from_block)
             .await
-            .map_err(RequestError)?;
+            .map_err(RequestError);
 
-        let response = CreateIndexerResponse {
-            indexer: Some(indexer.into()),
-        };
+        match res {
+            Err(err) => {
+                error!("create indexer error: {:?}", err);
+                return Err(err)?;
+            }
+            Ok(indexer) => {
+                let response = CreateIndexerResponse {
+                    indexer: Some(indexer.into()),
+                };
 
-        Ok(Response::new(response))
+                Ok(Response::new(response))
+            }
+        }
     }
 
     async fn get_indexer(
@@ -87,16 +95,23 @@ impl<P: ChainProvider, IP: IndexerPersistence> IndexerManagerTrait
         debug!("get indexer: {:?}", message);
         let id: Id = message.id.parse().map_err(RequestError)?;
 
-        let indexer = self
+        let res = self
             .indexer_manager
             .get_indexer(&id)
             .await
-            .map_err(RequestError)?
-            .map(Into::into);
+            .map_err(RequestError)
+            .map(|o| o.map(Into::into));
 
-        let response = GetIndexerResponse { indexer };
-
-        Ok(Response::new(response))
+        match res {
+            Err(err) => {
+                error!("get indexer error: {:?}", err);
+                return Err(err)?;
+            }
+            Ok(indexer) => {
+                let response = GetIndexerResponse { indexer };
+                Ok(Response::new(response))
+            }
+        }
     }
 
     async fn delete_indexer(
@@ -107,18 +122,25 @@ impl<P: ChainProvider, IP: IndexerPersistence> IndexerManagerTrait
         debug!("delete indexer: {:?}", message);
         let id: Id = message.id.parse().map_err(RequestError)?;
 
-        let deleted = self
+        let res = self
             .indexer_manager
             .delete_indexer(&id)
             .await
-            .map_err(RequestError)?
-            .into();
+            .map_err(RequestError)
+            .map(Into::into);
 
-        let response = DeleteIndexerResponse {
-            indexer: Some(deleted),
-        };
-
-        Ok(Response::new(response))
+        match res {
+            Err(err) => {
+                error!("delete indexer error: {:?}", err);
+                return Err(err)?;
+            }
+            Ok(indexer) => {
+                let response = DeleteIndexerResponse {
+                    indexer: Some(indexer),
+                };
+                Ok(Response::new(response))
+            }
+        }
     }
 
     async fn list_indexer(
@@ -127,18 +149,23 @@ impl<P: ChainProvider, IP: IndexerPersistence> IndexerManagerTrait
     ) -> TonicResult<ListIndexerResponse> {
         let _message: ListIndexerRequest = request.into_inner();
         debug!("list indexer");
-        let indexers = self
+        let res = self
             .indexer_manager
             .list_indexer()
             .await
-            .map_err(RequestError)?
-            .into_iter()
-            .map(Into::into)
-            .collect();
+            .map_err(RequestError)
+            .map(|indexers| indexers.into_iter().map(Into::into).collect());
 
-        let response = ListIndexerResponse { indexers };
-
-        Ok(Response::new(response))
+        match res {
+            Err(err) => {
+                error!("list indexer error: {:?}", err);
+                return Err(err)?;
+            }
+            Ok(indexers) => {
+                let response = ListIndexerResponse { indexers };
+                Ok(Response::new(response))
+            }
+        }
     }
 
     type ConnectIndexerStream =
@@ -155,31 +182,40 @@ impl<P: ChainProvider, IP: IndexerPersistence> IndexerManagerTrait
             Err(err) => Err(Error::msg(err.to_string())),
         });
 
-        let indexer_stream = self
+        let res = self
             .indexer_manager
             .connect_indexer(Box::pin(request_stream), self.provider.clone())
             .await
-            .map_err(RequestError)?;
+            .map_err(RequestError);
 
-        let response_stream: Pin<
-            Box<dyn Stream<Item = Result<ConnectIndexerResponse, Status>> + Send>,
-        > = Box::pin(indexer_stream.map(|m| match m {
-            Err(err) => Err(RequestError(err))?,
-            Ok(message) => {
-                let message = message.into();
-                let response = ConnectIndexerResponse {
-                    message: Some(message),
-                };
+        match res {
+            Err(err) => {
+                error!("connect indexer error: {:?}", err);
+                return Err(err)?;
+            }
+            Ok(indexer_stream) => {
+                let response_stream: Pin<
+                    Box<dyn Stream<Item = Result<ConnectIndexerResponse, Status>> + Send>,
+                > = Box::pin(indexer_stream.map(|m| match m {
+                    Err(err) => Err(RequestError(err))?,
+                    Ok(message) => {
+                        let message = message.into();
+                        let response = ConnectIndexerResponse {
+                            message: Some(message),
+                        };
+                        Ok(response)
+                    }
+                }));
+
+                let response = Response::new(response_stream);
+
                 Ok(response)
             }
-        }));
-
-        let response = Response::new(response_stream);
-
-        Ok(response)
+        }
     }
 }
 
+#[derive(Debug)]
 struct RequestError(anyhow::Error);
 
 impl From<RequestError> for Status {

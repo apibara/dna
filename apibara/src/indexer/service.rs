@@ -9,7 +9,7 @@ use anyhow::{Context, Error, Result};
 use futures::{future, Stream, StreamExt};
 use tokio::{sync::mpsc, task::JoinHandle};
 use tokio_stream::wrappers::ReceiverStream;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 use crate::{
     chain::{BlockEvents, BlockHash, BlockHeader, ChainProvider},
@@ -93,7 +93,10 @@ where
     {
         let (stream_tx, stream_rx) = mpsc::channel(64);
 
-        let next_block_number = state.indexed_to_block.map(|b| b + 1).unwrap_or(0);
+        let next_block_number = state
+            .indexed_to_block
+            .map(|b| b + 1)
+            .unwrap_or(state.index_from_block);
         let service = IndexerService {
             provider,
             persistence,
@@ -138,6 +141,7 @@ where
         let mut waiting_for_ack: Option<(BlockHash, u64)> = None;
         let mut block_batch = VecDeque::new();
         loop {
+            debug!("poll for new head or client messages");
             tokio::select! {
                 // poll in order since the code needs to know about
                 // new heads.
@@ -181,7 +185,7 @@ where
                         None => continue,
                         Some(ref head) => {
                             if head.number < self.next_block_number {
-                                info!(head=?head.number, "at head of chain");
+                                debug!(head=?head.number, "at head of chain");
                                 tokio::time::sleep(loop_sleep_duration).await;
                                 continue;
                             }

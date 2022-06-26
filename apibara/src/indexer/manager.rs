@@ -94,6 +94,7 @@ impl<IP: IndexerPersistence> IndexerManager<IP> {
             return Err(Error::msg("must send Connect message first"));
         };
 
+        // TODO: track all indexers' handles and report their error
         let (_indexer_handle, indexer_stream) = start_indexer(
             &indexer_state,
             client_stream,
