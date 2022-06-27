@@ -127,7 +127,8 @@ impl ChainProvider for StarkNetProvider {
 
         let mut block_events = BlockEventsBuilder::new();
         let mut page_number = 0;
-        // TODO: need to keep events sorted
+        // TODO: need to keep events sorted. Need to have a block_index in the rpc
+        // response.
         loop {
             let page = self
                 .client

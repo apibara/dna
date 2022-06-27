@@ -4,7 +4,7 @@ use futures::StreamExt;
 use std::{collections::VecDeque, sync::Arc};
 use tokio::{sync::mpsc, task::JoinHandle};
 use tokio_stream::wrappers::ReceiverStream;
-use tracing::debug;
+use tracing::{debug, error};
 
 use crate::chain::{BlockHeader, ChainProvider};
 
@@ -88,8 +88,10 @@ impl<P: ChainProvider> HeadTracker<P> {
                 // send new head
                 tx.send(Message::NewBlock(block)).await?;
             } else if block.number > prev_head.number + 1 {
+                error!("head application with gaps not handled");
                 panic!("head application with gaps not handled");
             } else {
+                error!("head application rollback not handled");
                 panic!("head application rollback not handled");
             }
         }
