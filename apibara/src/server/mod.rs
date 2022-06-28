@@ -8,26 +8,29 @@ use anyhow::Result;
 use tonic::transport::Server as TonicServer;
 use tracing::info;
 
-use crate::{chain::starknet::StarkNetProvider, indexer::IndexerPersistence};
+use crate::{chain::ChainProvider, indexer::IndexerPersistence};
 
 use self::indexer_service::IndexerManagerService;
 
-pub struct Server<IP: IndexerPersistence> {
+pub struct Server<P: ChainProvider, IP: IndexerPersistence> {
+    provider: Arc<P>,
     indexer_persistence: Arc<IP>,
 }
 
-impl<IP: IndexerPersistence> Server<IP> {
-    pub fn new(indexer_persistence: Arc<IP>) -> Server<IP> {
+impl<P: ChainProvider, IP: IndexerPersistence> Server<P, IP> {
+    pub fn new(provider: Arc<P>, indexer_persistence: Arc<IP>) -> Server<P, IP> {
         Server {
+            provider,
             indexer_persistence,
         }
     }
 
     pub async fn serve(self, addr: SocketAddr) -> Result<()> {
         // TODO: provider manager
-        let provider = StarkNetProvider::new("http://192.168.8.100:9545")?;
-        let indexer_manager =
-            IndexerManagerService::new(Arc::new(provider), self.indexer_persistence.clone());
+        let indexer_manager = IndexerManagerService::new(
+            self.provider.clone(),
+            self.indexer_persistence.clone(),
+        );
 
         info!(addr=?addr, "starting apibara server");
 

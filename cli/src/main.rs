@@ -3,7 +3,7 @@ use clap::{Parser, Subcommand};
 use std::{net::SocketAddr, path::PathBuf, sync::Arc};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
-use apibara::{configuration::Configuration, persistence::MongoPersistence, server::Server};
+use apibara::{configuration::Configuration, persistence::MongoPersistence, server::Server, chain::starknet::StarkNetProvider};
 
 /// CLI to manage an Apibara server.
 #[derive(Debug, Parser)]
@@ -48,7 +48,9 @@ async fn main() -> Result<()> {
     let application_persistence =
         MongoPersistence::new_with_uri(configuration.admin.storage.connection_string).await?;
 
-    let server = Server::new(Arc::new(application_persistence));
+    let provider = StarkNetProvider::new(&configuration.network.starknet.provider_url)?;
+
+    let server = Server::new(Arc::new(provider), Arc::new(application_persistence));
     server.serve(server_addr).await?;
 
     Ok(())
