@@ -27,6 +27,6 @@ pub trait ChainProvider: Send + Sync + 'static {
         &self,
         from_block: u64,
         to_block: u64,
-        filter: &EventFilter,
+        filters: &[EventFilter],
     ) -> Result<Vec<BlockEvents>>;
 }

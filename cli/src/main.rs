@@ -3,7 +3,10 @@ use clap::{Parser, Subcommand};
 use std::{net::SocketAddr, path::PathBuf, sync::Arc};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
-use apibara::{configuration::Configuration, persistence::MongoPersistence, server::Server, chain::starknet::StarkNetProvider};
+use apibara::{
+    chain::starknet::StarkNetProvider, configuration::Configuration, persistence::MongoPersistence,
+    server::Server,
+};
 
 /// CLI to manage an Apibara server.
 #[derive(Debug, Parser)]

@@ -193,20 +193,12 @@ where
                             if block_batch.is_empty() {
                                 let (start, end) = self.next_block_events_query()?;
                                 info!("get events: [{}, {}]", start, end);
-
-                                // TODO: join block events by different filters
-                                if filters.len() > 1 {
-                                    return Err(Error::msg("support only one filter for now"));
-                                }
-
-                                for filter in &filters {
-                                    let block_events = self
-                                        .provider
-                                        .get_events_in_range(start, end, filter)
-                                        .await
-                                        .context("failed to fetch events")?;
-                                    block_batch.extend(block_events.into_iter());
-                                }
+                                let block_events = self
+                                    .provider
+                                    .get_events_in_range(start, end, &filters)
+                                    .await
+                                    .context("failed to fetch events")?;
+                                block_batch.extend(block_events.into_iter());
                                 self.update_next_block(end + 1);
                             }
 

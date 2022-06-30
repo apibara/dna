@@ -27,6 +27,56 @@ impl StarkNetProvider {
             client: Arc::new(client),
         })
     }
+
+    async fn accumulate_filter_events(
+        &self,
+        block_events: &mut BlockEventsBuilder,
+        from_block: u64,
+        to_block: u64,
+        filter: &EventFilter,
+    ) -> Result<()> {
+        let address: Option<FieldElement> =
+            filter.address.as_ref().map(|a| a.try_into()).transpose()?;
+        let mut topics: Vec<FieldElement> = Vec::new();
+        for topic in &filter.topics {
+            let topic = topic.try_into()?;
+            topics.push(topic);
+        }
+        let mut page_number = 0;
+        // TODO: need to keep events sorted. Need to have a block_index in the rpc
+        // response.
+        // use a fake block index to keep events of the same type sorted
+        let mut fake_block_index = 0;
+        loop {
+            let page = self
+                .client
+                .get_events(
+                    Some(from_block),
+                    Some(to_block),
+                    address,
+                    topics.clone(),
+                    page_number,
+                    100,
+                )
+                .await
+                .context("failed to fetch starknet events")?;
+
+            for event in &page.events {
+                let block_hash = event.block_hash.into();
+                let mut new_event: Event = event.into();
+                new_event.block_index = fake_block_index;
+                fake_block_index += 1;
+                block_events.add_event(event.block_number, block_hash, new_event);
+            }
+
+            page_number += 1;
+            if page.is_last_page {
+                break;
+            }
+        }
+
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -115,43 +165,13 @@ impl ChainProvider for StarkNetProvider {
         &self,
         from_block: u64,
         to_block: u64,
-        filter: &EventFilter,
+        filters: &[EventFilter],
     ) -> Result<Vec<BlockEvents>> {
-        let address: Option<FieldElement> =
-            filter.address.as_ref().map(|a| a.try_into()).transpose()?;
-        let mut topics: Vec<FieldElement> = Vec::new();
-        for topic in &filter.topics {
-            let topic = topic.try_into()?;
-            topics.push(topic);
-        }
-
         let mut block_events = BlockEventsBuilder::new();
-        let mut page_number = 0;
-        // TODO: need to keep events sorted. Need to have a block_index in the rpc
-        // response.
-        loop {
-            let page = self
-                .client
-                .get_events(
-                    Some(from_block),
-                    Some(to_block),
-                    address,
-                    topics.clone(),
-                    page_number,
-                    100,
-                )
-                .await
-                .context("failed to fetch starknet events")?;
 
-            for event in &page.events {
-                let block_hash = event.block_hash.into();
-                block_events.add_event(event.block_number, block_hash, event.into());
-            }
-
-            page_number += 1;
-            if page.is_last_page {
-                break;
-            }
+        for filter in filters {
+            self.accumulate_filter_events(&mut block_events, from_block, to_block, filter)
+                .await?;
         }
 
         block_events.build()
@@ -179,12 +199,15 @@ impl BlockEventsBuilder {
     /// Return a vector of `BlockEvents` with the accumulated events.
     pub fn build(self) -> Result<Vec<BlockEvents>> {
         let mut result = Vec::new();
-        for (block_number, events) in self.events {
+        for (block_number, mut events) in self.events {
             let block_hash = self
                 .hashes
                 .get(&block_number)
                 .ok_or_else(|| Error::msg("block missing hash"))?
                 .to_owned();
+
+            events.sort_by(|a, b| a.block_index.cmp(&b.block_index));
+
             let block_with_events = BlockEvents {
                 number: block_number,
                 hash: block_hash,

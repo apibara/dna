@@ -27,10 +27,8 @@ impl<P: ChainProvider, IP: IndexerPersistence> Server<P, IP> {
 
     pub async fn serve(self, addr: SocketAddr) -> Result<()> {
         // TODO: provider manager
-        let indexer_manager = IndexerManagerService::new(
-            self.provider.clone(),
-            self.indexer_persistence.clone(),
-        );
+        let indexer_manager =
+            IndexerManagerService::new(self.provider.clone(), self.indexer_persistence.clone());
 
         info!(addr=?addr, "starting apibara server");
 
