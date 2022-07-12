@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 async-trait = "0.1.53"
+async-recursion = "1.0.0"
 anyhow = "1.0"
 backoff = { version = "0.4.0", features = ["tokio"] }
 chrono = "0.4.19"
@@ -25,6 +26,10 @@ tokio-stream = "0.1.8"
 tokio = { version = "1.18", features = ["full"] }
 tracing = "0.1.34"
 url = "2.2.2"
+
+[dev-dependencies]
+assert_matches = "1.5.0"
+mockall = "0.11.1"
 
 [build-dependencies]
 tonic-build = "0.7"

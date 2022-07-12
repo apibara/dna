@@ -13,7 +13,7 @@ use tracing::{debug, error, info, trace};
 
 use crate::{
     chain::{BlockEvents, BlockHash, BlockHeader, ChainProvider},
-    head_tracker::{HeadTracker, Message as HeadMessage},
+    head_tracker::{start_head_tracker, Message as HeadMessage},
     persistence::Id,
 };
 
@@ -112,9 +112,7 @@ where
     }
 
     pub async fn run(mut self) -> Result<()> {
-        let head_tracker = HeadTracker::new(self.provider.clone());
-        let (head_tracker_handle, head_stream) = head_tracker
-            .start()
+        let (head_tracker_handle, head_stream) = start_head_tracker(self.provider.clone())
             .await
             .context("failed to start head tracker")?;
 

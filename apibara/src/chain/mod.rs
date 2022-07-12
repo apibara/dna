@@ -1,6 +1,6 @@
 //! Types and traits common to all chains.
 mod filter;
-mod provider;
+pub mod provider;
 pub mod starknet;
 mod types;
 

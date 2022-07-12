@@ -5,6 +5,8 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use futures::Stream;
+#[cfg(test)]
+use mockall::automock;
 use std::pin::Pin;
 
 use crate::chain::{
@@ -13,6 +15,7 @@ use crate::chain::{
 };
 
 /// Provide information about blocks and events/logs on a chain.
+#[cfg_attr(test, automock)]
 #[async_trait]
 pub trait ChainProvider: Send + Sync + 'static {
     /// Get the most recent (head) block.
