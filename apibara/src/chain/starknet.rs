@@ -2,13 +2,23 @@
 use anyhow::{Context, Error, Result};
 use async_trait::async_trait;
 use backoff::ExponentialBackoff;
+use chrono::NaiveDateTime;
 use futures::Stream;
-use starknet::core::types::FieldElement;
-use starknet_rpc::{Block as SNBlock, BlockHash as SNBlockHash, Event as SNEvent, RpcProvider};
+use starknet::{
+    core::types::FieldElement,
+    providers::jsonrpc::{
+        models::{
+            Block as SNBlock, BlockHashOrTag, BlockTag, EmittedEvent as SNEmittedEvent,
+            Event as SNEvent, EventFilter as SNEventFilter,
+        },
+        HttpTransport, JsonRpcClient,
+    },
+};
 use std::{collections::HashMap, pin::Pin, sync::Arc, time::Duration};
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
-use tracing::{debug, error, trace};
+use tracing::{error, trace};
+use url::Url;
 
 use crate::chain::{
     Address, BlockEvents, BlockHash, BlockHeader, ChainProvider, Event, EventFilter, Topic,
@@ -17,12 +27,14 @@ use crate::chain::{
 
 #[derive(Debug)]
 pub struct StarkNetProvider {
-    client: Arc<RpcProvider>,
+    client: Arc<JsonRpcClient<HttpTransport>>,
 }
 
 impl StarkNetProvider {
     pub fn new(url: &str) -> Result<StarkNetProvider> {
-        let client = RpcProvider::new(url)?;
+        let url: Url = url.try_into()?;
+        let transport = HttpTransport::new(url);
+        let client = JsonRpcClient::new(transport);
         Ok(StarkNetProvider {
             client: Arc::new(client),
         })
@@ -47,17 +59,17 @@ impl StarkNetProvider {
         // response.
         // use a fake block index to keep events of the same type sorted
         let mut fake_block_index = 0;
+        let event_filter = SNEventFilter {
+            from_block: Some(from_block),
+            to_block: Some(to_block),
+            address,
+            keys: Some(topics.clone()),
+        };
+
         loop {
             let page = self
                 .client
-                .get_events(
-                    Some(from_block),
-                    Some(to_block),
-                    address,
-                    topics.clone(),
-                    page_number,
-                    100,
-                )
+                .get_events(event_filter.clone(), page_number, 100)
                 .await
                 .context("failed to fetch starknet events")?;
 
@@ -82,12 +94,12 @@ impl StarkNetProvider {
 #[async_trait]
 impl ChainProvider for StarkNetProvider {
     async fn get_head_block(&self) -> Result<BlockHeader> {
+        let tag = BlockHashOrTag::Tag(BlockTag::Latest);
         let block = self
             .client
-            .get_block_by_hash(&SNBlockHash::Latest)
+            .get_block_by_hash(&tag)
             .await
-            .context("failed to fetch starknet head")?
-            .ok_or_else(|| Error::msg("failed to fetch latest starknet block"))?;
+            .context("failed to fetch starknet head")?;
         Ok(block.into())
     }
 
@@ -95,13 +107,13 @@ impl ChainProvider for StarkNetProvider {
         let hash_fe = hash
             .try_into()
             .context("failed to convert block hash to field element")?;
-        let hash = SNBlockHash::Hash(hash_fe);
+        let hash = BlockHashOrTag::Hash(hash_fe);
         let block = self
             .client
             .get_block_by_hash(&hash)
             .await
             .context("failed to fetch starknet head")?;
-        Ok(block.map(Into::into))
+        Ok(Some(block.into()))
     }
 
     fn subscribe_blocks(&self) -> Result<Pin<Box<dyn Stream<Item = BlockHeader> + Send>>> {
@@ -117,13 +129,11 @@ impl ChainProvider for StarkNetProvider {
                     let block: Result<BlockHeader> =
                         backoff::future::retry(ExponentialBackoff::default(), || async {
                             trace!("fetching starknet head");
+                            let tag = BlockHashOrTag::Tag(BlockTag::Latest);
                             let block = client
-                                .get_block_by_hash(&SNBlockHash::Latest)
+                                .get_block_by_hash(&tag)
                                 .await
-                                .context("failed to fetch starknet head")?
-                                .ok_or_else(|| {
-                                    Error::msg("failed to fetch latest starknet block")
-                                })?;
+                                .context("failed to fetch starknet head")?;
                             Ok(block.into())
                         })
                         .await;
@@ -143,8 +153,9 @@ impl ChainProvider for StarkNetProvider {
 
                             if should_send {
                                 prev_block = Some(block.clone());
-                                // TODO: add backpressure
-                                debug!("sending new head {} {}", block.number, block.hash);
+                                // no backpressure needed since it's live block which are not produced
+                                // often enough to create issues downstream.
+                                trace!("sending new head {} {}", block.number, block.hash);
                                 if let Err(err) = tx.send(block.clone()).await {
                                     error!("starknet block poll error sending block: {:?}", err);
                                 }
@@ -224,14 +235,23 @@ impl BlockEventsBuilder {
 
 impl From<SNBlock> for BlockHeader {
     fn from(b: SNBlock) -> Self {
-        let hash = BlockHash::from_bytes(&b.block_hash.to_bytes_be());
-        let parent_hash = BlockHash::from_bytes(&b.parent_hash.to_bytes_be());
+        let metadata = b.metadata;
+        let hash = BlockHash::from_bytes(&metadata.block_hash.to_bytes_be());
+        let parent_hash = BlockHash::from_bytes(&metadata.parent_hash.to_bytes_be());
+        let timestamp = NaiveDateTime::from_timestamp(metadata.accepted_time as i64, 0);
+
         BlockHeader {
             hash,
             parent_hash: Some(parent_hash),
-            number: b.block_number,
-            timestamp: b.accepted_time,
+            timestamp,
+            number: metadata.block_number,
         }
+    }
+}
+
+impl From<&SNEmittedEvent> for Event {
+    fn from(e: &SNEmittedEvent) -> Self {
+        (&e.event).into()
     }
 }
 
@@ -239,12 +259,14 @@ impl From<&SNEvent> for Event {
     fn from(e: &SNEvent) -> Self {
         let address = e.from_address.to_bytes_be().as_ref().into();
         let topics = e
+            .content
             .keys
             .iter()
             .map(|t| t.to_bytes_be().as_ref().into())
             .collect();
 
         let data = e
+            .content
             .data
             .iter()
             .map(|d| d.to_bytes_be().as_ref().into())
