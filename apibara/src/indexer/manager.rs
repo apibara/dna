@@ -2,6 +2,7 @@ use std::{pin::Pin, sync::Arc};
 
 use anyhow::{Error, Result};
 use futures::{Stream, StreamExt};
+use tracing::error;
 
 use crate::{
     chain::{ChainProvider, EventFilter},
@@ -94,14 +95,19 @@ impl<IP: IndexerPersistence> IndexerManager<IP> {
             return Err(Error::msg("must send Connect message first"));
         };
 
-        // TODO: track all indexers' handles and report their error
-        let (_indexer_handle, indexer_stream) = start_indexer(
+        let (indexer_handle, indexer_stream) = start_indexer(
             &indexer_state,
             client_stream,
             provider,
             self.persistence.clone(),
         )
         .await?;
+
+        tokio::spawn(async move {
+            if let Ok(Err(err)) = indexer_handle.await {
+                error!("indexer service error: {:?}", err);
+            }
+        });
 
         Ok(Box::pin(indexer_stream))
     }

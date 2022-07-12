@@ -69,7 +69,7 @@ impl StarkNetProvider {
         loop {
             let page = self
                 .client
-                .get_events(event_filter.clone(), page_number, 100)
+                .get_events(event_filter.clone(), 100, page_number)
                 .await
                 .context("failed to fetch starknet events")?;
 

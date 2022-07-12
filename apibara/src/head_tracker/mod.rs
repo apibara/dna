@@ -4,11 +4,11 @@ use futures::StreamExt;
 use std::{collections::VecDeque, sync::Arc};
 use tokio::{sync::mpsc, task::JoinHandle};
 use tokio_stream::wrappers::ReceiverStream;
-use tracing::{debug, error};
+use tracing::{debug, error, trace};
 
 use crate::chain::{BlockHeader, ChainProvider};
 
-const REORG_BUFFER_SIZE: usize = 32;
+const REORG_BUFFER_SIZE: usize = 16;
 const CHANNEL_BUFFER_SIZE: usize = 64;
 
 /// Message sent by the head tracker.
@@ -99,7 +99,9 @@ impl<P: ChainProvider> HeadTracker<P> {
     }
 
     async fn build_chain_reorg_buffer(&self) -> Result<VecDeque<BlockHeader>> {
+        trace!("building chain reorg block buffer");
         let current_head = self.provider.get_head_block().await?;
+        debug!("fetched current head: {:?}", current_head);
 
         let mut next_hash = current_head.parent_hash.clone();
         let mut block_buffer = VecDeque::new();

@@ -9,7 +9,7 @@ use anyhow::{Context, Error, Result};
 use futures::{future, Stream, StreamExt};
 use tokio::{sync::mpsc, task::JoinHandle};
 use tokio_stream::wrappers::ReceiverStream;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, trace};
 
 use crate::{
     chain::{BlockEvents, BlockHash, BlockHeader, ChainProvider},
@@ -141,7 +141,7 @@ where
         let mut waiting_for_ack: Option<(BlockHash, u64)> = None;
         let mut block_batch = VecDeque::new();
         loop {
-            debug!("poll for new head or client messages");
+            trace!("poll for new head or client messages");
             tokio::select! {
                 // poll in order since the code needs to know about
                 // new heads.
@@ -205,8 +205,22 @@ where
                             match block_batch.pop_front() {
                                 None => {
                                     // no events in this block range
-                                    // TODO: can safely update the indexed range to include
-                                    // the batch end block.
+                                    // now it's safe to update the indexed range to include all
+                                    // the blocks it just fetched events for. `self.next_block_number` should
+                                    // never be = 0, but just check to avoid unexpected situations.
+                                    // need to subtract 1 because `next_block_number` was not indexed.
+                                    let end_block = if self.next_block_number > 0 {
+                                        self.next_block_number - 1
+                                    } else {
+                                        0
+                                    };
+                                    debug!(
+                                        "no events in block range. Update indexer state: {}",
+                                        end_block
+                                    );
+                                    self.persistence
+                                        .update_indexer_block(&self.indexer_id, end_block)
+                                        .await?;
                                 }
                                 Some(block_events) => {
                                     waiting_for_ack =
