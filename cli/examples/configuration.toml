@@ -1,2 +1,10 @@
 [admin.storage]
 connection_string = "mongodb://apibara:apibara@localhost:27017"
+
+[network.starknet-goerli]
+type = "starknet"
+provider_url = "https://starknet-goerli.apibara.com"
+
+[network.starknet-devnet]
+type = "starknet"
+provider_url = "http://localhost:5050/rpc"

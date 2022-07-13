@@ -17,9 +17,13 @@ pub use self::mongo::MongoPersistence;
 static ID_REGEX: Lazy<Regex> =
     Lazy::new(|| Regex::new("[[:alpha:]]([[:alnum:]]|-)*[[:alnum:]]").unwrap());
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Hash, PartialEq, Eq)]
+#[serde(transparent)]
 /// Unique id that is also human readable.
 pub struct Id(String);
+
+/// Network names are ids for networks.
+pub type NetworkName = Id;
 
 impl Id {
     /// Parse and create a new Id.

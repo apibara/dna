@@ -21,12 +21,9 @@ pub enum Message {
     Reorg(BlockHeader),
 }
 
-pub async fn start_head_tracker<P>(
-    provider: Arc<P>,
-) -> Result<(JoinHandle<Result<()>>, ReceiverStream<Message>)>
-where
-    P: ChainProvider,
-{
+pub async fn start_head_tracker(
+    provider: Arc<dyn ChainProvider>,
+) -> Result<(JoinHandle<Result<()>>, ReceiverStream<Message>)> {
     let (tx, rx) = mpsc::channel(CHANNEL_BUFFER_SIZE);
 
     let tracker = HeadTracker::new(provider, tx);
@@ -37,9 +34,9 @@ where
     Ok((join_handle, stream))
 }
 
-pub struct HeadTracker<P: ChainProvider> {
+pub struct HeadTracker {
     // rpc provider used to fetch/subscribe to blocks.
-    provider: Arc<P>,
+    provider: Arc<dyn ChainProvider>,
     // target size of `prev_block_buffer`.
     reorg_buffer_size: usize,
     // buffer of blocks in the current chain.
@@ -50,8 +47,8 @@ pub struct HeadTracker<P: ChainProvider> {
     tx: mpsc::Sender<Message>,
 }
 
-impl<P: ChainProvider> HeadTracker<P> {
-    pub fn new(provider: Arc<P>, tx: mpsc::Sender<Message>) -> Self {
+impl HeadTracker {
+    pub fn new(provider: Arc<dyn ChainProvider>, tx: mpsc::Sender<Message>) -> Self {
         HeadTracker {
             provider,
             tx,

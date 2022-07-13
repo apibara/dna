@@ -44,14 +44,13 @@ pub type IndexerStream = ReceiverStream<Result<Message>>;
 /// An indexer task.
 pub type IndexerHandle = JoinHandle<Result<()>>;
 
-pub async fn start_indexer<P, CS, IP>(
+pub async fn start_indexer<CS, IP>(
     indexer_state: &IndexerState,
     client_stream: CS,
-    provider: Arc<P>,
+    provider: Arc<dyn ChainProvider>,
     indexer_persistence: Arc<IP>,
 ) -> Result<(IndexerHandle, IndexerStream)>
 where
-    P: ChainProvider,
     CS: Stream<Item = Result<ClientToIndexerMessage>> + Send + 'static,
     IP: IndexerPersistence,
 {
@@ -64,8 +63,8 @@ where
     Ok((handle, stream))
 }
 
-struct IndexerService<P: ChainProvider, IP: IndexerPersistence> {
-    provider: Arc<P>,
+struct IndexerService<IP: IndexerPersistence> {
+    provider: Arc<dyn ChainProvider>,
     persistence: Arc<IP>,
     indexer_id: Id,
     stream_tx: mpsc::Sender<Result<Message>>,
@@ -77,17 +76,16 @@ struct IndexerService<P: ChainProvider, IP: IndexerPersistence> {
     head: Option<BlockHeader>,
 }
 
-impl<P, IP> IndexerService<P, IP>
+impl<IP> IndexerService<IP>
 where
-    P: ChainProvider,
     IP: IndexerPersistence,
 {
     pub fn new<CS>(
         state: &IndexerState,
-        provider: Arc<P>,
+        provider: Arc<dyn ChainProvider>,
         persistence: Arc<IP>,
         client_stream: CS,
-    ) -> (IndexerService<P, IP>, mpsc::Receiver<Result<Message>>)
+    ) -> (IndexerService<IP>, mpsc::Receiver<Result<Message>>)
     where
         CS: Stream<Item = Result<ClientToIndexerMessage>> + Send + 'static,
     {

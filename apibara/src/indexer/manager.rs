@@ -5,27 +5,32 @@ use futures::{Stream, StreamExt};
 use tracing::error;
 
 use crate::{
-    chain::{ChainProvider, EventFilter},
-    persistence::Id,
+    chain::EventFilter,
+    network_manager::NetworkManager,
+    persistence::{Id, NetworkName},
 };
 
 use super::{start_indexer, ClientToIndexerMessage, IndexerPersistence, Message, State};
 
 const DEFAULT_BLOCK_BATCH_SIZE: usize = 200;
 
-#[derive(Debug)]
 pub struct IndexerManager<IP: IndexerPersistence> {
+    network_manager: Arc<NetworkManager>,
     persistence: Arc<IP>,
 }
 
 impl<IP: IndexerPersistence> IndexerManager<IP> {
-    pub fn new(persistence: Arc<IP>) -> IndexerManager<IP> {
-        Self { persistence }
+    pub fn new(network_manager: Arc<NetworkManager>, persistence: Arc<IP>) -> IndexerManager<IP> {
+        Self {
+            network_manager,
+            persistence,
+        }
     }
 
     pub async fn create_indexer(
         &self,
         id: &Id,
+        network_name: NetworkName,
         filters: Vec<EventFilter>,
         index_from_block: u64,
     ) -> Result<State> {
@@ -38,6 +43,7 @@ impl<IP: IndexerPersistence> IndexerManager<IP> {
 
         let state = State {
             id: id.clone(),
+            network_name,
             index_from_block,
             filters,
             block_batch_size: DEFAULT_BLOCK_BATCH_SIZE,
@@ -70,14 +76,12 @@ impl<IP: IndexerPersistence> IndexerManager<IP> {
         }
     }
 
-    pub async fn connect_indexer<S, P>(
+    pub async fn connect_indexer<S>(
         &self,
         mut client_stream: Pin<Box<S>>,
-        provider: Arc<P>,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<Message>> + Send>>>
     where
         S: Stream<Item = Result<ClientToIndexerMessage>> + Send + 'static,
-        P: ChainProvider,
     {
         // first message MUST be a connect message
         // when we receive that message, use the provided indexer id
@@ -94,6 +98,10 @@ impl<IP: IndexerPersistence> IndexerManager<IP> {
         } else {
             return Err(Error::msg("must send Connect message first"));
         };
+
+        let provider = self
+            .network_manager
+            .provider_for_network(&indexer_state.network_name)?;
 
         let (indexer_handle, indexer_stream) = start_indexer(
             &indexer_state,

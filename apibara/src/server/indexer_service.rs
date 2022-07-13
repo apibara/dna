@@ -1,5 +1,5 @@
 mod pb {
-    tonic::include_proto!("apibara.application.v1alpha1");
+    tonic::include_proto!("apibara.application.v1alpha2");
 }
 
 use std::{pin::Pin, sync::Arc};
@@ -12,13 +12,12 @@ use tracing::{debug, error};
 
 use crate::{
     build_info,
-    chain::{
-        Address, BlockHash, BlockHeader, ChainProvider, Event, EventFilter, Topic, TopicValue,
-    },
+    chain::{Address, BlockHash, BlockHeader, Event, EventFilter, Topic, TopicValue},
     indexer::{
         ClientToIndexerMessage as IndexerClientMessage, IndexerManager, IndexerPersistence,
         Message as IndexerMessage, State as IndexerState,
     },
+    network_manager::NetworkManager,
     persistence::Id,
 };
 
@@ -31,32 +30,26 @@ use self::pb::{
     IndexerConnected, ListIndexerRequest, ListIndexerResponse, NewBlock, NewEvents, Reorg, Version,
 };
 
-pub struct IndexerManagerService<P: ChainProvider, IP: IndexerPersistence> {
-    provider: Arc<P>,
+pub struct IndexerManagerService<IP: IndexerPersistence> {
     indexer_manager: IndexerManager<IP>,
 }
 
 type TonicResult<T> = Result<Response<T>, Status>;
 
-impl<P: ChainProvider, IP: IndexerPersistence> IndexerManagerService<P, IP> {
-    pub fn new(provider: Arc<P>, indexer_persistence: Arc<IP>) -> Self {
-        let indexer_manager = IndexerManager::new(indexer_persistence);
+impl<IP: IndexerPersistence> IndexerManagerService<IP> {
+    pub fn new(network_manager: Arc<NetworkManager>, indexer_persistence: Arc<IP>) -> Self {
+        let indexer_manager = IndexerManager::new(network_manager, indexer_persistence);
 
-        IndexerManagerService {
-            provider,
-            indexer_manager,
-        }
+        IndexerManagerService { indexer_manager }
     }
 
-    pub fn into_service(self) -> IndexerManagerServer<IndexerManagerService<P, IP>> {
+    pub fn into_service(self) -> IndexerManagerServer<IndexerManagerService<IP>> {
         IndexerManagerServer::new(self)
     }
 }
 
 #[tonic::async_trait]
-impl<P: ChainProvider, IP: IndexerPersistence> IndexerManagerTrait
-    for IndexerManagerService<P, IP>
-{
+impl<IP: IndexerPersistence> IndexerManagerTrait for IndexerManagerService<IP> {
     async fn create_indexer(
         &self,
         request: Request<CreateIndexerRequest>,
@@ -64,12 +57,13 @@ impl<P: ChainProvider, IP: IndexerPersistence> IndexerManagerTrait
         let message: CreateIndexerRequest = request.into_inner();
         debug!("create indexer: {:?}", message);
         let id: Id = message.id.parse().map_err(RequestError)?;
+        let network_name = message.network_name.parse().map_err(RequestError)?;
 
         let filters = message.filters.into_iter().map(Into::into).collect();
 
         let res = self
             .indexer_manager
-            .create_indexer(&id, filters, message.index_from_block)
+            .create_indexer(&id, network_name, filters, message.index_from_block)
             .await
             .map_err(RequestError);
 
@@ -185,7 +179,7 @@ impl<P: ChainProvider, IP: IndexerPersistence> IndexerManagerTrait
 
         let res = self
             .indexer_manager
-            .connect_indexer(Box::pin(request_stream), self.provider.clone())
+            .connect_indexer(Box::pin(request_stream))
             .await
             .map_err(RequestError);
 

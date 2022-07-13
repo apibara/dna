@@ -4,13 +4,18 @@ use anyhow::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
-use crate::{chain::EventFilter, persistence::Id};
+use crate::{
+    chain::EventFilter,
+    persistence::{Id, NetworkName},
+};
 
 /// Indexer state.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct State {
     /// Unique id.
     pub id: Id,
+    /// Network name. Network names are local to the server.
+    pub network_name: NetworkName,
     /// Event filters.
     pub filters: Vec<EventFilter>,
     /// Number of blocks to fetch in one call.

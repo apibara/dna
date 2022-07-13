@@ -2,7 +2,7 @@ syntax = "proto3";
 
 import "google/protobuf/timestamp.proto";
 
-package apibara.application.v1alpha1;
+package apibara.application.v1alpha2;
 
 service IndexerManager {
   rpc CreateIndexer(CreateIndexerRequest) returns (CreateIndexerResponse);
@@ -49,8 +49,9 @@ message Indexer {
 
 message CreateIndexerRequest {
   string id = 1;
-  uint64 index_from_block = 2;
-  repeated EventFilter filters = 3;
+  string network_name = 2;
+  uint64 index_from_block = 3;
+  repeated EventFilter filters = 4;
 }
 
 message CreateIndexerResponse {

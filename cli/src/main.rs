@@ -1,12 +1,9 @@
-use anyhow::{Context, Result};
+use anyhow::{Context, Error, Result};
 use clap::{Parser, Subcommand};
 use std::{net::SocketAddr, path::PathBuf, sync::Arc};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
-use apibara::{
-    chain::starknet::StarkNetProvider, configuration::Configuration, persistence::MongoPersistence,
-    server::Server,
-};
+use apibara::{configuration::Configuration, persistence::MongoPersistence, server::Server};
 
 /// CLI to manage an Apibara server.
 #[derive(Debug, Parser)]
@@ -51,9 +48,10 @@ async fn main() -> Result<()> {
     let application_persistence =
         MongoPersistence::new_with_uri(configuration.admin.storage.connection_string).await?;
 
-    let provider = StarkNetProvider::new(&configuration.network.starknet.provider_url)?;
-
-    let server = Server::new(Arc::new(provider), Arc::new(application_persistence));
+    if configuration.network.is_empty() {
+        return Err(Error::msg("must register at least one network"));
+    }
+    let server = Server::new(configuration.network, Arc::new(application_persistence));
     server.serve(server_addr).await?;
 
     Ok(())

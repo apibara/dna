@@ -2,33 +2,41 @@
 
 mod indexer_service;
 
-use std::{net::SocketAddr, sync::Arc};
+use std::{collections::HashMap, net::SocketAddr, sync::Arc};
 
 use anyhow::Result;
 use tonic::transport::Server as TonicServer;
 use tracing::info;
 
-use crate::{chain::ChainProvider, indexer::IndexerPersistence};
+use crate::{
+    configuration::Network, indexer::IndexerPersistence, network_manager::NetworkManager,
+    persistence::NetworkName,
+};
 
 use self::indexer_service::IndexerManagerService;
 
-pub struct Server<P: ChainProvider, IP: IndexerPersistence> {
-    provider: Arc<P>,
+pub struct Server<IP: IndexerPersistence> {
+    network_manager: Arc<NetworkManager>,
     indexer_persistence: Arc<IP>,
 }
 
-impl<P: ChainProvider, IP: IndexerPersistence> Server<P, IP> {
-    pub fn new(provider: Arc<P>, indexer_persistence: Arc<IP>) -> Server<P, IP> {
+impl<IP: IndexerPersistence> Server<IP> {
+    pub fn new(
+        networks: HashMap<NetworkName, Network>,
+        indexer_persistence: Arc<IP>,
+    ) -> Server<IP> {
+        let network_manager = Arc::new(NetworkManager::new(networks));
         Server {
-            provider,
+            network_manager,
             indexer_persistence,
         }
     }
 
     pub async fn serve(self, addr: SocketAddr) -> Result<()> {
-        // TODO: provider manager
-        let indexer_manager =
-            IndexerManagerService::new(self.provider.clone(), self.indexer_persistence.clone());
+        let indexer_manager = IndexerManagerService::new(
+            self.network_manager.clone(),
+            self.indexer_persistence.clone(),
+        );
 
         info!(addr=?addr, "starting apibara server");
 

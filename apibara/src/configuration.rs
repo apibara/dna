@@ -1,6 +1,6 @@
 //! Apibara configuration.
 
-use std::path::Path;
+use std::{collections::HashMap, path::Path};
 
 use anyhow::Result;
 use figment::{
@@ -9,10 +9,12 @@ use figment::{
 };
 use serde::{Deserialize, Serialize};
 
+use crate::persistence::NetworkName;
+
 #[derive(Debug, Default, Deserialize, Serialize)]
 pub struct Configuration {
     pub admin: Admin,
-    pub network: Network,
+    pub network: HashMap<NetworkName, Network>,
     pub server: Server,
 }
 
@@ -31,13 +33,14 @@ pub struct Server {
     pub address: String,
 }
 
-#[derive(Debug, Default, Deserialize, Serialize)]
-pub struct Network {
-    pub starknet: NetworkConfiguration,
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum Network {
+    StarkNet(StarkNetNetwork),
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-pub struct NetworkConfiguration {
+pub struct StarkNetNetwork {
     pub provider_url: String,
 }
 
@@ -62,14 +65,6 @@ impl Default for Server {
     fn default() -> Self {
         Server {
             address: "0.0.0.0:7171".to_string(),
-        }
-    }
-}
-
-impl Default for NetworkConfiguration {
-    fn default() -> Self {
-        NetworkConfiguration {
-            provider_url: "https://starknet-goerli.apibara.com:443".to_string(),
         }
     }
 }
