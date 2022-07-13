@@ -21,9 +21,10 @@ use tracing::{error, trace};
 use url::Url;
 
 use crate::chain::{
-    Address, BlockEvents, BlockHash, BlockHeader, ChainProvider, Event, EventFilter, Topic,
-    TopicValue,
+    Address, BlockHash, BlockHeader, ChainProvider, Event, EventFilter, Topic, TopicValue,
 };
+
+use super::types::EventsWithBlockNumberHash;
 
 #[derive(Debug)]
 pub struct StarkNetProvider {
@@ -177,7 +178,7 @@ impl ChainProvider for StarkNetProvider {
         from_block: u64,
         to_block: u64,
         filters: &[EventFilter],
-    ) -> Result<Vec<BlockEvents>> {
+    ) -> Result<Vec<EventsWithBlockNumberHash>> {
         let mut block_events = BlockEventsBuilder::new();
 
         for filter in filters {
@@ -208,7 +209,7 @@ impl BlockEventsBuilder {
     }
 
     /// Return a vector of `BlockEvents` with the accumulated events.
-    pub fn build(self) -> Result<Vec<BlockEvents>> {
+    pub fn build(self) -> Result<Vec<EventsWithBlockNumberHash>> {
         let mut result = Vec::new();
         for (block_number, mut events) in self.events {
             let block_hash = self
@@ -219,7 +220,7 @@ impl BlockEventsBuilder {
 
             events.sort_by(|a, b| a.block_index.cmp(&b.block_index));
 
-            let block_with_events = BlockEvents {
+            let block_with_events = EventsWithBlockNumberHash {
                 number: block_number,
                 hash: block_hash,
                 events,

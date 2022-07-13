@@ -220,9 +220,27 @@ where
                                         .update_indexer_block(&self.indexer_id, end_block)
                                         .await?;
                                 }
-                                Some(block_events) => {
-                                    waiting_for_ack =
-                                        Some((block_events.hash.clone(), block_events.number));
+                                Some(events_with_block_hash) => {
+                                    waiting_for_ack = Some((
+                                        events_with_block_hash.hash.clone(),
+                                        events_with_block_hash.number,
+                                    ));
+
+                                    let block = self
+                                        .provider
+                                        .get_block_by_hash(&events_with_block_hash.hash)
+                                        .await
+                                        .context("failed to fetch block by hash")?
+                                        .ok_or_else(|| {
+                                            Error::msg(
+                                                "failed to fetch block with hash: does not exist",
+                                            )
+                                        })?;
+
+                                    let block_events = BlockEvents {
+                                        block,
+                                        events: events_with_block_hash.events,
+                                    };
 
                                     self.stream_tx
                                         .send(Ok(Message::NewEvents(block_events)))

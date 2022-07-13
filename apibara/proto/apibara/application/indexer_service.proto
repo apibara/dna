@@ -129,9 +129,8 @@ message Reorg {
 }
 
 message NewEvents {
-  bytes block_hash = 1;
-  uint64 block_number = 2;
-  repeated Event events = 3;
+  BlockHeader block = 1;
+  repeated Event events = 2;
 }
 
 message ConnectIndexerResponse {

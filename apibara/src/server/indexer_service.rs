@@ -334,10 +334,10 @@ impl Into<ConnectIndexerResponseMessage> for IndexerMessage {
                 ConnectIndexerResponseMessage::Reorg(reorg)
             }
             IndexerMessage::NewEvents(block_events) => {
+                let block = block_events.block.into();
                 let events = block_events.events.into_iter().map(Into::into).collect();
                 let new_events = NewEvents {
-                    block_hash: block_events.hash.to_vec(),
-                    block_number: block_events.number,
+                    block: Some(block),
                     events,
                 };
                 ConnectIndexerResponseMessage::NewEvents(new_events)

@@ -54,6 +54,15 @@ pub struct Event {
 /// Events emitted in a single block.
 #[derive(Debug)]
 pub struct BlockEvents {
+    /// The block containing the events.
+    pub block: BlockHeader,
+    /// The events.
+    pub events: Vec<Event>,
+}
+
+/// Similar to `BlockEvents`, but only with block number and hash.
+#[derive(Debug)]
+pub struct EventsWithBlockNumberHash {
     /// The block number.
     pub number: u64,
     /// The block hash.

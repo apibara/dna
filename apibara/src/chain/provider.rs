@@ -11,8 +11,10 @@ use std::pin::Pin;
 
 use crate::chain::{
     filter::EventFilter,
-    types::{BlockEvents, BlockHash, BlockHeader},
+    types::{BlockHash, BlockHeader},
 };
+
+use super::types::EventsWithBlockNumberHash;
 
 /// Provide information about blocks and events/logs on a chain.
 #[cfg_attr(test, automock)]
@@ -31,5 +33,5 @@ pub trait ChainProvider: Send + Sync + 'static {
         from_block: u64,
         to_block: u64,
         filters: &[EventFilter],
-    ) -> Result<Vec<BlockEvents>>;
+    ) -> Result<Vec<EventsWithBlockNumberHash>>;
 }
