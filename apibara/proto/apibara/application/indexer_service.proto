@@ -94,12 +94,19 @@ message Event {
   repeated TopicValue data = 4;
 }
 
+message Version {
+  uint64 major = 1;
+  uint64 minor = 2;
+  uint64 patch = 3;
+}
+
 message ConnectIndexer {
   string id = 1;
 }
 
 message IndexerConnected {
   Indexer indexer = 1;
+  Version version = 2;
 }
 
 message AckBlock {

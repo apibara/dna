@@ -67,13 +67,14 @@ checksum = "08f9b8508dccb7687a1d6c4ce66b2b0ecef467c94667de27d8d7fe1f8d2a9cdc"
 
 [[package]]
 name = "apibara"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "assert_matches",
  "async-recursion",
  "async-trait",
  "backoff",
+ "built",
  "chrono",
  "ethers",
  "figment",
@@ -86,6 +87,7 @@ dependencies = [
  "prost",
  "prost-types",
  "regex",
+ "semver 1.0.9",
  "serde",
  "starknet",
  "tokio",
@@ -508,6 +510,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "built"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4f346b6890a0dfa7266974910e7df2d5088120dd54721b9b0e5aae1ae5e05715"
+dependencies = [
+ "cargo-lock",
+]
+
+[[package]]
 name = "bumpalo"
 version = "3.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -547,6 +558,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "07fd178c5af4d59e83498ef15cf3f154e1a6f9d091270cb86283c65ef44e9ef0"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "cargo-lock"
+version = "7.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6c408da54db4c50d4693f7e649c299bc9de9c23ead86249e5368830bb32a734b"
+dependencies = [
+ "semver 1.0.9",
+ "serde",
+ "toml",
+ "url",
 ]
 
 [[package]]

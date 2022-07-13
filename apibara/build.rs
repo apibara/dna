@@ -6,5 +6,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             &["proto/apibara/application/indexer_service.proto"],
             &["proto/apibara"],
         )?;
+    built::write_built_file()?;
     Ok(())
 }

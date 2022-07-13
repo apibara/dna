@@ -11,6 +11,7 @@ use tonic::{Request, Response, Status, Streaming};
 use tracing::{debug, error};
 
 use crate::{
+    build_info,
     chain::{
         Address, BlockHash, BlockHeader, ChainProvider, Event, EventFilter, Topic, TopicValue,
     },
@@ -27,7 +28,7 @@ use self::pb::{
     indexer_manager_server::{IndexerManager as IndexerManagerTrait, IndexerManagerServer},
     ConnectIndexerRequest, ConnectIndexerResponse, CreateIndexerRequest, CreateIndexerResponse,
     DeleteIndexerRequest, DeleteIndexerResponse, GetIndexerRequest, GetIndexerResponse,
-    IndexerConnected, ListIndexerRequest, ListIndexerResponse, NewBlock, NewEvents, Reorg,
+    IndexerConnected, ListIndexerRequest, ListIndexerResponse, NewBlock, NewEvents, Reorg, Version,
 };
 
 pub struct IndexerManagerService<P: ChainProvider, IP: IndexerPersistence> {
@@ -305,8 +306,18 @@ impl Into<ConnectIndexerResponseMessage> for IndexerMessage {
     fn into(self) -> ConnectIndexerResponseMessage {
         match self {
             IndexerMessage::Connected(state) => {
+                // the version is controlled by the crate and so it cannot
+                // fail parsing.
+                let version = semver::Version::parse(build_info::PKG_VERSION)
+                    .expect("failed to parse crate version");
+                let version = Version {
+                    major: version.major,
+                    minor: version.minor,
+                    patch: version.patch,
+                };
                 let connected = IndexerConnected {
                     indexer: Some(state.into()),
+                    version: Some(version),
                 };
                 ConnectIndexerResponseMessage::Connected(connected)
             }
