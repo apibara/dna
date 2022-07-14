@@ -36,15 +36,16 @@ message TopicValue {
 
 // Represent the indexer's state.
 message Indexer {
-  // TODO: add chain id, application id
   // The unique indexer id.
   string id = 1;
+  // The name of the network indexed.
+  string network_name = 2;
   // The latest block the indexer inedxed.
-  optional uint64 indexed_to_block = 2;
+  optional uint64 indexed_to_block = 3;
   // The block from which to start indexing.
-  uint64 index_from_block = 3;
+  uint64 index_from_block = 4;
   // Filters that produce the events this indexer ingests.
-  repeated EventFilter filters = 4;
+  repeated EventFilter filters = 5;
 }
 
 message CreateIndexerRequest {

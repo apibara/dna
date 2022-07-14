@@ -224,6 +224,7 @@ impl Into<pb::Indexer> for IndexerState {
     fn into(self) -> pb::Indexer {
         pb::Indexer {
             id: self.id.into_string(),
+            network_name: self.network_name.into_string(),
             indexed_to_block: self.indexed_to_block,
             index_from_block: self.index_from_block,
             filters: self.filters.into_iter().map(Into::into).collect(),

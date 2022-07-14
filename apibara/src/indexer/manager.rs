@@ -12,7 +12,7 @@ use crate::{
 
 use super::{start_indexer, ClientToIndexerMessage, IndexerPersistence, Message, State};
 
-const DEFAULT_BLOCK_BATCH_SIZE: usize = 200;
+const DEFAULT_BLOCK_BATCH_SIZE: usize = 20;
 
 pub struct IndexerManager<IP: IndexerPersistence> {
     network_manager: Arc<NetworkManager>,
@@ -40,6 +40,9 @@ impl<IP: IndexerPersistence> IndexerManager<IP> {
         if existing.is_some() {
             return Err(Error::msg("already exists"));
         }
+
+        // Check if network exists.
+        let _ = self.network_manager.provider_for_network(&network_name)?;
 
         let state = State {
             id: id.clone(),
