@@ -159,6 +159,7 @@ impl ChainProvider for StarkNetProvider {
                                 trace!("sending new head {} {}", block.number, block.hash);
                                 if let Err(err) = tx.send(block.clone()).await {
                                     error!("starknet block poll error sending block: {:?}", err);
+                                    return;
                                 }
                             }
 
