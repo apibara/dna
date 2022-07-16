@@ -37,10 +37,16 @@ pub struct Server {
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum Network {
     StarkNet(StarkNetNetwork),
+    Ethereum(EthereumNetwork),
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct StarkNetNetwork {
+    pub provider_url: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct EthereumNetwork {
     pub provider_url: String,
 }
 

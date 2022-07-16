@@ -39,7 +39,7 @@ pub struct BlockHeader {
 // it when sending to client.
 /// A blockchain event.
 #[derive(Debug)]
-pub struct Event {
+pub struct StarkNetEvent {
     // TODO: add transaction hash
     /// Event source address.
     pub address: Address,
@@ -48,7 +48,35 @@ pub struct Event {
     /// Event data.
     pub data: Vec<TopicValue>,
     /// Event index in the block.
-    pub block_index: usize,
+    pub log_index: usize,
+}
+
+#[derive(Debug)]
+pub struct EthereumEvent {
+    // TODO: add transaction hash
+    /// Event source address.
+    pub address: Address,
+    /// Indexed events.
+    pub topics: Vec<TopicValue>,
+    /// Event data.
+    pub data: Vec<u8>,
+    /// Event index in the block.
+    pub log_index: usize,
+}
+
+#[derive(Debug)]
+pub enum Event {
+    StarkNet(StarkNetEvent),
+    Ethereum(EthereumEvent),
+}
+
+impl Event {
+    pub fn log_index(&self) -> usize {
+        match self {
+            Event::StarkNet(ev) => ev.log_index,
+            Event::Ethereum(ev) => ev.log_index,
+        }
+    }
 }
 
 /// Events emitted in a single block.

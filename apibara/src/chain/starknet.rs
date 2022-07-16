@@ -1,4 +1,6 @@
 //! StarkNet provider.
+use std::{pin::Pin, sync::Arc, time::Duration};
+
 use anyhow::{Context, Error, Result};
 use async_trait::async_trait;
 use backoff::ExponentialBackoff;
@@ -14,17 +16,17 @@ use starknet::{
         HttpTransport, JsonRpcClient,
     },
 };
-use std::{collections::HashMap, pin::Pin, sync::Arc, time::Duration};
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::{error, trace};
 use url::Url;
 
 use crate::chain::{
-    Address, BlockHash, BlockHeader, ChainProvider, Event, EventFilter, Topic, TopicValue,
+    Address, BlockHash, BlockHeader, ChainProvider, Event, EventFilter, StarkNetEvent, Topic,
+    TopicValue,
 };
 
-use super::types::EventsWithBlockNumberHash;
+use super::{block_events::BlockEventsBuilder, types::EventsWithBlockNumberHash};
 
 #[derive(Debug)]
 pub struct StarkNetProvider {
@@ -76,10 +78,10 @@ impl StarkNetProvider {
 
             for event in &page.events {
                 let block_hash = event.block_hash.into();
-                let mut new_event: Event = event.into();
-                new_event.block_index = fake_block_index;
+                let mut new_event: StarkNetEvent = event.into();
+                new_event.log_index = fake_block_index;
                 fake_block_index += 1;
-                block_events.add_event(event.block_number, block_hash, new_event);
+                block_events.add_event(event.block_number, block_hash, Event::StarkNet(new_event));
             }
 
             page_number += 1;
@@ -117,7 +119,9 @@ impl ChainProvider for StarkNetProvider {
         Ok(Some(block.into()))
     }
 
-    fn subscribe_blocks(&self) -> Result<Pin<Box<dyn Stream<Item = BlockHeader> + Send>>> {
+    async fn subscribe_blocks<'a>(
+        &'a self,
+    ) -> Result<Pin<Box<dyn Stream<Item = BlockHeader> + Send + 'a>>> {
         // starknet rpc does not support subscriptions yet. for now, spawn a new task and
         // poll the rpc node.
         let (tx, rx) = mpsc::channel(64);
@@ -191,50 +195,6 @@ impl ChainProvider for StarkNetProvider {
     }
 }
 
-#[derive(Debug, Default)]
-struct BlockEventsBuilder {
-    hashes: HashMap<u64, BlockHash>,
-    events: HashMap<u64, Vec<Event>>,
-}
-
-impl BlockEventsBuilder {
-    pub fn new() -> Self {
-        Default::default()
-    }
-
-    /// Add `event` to the events in that block.
-    pub fn add_event(&mut self, block_number: u64, block_hash: BlockHash, event: Event) {
-        let events_in_block = self.events.entry(block_number).or_default();
-        events_in_block.push(event);
-        self.hashes.entry(block_number).or_insert(block_hash);
-    }
-
-    /// Return a vector of `BlockEvents` with the accumulated events.
-    pub fn build(self) -> Result<Vec<EventsWithBlockNumberHash>> {
-        let mut result = Vec::new();
-        for (block_number, mut events) in self.events {
-            let block_hash = self
-                .hashes
-                .get(&block_number)
-                .ok_or_else(|| Error::msg("block missing hash"))?
-                .to_owned();
-
-            events.sort_by(|a, b| a.block_index.cmp(&b.block_index));
-
-            let block_with_events = EventsWithBlockNumberHash {
-                number: block_number,
-                hash: block_hash,
-                events,
-            };
-            result.push(block_with_events);
-        }
-
-        result.sort_by(|a, b| a.number.cmp(&b.number));
-
-        Ok(result)
-    }
-}
-
 impl From<SNBlock> for BlockHeader {
     fn from(b: SNBlock) -> Self {
         let metadata = b.metadata;
@@ -251,13 +211,13 @@ impl From<SNBlock> for BlockHeader {
     }
 }
 
-impl From<&SNEmittedEvent> for Event {
+impl From<&SNEmittedEvent> for StarkNetEvent {
     fn from(e: &SNEmittedEvent) -> Self {
         (&e.event).into()
     }
 }
 
-impl From<&SNEvent> for Event {
+impl From<&SNEvent> for StarkNetEvent {
     fn from(e: &SNEvent) -> Self {
         let address = e.from_address.to_bytes_be().as_ref().into();
         let topics = e
@@ -275,11 +235,11 @@ impl From<&SNEvent> for Event {
             .collect();
 
         // at the moment, starknet events don't have a block index.
-        Event {
+        StarkNetEvent {
             address,
             topics,
             data,
-            block_index: 0,
+            log_index: 0,
         }
     }
 }

@@ -12,7 +12,10 @@ use tracing::{debug, error};
 
 use crate::{
     build_info,
-    chain::{Address, BlockHash, BlockHeader, Event, EventFilter, Topic, TopicValue},
+    chain::{
+        Address, BlockHash, BlockHeader, EthereumEvent, Event, EventFilter, StarkNetEvent, Topic,
+        TopicValue,
+    },
     indexer::{
         ClientToIndexerMessage as IndexerClientMessage, IndexerManager, IndexerPersistence,
         Message as IndexerMessage, State as IndexerState,
@@ -276,14 +279,38 @@ impl Into<pb::BlockHeader> for BlockHeader {
 #[allow(clippy::from_over_into)]
 impl Into<pb::Event> for Event {
     fn into(self) -> pb::Event {
+        let event = match self {
+            Event::StarkNet(starknet) => {
+                let inner = starknet.into();
+                pb::event::Event::Starknet(inner)
+            }
+            Event::Ethereum(ethereum) => {
+                let inner = ethereum.into();
+                pb::event::Event::Ethereum(inner)
+            }
+        };
+        pb::Event { event: Some(event) }
+    }
+}
+
+#[allow(clippy::from_over_into)]
+impl Into<pb::StarkNetEvent> for StarkNetEvent {
+    fn into(self) -> pb::StarkNetEvent {
         let data = self.data.into_iter().map(Into::into).collect();
         let topics = self.topics.into_iter().map(Into::into).collect();
-        pb::Event {
+        pb::StarkNetEvent {
             address: self.address.to_vec(),
-            block_index: self.block_index as u64,
+            log_index: self.log_index as u64,
             data,
             topics,
         }
+    }
+}
+
+#[allow(clippy::from_over_into)]
+impl Into<pb::EthereumEvent> for EthereumEvent {
+    fn into(self) -> pb::EthereumEvent {
+        todo!()
     }
 }
 

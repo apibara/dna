@@ -89,11 +89,25 @@ message BlockHeader {
   google.protobuf.Timestamp timestamp = 4;
 }
 
-message Event {
+message StarkNetEvent {
   bytes address = 1;
-  uint64 block_index = 2;
+  uint64 log_index = 2;
   repeated TopicValue topics = 3;
   repeated TopicValue data = 4;
+}
+
+message EthereumEvent {
+  bytes address = 1;
+  uint64 log_index = 2;
+  repeated TopicValue topics = 3;
+  bytes data = 4;
+}
+
+message Event {
+  oneof event {
+    StarkNetEvent starknet = 1;
+    EthereumEvent ethereum = 2;
+  }
 }
 
 message Version {

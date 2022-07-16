@@ -26,7 +26,9 @@ pub trait ChainProvider: Send + Sync + 'static {
     /// Get a specific block by its hash.
     async fn get_block_by_hash(&self, hash: &BlockHash) -> Result<Option<BlockHeader>>;
 
-    fn subscribe_blocks(&self) -> Result<Pin<Box<dyn Stream<Item = BlockHeader> + Send>>>;
+    async fn subscribe_blocks<'a>(
+        &'a self,
+    ) -> Result<Pin<Box<dyn Stream<Item = BlockHeader> + Send + 'a>>>;
 
     async fn get_events_in_range(
         &self,

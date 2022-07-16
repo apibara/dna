@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 use anyhow::{Error, Result};
 
 use crate::{
-    chain::{starknet::StarkNetProvider, ChainProvider},
+    chain::{ethereum::EthereumProvider, starknet::StarkNetProvider, ChainProvider},
     configuration::Network,
     persistence::NetworkName,
 };
@@ -17,7 +17,7 @@ impl NetworkManager {
         NetworkManager { networks }
     }
 
-    pub fn provider_for_network(
+    pub async fn provider_for_network(
         &self,
         network_name: &NetworkName,
     ) -> Result<Arc<dyn ChainProvider>> {
@@ -29,6 +29,10 @@ impl NetworkManager {
         match network_config {
             Network::StarkNet(starknet) => {
                 let provider = StarkNetProvider::new(&starknet.provider_url)?;
+                Ok(Arc::new(provider))
+            }
+            Network::Ethereum(ethereum) => {
+                let provider = EthereumProvider::new(&ethereum.provider_url).await?;
                 Ok(Arc::new(provider))
             }
         }

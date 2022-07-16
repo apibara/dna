@@ -59,7 +59,8 @@ impl HeadTracker {
     }
 
     async fn run_loop(mut self) -> Result<()> {
-        let mut block_stream = self.provider.subscribe_blocks()?;
+        let provider = self.provider.clone();
+        let mut block_stream = provider.subscribe_blocks().await?;
 
         self.build_chain_reorg_buffer().await?;
 
