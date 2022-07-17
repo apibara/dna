@@ -1,5 +1,5 @@
 mod pb {
-    tonic::include_proto!("apibara.application.v1alpha2");
+    tonic::include_proto!("apibara.application.v1alpha3");
 }
 
 use std::{pin::Pin, sync::Arc};
@@ -13,7 +13,7 @@ use tracing::{debug, error};
 use crate::{
     build_info,
     chain::{
-        Address, BlockHash, BlockHeader, EthereumEvent, Event, EventFilter, StarkNetEvent, Topic,
+        Address, BlockHash, BlockHeader, EthereumEvent, Event, EventFilter, StarkNetEvent,
         TopicValue,
     },
     indexer::{
@@ -239,23 +239,8 @@ impl Into<pb::Indexer> for IndexerState {
 impl Into<pb::EventFilter> for EventFilter {
     fn into(self) -> pb::EventFilter {
         let address = self.address.map(|a| a.to_vec()).unwrap_or_default();
-        let topics = self.topics.into_iter().map(Into::into).collect();
-        pb::EventFilter { address, topics }
-    }
-}
-
-#[allow(clippy::from_over_into)]
-impl Into<pb::Topic> for Topic {
-    fn into(self) -> pb::Topic {
-        match self {
-            Topic::Value(topic) => pb::Topic {
-                choices: vec![topic.into()],
-            },
-            Topic::Choice(choices) => {
-                let choices = choices.into_iter().map(Into::into).collect();
-                pb::Topic { choices }
-            }
-        }
+        let signature = self.signature;
+        pb::EventFilter { address, signature }
     }
 }
 
@@ -310,7 +295,14 @@ impl Into<pb::StarkNetEvent> for StarkNetEvent {
 #[allow(clippy::from_over_into)]
 impl Into<pb::EthereumEvent> for EthereumEvent {
     fn into(self) -> pb::EthereumEvent {
-        todo!()
+        let topics = self.topics.into_iter().map(Into::into).collect();
+
+        pb::EthereumEvent {
+            address: self.address.to_vec(),
+            log_index: self.log_index as u64,
+            topics,
+            data: self.data,
+        }
     }
 }
 
@@ -393,19 +385,8 @@ impl From<pb::EventFilter> for EventFilter {
         } else {
             Some(Address::from_bytes(&ef.address))
         };
-        let topics = ef.topics.into_iter().map(Into::into).collect();
-        EventFilter { address, topics }
-    }
-}
-
-impl From<pb::Topic> for Topic {
-    fn from(mut t: pb::Topic) -> Self {
-        if t.choices.len() == 1 {
-            Topic::Value(t.choices.remove(0).into())
-        } else {
-            let choices = t.choices.into_iter().map(Into::into).collect();
-            Topic::Choice(choices)
-        }
+        let signature = ef.signature;
+        EventFilter { address, signature }
     }
 }
 

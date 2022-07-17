@@ -27,9 +27,10 @@ pub struct EthereumProvider {
 
 impl EthereumProvider {
     pub async fn new(url: &str) -> Result<EthereumProvider> {
-        let client = Provider::<Ws>::connect(url)
+        let ws = Ws::connect(url)
             .await
-            .context("failed to connect to ethereum provider")?;
+            .context("failed to connect to the ethereum ws provider")?;
+        let client = Provider::new(ws);
 
         Ok(EthereumProvider {
             client: Arc::new(client),
@@ -43,7 +44,10 @@ impl EthereumProvider {
         to_block: u64,
         filter: &EventFilter,
     ) -> Result<()> {
-        let ethers_filter = Filter::new().from_block(from_block).to_block(to_block);
+        let ethers_filter = Filter::new()
+            .from_block(from_block)
+            .to_block(to_block)
+            .event(&filter.signature);
 
         let ethers_filter = match filter.address {
             None => ethers_filter,
@@ -52,8 +56,6 @@ impl EthereumProvider {
                 ethers_filter.address(ValueOrArray::Value(ethers_addr))
             }
         };
-
-        // TODO: add topics
 
         let logs = self
             .client

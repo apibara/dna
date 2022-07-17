@@ -9,7 +9,7 @@ async-recursion = "1.0.0"
 anyhow = "1.0"
 backoff = { version = "0.4.0", features = ["tokio"] }
 chrono = "0.4.19"
-ethers = { version = "0.6.2", features = ["ws"] }
+ethers = { version = "0.6.2", features = ["ws", "openssl"] }
 figment = { version = "0.10.6", features = ["toml"] }
 futures = "0.3.21"
 hex = "0.4.3"

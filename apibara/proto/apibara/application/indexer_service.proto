@@ -2,7 +2,7 @@ syntax = "proto3";
 
 import "google/protobuf/timestamp.proto";
 
-package apibara.application.v1alpha2;
+package apibara.application.v1alpha3;
 
 service IndexerManager {
   rpc CreateIndexer(CreateIndexerRequest) returns (CreateIndexerResponse);
@@ -18,14 +18,8 @@ message EventFilter {
   // Address of the contract emitting the event.
   bytes address = 1;
 
-  // Filter topics.
-  repeated Topic topics = 2;
-}
-
-// Event topic.
-message Topic {
-  // Topic possible values. The values are OR of each other.
-  repeated TopicValue choices = 1;
+  // Event signature.
+  string signature = 2;
 }
 
 // Topic value.

@@ -1,32 +1,23 @@
 //! Filter on chain events.
 use serde::{Deserialize, Serialize};
 
-use crate::chain::types::{Address, TopicValue};
-
-/// An event topic.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum Topic {
-    /// A single value.
-    Value(TopicValue),
-    /// Choice between multiple values.
-    Choice(Vec<TopicValue>),
-}
+use crate::chain::types::Address;
 
 /// Describe how to filter events.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EventFilter {
     /// Filter by the contracts emitting the event.
     pub address: Option<Address>,
-    /// Filter by topics.
-    pub topics: Vec<Topic>,
+    /// Filter by event signature.
+    pub signature: String,
 }
 
 impl EventFilter {
     /// Create a new (empty) event filter.
-    pub fn empty() -> Self {
+    pub fn new_with_signature(signature: impl AsRef<str>) -> Self {
         EventFilter {
             address: None,
-            topics: Vec::new(),
+            signature: signature.as_ref().to_string(),
         }
     }
 
@@ -34,17 +25,5 @@ impl EventFilter {
     pub fn with_address(mut self, address: Address) -> Self {
         self.address = Some(address);
         self
-    }
-
-    /// Filter events that match this topic.
-    pub fn add_topic(mut self, topic: impl Into<Topic>) -> Self {
-        self.topics.push(topic.into());
-        self
-    }
-}
-
-impl From<TopicValue> for Topic {
-    fn from(value: TopicValue) -> Self {
-        Topic::Value(value)
     }
 }

@@ -12,7 +12,7 @@ use crate::{
 
 use super::{start_indexer, ClientToIndexerMessage, IndexerPersistence, Message, State};
 
-const DEFAULT_BLOCK_BATCH_SIZE: usize = 20;
+const DEFAULT_BLOCK_BATCH_SIZE: usize = 200;
 
 pub struct IndexerManager<IP: IndexerPersistence> {
     network_manager: Arc<NetworkManager>,

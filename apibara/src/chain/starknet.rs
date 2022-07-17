@@ -7,7 +7,7 @@ use backoff::ExponentialBackoff;
 use chrono::NaiveDateTime;
 use futures::Stream;
 use starknet::{
-    core::types::FieldElement,
+    core::{types::FieldElement, utils::get_selector_from_name},
     providers::jsonrpc::{
         models::{
             Block as SNBlock, BlockHashOrTag, BlockTag, EmittedEvent as SNEmittedEvent,
@@ -22,8 +22,7 @@ use tracing::{error, trace};
 use url::Url;
 
 use crate::chain::{
-    Address, BlockHash, BlockHeader, ChainProvider, Event, EventFilter, StarkNetEvent, Topic,
-    TopicValue,
+    Address, BlockHash, BlockHeader, ChainProvider, Event, EventFilter, StarkNetEvent, TopicValue,
 };
 
 use super::{block_events::BlockEventsBuilder, types::EventsWithBlockNumberHash};
@@ -52,11 +51,9 @@ impl StarkNetProvider {
     ) -> Result<()> {
         let address: Option<FieldElement> =
             filter.address.as_ref().map(|a| a.try_into()).transpose()?;
-        let mut topics: Vec<FieldElement> = Vec::new();
-        for topic in &filter.topics {
-            let topic = topic.try_into()?;
-            topics.push(topic);
-        }
+        let event_selector = get_selector_from_name(&filter.signature)
+            .map_err(|_| Error::msg("invalid ethereum event name"))?;
+        let topics = vec![event_selector];
         let mut page_number = 0;
         // TODO: need to keep events sorted. Need to have a block_index in the rpc
         // response.
@@ -273,17 +270,6 @@ impl TryInto<FieldElement> for &Address {
             return Ok(FieldElement::from_bytes_be(&buff)?);
         }
         Err(Error::msg(""))
-    }
-}
-
-impl TryInto<FieldElement> for &Topic {
-    type Error = Error;
-
-    fn try_into(self) -> Result<FieldElement, Self::Error> {
-        match self {
-            Topic::Value(ref value) => value.try_into(),
-            Topic::Choice(_) => Err(Error::msg("choice not supported on starknet")),
-        }
     }
 }
 
