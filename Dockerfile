@@ -9,13 +9,11 @@ WORKDIR /usr/src/apibara
 # Build dependencies first for better caching.
 RUN cargo new --lib --vcs none apibara
 RUN cargo new --lib --vcs none cli
-RUN cargo new --lib --vcs none starknet-rpc
 COPY Cargo.toml Cargo.toml
 COPY Cargo.lock Cargo.lock
 
 COPY apibara/Cargo.toml apibara/Cargo.toml
 COPY cli/Cargo.toml cli/Cargo.toml
-COPY starknet-rpc/Cargo.toml starknet-rpc/Cargo.toml
 
 RUN CARGO_INCREMENTAL=0 DEPENDENCY_LAYER=1 cargo build --release -p apibara
 
