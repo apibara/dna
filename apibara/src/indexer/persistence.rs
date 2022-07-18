@@ -9,13 +9,38 @@ use crate::{
     persistence::{Id, NetworkName},
 };
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct StarkNetNetwork {
+    pub name: NetworkName,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct EthereumNetwork {
+    pub name: NetworkName,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum Network {
+    StarkNet(StarkNetNetwork),
+    Ethereum(EthereumNetwork),
+}
+
+impl Network {
+    pub fn name(&self) -> &NetworkName {
+        match self {
+            Network::StarkNet(net) => &net.name,
+            Network::Ethereum(net) => &net.name,
+        }
+    }
+}
+
 /// Indexer state.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct State {
     /// Unique id.
     pub id: Id,
-    /// Network name. Network names are local to the server.
-    pub network_name: NetworkName,
+    /// Network being indexed.
+    pub network: Network,
     /// Event filters.
     pub filters: Vec<EventFilter>,
     /// Number of blocks to fetch in one call.

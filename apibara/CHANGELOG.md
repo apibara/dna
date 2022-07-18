@@ -1,5 +1,21 @@
 # Changelog
 
+## Apibara 0.3.0
+
+### Added
+
+ - Support EVM-compatible networks.
+
+### Changed
+
+ - Support configurable networks. Now developers can specify local test networks.
+
+### Fixed
+
+ - More reliable connection handling.
+ - Graceful indexer shutdown.
+
+
 ## Apibara 0.2.0
 
 ### Changed

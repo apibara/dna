@@ -18,7 +18,7 @@ use crate::{
     },
     indexer::{
         ClientToIndexerMessage as IndexerClientMessage, IndexerManager, IndexerPersistence,
-        Message as IndexerMessage, State as IndexerState,
+        Message as IndexerMessage, Network, State as IndexerState,
     },
     network_manager::NetworkManager,
     persistence::Id,
@@ -223,11 +223,34 @@ impl From<RequestError> for Status {
 }
 
 #[allow(clippy::from_over_into)]
+impl Into<pb::Network> for Network {
+    fn into(self) -> pb::Network {
+        let network = match self {
+            Network::StarkNet(net) => {
+                let inner = pb::StarkNetNetwork {
+                    name: net.name.to_string(),
+                };
+                pb::network::Network::Starknet(inner)
+            }
+            Network::Ethereum(net) => {
+                let inner = pb::EthereumNetwork {
+                    name: net.name.to_string(),
+                };
+                pb::network::Network::Ethereum(inner)
+            }
+        };
+        pb::Network {
+            network: Some(network),
+        }
+    }
+}
+
+#[allow(clippy::from_over_into)]
 impl Into<pb::Indexer> for IndexerState {
     fn into(self) -> pb::Indexer {
         pb::Indexer {
             id: self.id.into_string(),
-            network_name: self.network_name.into_string(),
+            network: Some(self.network.into()),
             indexed_to_block: self.indexed_to_block,
             index_from_block: self.index_from_block,
             filters: self.filters.into_iter().map(Into::into).collect(),

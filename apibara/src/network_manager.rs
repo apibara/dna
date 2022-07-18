@@ -5,6 +5,10 @@ use anyhow::{Error, Result};
 use crate::{
     chain::{ethereum::EthereumProvider, starknet::StarkNetProvider, ChainProvider},
     configuration::Network,
+    indexer::{
+        EthereumNetwork as PersistedEthereumNetwork, Network as PersistedNetwork,
+        StarkNetNetwork as PersistedStarkNetNetwork,
+    },
     persistence::NetworkName,
 };
 
@@ -34,6 +38,21 @@ impl NetworkManager {
             Network::Ethereum(ethereum) => {
                 let provider = EthereumProvider::new(&ethereum.provider_url).await?;
                 Ok(Arc::new(provider))
+            }
+        }
+    }
+
+    pub fn find_network_by_name(&self, name: &NetworkName) -> Option<PersistedNetwork> {
+        let network_config = self.networks.get(name)?;
+
+        match network_config {
+            Network::StarkNet(_) => {
+                let res = PersistedStarkNetNetwork { name: name.clone() };
+                Some(PersistedNetwork::StarkNet(res))
+            }
+            Network::Ethereum(_) => {
+                let res = PersistedEthereumNetwork { name: name.clone() };
+                Some(PersistedNetwork::Ethereum(res))
             }
         }
     }

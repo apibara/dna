@@ -28,12 +28,27 @@ message TopicValue {
   bytes value = 1;
 }
 
+message StarkNetNetwork {
+  string name = 1;
+}
+
+message EthereumNetwork {
+  string name = 2;
+}
+
+message Network {
+  oneof network {
+    StarkNetNetwork starknet = 1;
+    EthereumNetwork ethereum = 2;
+  }
+}
+
 // Represent the indexer's state.
 message Indexer {
   // The unique indexer id.
   string id = 1;
-  // The name of the network indexed.
-  string network_name = 2;
+  // The network indexed.
+  Network network = 2;
   // The latest block the indexer inedxed.
   optional uint64 indexed_to_block = 3;
   // The block from which to start indexing.

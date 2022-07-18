@@ -42,14 +42,14 @@ impl<IP: IndexerPersistence> IndexerManager<IP> {
         }
 
         // Check if network exists.
-        let _ = self
+        let network = self
             .network_manager
-            .provider_for_network(&network_name)
-            .await?;
+            .find_network_by_name(&network_name)
+            .ok_or_else(|| Error::msg(format!("network not found: {}", network_name)))?;
 
         let state = State {
             id: id.clone(),
-            network_name,
+            network,
             index_from_block,
             filters,
             block_batch_size: DEFAULT_BLOCK_BATCH_SIZE,
@@ -107,7 +107,7 @@ impl<IP: IndexerPersistence> IndexerManager<IP> {
 
         let provider = self
             .network_manager
-            .provider_for_network(&indexer_state.network_name)
+            .provider_for_network(indexer_state.network.name())
             .await?;
 
         let (indexer_handle, indexer_stream) = start_indexer(

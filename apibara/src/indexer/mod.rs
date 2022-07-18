@@ -4,5 +4,5 @@ mod persistence;
 mod service;
 
 pub use manager::IndexerManager;
-pub use persistence::{IndexerPersistence, State};
+pub use persistence::{EthereumNetwork, IndexerPersistence, Network, StarkNetNetwork, State};
 pub use service::{start_indexer, ClientToIndexerMessage, Message};
