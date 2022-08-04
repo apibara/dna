@@ -1,5 +1,12 @@
 # Changelog
 
+## Apibara 0.3.1
+
+### Added
+
+ - Include transaction hash in events.
+
+
 ## Apibara 0.3.0
 
 ### Added
