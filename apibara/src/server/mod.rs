@@ -40,7 +40,7 @@ impl<IP: IndexerPersistence> Server<IP> {
 
         info!(addr=?addr, "starting apibara server");
 
-        let _ = TonicServer::builder()
+        TonicServer::builder()
             .add_service(indexer_manager.into_service())
             .serve(addr)
             .await?;

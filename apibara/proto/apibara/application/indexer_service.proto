@@ -103,6 +103,7 @@ message StarkNetEvent {
   uint64 log_index = 2;
   repeated TopicValue topics = 3;
   repeated TopicValue data = 4;
+  bytes transaction_hash = 5;
 }
 
 message EthereumEvent {
@@ -110,6 +111,7 @@ message EthereumEvent {
   uint64 log_index = 2;
   repeated TopicValue topics = 3;
   bytes data = 4;
+  bytes transaction_hash = 5;
 }
 
 message Event {

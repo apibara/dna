@@ -220,6 +220,7 @@ impl TryFrom<Block<H256>> for BlockHeader {
 impl From<Log> for EthereumEvent {
     fn from(log: Log) -> Self {
         let address: Address = log.address.as_bytes().into();
+        let transaction_hash = log.transaction_hash.unwrap_or_default().as_bytes().into();
         let topics: Vec<TopicValue> = log.topics.iter().map(|t| t.as_bytes().into()).collect();
         let data = log.data.0.to_vec();
         let log_index = log.log_index.unwrap_or_default().as_usize();
@@ -229,6 +230,7 @@ impl From<Log> for EthereumEvent {
             topics,
             data,
             log_index,
+            transaction_hash,
         }
     }
 }

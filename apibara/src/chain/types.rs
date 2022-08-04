@@ -9,6 +9,10 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, PartialEq)]
 pub struct BlockHash(Vec<u8>);
 
+/// Chain transaction hash.
+#[derive(Clone, PartialEq)]
+pub struct TransactionHash(Vec<u8>);
+
 /// Chain address.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Address(Vec<u8>);
@@ -49,6 +53,8 @@ pub struct StarkNetEvent {
     pub data: Vec<TopicValue>,
     /// Event index in the block.
     pub log_index: usize,
+    /// Hash of the transaction that emitted the event.
+    pub transaction_hash: TransactionHash,
 }
 
 #[derive(Debug)]
@@ -62,6 +68,8 @@ pub struct EthereumEvent {
     pub data: Vec<u8>,
     /// Event index in the block.
     pub log_index: usize,
+    /// Hash of the transaction that emitted the event.
+    pub transaction_hash: TransactionHash,
 }
 
 #[derive(Debug)]
@@ -113,6 +121,20 @@ impl BlockHash {
     }
 }
 
+impl TransactionHash {
+    pub fn from_bytes(data: &[u8]) -> Self {
+        TransactionHash(data.to_vec())
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.0
+    }
+
+    pub fn to_vec(&self) -> Vec<u8> {
+        self.0.clone()
+    }
+}
+
 impl Address {
     pub fn from_bytes(data: &[u8]) -> Self {
         Address(data.to_vec())
@@ -152,6 +174,18 @@ impl FromStr for BlockHash {
 impl From<Vec<u8>> for BlockHash {
     fn from(data: Vec<u8>) -> Self {
         BlockHash(data)
+    }
+}
+
+impl From<Vec<u8>> for TransactionHash {
+    fn from(data: Vec<u8>) -> Self {
+        TransactionHash(data)
+    }
+}
+
+impl From<&[u8]> for TransactionHash {
+    fn from(data: &[u8]) -> Self {
+        TransactionHash(data.to_vec())
     }
 }
 
@@ -207,6 +241,18 @@ impl fmt::Debug for BlockHash {
     }
 }
 
+impl fmt::Display for TransactionHash {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "0x{}", transaction_hash_to_hex(self))
+    }
+}
+
+impl fmt::Debug for TransactionHash {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "TransactionHash({})", self)
+    }
+}
+
 impl fmt::Display for TopicValue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "0x{}", topic_value_to_hex(self))
@@ -240,6 +286,10 @@ fn hex_to_vec(data: &str) -> Result<Vec<u8>> {
 }
 
 fn hash_to_hex(h: &BlockHash) -> String {
+    hex::encode(&h.0)
+}
+
+fn transaction_hash_to_hex(h: &TransactionHash) -> String {
     hex::encode(&h.0)
 }
 

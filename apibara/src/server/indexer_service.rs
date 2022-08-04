@@ -309,6 +309,7 @@ impl Into<pb::StarkNetEvent> for StarkNetEvent {
         pb::StarkNetEvent {
             address: self.address.to_vec(),
             log_index: self.log_index as u64,
+            transaction_hash: self.transaction_hash.to_vec(),
             data,
             topics,
         }
@@ -323,6 +324,7 @@ impl Into<pb::EthereumEvent> for EthereumEvent {
         pb::EthereumEvent {
             address: self.address.to_vec(),
             log_index: self.log_index as u64,
+            transaction_hash: self.transaction_hash.to_vec(),
             topics,
             data: self.data,
         }

@@ -11,7 +11,7 @@ use starknet::{
     providers::jsonrpc::{
         models::{
             Block as SNBlock, BlockHashOrTag, BlockTag, EmittedEvent as SNEmittedEvent,
-            Event as SNEvent, EventFilter as SNEventFilter,
+            EventFilter as SNEventFilter,
         },
         HttpTransport, JsonRpcClient,
     },
@@ -210,14 +210,10 @@ impl From<SNBlock> for BlockHeader {
 
 impl From<&SNEmittedEvent> for StarkNetEvent {
     fn from(e: &SNEmittedEvent) -> Self {
-        (&e.event).into()
-    }
-}
-
-impl From<&SNEvent> for StarkNetEvent {
-    fn from(e: &SNEvent) -> Self {
-        let address = e.from_address.to_bytes_be().as_ref().into();
+        let address = e.event.from_address.to_bytes_be().as_ref().into();
+        let transaction_hash = e.transaction_hash.to_bytes_be().as_ref().into();
         let topics = e
+            .event
             .content
             .keys
             .iter()
@@ -225,6 +221,7 @@ impl From<&SNEvent> for StarkNetEvent {
             .collect();
 
         let data = e
+            .event
             .content
             .data
             .iter()
@@ -236,6 +233,7 @@ impl From<&SNEvent> for StarkNetEvent {
             address,
             topics,
             data,
+            transaction_hash,
             log_index: 0,
         }
     }
