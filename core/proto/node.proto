@@ -1,0 +1,57 @@
+// # Apibara Node service.
+syntax = "proto3";
+
+package apibara.node.v1alpha1;
+
+service Node {
+  // Heartbeat request. The request and responses are empty.
+  rpc Health(HealthRequest) returns (HealthResponse);
+
+  // Get information about the node and its status.
+  rpc Status(StatusRequest) returns (StatusResponse);
+
+  // Connect to the node and start streaming data from it.
+  rpc Connect(stream ConnectRequest) returns (stream ConnectResponse);
+}
+
+// Health request. It's empty.
+message HealthRequest {
+}
+
+// Health response. It's empty. Use gRPC status to describe an error.
+message HealthResponse {
+}
+
+// Status request. It's empty.
+message StatusRequest {
+}
+
+// Status response. Returns information about the node's stream.
+message StatusResponse {
+}
+
+// Message sent from the client to the node.
+message ConnectRequest {
+}
+
+// Message sent from the node to the client.
+message ConnectResponse {
+}
+
+// Information about the node's sync status.
+message SyncStatus {
+  // The latest sequence number of the stream.
+  uint64 latest_sequence = 1;
+  // Sync state.
+  SyncState state = 2;
+}
+
+// Sync state.
+enum SyncState {
+  // Not specified. This value should not be sent down the wire.
+  SYNC_STATE_UNSPECIFIED = 0;
+  // The node can be considered synced, producing live data.
+  SYNC_STATE_SYNCED = 1;
+  // The node is catching up with their source. Data is stale.
+  SYNC_STATE_CATCHING_UP = 2;
+}

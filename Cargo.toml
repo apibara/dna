@@ -1,3 +1,6 @@
 [workspace]
 members = [
+    "core",
+    "node",
+    "cli"
 ]

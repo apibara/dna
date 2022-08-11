@@ -6,6 +6,30 @@
 
 # Apibara Node and SDK
 
+The Apibara SDK provides an high-level interface to build applications that
+transform streams of web3 data. Streams can be composed to form more complex
+applications. Streams can be transformed using any programming language.
+
+
+## Overview
+
+The Apibara SDK enables developers to build nodes that combine and transform
+multiple streams of data into a new stream. Nodes don't transform data directly,
+but delegate the operation to _applications_. Applications can run externally of
+the node or they can be built-in. External applications can be implemented in any
+language and communicate with the node through gRPC, while built-in applications
+are implemented in Rust and run directly within the node.
+
+
+## Project Structure
+
+The SDK is comprised of several crates, refer to their READMEs to learn
+more about each one of them.
+
+ - `core`: types shared by all other crates.
+ - `node`: used to build and run Apibara nodes.
+ - `cli`: the CLI interface to manage and start Apibara nodes.
+
 
 ## License
 
