@@ -19,7 +19,9 @@
       in
         {
           devShells.default = pkgs.mkShell {
+            LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
             buildInputs = with pkgs; [
+              clang
               openssl
               pkg-config
               protobuf

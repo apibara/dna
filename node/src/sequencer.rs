@@ -92,3 +92,110 @@
 //!
 //! OUTPUT SEQUENCE: 3
 //! ```
+
+use std::sync::Arc;
+
+use apibara_core::stream::{Sequence, SequenceRange, StreamId};
+use libmdbx::{Environment, EnvironmentKind, Error as MdbxError, WriteFlags};
+
+use crate::db::{
+    tables, MdbxEnvironmentExt, MdbxRWTransactionExt, MdbxTransactionExt, Table, TableKey,
+};
+
+pub struct Sequencer<E: EnvironmentKind> {
+    db: Arc<Environment<E>>,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum SequencerError {
+    #[error("invalid input stream sequence number")]
+    InvalidInputSequence,
+    #[error("error originating from database")]
+    Database(#[from] MdbxError),
+}
+
+pub type Result<T> = std::result::Result<T, SequencerError>;
+
+impl<E: EnvironmentKind> Sequencer<E> {
+    /// Create a new sequencer, persisting data to the given mdbx environment.
+    pub fn new(db: Arc<Environment<E>>) -> Result<Self> {
+        let txn = db.begin_rw_txn()?;
+        txn.ensure_table::<tables::SequencerInputTable>(None);
+        txn.ensure_table::<tables::SequencerInputToOutputTable>(None);
+        txn.ensure_table::<tables::SequencerOutputTriggerTable>(None);
+        txn.commit()?;
+        Ok(Sequencer { db })
+    }
+
+    /// Register a new input message `(stream_id, sequence)` that generates
+    /// `output_len` output messages.
+    ///
+    /// Returns a sequence range for the output.
+    pub fn register(
+        &mut self,
+        stream_id: &StreamId,
+        sequence: &Sequence,
+        output_len: usize,
+    ) -> Result<SequenceRange> {
+        let txn = self.db.begin_rw_txn()?;
+        let seq_input = txn.open_table::<tables::SequencerInputTable>()?;
+        if let Some(existing_seq) = seq_input.get(stream_id)? {
+            // TODO: check sequence number
+        }
+        // update sequence number
+        seq_input.cursor()?.put(stream_id, &sequence.into())?;
+        // check sequence
+        txn.commit()?;
+        todo!()
+    }
+
+    /// Invalidates all messages received after (inclusive) `(stream_id, sequence)`.
+    ///
+    /// Returns the sequence number of the first invalidated messages of the output stream.
+    pub fn invalidate(&mut self, stream_id: &StreamId, sequence: &Sequence) -> Result<Sequence> {
+        todo!()
+    }
+
+    /// Returns the start sequence of the next output message.
+    pub fn output_sequence_start(&self) -> Sequence {
+        todo!()
+    }
+
+    /// Returns the latest/current sequence of the given input `stream_id`.
+    pub fn input_sequence(&self, stream_id: &StreamId) -> Result<Option<Sequence>> {
+        todo!()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{env, sync::Arc};
+
+    use apibara_core::stream::{Sequence, StreamId};
+    use libmdbx::{Environment, EnvironmentKind, NoWriteMap};
+
+    use crate::db::MdbxEnvironmentExt;
+
+    use super::Sequencer;
+
+    fn create_db() -> Environment<NoWriteMap> {
+        let path = env::temp_dir();
+        Environment::<NoWriteMap>::open(path.as_path()).unwrap()
+    }
+
+    #[tokio::test]
+    pub async fn test_sequencer() {
+        let db = Arc::new(create_db());
+        let mut sequencer = Sequencer::new(db).unwrap();
+
+        let s_a = StreamId::from_u64(0);
+        let s_b = StreamId::from_u64(1);
+        let s_c = StreamId::from_u64(2);
+
+        let output_range = sequencer.register(&s_a, &Sequence::from_u64(0), 2).unwrap();
+        assert!(sequencer.output_sequence_start().as_u64() == 1);
+        assert!(sequencer.input_sequence(&s_a).unwrap().unwrap().as_u64() == 1);
+        assert!(sequencer.input_sequence(&s_b).unwrap().is_none());
+        assert!(sequencer.input_sequence(&s_c).unwrap().is_none());
+    }
+}
