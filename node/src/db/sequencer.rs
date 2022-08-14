@@ -4,63 +4,99 @@ use apibara_core::stream::{Sequence, StreamId};
 use libmdbx::{EnvironmentKind, Error as MdbxError, TransactionKind};
 use prost::Message;
 
-use super::{MdbxTable, Table};
+use super::{DupSortTable, MdbxTable, Table};
 
-/// Table that maps input's sequence to the output start sequence.
+/// Table with the state of each input sequence, together with the respective
+/// output range.
 #[derive(Debug, Clone, Copy, Default)]
-pub struct SequencerInputToOutputTable;
+pub struct SequencerStateTable;
 
+/// Store the input's sequence, together with the start and end (inclusive)
+/// output range.
+///
+/// Since the output sequence is strictly increasing, we can use the input
+/// sequence to order the state and that will also keep the output's sequence
+/// ordered.
+///
+/// Mark fields as optional to enforce serializing the `0` value.
 #[derive(Clone, PartialEq, Message)]
-pub struct SequencerInputToOutput {}
-
-/// Table that tracks input's sequence number.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct SequencerInputTable;
-
-#[derive(Clone, PartialEq, Message)]
-pub struct SequencerInput {
-    #[prost(uint64)]
-    pub sequence: u64,
+pub struct SequencerState {
+    #[prost(fixed64, optional, tag = "1")]
+    pub input_sequence: Option<u64>,
+    #[prost(fixed64, optional, tag = "2")]
+    pub output_sequence_start: Option<u64>,
+    #[prost(fixed64, optional, tag = "3")]
+    pub output_sequence_end: Option<u64>,
 }
 
-/// Table that tracks what input trigger the output starting at sequence.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct SequencerOutputTriggerTable;
-
-#[derive(Clone, PartialEq, Message)]
-pub struct SequencerOutputTrigger {}
-
-impl Table for SequencerInputTable {
+impl Table for SequencerStateTable {
     type Key = StreamId;
-    type Value = SequencerInput;
+    type Value = SequencerState;
 
     fn db_name() -> &'static str {
-        "SequencerInput"
+        "SequencerState"
     }
 }
 
-impl Table for SequencerInputToOutputTable {
-    type Key = (StreamId, Sequence);
-    type Value = SequencerInputToOutput;
+impl DupSortTable for SequencerStateTable {}
 
-    fn db_name() -> &'static str {
-        "SequencerInputToOutput"
-    }
-}
+#[cfg(test)]
+mod tests {
+    use apibara_core::stream::StreamId;
+    use libmdbx::{DatabaseFlags, Environment, EnvironmentKind, NoWriteMap};
+    use std::sync::Arc;
+    use tempfile::tempdir;
 
-impl Table for SequencerOutputTriggerTable {
-    type Key = Sequence;
-    type Value = SequencerOutputTrigger;
+    use crate::db::{MdbxEnvironmentExt, MdbxRWTransactionExt, MdbxTransactionExt};
 
-    fn db_name() -> &'static str {
-        "SequencerOutputTrigger"
-    }
-}
+    use super::{SequencerState, SequencerStateTable};
 
-impl From<&Sequence> for SequencerInput {
-    fn from(seq: &Sequence) -> Self {
-        SequencerInput {
-            sequence: seq.as_u64(),
-        }
+    #[test]
+    fn test_state_order() {
+        let path = tempdir().unwrap();
+        let db = Environment::<NoWriteMap>::open(path.path()).unwrap();
+        let stream_id = StreamId::from_u64(1);
+        let value_low = SequencerState {
+            input_sequence: Some(0),
+            output_sequence_start: Some(0),
+            output_sequence_end: Some(1),
+        };
+        let value_mid = SequencerState {
+            input_sequence: Some(1),
+            output_sequence_start: Some(2),
+            output_sequence_end: Some(2),
+        };
+        let value_high = SequencerState {
+            input_sequence: Some(2),
+            output_sequence_start: Some(3),
+            output_sequence_end: Some(4),
+        };
+
+        let txn = db.begin_rw_txn().unwrap();
+        txn.ensure_table::<SequencerStateTable>(Some(DatabaseFlags::DUP_SORT));
+        let table = txn.open_table::<SequencerStateTable>().unwrap();
+        let mut cursor = table.cursor().unwrap();
+        cursor.first().unwrap();
+        // insert three values in the wrong order, then check if they're stored in order.
+        cursor.put(&stream_id, &value_mid).unwrap();
+        cursor.put(&stream_id, &value_high).unwrap();
+        cursor.put(&stream_id, &value_low).unwrap();
+        txn.commit().unwrap();
+
+        let txn = db.begin_ro_txn().unwrap();
+        let table = txn.open_table::<SequencerStateTable>().unwrap();
+        let mut cursor = table.cursor().unwrap();
+        let (key, value) = cursor.seek_exact(&stream_id).unwrap().unwrap();
+        assert!(key.as_u64() == 1);
+        assert!(value.input_sequence == Some(0));
+        let (key, value) = cursor.next_dup().unwrap().unwrap();
+        assert!(key.as_u64() == 1);
+        assert!(value.input_sequence == Some(1));
+        let (key, value) = cursor.next_dup().unwrap().unwrap();
+        assert!(key.as_u64() == 1);
+        assert!(value.input_sequence == Some(2));
+        let value = cursor.next_dup().unwrap();
+        assert!(value.is_none());
+        txn.commit().unwrap();
     }
 }

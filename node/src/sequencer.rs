@@ -120,9 +120,7 @@ impl<E: EnvironmentKind> Sequencer<E> {
     /// Create a new sequencer, persisting data to the given mdbx environment.
     pub fn new(db: Arc<Environment<E>>) -> Result<Self> {
         let txn = db.begin_rw_txn()?;
-        txn.ensure_table::<tables::SequencerInputTable>(None);
-        txn.ensure_table::<tables::SequencerInputToOutputTable>(None);
-        txn.ensure_table::<tables::SequencerOutputTriggerTable>(None);
+        txn.ensure_table::<tables::SequencerStateTable>(None);
         txn.commit()?;
         Ok(Sequencer { db })
     }
@@ -138,13 +136,6 @@ impl<E: EnvironmentKind> Sequencer<E> {
         output_len: usize,
     ) -> Result<SequenceRange> {
         let txn = self.db.begin_rw_txn()?;
-        let seq_input = txn.open_table::<tables::SequencerInputTable>()?;
-        if let Some(existing_seq) = seq_input.get(stream_id)? {
-            // TODO: check sequence number
-        }
-        // update sequence number
-        seq_input.cursor()?.put(stream_id, &sequence.into())?;
-        // check sequence
         txn.commit()?;
         todo!()
     }
@@ -183,6 +174,7 @@ mod tests {
         Environment::<NoWriteMap>::open(path.as_path()).unwrap()
     }
 
+    /*
     #[tokio::test]
     pub async fn test_sequencer() {
         let db = Arc::new(create_db());
@@ -198,4 +190,5 @@ mod tests {
         assert!(sequencer.input_sequence(&s_b).unwrap().is_none());
         assert!(sequencer.input_sequence(&s_c).unwrap().is_none());
     }
+    */
 }

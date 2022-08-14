@@ -34,9 +34,11 @@ name = "apibara-node"
 version = "0.1.0"
 dependencies = [
  "apibara-core",
+ "byteorder",
  "libmdbx",
  "prost",
  "prost-types",
+ "tempfile",
  "thiserror",
  "tokio",
  "tracing",

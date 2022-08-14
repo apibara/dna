@@ -1,12 +1,25 @@
 //! Type-safe database access.
 
+use std::io::Cursor;
+
 use apibara_core::stream::{Sequence, StreamId};
+use byteorder::{BigEndian, ReadBytesExt};
+use libmdbx::Error as MdbxError;
 use prost::Message;
 
-pub trait TableKey: Send + Sync {
+#[derive(Debug, thiserror::Error)]
+pub enum KeyDecodeError {
+    #[error("invalid key bytes size")]
+    InvalidByteSize { expected: usize, actual: usize },
+    #[error("error reading key from bytes")]
+    ReadError(#[from] std::io::Error),
+}
+
+pub trait TableKey: Send + Sync + Sized {
     type Encoded: AsRef<[u8]> + Send + Sync;
 
     fn encode(&self) -> Self::Encoded;
+    fn decode(b: &[u8]) -> Result<Self, KeyDecodeError>;
 }
 
 pub trait Table: Send + Sync {
@@ -16,11 +29,27 @@ pub trait Table: Send + Sync {
     fn db_name() -> &'static str;
 }
 
+pub trait DupSortTable: Table {}
+
 impl TableKey for StreamId {
     type Encoded = [u8; 8];
 
     fn encode(&self) -> Self::Encoded {
         self.as_u64().to_be_bytes()
+    }
+
+    fn decode(b: &[u8]) -> Result<Self, KeyDecodeError> {
+        if b.len() != 8 {
+            return Err(KeyDecodeError::InvalidByteSize {
+                expected: 8,
+                actual: b.len(),
+            });
+        }
+        let mut cursor = Cursor::new(b);
+        let stream_id = cursor
+            .read_u64::<BigEndian>()
+            .map_err(|err| KeyDecodeError::ReadError(err))?;
+        Ok(StreamId::from_u64(stream_id))
     }
 }
 
@@ -29,6 +58,20 @@ impl TableKey for Sequence {
 
     fn encode(&self) -> Self::Encoded {
         self.as_u64().to_be_bytes()
+    }
+
+    fn decode(b: &[u8]) -> Result<Self, KeyDecodeError> {
+        if b.len() != 8 {
+            return Err(KeyDecodeError::InvalidByteSize {
+                expected: 8,
+                actual: b.len(),
+            });
+        }
+        let mut cursor = Cursor::new(b);
+        let sequence = cursor
+            .read_u64::<BigEndian>()
+            .map_err(|err| KeyDecodeError::ReadError(err))?;
+        Ok(Sequence::from_u64(sequence))
     }
 }
 
@@ -40,5 +83,22 @@ impl TableKey for (StreamId, Sequence) {
         out[..8].copy_from_slice(&self.0.encode());
         out[8..].copy_from_slice(&self.1.encode());
         out
+    }
+
+    fn decode(b: &[u8]) -> Result<Self, KeyDecodeError> {
+        if b.len() != 16 {
+            return Err(KeyDecodeError::InvalidByteSize {
+                expected: 16,
+                actual: b.len(),
+            });
+        }
+        let mut cursor = Cursor::new(b);
+        let stream_id = cursor
+            .read_u64::<BigEndian>()
+            .map_err(|err| KeyDecodeError::ReadError(err))?;
+        let sequence = cursor
+            .read_u64::<BigEndian>()
+            .map_err(|err| KeyDecodeError::ReadError(err))?;
+        Ok((StreamId::from_u64(stream_id), Sequence::from_u64(sequence)))
     }
 }

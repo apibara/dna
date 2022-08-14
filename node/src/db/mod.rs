@@ -6,10 +6,8 @@ mod sequencer;
 mod table;
 
 pub use self::mdbx::{MdbxEnvironmentExt, MdbxRWTransactionExt, MdbxTable, MdbxTransactionExt};
-pub use self::table::{Table, TableKey};
+pub use self::table::{DupSortTable, Table, TableKey};
 
 pub mod tables {
-    pub use super::sequencer::{
-        SequencerInputTable, SequencerInputToOutputTable, SequencerOutputTriggerTable,
-    };
+    pub use super::sequencer::{SequencerState, SequencerStateTable};
 }

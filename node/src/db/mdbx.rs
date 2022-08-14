@@ -6,7 +6,10 @@ use libmdbx::{
 };
 use prost::Message;
 
-use super::table::{Table, TableKey};
+use super::{
+    table::{Table, TableKey},
+    DupSortTable,
+};
 
 /// A type-safe view over a mdbx database.
 pub struct MdbxTable<'txn, T, K, E>
@@ -97,6 +100,23 @@ where
     }
 }
 
+#[derive(Debug, Clone)]
+struct TableKeyWrapper<T>(T);
+
+impl<'txn, T> TableObject<'txn> for TableKeyWrapper<T>
+where
+    T: TableKey,
+{
+    fn decode(data_val: &[u8]) -> Result<Self, MdbxError>
+    where
+        Self: Sized,
+    {
+        T::decode(data_val)
+            .map_err(|err| MdbxError::DecodeError(Box::new(err)))
+            .map(Self)
+    }
+}
+
 impl<'txn, T, K, E> MdbxTable<'txn, T, K, E>
 where
     T: Table,
@@ -121,6 +141,42 @@ where
     }
 }
 
+impl<'txn, T, K> TableCursor<'txn, T, K>
+where
+    T: Table,
+    K: TransactionKind,
+{
+    /// Position at the first item.
+    pub fn first(&mut self) -> Result<Option<(T::Key, T::Value)>, MdbxError> {
+        map_kv_result::<T>(self.cursor.first())
+    }
+
+    /// Position at the last item.
+    pub fn last(&mut self) -> Result<Option<(T::Key, T::Value)>, MdbxError> {
+        map_kv_result::<T>(self.cursor.last())
+    }
+
+    /// Position at the specified key.
+    pub fn seek_exact(&mut self, key: &T::Key) -> Result<Option<(T::Key, T::Value)>, MdbxError> {
+        map_kv_result::<T>(self.cursor.set_key(key.encode().as_ref()))
+    }
+
+    /// Position at the first key greater than or equal to the specified key.
+    pub fn seek_range(&mut self, key: &T::Key) -> Result<Option<(T::Key, T::Value)>, MdbxError> {
+        map_kv_result::<T>(self.cursor.set_range(key.encode().as_ref()))
+    }
+}
+
+impl<'txn, T, K> TableCursor<'txn, T, K>
+where
+    T: DupSortTable,
+    K: TransactionKind,
+{
+    pub fn next_dup(&mut self) -> Result<Option<(T::Key, T::Value)>, MdbxError> {
+        map_kv_result::<T>(self.cursor.next_dup())
+    }
+}
+
 impl<'txn, T> TableCursor<'txn, T, RW>
 where
     T: Table,
@@ -131,4 +187,28 @@ where
             .put(key.encode().as_ref(), &data, WriteFlags::default())?;
         Ok(())
     }
+}
+
+impl<'txn, T> TableCursor<'txn, T, RW>
+where
+    T: DupSortTable,
+{
+    pub fn append_dup(&mut self, key: &T::Key, value: &T::Value) -> Result<(), MdbxError> {
+        let data = T::Value::encode_to_vec(&value);
+        self.cursor
+            .put(key.encode().as_ref(), &data, WriteFlags::APPEND_DUP)?;
+        Ok(())
+    }
+}
+
+fn map_kv_result<T>(
+    t: Result<Option<(TableKeyWrapper<T::Key>, TableObjectWrapper<T::Value>)>, MdbxError>,
+) -> Result<Option<(T::Key, T::Value)>, MdbxError>
+where
+    T: Table,
+{
+    if let Some((k, v)) = t? {
+        return Ok(Some((k.0, v.0)));
+    }
+    Ok(None)
 }
