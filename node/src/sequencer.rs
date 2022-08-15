@@ -96,11 +96,9 @@
 use std::sync::Arc;
 
 use apibara_core::stream::{Sequence, SequenceRange, StreamId};
-use libmdbx::{Environment, EnvironmentKind, Error as MdbxError, WriteFlags};
+use libmdbx::{DatabaseFlags, Environment, EnvironmentKind, Error as MdbxError, TransactionKind};
 
-use crate::db::{
-    tables, MdbxEnvironmentExt, MdbxRWTransactionExt, MdbxTransactionExt, Table, TableKey,
-};
+use crate::db::{tables, MdbxRWTransactionExt, MdbxTransactionExt, TableCursor};
 
 pub struct Sequencer<E: EnvironmentKind> {
     db: Arc<Environment<E>>,
@@ -109,7 +107,7 @@ pub struct Sequencer<E: EnvironmentKind> {
 #[derive(Debug, thiserror::Error)]
 pub enum SequencerError {
     #[error("invalid input stream sequence number")]
-    InvalidInputSequence,
+    InvalidInputSequence { expected: u64, actual: u64 },
     #[error("error originating from database")]
     Database(#[from] MdbxError),
 }
@@ -120,7 +118,7 @@ impl<E: EnvironmentKind> Sequencer<E> {
     /// Create a new sequencer, persisting data to the given mdbx environment.
     pub fn new(db: Arc<Environment<E>>) -> Result<Self> {
         let txn = db.begin_rw_txn()?;
-        txn.ensure_table::<tables::SequencerStateTable>(None);
+        txn.ensure_table::<tables::SequencerStateTable>(Some(DatabaseFlags::DUP_SORT))?;
         txn.commit()?;
         Ok(Sequencer { db })
     }
@@ -128,7 +126,8 @@ impl<E: EnvironmentKind> Sequencer<E> {
     /// Register a new input message `(stream_id, sequence)` that generates
     /// `output_len` output messages.
     ///
-    /// Returns a sequence range for the output.
+    /// Returns a sequence range for the output. Notice that if `output_len == 0`, then
+    /// the output range is empty.
     pub fn register(
         &mut self,
         stream_id: &StreamId,
@@ -136,8 +135,48 @@ impl<E: EnvironmentKind> Sequencer<E> {
         output_len: usize,
     ) -> Result<SequenceRange> {
         let txn = self.db.begin_rw_txn()?;
+        let state_table = txn.open_table::<tables::SequencerStateTable>()?;
+        let mut state_cursor = state_table.cursor()?;
+
+        // Check the input sequence number is +1 of the previous input's sequence.
+        if state_cursor.seek_exact(stream_id)?.is_some() {
+            if let Some(state) = state_cursor.last_dup()? {
+                if let Some(input_sequence) = state.input_sequence {
+                    if sequence.as_u64() != input_sequence + 1 {
+                        return Err(SequencerError::InvalidInputSequence {
+                            expected: input_sequence + 1,
+                            actual: sequence.as_u64(),
+                        });
+                    }
+                }
+            }
+        }
+
+        // Find the current output sequence. Since all streams state is ordered, only need
+        // to check the last item for each stream.
+        let output_sequence_start = self
+            .output_sequence_start_with_cursor(&mut state_cursor)?
+            .as_u64();
+
+        // Create range of output values.
+        let output_len = output_len as u64;
+        let output_sequence_end = Sequence::from_u64(output_sequence_start + output_len - 1);
+        let output_sequence_start = Sequence::from_u64(output_sequence_start);
+        let output_sequence = SequenceRange::new(output_sequence_start, output_sequence_end);
+
+        // Update stream state for the current input.
+        state_cursor.seek_exact(stream_id)?;
+        let new_state = tables::SequencerState {
+            input_sequence: Some(sequence.as_u64()),
+            output_sequence_start: Some(output_sequence_start.as_u64()),
+            output_sequence_end: Some(output_sequence_end.as_u64()),
+        };
+        state_cursor.append_dup(stream_id, &new_state)?;
+
+        // Finish updating data.
         txn.commit()?;
-        todo!()
+
+        Ok(output_sequence)
     }
 
     /// Invalidates all messages received after (inclusive) `(stream_id, sequence)`.
@@ -148,13 +187,61 @@ impl<E: EnvironmentKind> Sequencer<E> {
     }
 
     /// Returns the start sequence of the next output message.
-    pub fn output_sequence_start(&self) -> Sequence {
-        todo!()
+    pub fn next_output_sequence_start(&self) -> Result<Sequence> {
+        let txn = self.db.begin_ro_txn()?;
+        let state_table = txn.open_table::<tables::SequencerStateTable>()?;
+        let mut state_cursor = state_table.cursor()?;
+        let sequence = self.output_sequence_start_with_cursor(&mut state_cursor)?;
+        txn.commit()?;
+        Ok(sequence)
     }
 
     /// Returns the latest/current sequence of the given input `stream_id`.
     pub fn input_sequence(&self, stream_id: &StreamId) -> Result<Option<Sequence>> {
-        todo!()
+        let txn = self.db.begin_ro_txn()?;
+        let state_table = txn.open_table::<tables::SequencerStateTable>()?;
+        let mut state_cursor = state_table.cursor()?;
+        if state_cursor.seek_exact(stream_id)?.is_some() {
+            if let Some(state) = state_cursor.last_dup()? {
+                if let Some(input_sequence) = state.input_sequence {
+                    txn.commit()?;
+                    return Ok(Some(Sequence::from_u64(input_sequence)));
+                }
+            }
+        }
+        txn.commit()?;
+        Ok(None)
+    }
+
+    /// Find the current output sequence. Since all streams state is ordered, only need
+    /// to check the last item for each stream.
+    fn output_sequence_start_with_cursor<'txn, K>(
+        &self,
+        state_cursor: &mut TableCursor<'txn, tables::SequencerStateTable, K>,
+    ) -> Result<Sequence>
+    where
+        K: TransactionKind,
+    {
+        let mut output_sequence_start = None;
+        let mut val = state_cursor.first()?;
+        while let Some((_, state)) = val {
+            val = state_cursor.next()?;
+
+            if let Some(output_sequence) = state.output_sequence_end {
+                output_sequence_start = match output_sequence_start {
+                    None => Some(output_sequence + 1),
+                    Some(curr_output_start) => {
+                        // Output sequence start at successor of current value
+                        Some(u64::max(curr_output_start, output_sequence + 1))
+                    }
+                }
+            }
+        }
+
+        // If no input was found, start at 0.
+        Ok(Sequence::from_u64(
+            output_sequence_start.unwrap_or_default(),
+        ))
     }
 }
 
@@ -164,31 +251,75 @@ mod tests {
 
     use apibara_core::stream::{Sequence, StreamId};
     use libmdbx::{Environment, EnvironmentKind, NoWriteMap};
+    use tempfile::tempdir;
 
     use crate::db::MdbxEnvironmentExt;
 
     use super::Sequencer;
 
-    fn create_db() -> Environment<NoWriteMap> {
-        let path = env::temp_dir();
-        Environment::<NoWriteMap>::open(path.as_path()).unwrap()
-    }
-
-    /*
-    #[tokio::test]
-    pub async fn test_sequencer() {
-        let db = Arc::new(create_db());
-        let mut sequencer = Sequencer::new(db).unwrap();
+    #[test]
+    pub fn test_sequencer() {
+        let path = tempdir().unwrap();
+        let db = Environment::<NoWriteMap>::open(path.path()).unwrap();
+        let mut sequencer = Sequencer::new(Arc::new(db)).unwrap();
 
         let s_a = StreamId::from_u64(0);
         let s_b = StreamId::from_u64(1);
         let s_c = StreamId::from_u64(2);
 
         let output_range = sequencer.register(&s_a, &Sequence::from_u64(0), 2).unwrap();
-        assert!(sequencer.output_sequence_start().as_u64() == 1);
+        assert!(output_range.start().as_u64() == 0);
+        assert!(output_range.end().as_u64() == 1);
+        assert!(sequencer.next_output_sequence_start().unwrap().as_u64() == 2);
+        assert!(sequencer.input_sequence(&s_a).unwrap().unwrap().as_u64() == 0);
+        assert!(sequencer.input_sequence(&s_b).unwrap().is_none());
+        assert!(sequencer.input_sequence(&s_c).unwrap().is_none());
+
+        let output_range = sequencer.register(&s_a, &Sequence::from_u64(1), 1).unwrap();
+        assert!(output_range.start().as_u64() == 2);
+        assert!(output_range.end().as_u64() == 2);
+        assert!(sequencer.next_output_sequence_start().unwrap().as_u64() == 3);
         assert!(sequencer.input_sequence(&s_a).unwrap().unwrap().as_u64() == 1);
         assert!(sequencer.input_sequence(&s_b).unwrap().is_none());
         assert!(sequencer.input_sequence(&s_c).unwrap().is_none());
+
+        let output_range = sequencer.register(&s_b, &Sequence::from_u64(0), 0).unwrap();
+        assert!(output_range.is_empty());
+        assert!(sequencer.next_output_sequence_start().unwrap().as_u64() == 3);
+        assert!(sequencer.input_sequence(&s_a).unwrap().unwrap().as_u64() == 1);
+        assert!(sequencer.input_sequence(&s_b).unwrap().unwrap().as_u64() == 0);
+        assert!(sequencer.input_sequence(&s_c).unwrap().is_none());
+
+        let output_range = sequencer.register(&s_b, &Sequence::from_u64(1), 1).unwrap();
+        assert!(output_range.start().as_u64() == 3);
+        assert!(output_range.end().as_u64() == 3);
+        assert!(sequencer.next_output_sequence_start().unwrap().as_u64() == 4);
+        assert!(sequencer.input_sequence(&s_a).unwrap().unwrap().as_u64() == 1);
+        assert!(sequencer.input_sequence(&s_b).unwrap().unwrap().as_u64() == 1);
+        assert!(sequencer.input_sequence(&s_c).unwrap().is_none());
+
+        let output_range = sequencer.register(&s_a, &Sequence::from_u64(2), 3).unwrap();
+        assert!(output_range.start().as_u64() == 4);
+        assert!(output_range.end().as_u64() == 6);
+        assert!(sequencer.next_output_sequence_start().unwrap().as_u64() == 7);
+        assert!(sequencer.input_sequence(&s_a).unwrap().unwrap().as_u64() == 2);
+        assert!(sequencer.input_sequence(&s_b).unwrap().unwrap().as_u64() == 1);
+        assert!(sequencer.input_sequence(&s_c).unwrap().is_none());
+
+        let output_range = sequencer.register(&s_c, &Sequence::from_u64(0), 1).unwrap();
+        assert!(output_range.start().as_u64() == 7);
+        assert!(output_range.end().as_u64() == 7);
+        assert!(sequencer.next_output_sequence_start().unwrap().as_u64() == 8);
+        assert!(sequencer.input_sequence(&s_a).unwrap().unwrap().as_u64() == 2);
+        assert!(sequencer.input_sequence(&s_b).unwrap().unwrap().as_u64() == 1);
+        assert!(sequencer.input_sequence(&s_c).unwrap().unwrap().as_u64() == 0);
+
+        let output_range = sequencer.register(&s_b, &Sequence::from_u64(2), 2).unwrap();
+        assert!(output_range.start().as_u64() == 8);
+        assert!(output_range.end().as_u64() == 9);
+        assert!(sequencer.next_output_sequence_start().unwrap().as_u64() == 10);
+        assert!(sequencer.input_sequence(&s_a).unwrap().unwrap().as_u64() == 2);
+        assert!(sequencer.input_sequence(&s_b).unwrap().unwrap().as_u64() == 2);
+        assert!(sequencer.input_sequence(&s_c).unwrap().unwrap().as_u64() == 0);
     }
-    */
 }

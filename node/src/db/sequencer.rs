@@ -1,10 +1,9 @@
 //! Sequencer-related tables.
 
-use apibara_core::stream::{Sequence, StreamId};
-use libmdbx::{EnvironmentKind, Error as MdbxError, TransactionKind};
+use apibara_core::stream::StreamId;
 use prost::Message;
 
-use super::{DupSortTable, MdbxTable, Table};
+use super::{DupSortTable, Table};
 
 /// Table with the state of each input sequence, together with the respective
 /// output range.
@@ -73,7 +72,8 @@ mod tests {
         };
 
         let txn = db.begin_rw_txn().unwrap();
-        txn.ensure_table::<SequencerStateTable>(Some(DatabaseFlags::DUP_SORT));
+        txn.ensure_table::<SequencerStateTable>(Some(DatabaseFlags::DUP_SORT))
+            .unwrap();
         let table = txn.open_table::<SequencerStateTable>().unwrap();
         let mut cursor = table.cursor().unwrap();
         cursor.first().unwrap();

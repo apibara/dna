@@ -9,8 +9,7 @@ pub struct StreamId(u64);
 pub struct Sequence(u64);
 
 /// A range of sequence numbers. The range is inclusive.
-#[derive(Debug, Clone)]
-pub struct SequenceRange(RangeInclusive<Sequence>);
+pub type SequenceRange = RangeInclusive<Sequence>;
 
 impl StreamId {
     /// Create a `StreamId` from a `u64`.
@@ -38,12 +37,5 @@ impl Sequence {
     /// Returns the sequence number as `u64`.
     pub fn as_u64(&self) -> u64 {
         self.0
-    }
-}
-
-impl SequenceRange {
-    pub fn new(start: Sequence, end: Sequence) -> SequenceRange {
-        let inner = RangeInclusive::new(start, end);
-        SequenceRange(inner)
     }
 }

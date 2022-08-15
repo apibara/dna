@@ -4,7 +4,6 @@ use std::io::Cursor;
 
 use apibara_core::stream::{Sequence, StreamId};
 use byteorder::{BigEndian, ReadBytesExt};
-use libmdbx::Error as MdbxError;
 use prost::Message;
 
 #[derive(Debug, thiserror::Error)]
@@ -48,7 +47,7 @@ impl TableKey for StreamId {
         let mut cursor = Cursor::new(b);
         let stream_id = cursor
             .read_u64::<BigEndian>()
-            .map_err(|err| KeyDecodeError::ReadError(err))?;
+            .map_err(KeyDecodeError::ReadError)?;
         Ok(StreamId::from_u64(stream_id))
     }
 }
@@ -70,7 +69,7 @@ impl TableKey for Sequence {
         let mut cursor = Cursor::new(b);
         let sequence = cursor
             .read_u64::<BigEndian>()
-            .map_err(|err| KeyDecodeError::ReadError(err))?;
+            .map_err(KeyDecodeError::ReadError)?;
         Ok(Sequence::from_u64(sequence))
     }
 }
@@ -95,10 +94,10 @@ impl TableKey for (StreamId, Sequence) {
         let mut cursor = Cursor::new(b);
         let stream_id = cursor
             .read_u64::<BigEndian>()
-            .map_err(|err| KeyDecodeError::ReadError(err))?;
+            .map_err(KeyDecodeError::ReadError)?;
         let sequence = cursor
             .read_u64::<BigEndian>()
-            .map_err(|err| KeyDecodeError::ReadError(err))?;
+            .map_err(KeyDecodeError::ReadError)?;
         Ok((StreamId::from_u64(stream_id), Sequence::from_u64(sequence)))
     }
 }
