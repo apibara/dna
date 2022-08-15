@@ -108,6 +108,8 @@ pub struct Sequencer<E: EnvironmentKind> {
 pub enum SequencerError {
     #[error("invalid input stream sequence number")]
     InvalidInputSequence { expected: u64, actual: u64 },
+    #[error("input sequence number not found")]
+    InputSequenceNotFound,
     #[error("error originating from database")]
     Database(#[from] MdbxError),
 }
@@ -183,7 +185,65 @@ impl<E: EnvironmentKind> Sequencer<E> {
     ///
     /// Returns the sequence number of the first invalidated messages of the output stream.
     pub fn invalidate(&mut self, stream_id: &StreamId, sequence: &Sequence) -> Result<Sequence> {
-        todo!()
+        let txn = self.db.begin_rw_txn()?;
+        let state_table = txn.open_table::<tables::SequencerStateTable>()?;
+        let mut state_cursor = state_table.cursor()?;
+        if state_cursor.seek_exact(stream_id)?.is_none() {
+            txn.commit()?;
+            return Err(SequencerError::InputSequenceNotFound);
+        }
+
+        let mut invalidated_input_state = None;
+        let mut val = state_cursor.last_dup()?;
+        while let Some(state) = val {
+            val = state_cursor.prev_dup()?.map(|v| v.1);
+
+            if state.input_sequence == Some(sequence.as_u64()) {
+                invalidated_input_state = Some(state);
+                break;
+            }
+        }
+
+        match invalidated_input_state {
+            Some(tables::SequencerState {
+                output_sequence_start: Some(first_invalidated_output_sequence_start),
+                ..
+            }) => {
+                // Now invalidate all outputs with output_sequence_start later than
+                // the current input's output_sequence_start
+                let mut stream_val = state_cursor.first()?;
+                while stream_val.is_some() {
+                    // Walk back and delete all elements that need to be invalidated.
+                    // Notice that if we delete a stream completely, this loop starts
+                    // iterating over the next stream immediately.
+                    while let Some(state) = state_cursor.last_dup()? {
+                        // Here we compare with output_sequence_end since if the input did
+                        // not generate any value, this value is less than output_sequence_start.
+                        //
+                        // If the value being deleted is immediately before the invalidated input,
+                        // this avoids mistakenly delete the value.
+                        // If the empty output is _after_ the invalidated input, it's still deleted.
+                        if let Some(output_start) = state.output_sequence_end {
+                            if output_start >= first_invalidated_output_sequence_start {
+                                state_cursor.del()?;
+                            } else {
+                                // no need to continue iterating this stream.
+                                break;
+                            }
+                        }
+                    }
+
+                    // Move on to the next stream.
+                    stream_val = state_cursor.next_no_dup()?;
+                }
+                txn.commit()?;
+                Ok(Sequence::from_u64(first_invalidated_output_sequence_start))
+            }
+            _ => {
+                txn.commit()?;
+                Err(SequencerError::InputSequenceNotFound)
+            }
+        }
     }
 
     /// Returns the start sequence of the next output message.
@@ -321,5 +381,20 @@ mod tests {
         assert!(sequencer.input_sequence(&s_a).unwrap().unwrap().as_u64() == 2);
         assert!(sequencer.input_sequence(&s_b).unwrap().unwrap().as_u64() == 2);
         assert!(sequencer.input_sequence(&s_c).unwrap().unwrap().as_u64() == 0);
+
+        let invalidated_sequence = sequencer.invalidate(&s_b, &Sequence::from_u64(1)).unwrap();
+        assert!(invalidated_sequence.as_u64() == 3);
+        assert!(sequencer.next_output_sequence_start().unwrap().as_u64() == 3);
+        assert!(sequencer.input_sequence(&s_a).unwrap().unwrap().as_u64() == 1);
+        assert!(sequencer.input_sequence(&s_b).unwrap().unwrap().as_u64() == 0);
+        assert!(sequencer.input_sequence(&s_c).unwrap().is_none());
+
+        let output_range = sequencer.register(&s_b, &Sequence::from_u64(1), 1).unwrap();
+        assert!(output_range.start().as_u64() == 3);
+        assert!(output_range.end().as_u64() == 3);
+        assert!(sequencer.next_output_sequence_start().unwrap().as_u64() == 4);
+        assert!(sequencer.input_sequence(&s_a).unwrap().unwrap().as_u64() == 1);
+        assert!(sequencer.input_sequence(&s_b).unwrap().unwrap().as_u64() == 1);
+        assert!(sequencer.input_sequence(&s_c).unwrap().is_none());
     }
 }

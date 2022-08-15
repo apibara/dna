@@ -149,6 +149,10 @@ where
     T: Table,
     K: TransactionKind,
 {
+    /// Get key/data at current cursor position.
+    pub fn get_current(&mut self) -> MdbxResult<Option<(T::Key, T::Value)>> {
+        map_kv_result::<T>(self.cursor.get_current())
+    }
     /// Position at the first item.
     pub fn first(&mut self) -> MdbxResult<Option<(T::Key, T::Value)>> {
         map_kv_result::<T>(self.cursor.first())
@@ -207,9 +211,19 @@ where
         map_kv_result::<T>(self.cursor.next_dup())
     }
 
+    /// Position at the first item of the next key.
+    pub fn next_no_dup(&mut self) -> MdbxResult<Option<(T::Key, T::Value)>> {
+        map_kv_result::<T>(self.cursor.next_nodup())
+    }
+
     /// Position at the previous item of the current key.
     pub fn prev_dup(&mut self) -> MdbxResult<Option<(T::Key, T::Value)>> {
         map_kv_result::<T>(self.cursor.prev_dup())
+    }
+
+    /// Position at the first item of the previous key.
+    pub fn prev_no_dup(&mut self) -> MdbxResult<Option<(T::Key, T::Value)>> {
+        map_kv_result::<T>(self.cursor.prev_nodup())
     }
 }
 
@@ -222,6 +236,11 @@ where
         self.cursor
             .put(key.encode().as_ref(), &data, WriteFlags::default())?;
         Ok(())
+    }
+
+    /// Delete the first cursor/data item.
+    pub fn del(&mut self) -> MdbxResult<()> {
+        self.cursor.del(WriteFlags::default())
     }
 }
 
