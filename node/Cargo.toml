@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 apibara-core = { path = "../core" }
+arrayvec = "0.7.2"
 byteorder = "1.4.3"
 libmdbx = "0.1.7"
 prost = "0.11.0"
@@ -14,4 +15,6 @@ tokio = { version = "1.20.1", features = ["full"] }
 tracing = "0.1.36"
 
 [dev-dependencies]
+assert_matches = "1.5.0"
+env_logger = "0.9.0"
 tempfile = "3.3.0"
