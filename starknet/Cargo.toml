@@ -1,0 +1,30 @@
+[package]
+name = "apibara-starknet"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "apibara_starknet"
+path = "src/lib.rs"
+
+[[bin]]
+name = "apibara-starknet"
+path = "src/bin.rs"
+
+[dependencies]
+anyhow = "=1.0.59"
+apibara-core = { path = "../core" }
+apibara-node = { path = "../node" }
+clap = { version = "3.2.17", features = ["env", "unicode", "cargo"] }
+opentelemetry = "0.17.0"
+prost = "0.11.0"
+prost-types = "0.11.1"
+starknet = { git = "https://github.com/xJonathanLEI/starknet-rs", rev = "7e88508b54c9d364dbec7120596c89dbcd0a0fe5" }
+thiserror = "1.0.32"
+tokio = { version = "1.20.1", features = ["full"] }
+tokio-util = "0.7.3"
+tonic = "0.8.0"
+tracing = "0.1.36"
+
+[build-dependencies]
+tonic-build = "0.8.0"

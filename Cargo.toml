@@ -2,5 +2,6 @@
 members = [
     "core",
     "node",
+    "starknet",
     "cli"
 ]

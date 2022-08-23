@@ -1,11 +1,13 @@
 //! # Node Database
 //!
 //! This module provides all the abstractions over storage.
+mod cli;
 mod head_tracker;
 mod mdbx;
 mod sequencer;
 mod table;
 
+pub use self::cli::{node_data_dir, DatabaseClapCommandExt};
 pub use self::mdbx::{
     MdbxEnvironmentExt, MdbxRWTransactionExt, MdbxTable, MdbxTransactionExt, TableCursor,
 };

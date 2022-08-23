@@ -42,8 +42,7 @@ impl DupSortTable for SequencerStateTable {}
 #[cfg(test)]
 mod tests {
     use apibara_core::stream::StreamId;
-    use libmdbx::{DatabaseFlags, Environment, EnvironmentKind, NoWriteMap};
-    use std::sync::Arc;
+    use libmdbx::{DatabaseFlags, Environment, NoWriteMap};
     use tempfile::tempdir;
 
     use crate::db::{MdbxEnvironmentExt, MdbxRWTransactionExt, MdbxTransactionExt};

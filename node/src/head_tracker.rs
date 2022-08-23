@@ -269,20 +269,10 @@ where
             }
 
             // possible reorg. block has the correct number but comes from a different chain
-            self.handle_chain_reorg_with_txn(
-                head,
-                txn,
-                &mut canon_cursor,
-                &mut blocks_cursor,
-            )
+            self.handle_chain_reorg_with_txn(head, txn, &mut canon_cursor, &mut blocks_cursor)
         } else if canon_block_number >= head.number {
             // possible reorg. block belongs to a different chain
-            self.handle_chain_reorg_with_txn(
-                head,
-                txn,
-                &mut canon_cursor,
-                &mut blocks_cursor,
-            )
+            self.handle_chain_reorg_with_txn(head, txn, &mut canon_cursor, &mut blocks_cursor)
         } else {
             // there's a gap in the supplied blocks so it's not possible to take a decision
             debug_assert!(head.number - canon_block_number > 1);

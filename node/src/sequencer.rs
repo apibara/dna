@@ -307,10 +307,10 @@ impl<E: EnvironmentKind> Sequencer<E> {
 
 #[cfg(test)]
 mod tests {
-    use std::{env, sync::Arc};
+    use std::sync::Arc;
 
     use apibara_core::stream::{Sequence, StreamId};
-    use libmdbx::{Environment, EnvironmentKind, NoWriteMap};
+    use libmdbx::{Environment, NoWriteMap};
     use tempfile::tempdir;
 
     use crate::db::MdbxEnvironmentExt;
