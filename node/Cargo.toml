@@ -9,6 +9,7 @@ arrayvec = "0.7.2"
 byteorder = "1.4.3"
 clap = { version = "3.2.17", features = ["env", "unicode"] }
 dirs = "4.0.0"
+env_logger = "0.9.0"
 futures = "0.3.23"
 libmdbx = "0.1.7"
 opentelemetry = { version = "0.17.0", features = ["trace", "metrics", "rt-tokio"] }

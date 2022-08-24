@@ -16,6 +16,8 @@ anyhow = "=1.0.59"
 apibara-core = { path = "../core" }
 apibara-node = { path = "../node" }
 clap = { version = "3.2.17", features = ["env", "unicode", "cargo"] }
+ctrlc = "3.2.3"
+hex = "0.4.3"
 opentelemetry = "0.17.0"
 prost = "0.11.0"
 prost-types = "0.11.1"
@@ -25,6 +27,7 @@ tokio = { version = "1.20.1", features = ["full"] }
 tokio-util = "0.7.3"
 tonic = "0.8.0"
 tracing = "0.1.36"
+url = "2.2.2"
 
 [build-dependencies]
 tonic-build = "0.8.0"

@@ -10,22 +10,12 @@ message Block {
   bytes block_hash = 1;
   bytes parent_block_hash = 2;
   uint64 block_number = 3;
-  BlockStatus status = 4;
-  bytes sequencer_address = 5;
-  bytes state_root = 6;
-  bytes gas_price = 7;
-  google.protobuf.Timestamp timestamp = 8;
-  string starknet_version = 9;
-}
-
-// Status of a block.
-enum BlockStatus {
-  BLOCK_STATUS_UNSPECIFIED = 0;
-  BLOCK_STATUS_RECEIVED = 1;
-  BLOCK_STATUS_PENDING = 2;
-  BLOCK_STATUS_ACCEPTED_ON_L2 = 3;
-  BLOCK_STATUS_ACCEPTED_ON_L1 = 4;
-  BLOCK_STATUS_REJECTED = 5;
+  bytes sequencer_address = 4;
+  bytes state_root = 5;
+  bytes gas_price = 6;
+  google.protobuf.Timestamp timestamp = 7;
+  string starknet_version = 8;
+  repeated Transaction transactions = 9;
 }
 
 // Status of a transaction.
@@ -55,6 +45,9 @@ message TransactionCommon {
 
 message InvokeTransaction {
   TransactionCommon common = 1;
+  bytes contract_address = 2;
+  bytes entry_point_selector = 3;
+  repeated bytes calldata = 4;
 }
 
 message DeclareTransaction {
@@ -91,13 +84,9 @@ message InvokeTransactionReceipt {
   repeated Event events = 4;
 }
 
-message DeclareTransactionReceipt {
-  TransactionReceiptCommon common = 1;
-}
+message DeclareTransactionReceipt { TransactionReceiptCommon common = 1; }
 
-message DeployTransactionReceipt {
-  TransactionReceiptCommon common = 1;
-}
+message DeployTransactionReceipt { TransactionReceiptCommon common = 1; }
 
 message MessageToL1 {
   bytes to_address = 1;

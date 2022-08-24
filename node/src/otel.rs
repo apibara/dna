@@ -22,5 +22,6 @@ impl<'help> OpenTelemetryClapCommandExt for Command<'help> {
 
 pub fn init_opentelemetry() -> Result<(), OpenTelemetryInitError> {
     // TODO: change tracer and metrics to otlp exporter once v0.18 is released.
+    env_logger::init();
     Ok(())
 }

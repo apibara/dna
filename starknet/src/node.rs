@@ -2,16 +2,22 @@
 //!
 //! This node indexes all StarkNet blocks and produces a stream of
 //! blocks with transaction data.
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 
 use apibara_node::db::{
     libmdbx::{Environment, EnvironmentKind, Error as MdbxError},
     MdbxRWTransactionExt, MdbxTransactionExt,
 };
-use tokio::task::JoinHandle;
+use starknet::providers::jsonrpc::{HttpTransport, JsonRpcClient};
+use tokio_util::sync::CancellationToken;
 use tracing::info;
+use url::Url;
 
-use crate::db::tables;
+use crate::{
+    block_builder::{self, BlockBuilder},
+    chain_tracker::{StarkNetChainTracker, StarkNetChainTrackerError},
+    db::tables,
+};
 
 #[derive(Debug)]
 pub struct StarkNetSourceNode<E: EnvironmentKind> {
@@ -20,8 +26,14 @@ pub struct StarkNetSourceNode<E: EnvironmentKind> {
 
 #[derive(Debug, thiserror::Error)]
 pub enum SourceNodeError {
+    #[error("error tracking the chain state")]
+    ChainTracker(#[from] StarkNetChainTrackerError),
     #[error("database error")]
     Database(#[from] MdbxError),
+    #[error("error setting up signal handler")]
+    SignalHandler(#[from] ctrlc::Error),
+    #[error("error parsing url")]
+    UrlParse(#[from] url::ParseError),
 }
 
 pub type Result<T> = std::result::Result<T, SourceNodeError>;
@@ -35,12 +47,29 @@ impl<E: EnvironmentKind> StarkNetSourceNode<E> {
     }
 
     pub async fn start(self) -> Result<()> {
-        // Check latest indexed block.
+        // TODO: Check latest indexed block.
         // - compare stored hash with live hash to detect reorgs
         //   while node was not running.
         let state = self.get_state()?;
-        info!("state = {:?}", state);
-        todo!()
+
+        // Setup cancellation for graceful shutdown
+        let cts = CancellationToken::new();
+        let ct = cts.clone();
+        ctrlc::set_handler(move || {
+            cts.cancel();
+        })?;
+
+        // Now start the node and setup the channels between the different subsystems.
+        // let starknet_provider_url = Url::parse("https://starknet-goerli.apibara.com")?;
+        // let starknet_client = JsonRpcClient::new(HttpTransport::new(starknet_provider_url));
+        // let starknet_client = Arc::new(starknet_client);
+
+        let block_builder = BlockBuilder::new();
+
+        let xxx = block_builder.latest_block().await.unwrap();
+        info!("{:?}", xxx);
+
+        Ok(())
     }
 
     pub fn get_state(&self) -> Result<tables::NodeState> {
