@@ -3,10 +3,10 @@
 use std::{marker::PhantomData, sync::Arc};
 
 use apibara_core::stream::Sequence;
-use libmdbx::{Environment, EnvironmentKind, Error as MdbxError};
+use libmdbx::{Environment, EnvironmentKind, Error as MdbxError, Transaction, RO};
 use prost::Message;
 
-use crate::db::{tables, MdbxRWTransactionExt, MdbxTransactionExt};
+use crate::db::{tables, MdbxRWTransactionExt, MdbxTransactionExt, TableCursor};
 
 /// Store messages in mdbx.
 pub struct MessageStorage<E: EnvironmentKind, M: Message> {
@@ -24,6 +24,12 @@ pub enum MessageStorageError {
 }
 
 pub type Result<T> = std::result::Result<T, MessageStorageError>;
+
+pub struct MessageIterator<'txn, E: EnvironmentKind, M: Message + Default> {
+    _txn: Transaction<'txn, RO, E>,
+    current: Option<Result<M>>,
+    cursor: TableCursor<'txn, tables::MessageTable<M>, RO>,
+}
 
 impl<E, M> MessageStorage<E, M>
 where
@@ -100,13 +106,48 @@ where
         txn.commit()?;
         Ok(count)
     }
+
+    /// Returns an iterator over all messages, starting at the given `start` index.
+    pub fn messages(&self, start: &Sequence) -> Result<MessageIterator<'_, E, M>> {
+        let txn = self.db.begin_ro_txn()?;
+        let table = txn.open_table::<tables::MessageTable<M>>()?;
+        let mut cursor = table.cursor()?;
+        let current = cursor.seek_exact(start)?.map(|v| Ok(v.1));
+        Ok(MessageIterator {
+            cursor,
+            _txn: txn,
+            current,
+        })
+    }
+}
+
+impl<'txn, E, M> Iterator for MessageIterator<'txn, E, M>
+where
+    E: EnvironmentKind,
+    M: Message + Default,
+{
+    type Item = Result<M>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.current.take() {
+            None => None,
+            Some(value) => {
+                self.current = match self.cursor.next() {
+                    Err(err) => Some(Err(err.into())),
+                    Ok(None) => None,
+                    Ok(Some(value)) => Some(Ok(value.1)),
+                };
+                Some(value)
+            }
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
 
-    use apibara_core::stream::{Sequence, StreamId};
+    use apibara_core::stream::Sequence;
     use libmdbx::{Environment, NoWriteMap};
     use prost::Message;
     use tempfile::tempdir;
@@ -146,15 +187,42 @@ mod tests {
         assert!(storage.insert(&Sequence::from_u64(2), &t1).is_err());
         storage.insert(&Sequence::from_u64(1), &t1).unwrap();
 
+        let all_messages = storage
+            .messages(&Sequence::from_u64(0))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+
+        assert!(all_messages.len() == 2);
+        assert!(all_messages[0] == t0);
+        assert!(all_messages[1] == t1);
+
         // invalidate latest message
         let count = storage.invalidate(&Sequence::from_u64(1)).unwrap();
         assert!(count == 1);
         // second time is a noop
         let count = storage.invalidate(&Sequence::from_u64(1)).unwrap();
         assert!(count == 0);
+
+        let all_messages = storage
+            .messages(&Sequence::from_u64(0))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert!(all_messages.len() == 1);
+        assert!(all_messages[0] == t0);
+
         // insert value again
         assert!(storage.insert(&Sequence::from_u64(0), &t1).is_err());
         assert!(storage.insert(&Sequence::from_u64(2), &t1).is_err());
         storage.insert(&Sequence::from_u64(1), &t1).unwrap();
+
+        let all_messages = storage
+            .messages(&Sequence::from_u64(1))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert!(all_messages.len() == 1);
+        assert!(all_messages[0] == t1);
     }
 }
