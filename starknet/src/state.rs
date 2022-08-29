@@ -33,10 +33,10 @@ where
         Ok(StateStorage { db })
     }
 
-    pub fn update_state(&self, block_number: u64, block_hash: FieldElement) -> Result<()> {
+    pub fn update_state(&self, block_number: u64, block_hash: Vec<u8>) -> Result<()> {
         let new_state = tables::NodeState {
             block_number,
-            block_hash: block_hash.to_bytes_be().to_vec(),
+            block_hash,
         };
 
         let txn = self.db.begin_rw_txn()?;

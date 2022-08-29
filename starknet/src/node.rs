@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use apibara_node::db::libmdbx::{Environment, EnvironmentKind, Error as MdbxError};
 use starknet::providers::SequencerGatewayProvider;
-use tokio::task::JoinError;
+use tokio::{sync::broadcast, task::JoinError};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
@@ -51,10 +51,12 @@ impl<E: EnvironmentKind> StarkNetSourceNode<E> {
         })?;
 
         let starknet_client = Arc::new(SequencerGatewayProvider::starknet_alpha_goerli());
-        let block_ingestor = BlockIngestor::new(self.db.clone(), starknet_client);
+        let block_ingestor = BlockIngestor::new(self.db.clone(), starknet_client)?;
+
+        let (block_tx, block_rx) = broadcast::channel(128);
 
         let block_ingestor_handle =
-            tokio::spawn(async move { block_ingestor.start(ct.clone()).await });
+            tokio::spawn(async move { block_ingestor.start(block_tx, ct.clone()).await });
 
         block_ingestor_handle.await??;
         Ok(())

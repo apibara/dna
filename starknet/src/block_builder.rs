@@ -1,11 +1,13 @@
 //! Assemble blocks data
 
-use std::{fmt, sync::Arc};
+use std::{fmt, sync::Arc, time::Duration};
 
+use backoff::ExponentialBackoffBuilder;
 use starknet::{
     core::types as sn_types,
     providers::{Provider, SequencerGatewayProvider, SequencerGatewayProviderError},
 };
+use tokio_util::sync::CancellationToken;
 use tracing::info;
 
 use crate::core::{
@@ -14,7 +16,7 @@ use crate::core::{
 };
 
 pub struct BlockBuilder {
-    pub client: SequencerGatewayProvider,
+    pub client: Arc<SequencerGatewayProvider>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -29,15 +31,54 @@ pub type Result<T> = std::result::Result<T, BlockBuilderError>;
 
 impl BlockBuilder {
     /// Creates a new [BlockBuilder] with the given StarkNet JSON-RPC client.
-    pub fn new() -> Self {
-        let client = SequencerGatewayProvider::starknet_alpha_goerli();
+    pub fn new(client: Arc<SequencerGatewayProvider>) -> Self {
         BlockBuilder { client }
     }
 
-    #[tracing::instrument]
+    #[tracing::instrument(skip(self))]
     pub async fn latest_block(&self) -> Result<Block> {
         let block = self.client.get_block(sn_types::BlockId::Latest).await?;
-        Ok(block.try_into()?)
+        block.try_into()
+    }
+
+    #[tracing::instrument(skip(self))]
+    pub async fn block_by_number(&self, block_number: u64) -> Result<Block> {
+        let block = self
+            .client
+            .get_block(sn_types::BlockId::Number(block_number))
+            .await?;
+        block.try_into()
+    }
+
+    pub async fn block_by_number_with_backoff(
+        &self,
+        block_number: u64,
+        ct: CancellationToken,
+    ) -> Result<Block> {
+        // Exponential backoff with parameters tuned for the current sequencer
+        let exp_backoff = ExponentialBackoffBuilder::new()
+            .with_initial_interval(Duration::from_secs(10))
+            .with_multiplier(2.0)
+            .with_max_elapsed_time(Some(Duration::from_secs(60 * 5)))
+            .build();
+
+        backoff::future::retry(exp_backoff, || async {
+            match self.block_by_number(block_number).await {
+                Ok(block) => Ok(block),
+                Err(BlockBuilderError::Rpc(err)) => match err {
+                    SequencerGatewayProviderError::Deserialization { .. } => {
+                        if ct.is_cancelled() {
+                            return Err(backoff::Error::permanent(BlockBuilderError::Rpc(err)));
+                        }
+                        // deserialization errors are actually caused by rate limiting
+                        Err(backoff::Error::transient(BlockBuilderError::Rpc(err)))
+                    }
+                    _ => Err(backoff::Error::permanent(BlockBuilderError::Rpc(err))),
+                },
+                Err(err) => Err(backoff::Error::permanent(err)),
+            }
+        })
+        .await
     }
 }
 
@@ -54,11 +95,11 @@ impl TryFrom<sn_types::Block> for Block {
         let block_number = block
             .block_number
             .ok_or(BlockBuilderError::UnexpectedPendingBlock)?;
+        // some blocks have no sequencer address
         let sequencer_address = block
             .sequencer_address
-            .ok_or(BlockBuilderError::UnexpectedPendingBlock)?
-            .to_bytes_be()
-            .to_vec();
+            .map(|f| f.to_bytes_be().to_vec())
+            .unwrap_or_default();
         let state_root = block
             .state_root
             .ok_or(BlockBuilderError::UnexpectedPendingBlock)?
@@ -69,10 +110,8 @@ impl TryFrom<sn_types::Block> for Block {
             nanos: 0,
             seconds: block.timestamp as i64,
         };
-        let starknet_version = block
-            .starknet_version
-            .clone()
-            .ok_or(BlockBuilderError::UnexpectedPendingBlock)?;
+        // some blocks don't specify version
+        let starknet_version = block.starknet_version.clone().unwrap_or_default();
 
         let transactions = block
             .transactions
