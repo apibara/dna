@@ -2,7 +2,11 @@
 //!
 //! This node indexes all StarkNet blocks and produces a stream of
 //! blocks with transaction data.
-use std::{sync::Arc, time::Duration};
+use std::{
+    net::{AddrParseError, SocketAddr},
+    sync::Arc,
+    time::Duration,
+};
 
 use apibara_node::db::libmdbx::{Environment, EnvironmentKind, Error as MdbxError};
 use futures::future;
@@ -14,6 +18,7 @@ use tracing::info;
 use crate::{
     block_ingestion::{BlockIngestor, BlockIngestorError},
     chain_tracker::StarkNetChainTrackerError,
+    server::{Server, ServerError},
     storage::{BlockStorage, BlockStorageError},
 };
 
@@ -40,6 +45,10 @@ pub enum SourceNodeError {
     BlockStorage(#[from] BlockStorageError),
     #[error("node did not shutdown gracefully")]
     Shutdown,
+    #[error("error parsing server address")]
+    AddressParseError(#[from] AddrParseError),
+    #[error("server error")]
+    Server(#[from] ServerError),
 }
 
 pub type Result<T> = std::result::Result<T, SourceNodeError>;
@@ -63,6 +72,30 @@ impl<E: EnvironmentKind> StarkNetSourceNode<E> {
         let starknet_client = Arc::new(SequencerGatewayProvider::starknet_alpha_goerli());
         let (block_tx, block_rx) = broadcast::channel(128);
 
+        let storage = BlockStorage::new(self.db.clone())?;
+        let mut storage_handle = tokio::spawn({
+            let ct = ct.clone();
+            let block_rx = block_tx.subscribe();
+            async move {
+                storage
+                    .start(block_rx, ct)
+                    .await
+                    .map_err(SourceNodeError::BlockStorage)
+            }
+        });
+
+        let server_addr: SocketAddr = "0.0.0.0:7171".parse()?;
+        let server = Server::new();
+        let mut server_handle = tokio::spawn({
+            let ct = ct.clone();
+            async move {
+                server
+                    .start(server_addr, block_rx, ct)
+                    .await
+                    .map_err(SourceNodeError::Server)
+            }
+        });
+
         let block_ingestor = BlockIngestor::new(self.db.clone(), starknet_client)?;
         let mut block_ingestor_handle = tokio::spawn({
             let ct = ct.clone();
@@ -74,24 +107,13 @@ impl<E: EnvironmentKind> StarkNetSourceNode<E> {
             }
         });
 
-        let storage = BlockStorage::new(self.db.clone())?;
-
-        let mut storage_handle = tokio::spawn({
-            let ct = ct.clone();
-            async move {
-                storage
-                    .start(block_rx, ct)
-                    .await
-                    .map_err(SourceNodeError::BlockStorage)
-            }
-        });
-
         info!("source node started");
         // Gracefully shutdown of all tasks.
         // Start by waiting for the first task that completes
         tokio::select! {
             _ = &mut block_ingestor_handle => {},
             _ = &mut storage_handle => {},
+            _ = &mut server_handle => {},
         }
 
         // Then signal to all other tasks to stop
@@ -100,7 +122,8 @@ impl<E: EnvironmentKind> StarkNetSourceNode<E> {
         // Then wait for them to complete, but not for _too long_
         // TODO: this panics because it polls a completed join handle.
         // figure out how to fuse the handle
-        let all_handles = future::try_join_all([block_ingestor_handle, storage_handle]);
+        let all_handles =
+            future::try_join_all([block_ingestor_handle, storage_handle, server_handle]);
         tokio::time::timeout(Duration::from_secs(30), all_handles)
             .await
             .map_err(|_| SourceNodeError::Shutdown)??;

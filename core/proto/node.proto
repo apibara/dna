@@ -3,6 +3,8 @@ syntax = "proto3";
 
 package apibara.node.v1alpha1;
 
+import "google/protobuf/any.proto";
+
 service Node {
   // Heartbeat request. The request and responses are empty.
   rpc Health(HealthRequest) returns (HealthResponse);
@@ -36,6 +38,20 @@ message ConnectRequest {
 
 // Message sent from the node to the client.
 message ConnectResponse {
+  oneof message {
+    Invalidate invalidate = 1;
+    Data data = 2;
+  }
+}
+
+// Invalidate data after (inclusive) the given sequence number.
+message Invalidate {
+  uint64 sequence = 1;
+}
+
+message Data {
+  uint64 sequence = 1;
+  google.protobuf.Any data = 2;
 }
 
 // Information about the node's sync status.

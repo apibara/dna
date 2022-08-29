@@ -4,6 +4,7 @@ mod chain_tracker;
 mod core;
 mod db;
 mod node;
+mod server;
 mod state;
 mod storage;
 
