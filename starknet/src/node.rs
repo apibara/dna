@@ -110,11 +110,19 @@ impl<E: EnvironmentKind> StarkNetSourceNode<E> {
         info!("source node started");
         // Gracefully shutdown of all tasks.
         // Start by waiting for the first task that completes
-        tokio::select! {
-            _ = &mut block_ingestor_handle => {},
-            _ = &mut storage_handle => {},
-            _ = &mut server_handle => {},
-        }
+        let res = tokio::select! {
+            res = &mut block_ingestor_handle => {
+                res
+            },
+            res = &mut storage_handle => {
+                res
+            },
+            res = &mut server_handle => {
+                res
+            },
+        };
+
+        info!(res = ?res, "terminated");
 
         // Then signal to all other tasks to stop
         cts.cancel();

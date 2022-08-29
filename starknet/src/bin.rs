@@ -3,7 +3,7 @@ use std::{fs, path::PathBuf, sync::Arc};
 use anyhow::{anyhow, Result};
 use apibara_node::{
     db::{
-        libmdbx::{Environment, NoWriteMap},
+        libmdbx::{Environment, Geometry, NoWriteMap},
         node_data_dir, DatabaseClapCommandExt, MdbxEnvironmentExt,
     },
     otel::{init_opentelemetry, OpenTelemetryClapCommandExt},
@@ -22,7 +22,18 @@ async fn start(start_matches: &ArgMatches) -> Result<()> {
         .unwrap_or_else(|| node_data_dir("starknet"))
         .ok_or_else(|| anyhow!("could not get datadir"))?;
     fs::create_dir_all(&datadir)?;
-    let db = Environment::<NoWriteMap>::open(&datadir)?;
+    let min_size = byte_unit::n_gib_bytes!(10) as usize;
+    let max_size = byte_unit::n_gib_bytes!(100) as usize;
+    let growth_step = byte_unit::n_gib_bytes(2) as isize;
+    let db = Environment::<NoWriteMap>::new()
+        .set_geometry(Geometry {
+            size: Some(min_size..max_size),
+            growth_step: Some(growth_step),
+            shrink_threshold: None,
+            page_size: None,
+        })
+        .set_max_dbs(100)
+        .open(&datadir)?;
     let db = Arc::new(db);
 
     let node = StarkNetSourceNode::new(db);

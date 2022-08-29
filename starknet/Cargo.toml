@@ -16,6 +16,7 @@ anyhow = "=1.0.59"
 apibara-core = { path = "../core" }
 apibara-node = { path = "../node" }
 backoff = { version = "0.4.0", features = ["tokio"] }
+byte-unit = "4.0.14"
 clap = { version = "3.2.17", features = ["env", "unicode", "cargo"] }
 ctrlc = "3.2.3"
 futures = "0.3.24"
