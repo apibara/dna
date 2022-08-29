@@ -25,7 +25,7 @@ async fn start(start_matches: &ArgMatches) -> Result<()> {
     let db = Environment::<NoWriteMap>::open(&datadir)?;
     let db = Arc::new(db);
 
-    let node = StarkNetSourceNode::new(db)?;
+    let node = StarkNetSourceNode::new(db);
     node.start().await?;
 
     Ok(())

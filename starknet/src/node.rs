@@ -4,19 +4,14 @@
 //! blocks with transaction data.
 use std::sync::Arc;
 
-use apibara_node::db::{
-    libmdbx::{Environment, EnvironmentKind, Error as MdbxError},
-    MdbxRWTransactionExt, MdbxTransactionExt,
-};
-use starknet::providers::jsonrpc::{HttpTransport, JsonRpcClient};
+use apibara_node::db::libmdbx::{Environment, EnvironmentKind, Error as MdbxError};
+use starknet::providers::SequencerGatewayProvider;
+use tokio::task::JoinError;
 use tokio_util::sync::CancellationToken;
-use tracing::info;
-use url::Url;
 
 use crate::{
-    block_builder::{self, BlockBuilder},
-    chain_tracker::{StarkNetChainTracker, StarkNetChainTrackerError},
-    db::tables,
+    block_ingestion::{BlockIngestor, BlockIngestorError},
+    chain_tracker::StarkNetChainTrackerError,
 };
 
 #[derive(Debug)]
@@ -34,24 +29,20 @@ pub enum SourceNodeError {
     SignalHandler(#[from] ctrlc::Error),
     #[error("error parsing url")]
     UrlParse(#[from] url::ParseError),
+    #[error("error waiting tokio task")]
+    Join(#[from] JoinError),
+    #[error("error ingesting block")]
+    BlockIngestion(#[from] BlockIngestorError),
 }
 
 pub type Result<T> = std::result::Result<T, SourceNodeError>;
 
 impl<E: EnvironmentKind> StarkNetSourceNode<E> {
-    pub fn new(db: Arc<Environment<E>>) -> Result<Self> {
-        let txn = db.begin_rw_txn()?;
-        txn.ensure_table::<tables::NodeStateTable>(None)?;
-        txn.commit()?;
-        Ok(StarkNetSourceNode { db })
+    pub fn new(db: Arc<Environment<E>>) -> Self {
+        StarkNetSourceNode { db }
     }
 
     pub async fn start(self) -> Result<()> {
-        // TODO: Check latest indexed block.
-        // - compare stored hash with live hash to detect reorgs
-        //   while node was not running.
-        let state = self.get_state()?;
-
         // Setup cancellation for graceful shutdown
         let cts = CancellationToken::new();
         let ct = cts.clone();
@@ -59,25 +50,13 @@ impl<E: EnvironmentKind> StarkNetSourceNode<E> {
             cts.cancel();
         })?;
 
-        // Now start the node and setup the channels between the different subsystems.
-        // let starknet_provider_url = Url::parse("https://starknet-goerli.apibara.com")?;
-        // let starknet_client = JsonRpcClient::new(HttpTransport::new(starknet_provider_url));
-        // let starknet_client = Arc::new(starknet_client);
+        let starknet_client = Arc::new(SequencerGatewayProvider::starknet_alpha_goerli());
+        let block_ingestor = BlockIngestor::new(self.db.clone(), starknet_client);
 
-        let block_builder = BlockBuilder::new();
+        let block_ingestor_handle =
+            tokio::spawn(async move { block_ingestor.start(ct.clone()).await });
 
-        let xxx = block_builder.latest_block().await.unwrap();
-        info!("{:?}", xxx);
-
+        block_ingestor_handle.await??;
         Ok(())
-    }
-
-    pub fn get_state(&self) -> Result<tables::NodeState> {
-        let txn = self.db.begin_ro_txn()?;
-        let db = txn.open_table::<tables::NodeStateTable>()?;
-        let mut cursor = db.cursor()?;
-        let state = cursor.seek_exact(&())?.map(|d| d.1).unwrap_or_default();
-        txn.commit()?;
-        Ok(state)
     }
 }

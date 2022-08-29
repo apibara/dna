@@ -7,9 +7,9 @@ pub mod tables {
 
     #[derive(Clone, PartialEq, Message)]
     pub struct NodeState {
-        /// Latest indexed block number, as felt.
-        #[prost(bytes, tag = "1")]
-        pub block_number: Vec<u8>,
+        /// Latest indexed block number.
+        #[prost(uint64, tag = "1")]
+        pub block_number: u64,
         /// Latest indexed block hash, as felt.
         #[prost(bytes, tag = "2")]
         pub block_hash: Vec<u8>,

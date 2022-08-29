@@ -108,7 +108,7 @@ where
     }
 
     /// Returns an iterator over all messages, starting at the given `start` index.
-    pub fn messages(&self, start: &Sequence) -> Result<MessageIterator<'_, E, M>> {
+    pub fn iter_from(&self, start: &Sequence) -> Result<MessageIterator<'_, E, M>> {
         let txn = self.db.begin_ro_txn()?;
         let table = txn.open_table::<tables::MessageTable<M>>()?;
         let mut cursor = table.cursor()?;
@@ -188,7 +188,7 @@ mod tests {
         storage.insert(&Sequence::from_u64(1), &t1).unwrap();
 
         let all_messages = storage
-            .messages(&Sequence::from_u64(0))
+            .iter_from(&Sequence::from_u64(0))
             .unwrap()
             .collect::<Result<Vec<_>, _>>()
             .unwrap();
@@ -205,7 +205,7 @@ mod tests {
         assert!(count == 0);
 
         let all_messages = storage
-            .messages(&Sequence::from_u64(0))
+            .iter_from(&Sequence::from_u64(0))
             .unwrap()
             .collect::<Result<Vec<_>, _>>()
             .unwrap();
@@ -218,7 +218,7 @@ mod tests {
         storage.insert(&Sequence::from_u64(1), &t1).unwrap();
 
         let all_messages = storage
-            .messages(&Sequence::from_u64(1))
+            .iter_from(&Sequence::from_u64(1))
             .unwrap()
             .collect::<Result<Vec<_>, _>>()
             .unwrap();
