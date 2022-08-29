@@ -18,6 +18,7 @@ apibara-node = { path = "../node" }
 backoff = { version = "0.4.0", features = ["tokio"] }
 clap = { version = "3.2.17", features = ["env", "unicode", "cargo"] }
 ctrlc = "3.2.3"
+futures = "0.3.24"
 hex = "0.4.3"
 opentelemetry = "0.17.0"
 prost = "0.11.0"

@@ -5,5 +5,6 @@ mod core;
 mod db;
 mod node;
 mod state;
+mod storage;
 
 pub use node::{SourceNodeError, StarkNetSourceNode};

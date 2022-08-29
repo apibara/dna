@@ -47,18 +47,4 @@ async fn main() -> Result<()> {
         Some(("start", start_matches)) => start(start_matches).await,
         _ => unreachable!(),
     }
-
-    /*
-    tracing_subscriber::registry()
-        .with(fmt::layer())
-        .with(EnvFilter::from_default_env())
-        .init();
-
-    let path = Path::new("/tmp/foo");
-    let db = Environment::<NoWriteMap>::open(path)?;
-    let db = Arc::new(db);
-    let node = StarkNetSourceNode::new(db)?;
-    node.start().await?;
-    Ok(())
-    */
 }
