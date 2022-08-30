@@ -51,9 +51,15 @@ impl StarkNetProvider {
     ) -> Result<()> {
         let address: Option<FieldElement> =
             filter.address.as_ref().map(|a| a.try_into()).transpose()?;
-        let event_selector = get_selector_from_name(&filter.signature)
-            .map_err(|_| Error::msg("invalid ethereum event name"))?;
-        let topics = vec![event_selector];
+
+        let topics = if filter.signature.is_empty() {
+            None
+        } else {
+            let event_selector = get_selector_from_name(&filter.signature)
+                .map_err(|_| Error::msg("invalid ethereum event name"))?;
+            Some(vec![event_selector])
+        };
+
         let mut page_number = 0;
         // TODO: need to keep events sorted. Need to have a block_index in the rpc
         // response.
@@ -63,7 +69,7 @@ impl StarkNetProvider {
             from_block: Some(from_block),
             to_block: Some(to_block),
             address,
-            keys: Some(topics.clone()),
+            keys: topics,
         };
 
         loop {
