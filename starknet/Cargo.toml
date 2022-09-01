@@ -24,7 +24,7 @@ hex = "0.4.3"
 opentelemetry = "0.17.0"
 prost = "0.11.0"
 prost-types = "0.11.1"
-starknet = { git = "https://github.com/xJonathanLEI/starknet-rs", rev = "7e88508b54c9d364dbec7120596c89dbcd0a0fe5" }
+starknet = { git = "https://github.com/xJonathanLEI/starknet-rs", rev = "cb3dfff7952091074eba4a37a9f2eec8b0029879" }
 thiserror = "1.0.32"
 tokio = { version = "1.20.1", features = ["full"] }
 tokio-stream = { version = "0.1.9", features = ["sync"] }

@@ -17,7 +17,6 @@ use tracing::info;
 
 use crate::{
     block_ingestion::{BlockIngestor, BlockIngestorError},
-    chain_tracker::StarkNetChainTrackerError,
     server::{Server, ServerError},
     storage::{BlockStorage, BlockStorageError},
 };
@@ -29,8 +28,6 @@ pub struct StarkNetSourceNode<E: EnvironmentKind> {
 
 #[derive(Debug, thiserror::Error)]
 pub enum SourceNodeError {
-    #[error("error tracking the chain state")]
-    ChainTracker(#[from] StarkNetChainTrackerError),
     #[error("database error")]
     Database(#[from] MdbxError),
     #[error("error setting up signal handler")]
