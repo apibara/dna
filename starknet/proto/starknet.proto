@@ -7,8 +7,8 @@ import "google/protobuf/timestamp.proto";
 
 // A StarkNet block.
 message Block {
-  bytes block_hash = 1;
-  bytes parent_block_hash = 2;
+  BlockHash block_hash = 1;
+  BlockHash parent_block_hash = 2;
   uint64 block_number = 3;
   bytes sequencer_address = 4;
   bytes state_root = 5;
@@ -16,6 +16,11 @@ message Block {
   google.protobuf.Timestamp timestamp = 7;
   string starknet_version = 8;
   repeated Transaction transactions = 9;
+}
+
+// The hash of a StarkNet block.
+message BlockHash {
+  bytes hash = 1;
 }
 
 // Status of a transaction.

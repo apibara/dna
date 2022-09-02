@@ -12,6 +12,7 @@ pub trait BlockHash:
     Send + Sync + AsRef<[u8]> + Sized + PartialEq + Clone + std::fmt::Debug
 {
     fn from_slice(b: &[u8]) -> Result<Self, KeyDecodeError>;
+    fn zero() -> Self;
 }
 
 /// A blockchain block with the associated hash type.

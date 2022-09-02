@@ -4,15 +4,14 @@ use std::{fmt, sync::Arc, time::Duration};
 
 use backoff::ExponentialBackoffBuilder;
 use starknet::{
-    core::types as sn_types,
+    core::types::{self as sn_types, FieldElement},
     providers::{Provider, SequencerGatewayProvider, SequencerGatewayProviderError},
 };
 use tokio_util::sync::CancellationToken;
-use tracing::info;
 
 use crate::core::{
-    transaction, Block, DeclareTransaction, DeployTransaction, InvokeTransaction, Transaction,
-    TransactionCommon,
+    transaction, Block, BlockHash, DeclareTransaction, DeployTransaction, InvokeTransaction,
+    Transaction, TransactionCommon,
 };
 
 pub struct BlockBuilder {
@@ -35,13 +34,13 @@ impl BlockBuilder {
         BlockBuilder { client }
     }
 
-    #[tracing::instrument(skip(self))]
+    #[tracing::instrument(level = "debug", skip(self))]
     pub async fn latest_block(&self) -> Result<Block> {
         let block = self.client.get_block(sn_types::BlockId::Latest).await?;
         block.try_into()
     }
 
-    #[tracing::instrument(skip(self))]
+    #[tracing::instrument(level = "debug", skip(self))]
     pub async fn block_by_number(&self, block_number: u64) -> Result<Block> {
         let block = self
             .client
@@ -89,9 +88,8 @@ impl TryFrom<sn_types::Block> for Block {
         let block_hash = block
             .block_hash
             .ok_or(BlockBuilderError::UnexpectedPendingBlock)?
-            .to_bytes_be()
-            .to_vec();
-        let parent_block_hash = block.parent_block_hash.to_bytes_be().to_vec();
+            .into();
+        let parent_block_hash = block.parent_block_hash.into();
         let block_number = block
             .block_number
             .ok_or(BlockBuilderError::UnexpectedPendingBlock)?;
@@ -120,8 +118,8 @@ impl TryFrom<sn_types::Block> for Block {
             .collect::<Result<Vec<_>>>()?;
 
         Ok(Block {
-            block_hash,
-            parent_block_hash,
+            block_hash: Some(block_hash),
+            parent_block_hash: Some(parent_block_hash),
             block_number,
             sequencer_address,
             state_root,
@@ -130,6 +128,13 @@ impl TryFrom<sn_types::Block> for Block {
             starknet_version,
             transactions,
         })
+    }
+}
+
+impl From<FieldElement> for BlockHash {
+    fn from(value: FieldElement) -> Self {
+        let hash = value.to_bytes_be().to_vec();
+        BlockHash { hash }
     }
 }
 

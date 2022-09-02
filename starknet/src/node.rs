@@ -18,7 +18,6 @@ use tracing::info;
 use crate::{
     block_ingestion::{BlockIngestor, BlockIngestorError},
     server::{Server, ServerError},
-    storage::{BlockStorage, BlockStorageError},
 };
 
 #[derive(Debug)]
@@ -38,8 +37,6 @@ pub enum SourceNodeError {
     Join(#[from] JoinError),
     #[error("error ingesting block")]
     BlockIngestion(#[from] BlockIngestorError),
-    #[error("error storing blocks")]
-    BlockStorage(#[from] BlockStorageError),
     #[error("node did not shutdown gracefully")]
     Shutdown,
     #[error("error parsing server address")]
@@ -68,18 +65,6 @@ impl<E: EnvironmentKind> StarkNetSourceNode<E> {
 
         let starknet_client = Arc::new(SequencerGatewayProvider::starknet_alpha_goerli());
         let (block_tx, block_rx) = broadcast::channel(128);
-
-        let storage = BlockStorage::new(self.db.clone())?;
-        let mut storage_handle = tokio::spawn({
-            let ct = ct.clone();
-            let block_rx = block_tx.subscribe();
-            async move {
-                storage
-                    .start(block_rx, ct)
-                    .await
-                    .map_err(SourceNodeError::BlockStorage)
-            }
-        });
 
         let server_addr: SocketAddr = "0.0.0.0:7171".parse()?;
         let server = Server::new();
@@ -111,9 +96,6 @@ impl<E: EnvironmentKind> StarkNetSourceNode<E> {
             res = &mut block_ingestor_handle => {
                 res
             },
-            res = &mut storage_handle => {
-                res
-            },
             res = &mut server_handle => {
                 res
             },
@@ -127,8 +109,7 @@ impl<E: EnvironmentKind> StarkNetSourceNode<E> {
         // Then wait for them to complete, but not for _too long_
         // TODO: this panics because it polls a completed join handle.
         // figure out how to fuse the handle
-        let all_handles =
-            future::try_join_all([block_ingestor_handle, storage_handle, server_handle]);
+        let all_handles = future::try_join_all([block_ingestor_handle, server_handle]);
         tokio::time::timeout(Duration::from_secs(30), all_handles)
             .await
             .map_err(|_| SourceNodeError::Shutdown)??;

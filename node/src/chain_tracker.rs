@@ -1,7 +1,9 @@
 //! # Track the chain's head
 use std::{marker::PhantomData, sync::Arc};
 
-use libmdbx::{Environment, EnvironmentKind, Error as MdbxError, Transaction, TransactionKind, RW};
+use libmdbx::{
+    Environment, EnvironmentKind, Error as MdbxError, Transaction, TransactionKind, RO, RW,
+};
 use tracing::debug;
 
 use crate::db::{
@@ -41,6 +43,17 @@ use crate::db::{
 pub struct ChainTracker<B: Block, E: EnvironmentKind> {
     db: Arc<Environment<E>>,
     phantom: PhantomData<B>,
+}
+
+/// Change to the chain state.
+#[derive(Debug)]
+pub enum ChainChange<B: Block> {
+    /// Chain advanced by the provided blocks.
+    Advance(Vec<B>),
+    /// Chain advanced through a reorganization.
+    Reorg(Vec<B>),
+    /// Need to provide the requested block to make a decision.
+    MissingBlock(u64, B::Hash),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -119,8 +132,17 @@ where
     ///
     /// This function must be called after at least one head has been
     /// stored, so that the tracker can detect chain reorganizations.
-    pub fn update_indexed_block(&self, block: &B) -> Result<()> {
+    pub fn update_indexed_block(&self, block: B) -> Result<ChainChange<B>> {
         let head_height = self.head_height()?.ok_or(ChainTrackerError::MissingHead)?;
+
+        let txn = self.db.begin_rw_txn()?;
+        let mut block_cursor = txn.open_table::<tables::BlockTable<B>>()?.cursor()?;
+        let mut canon_cursor = txn
+            .open_table::<tables::CanonicalBlockTable<B::Hash>>()?
+            .cursor()?;
+
+        // store block information to db
+        self.store_block_with_cursor(&block, &mut block_cursor)?;
 
         match self.latest_indexed_block()? {
             None => {
@@ -131,51 +153,39 @@ where
                         given: block.number(),
                     });
                 }
-                let txn = self.db.begin_rw_txn()?;
-                let mut block_cursor = txn.open_table::<tables::BlockTable<B>>()?.cursor()?;
-                let mut canon_cursor = txn
-                    .open_table::<tables::CanonicalBlockTable<B::Hash>>()?
-                    .cursor()?;
-                self.store_block_with_cursor(block, &mut block_cursor)?;
-                self.update_canonical_chain_with_cursor(block, &mut canon_cursor)?;
+                // update canonical chain
+                self.update_canonical_chain_with_cursor(&block, &mut canon_cursor)?;
                 txn.commit()?;
-                Ok(())
+                Ok(ChainChange::Advance(vec![block]))
             }
-            Some(prev_block) => {
-                // any block must be successors of the previous indexed block
-                if block.number() != prev_block.number() + 1 {
-                    // TODO: if the height is > head, return a missing block error
-                    // containing the height and hash of the block
-                    // also store the block for later use
-                    if block.number() > head_height {
-                        todo!()
+            Some(latest_block) => {
+                // there is a gap in the chain, request missing block to caller
+                if block.number() > latest_block.number() + 1 {
+                    txn.commit()?;
+                    return Ok(ChainChange::MissingBlock(
+                        block.number() - 1,
+                        block.parent_hash().clone(),
+                    ));
+                }
+
+                // simple block application
+                if block.number() == latest_block.number() + 1 {
+                    if latest_block.hash() == block.parent_hash() {
+                        let blocks = self.advance_chain_state_with_block(
+                            block,
+                            &mut canon_cursor,
+                            &mut block_cursor,
+                        )?;
+
+                        txn.commit()?;
+
+                        return Ok(ChainChange::Advance(blocks));
                     }
-
-                    return Err(ChainTrackerError::InvalidBlockNumber {
-                        expected: prev_block.number() + 1,
-                        given: block.number(),
-                    });
                 }
 
-                let txn = self.db.begin_rw_txn()?;
-                let mut block_cursor = txn.open_table::<tables::BlockTable<B>>()?.cursor()?;
-                let mut canon_cursor = txn
-                    .open_table::<tables::CanonicalBlockTable<B::Hash>>()?
-                    .cursor()?;
-                self.store_block_with_cursor(block, &mut block_cursor)?;
+                // TODO: need to handle chain reorganization
 
-                // check if the given block parent hash matches prev block.
-                if prev_block.hash() == block.parent_hash() {
-                    // clean apply
-                    self.update_canonical_chain_with_cursor(&block, &mut canon_cursor)?;
-                } else {
-                    // TODO: can it reorg the chain?
-                    todo!()
-                }
-
-                txn.commit()?;
-
-                Ok(())
+                todo!()
             }
         }
     }
@@ -228,11 +238,69 @@ where
         };
         Ok(block)
     }
+
+    fn advance_chain_state_with_block(
+        &self,
+        block: B,
+        mut canon_cursor: &mut TableCursor<'_, tables::CanonicalBlockTable<B::Hash>, RW>,
+        block_cursor: &mut TableCursor<'_, tables::BlockTable<B>, RW>,
+    ) -> Result<Vec<B>> {
+        let mut next_iter_block = Some(block);
+        let mut applied_blocks = Vec::new();
+
+        while let Some(block) = next_iter_block.take() {
+            self.update_canonical_chain_with_cursor(&block, &mut canon_cursor)?;
+            let next_block_number = block.number() + 1;
+            let block_hash = block.hash().clone();
+            applied_blocks.push(block);
+
+            let mut maybe_next_block =
+                block_cursor.seek_range(&(next_block_number, B::Hash::zero()))?;
+
+            while let Some(((block_number, _), next_block)) = maybe_next_block {
+                // explored all siblings
+                if block_number != next_block_number {
+                    break;
+                }
+
+                if next_block.parent_hash() == &block_hash {
+                    next_iter_block = Some(next_block);
+                    break;
+                }
+                maybe_next_block = block_cursor.next()?;
+            }
+        }
+
+        Ok(applied_blocks)
+    }
+}
+
+impl<B: Block> ChainChange<B> {
+    pub fn as_advance(&self) -> Option<&[B]> {
+        match self {
+            ChainChange::Advance(blocks) => Some(&blocks),
+            _ => None,
+        }
+    }
+
+    pub fn as_reorg(&self) -> Option<&[B]> {
+        match self {
+            ChainChange::Reorg(blocks) => Some(&blocks),
+            _ => None,
+        }
+    }
+
+    pub fn as_missing_block(&self) -> Option<(u64, &B::Hash)> {
+        match self {
+            ChainChange::MissingBlock(num, hash) => Some((*num, hash)),
+            _ => None,
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::{f32::consts::E, sync::Arc};
 
     use assert_matches::assert_matches;
     use libmdbx::{Environment, NoWriteMap};
@@ -244,7 +312,7 @@ mod tests {
         MdbxEnvironmentExt,
     };
 
-    use super::{ChainTracker, ChainTrackerError};
+    use super::{ChainChange, ChainTracker, ChainTrackerError};
 
     #[derive(PartialEq, Clone, Message)]
     pub struct TestBlockHash {
@@ -262,7 +330,7 @@ mod tests {
         }
     }
 
-    #[derive(Message)]
+    #[derive(Message, Clone)]
     pub struct TestBlock {
         #[prost(message, required, tag = "1")]
         pub hash: TestBlockHash,
@@ -281,6 +349,11 @@ mod tests {
                 });
             }
             Ok(TestBlockHash { hash: b.to_vec() })
+        }
+
+        fn zero() -> Self {
+            let hash = vec![0; 32];
+            TestBlockHash { hash }
         }
     }
 
@@ -323,7 +396,7 @@ mod tests {
             parent_hash: TestBlockHash::new(0, 0),
         };
         assert_matches!(
-            chain.update_indexed_block(&genesis),
+            chain.update_indexed_block(genesis.clone()),
             Err(ChainTrackerError::MissingHead)
         );
 
@@ -334,7 +407,8 @@ mod tests {
         };
 
         chain.update_head(&head).unwrap();
-        chain.update_indexed_block(&genesis).unwrap();
+        let change = chain.update_indexed_block(genesis).unwrap();
+        assert_matches!(change, ChainChange::Advance(..));
 
         assert_eq!(chain.head_height().unwrap(), Some(10));
         let block = chain.latest_indexed_block().unwrap().unwrap();
@@ -351,18 +425,76 @@ mod tests {
             parent_hash: TestBlockHash::new(1, 0),
         };
 
-        assert_matches!(
-            chain.update_indexed_block(&block_2),
-            Err(ChainTrackerError::InvalidBlockNumber {
-                expected: 1,
-                given: 2
-            })
-        );
-        chain.update_indexed_block(&block_1).unwrap();
-        chain.update_indexed_block(&block_2).unwrap();
+        let (block_num, _) = chain
+            .update_indexed_block(block_2.clone())
+            .unwrap()
+            .as_missing_block()
+            .unwrap();
+        assert_eq!(block_num, 1);
+
+        chain.update_indexed_block(block_1).unwrap();
+        chain.update_indexed_block(block_2).unwrap();
         let block = chain.latest_indexed_block().unwrap().unwrap();
         assert_eq!(block.number, 2);
         let block = chain.block_by_number(1).unwrap().unwrap();
         assert_eq!(block.number, 1);
+    }
+
+    #[test]
+    pub fn test_index_connect_with_head() {
+        let chain = new_chain_tracker();
+
+        // simulate adding heads while backfilling the rest of the chain
+        let block_2 = TestBlock {
+            number: 2,
+            hash: TestBlockHash::new(2, 0),
+            parent_hash: TestBlockHash::new(1, 0),
+        };
+        chain.update_head(&block_2).unwrap();
+
+        let block_3 = TestBlock {
+            number: 3,
+            hash: TestBlockHash::new(3, 0),
+            parent_hash: TestBlockHash::new(2, 0),
+        };
+        chain.update_head(&block_3).unwrap();
+
+        let genesis = TestBlock {
+            number: 0,
+            hash: TestBlockHash::new(0, 0),
+            parent_hash: TestBlockHash::new(0, 0),
+        };
+        chain.update_indexed_block(genesis).unwrap();
+
+        // now we backfill block_1, we expect the tracker to advance
+        // to block 3
+
+        let block_1 = TestBlock {
+            number: 1,
+            hash: TestBlockHash::new(1, 0),
+            parent_hash: TestBlockHash::new(0, 0),
+        };
+        let res = chain.update_indexed_block(block_1).unwrap();
+
+        let blocks = res.as_advance().unwrap();
+        assert_eq!(blocks.len(), 3);
+
+        let block = chain.latest_indexed_block().unwrap().unwrap();
+        assert_eq!(block.number, 3);
+    }
+
+    #[test]
+    pub fn test_reorg() {
+        todo!()
+    }
+
+    #[test]
+    pub fn test_block_gap() {
+        todo!()
+    }
+
+    #[test]
+    pub fn test_invalidate_blocks() {
+        todo!()
     }
 }
