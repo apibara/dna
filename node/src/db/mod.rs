@@ -1,8 +1,8 @@
 //! # Node Database
 //!
 //! This module provides all the abstractions over storage.
+mod chain_tracker;
 mod cli;
-mod head_tracker;
 mod mdbx;
 mod message_storage;
 mod sequencer;
@@ -15,8 +15,8 @@ pub use self::mdbx::{
 pub use self::table::{ByteVec, DupSortTable, KeyDecodeError, Table, TableKey};
 
 pub mod tables {
-    pub use super::head_tracker::{
-        BlockHash, BlockHeader, BlockHeaderTable, CanonicalBlockHeader, CanonicalBlockHeaderTable,
+    pub use super::chain_tracker::{
+        Block, BlockHash, BlockTable, CanonicalBlock, CanonicalBlockTable,
     };
     pub use super::message_storage::MessageTable;
     pub use super::sequencer::{SequencerState, SequencerStateTable};
