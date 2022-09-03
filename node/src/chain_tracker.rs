@@ -1,10 +1,7 @@
 //! # Track the chain's head
 use std::{marker::PhantomData, sync::Arc};
 
-use libmdbx::{
-    Environment, EnvironmentKind, Error as MdbxError, Transaction, TransactionKind, RO, RW,
-};
-use tracing::debug;
+use libmdbx::{Environment, EnvironmentKind, Error as MdbxError, Transaction, TransactionKind, RW};
 
 use crate::db::{
     tables::{self, Block, BlockHash},
@@ -93,10 +90,7 @@ where
     pub fn head_height(&self) -> Result<Option<u64>> {
         let txn = self.db.begin_ro_txn()?;
         let mut block_cursor = txn.open_table::<tables::BlockTable<B>>()?.cursor()?;
-        let height = match block_cursor.last()? {
-            None => None,
-            Some(((height, _), _)) => Some(height),
-        };
+        let height = block_cursor.last()?.map(|((height, _), _)| height);
         txn.commit()?;
         Ok(height)
     }
@@ -122,7 +116,7 @@ where
     pub fn update_head(&self, head: &B) -> Result<()> {
         let txn = self.db.begin_rw_txn()?;
         let mut block_cursor = txn.open_table::<tables::BlockTable<B>>()?.cursor()?;
-        block_cursor.put(&(head.number(), head.hash().clone()), &head)?;
+        block_cursor.put(&(head.number(), head.hash().clone()), head)?;
         self.store_block_with_cursor(head, &mut block_cursor)?;
         txn.commit()?;
         Ok(())
@@ -133,7 +127,7 @@ where
     /// This function must be called after at least one head has been
     /// stored, so that the tracker can detect chain reorganizations.
     pub fn update_indexed_block(&self, block: B) -> Result<ChainChange<B>> {
-        let head_height = self.head_height()?.ok_or(ChainTrackerError::MissingHead)?;
+        let _head_height = self.head_height()?.ok_or(ChainTrackerError::MissingHead)?;
 
         let txn = self.db.begin_rw_txn()?;
         let mut block_cursor = txn.open_table::<tables::BlockTable<B>>()?.cursor()?;
@@ -169,18 +163,18 @@ where
                 }
 
                 // simple block application
-                if block.number() == latest_block.number() + 1 {
-                    if latest_block.hash() == block.parent_hash() {
-                        let blocks = self.advance_chain_state_with_block(
-                            block,
-                            &mut canon_cursor,
-                            &mut block_cursor,
-                        )?;
+                if block.number() == latest_block.number() + 1
+                    && latest_block.hash() == block.parent_hash()
+                {
+                    let blocks = self.advance_chain_state_with_block(
+                        block,
+                        &mut canon_cursor,
+                        &mut block_cursor,
+                    )?;
 
-                        txn.commit()?;
+                    txn.commit()?;
 
-                        return Ok(ChainChange::Advance(blocks));
-                    }
+                    return Ok(ChainChange::Advance(blocks));
                 }
 
                 // TODO: need to handle chain reorganization
@@ -232,24 +226,23 @@ where
             return Ok(None);
         };
         let mut block_cursor = txn.open_table::<tables::BlockTable<B>>()?.cursor()?;
-        let block = match block_cursor.seek_exact(&(block_number, block_hash))? {
-            None => None,
-            Some((_, block)) => Some(block),
-        };
+        let block = block_cursor
+            .seek_exact(&(block_number, block_hash))?
+            .map(|(_, block)| block);
         Ok(block)
     }
 
     fn advance_chain_state_with_block(
         &self,
         block: B,
-        mut canon_cursor: &mut TableCursor<'_, tables::CanonicalBlockTable<B::Hash>, RW>,
+        canon_cursor: &mut TableCursor<'_, tables::CanonicalBlockTable<B::Hash>, RW>,
         block_cursor: &mut TableCursor<'_, tables::BlockTable<B>, RW>,
     ) -> Result<Vec<B>> {
         let mut next_iter_block = Some(block);
         let mut applied_blocks = Vec::new();
 
         while let Some(block) = next_iter_block.take() {
-            self.update_canonical_chain_with_cursor(&block, &mut canon_cursor)?;
+            self.update_canonical_chain_with_cursor(&block, canon_cursor)?;
             let next_block_number = block.number() + 1;
             let block_hash = block.hash().clone();
             applied_blocks.push(block);
@@ -278,14 +271,14 @@ where
 impl<B: Block> ChainChange<B> {
     pub fn as_advance(&self) -> Option<&[B]> {
         match self {
-            ChainChange::Advance(blocks) => Some(&blocks),
+            ChainChange::Advance(blocks) => Some(blocks),
             _ => None,
         }
     }
 
     pub fn as_reorg(&self) -> Option<&[B]> {
         match self {
-            ChainChange::Reorg(blocks) => Some(&blocks),
+            ChainChange::Reorg(blocks) => Some(blocks),
             _ => None,
         }
     }

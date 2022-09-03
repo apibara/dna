@@ -9,7 +9,6 @@ use apibara_node::{
     chain_tracker::{ChainTracker, ChainTrackerError},
     db::libmdbx::EnvironmentKind,
 };
-use starknet::providers::jsonrpc::models::SyncStatusType;
 
 use crate::core::Block;
 
@@ -56,15 +55,15 @@ where
                     sequence: indexed.block_number,
                     inputs: vec![input],
                 };
-                return Ok(StatusResponse {
+                Ok(StatusResponse {
                     message: Some(status_response::Message::Syncing(syncing)),
-                });
+                })
             }
             (_, _) => {
                 let not_started = apibara_core::pb::NotStartedStatus {};
-                return Ok(StatusResponse {
+                Ok(StatusResponse {
                     message: Some(status_response::Message::NotStarted(not_started)),
-                });
+                })
             }
         }
     }

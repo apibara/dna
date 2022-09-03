@@ -21,7 +21,6 @@ use tracing::info;
 use crate::{
     block_ingestion::{BlockIngestor, BlockIngestorError},
     server::{Server, ServerError},
-    status_reporter::StatusReporter,
 };
 
 #[derive(Debug)]

@@ -4,15 +4,12 @@ use std::sync::Arc;
 
 use apibara_node::{
     chain_tracker::{ChainChange, ChainTracker, ChainTrackerError},
-    db::libmdbx::{Environment, EnvironmentKind},
+    db::libmdbx::EnvironmentKind,
 };
-use starknet::{
-    core::types::BlockId,
-    providers::{Provider, SequencerGatewayProvider, SequencerGatewayProviderError},
-};
+use starknet::providers::SequencerGatewayProvider;
 use tokio::sync::broadcast::{error::SendError, Sender};
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info};
+use tracing::{error, info};
 
 use crate::{
     block_builder::{BlockBuilder, BlockBuilderError},

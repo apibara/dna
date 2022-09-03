@@ -4,7 +4,7 @@ use anyhow::{anyhow, Result};
 use apibara_node::{
     db::{
         libmdbx::{Environment, Geometry, NoWriteMap},
-        node_data_dir, DatabaseClapCommandExt, MdbxEnvironmentExt,
+        node_data_dir, DatabaseClapCommandExt,
     },
     otel::{init_opentelemetry, OpenTelemetryClapCommandExt},
 };
