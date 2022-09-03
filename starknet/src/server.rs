@@ -1,8 +1,9 @@
 //! gRPC server.
 
-use std::{net::SocketAddr, pin::Pin};
+use std::{net::SocketAddr, pin::Pin, sync::Arc};
 
 use apibara_core::pb::{self, ConnectResponse};
+use apibara_node::{chain_tracker::ChainTracker, db::libmdbx::EnvironmentKind};
 use futures::{Stream, StreamExt};
 use prost::Message;
 use tokio::sync::broadcast::Receiver;
@@ -11,32 +12,46 @@ use tokio_util::sync::CancellationToken;
 use tonic::{transport::Server as TonicServer, Request, Response, Status, Streaming};
 use tracing::{error, info};
 
-use crate::core::Block;
+use crate::{core::Block, status_reporter::StatusReporter};
 
 type TonicResult<T> = std::result::Result<Response<T>, Status>;
 
-pub struct NodeServer {
+pub struct NodeServer<E: EnvironmentKind> {
+    status_reporter: StatusReporter<E>,
     block_rx: Receiver<Block>,
 }
 
-impl NodeServer {
-    pub fn new(block_rx: Receiver<Block>) -> Self {
-        NodeServer { block_rx }
+impl<E> NodeServer<E>
+where
+    E: EnvironmentKind,
+{
+    pub fn new(chain: Arc<ChainTracker<Block, E>>, block_rx: Receiver<Block>) -> Self {
+        let status_reporter = StatusReporter::new(chain);
+        NodeServer {
+            block_rx,
+            status_reporter,
+        }
     }
 
-    pub fn into_service(self) -> pb::node_server::NodeServer<NodeServer> {
+    pub fn into_service(self) -> pb::node_server::NodeServer<NodeServer<E>> {
         pb::node_server::NodeServer::new(self)
     }
 }
 
 #[tonic::async_trait]
-impl pb::node_server::Node for NodeServer {
-    async fn health(&self, request: Request<pb::HealthRequest>) -> TonicResult<pb::HealthResponse> {
-        todo!()
-    }
-
-    async fn status(&self, request: Request<pb::StatusRequest>) -> TonicResult<pb::StatusResponse> {
-        todo!()
+impl<E> pb::node_server::Node for NodeServer<E>
+where
+    E: EnvironmentKind,
+{
+    async fn status(
+        &self,
+        _request: Request<pb::StatusRequest>,
+    ) -> TonicResult<pb::StatusResponse> {
+        let status = self
+            .status_reporter
+            .status()
+            .map_err(|_| Status::internal("failed to compute status"))?;
+        Ok(Response::new(status))
     }
 
     type ConnectStream = Pin<
@@ -79,7 +94,9 @@ impl pb::node_server::Node for NodeServer {
     }
 }
 
-pub struct Server {}
+pub struct Server<E: EnvironmentKind> {
+    chain: Arc<ChainTracker<Block, E>>,
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum ServerError {
@@ -89,18 +106,21 @@ pub enum ServerError {
 
 pub type Result<T> = std::result::Result<T, ServerError>;
 
-impl Server {
-    pub fn new() -> Self {
-        Server {}
+impl<E> Server<E>
+where
+    E: EnvironmentKind,
+{
+    pub fn new(chain: Arc<ChainTracker<Block, E>>) -> Self {
+        Server { chain }
     }
 
     pub async fn start(
-        &self,
+        self,
         addr: SocketAddr,
         block_rx: Receiver<Block>,
         ct: CancellationToken,
     ) -> Result<()> {
-        let node_server = NodeServer::new(block_rx);
+        let node_server = NodeServer::new(self.chain, block_rx);
 
         info!(addr = ?addr, "starting server");
         TonicServer::builder()

@@ -6,22 +6,11 @@ package apibara.node.v1alpha1;
 import "google/protobuf/any.proto";
 
 service Node {
-  // Heartbeat request. The request and responses are empty.
-  rpc Health(HealthRequest) returns (HealthResponse);
-
   // Get information about the node and its status.
   rpc Status(StatusRequest) returns (StatusResponse);
 
   // Connect to the node and start streaming data from it.
   rpc Connect(stream ConnectRequest) returns (stream ConnectResponse);
-}
-
-// Health request. It's empty.
-message HealthRequest {
-}
-
-// Health response. It's empty. Use gRPC status to describe an error.
-message HealthResponse {
 }
 
 // Status request. It's empty.
@@ -30,6 +19,37 @@ message StatusRequest {
 
 // Status response. Returns information about the node's stream.
 message StatusResponse {
+  oneof message {
+    SyncingStatus syncing = 1;
+    SyncedStatus synced = 2;
+    NotStartedStatus not_started = 3;
+  }
+}
+
+// Node is syncing with their sources.
+message SyncingStatus {
+  // The latest sequence number.
+  uint64 sequence = 1;
+  // The syncing status of each input.
+  repeated InputSyncingStatus inputs = 2;
+}
+
+// Syncing status of the node's input.
+message InputSyncingStatus {
+  // Latest sequence number.
+  uint64 head = 1;
+  // Latest indexed sequenced number.
+  uint64 indexed = 2;
+}
+
+// Node is fully synced.
+message SyncedStatus {
+  // The latest sequence number.
+  uint64 sequence = 1;
+}
+
+// Node didn't start syncing.
+message NotStartedStatus {
 }
 
 // Message sent from the client to the node.

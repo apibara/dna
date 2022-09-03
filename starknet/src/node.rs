@@ -8,7 +8,10 @@ use std::{
     time::Duration,
 };
 
-use apibara_node::db::libmdbx::{Environment, EnvironmentKind, Error as MdbxError};
+use apibara_node::{
+    chain_tracker::{ChainTracker, ChainTrackerError},
+    db::libmdbx::{Environment, EnvironmentKind, Error as MdbxError},
+};
 use futures::future;
 use starknet::providers::SequencerGatewayProvider;
 use tokio::{sync::broadcast, task::JoinError};
@@ -18,6 +21,7 @@ use tracing::info;
 use crate::{
     block_ingestion::{BlockIngestor, BlockIngestorError},
     server::{Server, ServerError},
+    status_reporter::StatusReporter,
 };
 
 #[derive(Debug)]
@@ -37,6 +41,8 @@ pub enum SourceNodeError {
     Join(#[from] JoinError),
     #[error("error ingesting block")]
     BlockIngestion(#[from] BlockIngestorError),
+    #[error("error tracking chain state")]
+    ChainTracker(#[from] ChainTrackerError),
     #[error("node did not shutdown gracefully")]
     Shutdown,
     #[error("error parsing server address")]
@@ -64,10 +70,14 @@ impl<E: EnvironmentKind> StarkNetSourceNode<E> {
         })?;
 
         let starknet_client = Arc::new(SequencerGatewayProvider::starknet_alpha_goerli());
+
+        let chain = ChainTracker::new(self.db.clone())?;
+        let chain = Arc::new(chain);
+
         let (block_tx, block_rx) = broadcast::channel(128);
 
         let server_addr: SocketAddr = "0.0.0.0:7171".parse()?;
-        let server = Server::new();
+        let server = Server::new(chain.clone());
         let mut server_handle = tokio::spawn({
             let ct = ct.clone();
             async move {
@@ -78,7 +88,7 @@ impl<E: EnvironmentKind> StarkNetSourceNode<E> {
             }
         });
 
-        let block_ingestor = BlockIngestor::new(self.db.clone(), starknet_client)?;
+        let block_ingestor = BlockIngestor::new(chain, starknet_client)?;
         let mut block_ingestor_handle = tokio::spawn({
             let ct = ct.clone();
             async move {

@@ -1,9 +1,9 @@
 //! Ingest blocks from the node.
 
-use std::{fmt::Display, sync::Arc};
+use std::sync::Arc;
 
 use apibara_node::{
-    chain_tracker::{ChainTracker, ChainTrackerError},
+    chain_tracker::{ChainChange, ChainTracker, ChainTrackerError},
     db::libmdbx::{Environment, EnvironmentKind},
 };
 use starknet::{
@@ -20,7 +20,7 @@ use crate::{
 };
 
 pub struct BlockIngestor<E: EnvironmentKind> {
-    chain: ChainTracker<Block, E>,
+    chain: Arc<ChainTracker<Block, E>>,
     block_builder: BlockBuilder,
 }
 
@@ -40,8 +40,10 @@ impl<E> BlockIngestor<E>
 where
     E: EnvironmentKind,
 {
-    pub fn new(db: Arc<Environment<E>>, client: Arc<SequencerGatewayProvider>) -> Result<Self> {
-        let chain = ChainTracker::new(db)?;
+    pub fn new(
+        chain: Arc<ChainTracker<Block, E>>,
+        client: Arc<SequencerGatewayProvider>,
+    ) -> Result<Self> {
         let block_builder = BlockBuilder::new(client);
         Ok(BlockIngestor {
             chain,
@@ -107,7 +109,19 @@ where
 
         info!(block_number = ?block.block_number, "got block");
 
-        let _state_change = self.chain.update_indexed_block(block)?;
+        match self.chain.update_indexed_block(block)? {
+            ChainChange::Advance(blocks) => {
+                info!("chain advanced by {} blocks", blocks.len());
+            }
+            ChainChange::Reorg(blocks) => {
+                info!("chain reorged by {} blocks", blocks.len());
+                todo!()
+            }
+            ChainChange::MissingBlock(block_number, block_hash) => {
+                info!("block is missing: {}/{}", block_number, block_hash);
+                todo!()
+            }
+        }
         // broadcast new block
         // block_tx.send(block)?;
 

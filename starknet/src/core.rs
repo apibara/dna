@@ -48,8 +48,7 @@ impl tables::Block for Block {
     }
 
     fn parent_hash(&self) -> &Self::Hash {
-        self
-            .parent_block_hash
+        self.parent_block_hash
             .as_ref()
             .expect("missing field parent_block_hash")
     }
