@@ -19,9 +19,7 @@ message Block {
 }
 
 // The hash of a StarkNet block.
-message BlockHash {
-  bytes hash = 1;
-}
+message BlockHash { bytes hash = 1; }
 
 // Status of a transaction.
 enum TransactionStatus {
@@ -61,9 +59,7 @@ message DeclareTransaction {
   bytes sender_address = 3;
 }
 
-message DeployTransaction {
-  TransactionCommon common = 1;
-}
+message DeployTransaction { TransactionCommon common = 1; }
 
 message TransactionReceipt {
   oneof receipt {

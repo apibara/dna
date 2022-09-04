@@ -14,7 +14,7 @@ use apibara_node::{
 };
 use futures::future;
 use starknet::providers::SequencerGatewayProvider;
-use tokio::{sync::broadcast, task::JoinError};
+use tokio::task::JoinError;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
@@ -73,28 +73,28 @@ impl<E: EnvironmentKind> StarkNetSourceNode<E> {
         let chain = ChainTracker::new(self.db.clone())?;
         let chain = Arc::new(chain);
 
-        let (block_tx, block_rx) = broadcast::channel(128);
+        let block_ingestor = BlockIngestor::new(chain.clone(), starknet_client)?;
+        let block_ingestor = Arc::new(block_ingestor);
+        let mut block_ingestor_handle = tokio::spawn({
+            let ct = ct.clone();
+            let block_ingestor = block_ingestor.clone();
+            async move {
+                block_ingestor
+                    .start(ct)
+                    .await
+                    .map_err(SourceNodeError::BlockIngestion)
+            }
+        });
 
         let server_addr: SocketAddr = "0.0.0.0:7171".parse()?;
-        let server = Server::new(self.db.clone(), chain.clone());
+        let server = Server::new(self.db.clone(), chain.clone(), block_ingestor.clone());
         let mut server_handle = tokio::spawn({
             let ct = ct.clone();
             async move {
                 server
-                    .start(server_addr, block_rx, ct)
+                    .start(server_addr, ct)
                     .await
                     .map_err(SourceNodeError::Server)
-            }
-        });
-
-        let block_ingestor = BlockIngestor::new(chain, starknet_client)?;
-        let mut block_ingestor_handle = tokio::spawn({
-            let ct = ct.clone();
-            async move {
-                block_ingestor
-                    .start(block_tx, ct)
-                    .await
-                    .map_err(SourceNodeError::BlockIngestion)
             }
         });
 

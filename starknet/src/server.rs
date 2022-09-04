@@ -2,36 +2,39 @@
 
 use std::{net::SocketAddr, pin::Pin, sync::Arc};
 
-use apibara_core::pb;
+use apibara_core::pb::{self, node_file_descriptor_set};
 use apibara_node::{
     chain_tracker::ChainTracker,
     db::libmdbx::{Environment, EnvironmentKind},
 };
 use futures::{Stream, StreamExt};
-use prost::Message;
-use tokio::{sync::broadcast::Receiver, task::JoinError};
-use tokio_stream::wrappers::BroadcastStream;
+use tokio::task::JoinError;
 use tokio_util::sync::CancellationToken;
-use tonic::{transport::Server as TonicServer, Request, Response, Status, Streaming};
+use tonic::{transport::Server as TonicServer, Request, Response, Status};
 use tracing::{error, info};
 
-use crate::{core::Block, health_reporter::HealthReporter, status_reporter::StatusReporter};
+use crate::{
+    block_ingestion::BlockIngestor,
+    core::{starknet_file_descriptor_set, Block},
+    health_reporter::HealthReporter,
+    status_reporter::StatusReporter,
+};
 
 type TonicResult<T> = std::result::Result<Response<T>, Status>;
 
 pub struct NodeServer<E: EnvironmentKind> {
     status_reporter: StatusReporter<E>,
-    block_rx: Receiver<Block>,
+    block_ingestor: Arc<BlockIngestor<E>>,
 }
 
 impl<E> NodeServer<E>
 where
     E: EnvironmentKind,
 {
-    pub fn new(chain: Arc<ChainTracker<Block, E>>, block_rx: Receiver<Block>) -> Self {
+    pub fn new(chain: Arc<ChainTracker<Block, E>>, block_ingestor: Arc<BlockIngestor<E>>) -> Self {
         let status_reporter = StatusReporter::new(chain);
         NodeServer {
-            block_rx,
+            block_ingestor,
             status_reporter,
         }
     }
@@ -63,49 +66,35 @@ where
 
     async fn connect(
         &self,
-        _request: Request<Streaming<pb::ConnectRequest>>,
+        request: Request<pb::ConnectRequest>,
     ) -> TonicResult<Self::ConnectStream> {
-        let rx = self.block_rx.resubscribe();
+        let request: pb::ConnectRequest = request.into_inner();
 
-        let stream = BroadcastStream::new(rx);
-        let response_stream = Box::pin(stream.map(|maybe_block| match maybe_block {
-            Err(err) => {
-                error!(err = ?err, "connect stream error");
-                Err(Status::internal("internal error"))
-            }
-            Ok(block) => {
-                let mut buf = Vec::new();
-                buf.reserve(block.encoded_len());
-                block
-                    .encode(&mut buf)
-                    .map_err(|_| Status::internal("error encoding block data"))?;
-                let inner_data = prost_types::Any {
-                    type_url: "type.googleapis.com/apibara.starknet.v1alpha1.Block".to_string(),
-                    value: buf,
-                };
-                let data = pb::Data {
-                    sequence: block.block_number,
-                    data: Some(inner_data),
-                };
-                let message = pb::connect_response::Message::Data(data);
-                Ok(pb::ConnectResponse {
-                    message: Some(message),
-                })
-            }
-        }));
-        Ok(Response::new(response_stream))
+        let stream = self
+            .block_ingestor
+            .stream_from_sequence(request.starting_sequence)
+            .map_err(|_| Status::internal("failed to stream backfilled blocks"))?;
+
+        let response = Box::pin(
+            stream.map(|maybe_res| maybe_res.map_err(|_| Status::internal("failed to stream"))),
+        );
+
+        Ok(Response::new(response))
     }
 }
 
 pub struct Server<E: EnvironmentKind> {
     db: Arc<Environment<E>>,
     chain: Arc<ChainTracker<Block, E>>,
+    block_ingestor: Arc<BlockIngestor<E>>,
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum ServerError {
     #[error("grpc transport error")]
     Transport(#[from] tonic::transport::Error),
+    #[error("error building reflection server")]
+    ReflectionServer(#[from] tonic_reflection::server::Error),
     #[error("error awaiting task")]
     Task(#[from] JoinError),
 }
@@ -116,17 +105,20 @@ impl<E> Server<E>
 where
     E: EnvironmentKind,
 {
-    pub fn new(db: Arc<Environment<E>>, chain: Arc<ChainTracker<Block, E>>) -> Self {
-        Server { db, chain }
+    pub fn new(
+        db: Arc<Environment<E>>,
+        chain: Arc<ChainTracker<Block, E>>,
+        block_ingestor: Arc<BlockIngestor<E>>,
+    ) -> Self {
+        Server {
+            db,
+            chain,
+            block_ingestor,
+        }
     }
 
-    pub async fn start(
-        self,
-        addr: SocketAddr,
-        block_rx: Receiver<Block>,
-        ct: CancellationToken,
-    ) -> Result<()> {
-        let node_server = NodeServer::new(self.chain, block_rx);
+    pub async fn start(self, addr: SocketAddr, ct: CancellationToken) -> Result<()> {
+        let node_server = NodeServer::new(self.chain, self.block_ingestor);
 
         let (mut health_reporter, health_service) = HealthReporter::new(self.db.clone());
 
@@ -135,10 +127,19 @@ where
             async move { health_reporter.start(ct).await }
         });
 
+        let reflection_service = tonic_reflection::server::Builder::configure()
+            .register_encoded_file_descriptor_set(starknet_file_descriptor_set())
+            .register_encoded_file_descriptor_set(node_file_descriptor_set())
+            .register_encoded_file_descriptor_set(
+                tonic_health::proto::GRPC_HEALTH_V1_FILE_DESCRIPTOR_SET,
+            )
+            .build()?;
+
         info!(addr = ?addr, "starting server");
         TonicServer::builder()
             .add_service(node_server.into_service())
             .add_service(health_service)
+            .add_service(reflection_service)
             .serve_with_shutdown(addr, {
                 let ct = ct.clone();
                 async move {

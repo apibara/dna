@@ -10,7 +10,7 @@ service Node {
   rpc Status(StatusRequest) returns (StatusResponse);
 
   // Connect to the node and start streaming data from it.
-  rpc Connect(stream ConnectRequest) returns (stream ConnectResponse);
+  rpc Connect(ConnectRequest) returns (stream ConnectResponse);
 }
 
 // Status request. It's empty.
@@ -54,6 +54,8 @@ message NotStartedStatus {
 
 // Message sent from the client to the node.
 message ConnectRequest {
+  // Start streaming from the provided sequence number.
+  uint64 starting_sequence = 1;
 }
 
 // Message sent from the node to the client.
