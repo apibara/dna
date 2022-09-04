@@ -8,13 +8,14 @@ use apibara_node::{
     db::libmdbx::{Environment, EnvironmentKind},
 };
 use futures::{Stream, StreamExt};
+use prost::Message;
 use tokio::task::JoinError;
 use tokio_util::sync::CancellationToken;
 use tonic::{transport::Server as TonicServer, Request, Response, Status};
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::{
-    block_ingestion::BlockIngestor,
+    block_ingestion::{BlockIngestor, BlockStreamMessage},
     core::{starknet_file_descriptor_set, Block},
     health_reporter::HealthReporter,
     status_reporter::StatusReporter,
@@ -75,9 +76,32 @@ where
             .stream_from_sequence(request.starting_sequence)
             .map_err(|_| Status::internal("failed to stream backfilled blocks"))?;
 
-        let response = Box::pin(
-            stream.map(|maybe_res| maybe_res.map_err(|_| Status::internal("failed to stream"))),
-        );
+        let response = Box::pin(stream.map(|maybe_res| match maybe_res {
+            Err(err) => {
+                warn!(err = ?err, "stream failed");
+                Err(Status::internal("stream failed"))
+            }
+            Ok(BlockStreamMessage::Reorg(sequence)) => {
+                let invalidate = pb::Invalidate { sequence };
+                Ok(pb::ConnectResponse {
+                    message: Some(pb::connect_response::Message::Invalidate(invalidate)),
+                })
+            }
+            Ok(BlockStreamMessage::Data(block)) => {
+                let inner_data = prost_types::Any {
+                    type_url: "type.googleapis.com/apibara.starknet.v1alpha1.Block".to_string(),
+                    value: block.encode_to_vec(),
+                };
+                let data = pb::Data {
+                    sequence: block.block_number,
+                    data: Some(inner_data),
+                };
+
+                Ok(pb::ConnectResponse {
+                    message: Some(pb::connect_response::Message::Data(data)),
+                })
+            }
+        }));
 
         Ok(Response::new(response))
     }

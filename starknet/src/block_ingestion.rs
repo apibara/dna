@@ -2,15 +2,16 @@
 
 use std::{collections::VecDeque, sync::Arc, task::Poll};
 
-use apibara_core::pb;
 use apibara_node::{
     chain_tracker::{ChainChange, ChainTracker, ChainTrackerError},
     db::libmdbx::EnvironmentKind,
 };
 use futures::Stream;
-use prost::Message;
 use starknet::providers::SequencerGatewayProvider;
-use tokio::sync::broadcast::{self, error::SendError};
+use tokio::sync::broadcast::{
+    self,
+    error::{SendError, TryRecvError},
+};
 use tokio_util::sync::CancellationToken;
 use tonic::Status;
 use tracing::{error, info};
@@ -20,10 +21,17 @@ use crate::{
     core::Block,
 };
 
+#[derive(Debug, Clone)]
+pub enum BlockStreamMessage {
+    Data(Block),
+    Reorg(u64),
+}
+
 pub struct BlockIngestor<E: EnvironmentKind> {
     chain: Arc<ChainTracker<Block, E>>,
     block_builder: BlockBuilder,
-    block_tx: broadcast::Sender<pb::ConnectResponse>,
+    block_tx: broadcast::Sender<BlockStreamMessage>,
+    _block_rx: broadcast::Receiver<BlockStreamMessage>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -32,8 +40,8 @@ pub enum BlockIngestorError {
     ChainTracker(#[from] ChainTrackerError),
     #[error("error fetching or parsing block")]
     BlockBuilder(#[from] BlockBuilderError),
-    #[error("error broadcasting block")]
-    Broadcast(#[from] SendError<Block>),
+    #[error("error broadcasting chain event")]
+    Broadcast(#[from] SendError<BlockStreamMessage>),
     #[error("chain not started syncing")]
     EmptyChain,
 }
@@ -46,8 +54,8 @@ pub struct BackfilledBlockStream<E: EnvironmentKind> {
     chain: Arc<ChainTracker<Block, E>>,
     block: u64,
     indexed: u64,
-    rx: broadcast::Receiver<pb::ConnectResponse>,
-    buffer: VecDeque<pb::ConnectResponse>,
+    rx: broadcast::Receiver<BlockStreamMessage>,
+    buffer: VecDeque<BlockStreamMessage>,
 }
 
 impl<E> BlockIngestor<E>
@@ -59,17 +67,18 @@ where
         client: Arc<SequencerGatewayProvider>,
     ) -> Result<Self> {
         let block_builder = BlockBuilder::new(client);
-        let (block_tx, _) = broadcast::channel(MESSAGE_CHANNEL_SIZE);
+        let (block_tx, block_rx) = broadcast::channel(MESSAGE_CHANNEL_SIZE);
 
         Ok(BlockIngestor {
             chain,
             block_builder,
             block_tx,
+            _block_rx: block_rx,
         })
     }
 
     /// Subscribe to new chain blocks and reorganizations.
-    pub fn subscribe(&self) -> broadcast::Receiver<pb::ConnectResponse> {
+    pub fn subscribe(&self) -> broadcast::Receiver<BlockStreamMessage> {
         self.block_tx.subscribe()
     }
 
@@ -153,6 +162,9 @@ where
         match self.chain.update_indexed_block(block)? {
             ChainChange::Advance(blocks) => {
                 info!("chain advanced by {} blocks", blocks.len());
+                for block in blocks {
+                    self.block_tx.send(BlockStreamMessage::Data(block))?;
+                }
             }
             ChainChange::Reorg(blocks) => {
                 info!("chain reorged by {} blocks", blocks.len());
@@ -163,8 +175,6 @@ where
                 todo!()
             }
         }
-        // broadcast new block
-        // block_tx.send(block)?;
 
         Ok(())
     }
@@ -174,18 +184,43 @@ impl<E> BackfilledBlockStream<E>
 where
     E: EnvironmentKind,
 {
-    pub fn next_block(
-        &mut self,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::result::Result<Option<pb::ConnectResponse>, Status> {
-        if self.block < self.indexed {
-            self.next_backfilled_block().map(Some)
-        } else {
-            todo!()
+    pub fn next_block(&mut self) -> std::result::Result<Option<BlockStreamMessage>, Status> {
+        match self.rx.try_recv() {
+            Err(TryRecvError::Empty) => (),
+            Err(_) => {
+                return Err(Status::internal(
+                    "failed to communicate with block ingestor",
+                ))
+            }
+            Ok(BlockStreamMessage::Reorg(invalidate_after)) => {
+                if invalidate_after > self.indexed {
+                    // TODO: drop messages that were invalidated
+                    todo!()
+                }
+            }
+            Ok(BlockStreamMessage::Data(block)) => {
+                self.buffer.push_front(BlockStreamMessage::Data(block));
+
+                // keep buffer reasonably sized
+                while self.buffer.len() > 50 {
+                    self.buffer.pop_front();
+                }
+
+                // keep tracking the first "live" block to send
+                if let Some(BlockStreamMessage::Data(block)) = self.buffer.front() {
+                    self.indexed = block.block_number;
+                }
+            }
         }
+
+        if self.block < self.indexed {
+            return self.next_backfilled_block().map(Some);
+        }
+
+        Ok(self.buffer.pop_back())
     }
 
-    fn next_backfilled_block(&mut self) -> std::result::Result<pb::ConnectResponse, Status> {
+    fn next_backfilled_block(&mut self) -> std::result::Result<BlockStreamMessage, Status> {
         // backfill
         let block = self
             .chain
@@ -193,23 +228,7 @@ where
             .map_err(|_| Status::internal("failed to load data"))?
             .ok_or_else(|| Status::unavailable("not started indexing"))?;
         self.block += 1;
-        let mut buf = Vec::new();
-        buf.reserve(block.encoded_len());
-        block
-            .encode(&mut buf)
-            .map_err(|_| Status::internal("failed to encode message"))?;
-        let inner_data = prost_types::Any {
-            type_url: "type.googleapis.com/apibara.starknet.v1alpha1.Block".to_string(),
-            value: buf,
-        };
-        let data = pb::Data {
-            sequence: block.block_number,
-            data: Some(inner_data),
-        };
-        let message = pb::connect_response::Message::Data(data);
-        Ok(pb::ConnectResponse {
-            message: Some(message),
-        })
+        Ok(BlockStreamMessage::Data(block))
     }
 }
 
@@ -217,13 +236,13 @@ impl<E> Stream for BackfilledBlockStream<E>
 where
     E: EnvironmentKind,
 {
-    type Item = std::result::Result<pb::ConnectResponse, Status>;
+    type Item = std::result::Result<BlockStreamMessage, Status>;
 
     fn poll_next(
         mut self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
+        _cx: &mut std::task::Context<'_>,
     ) -> Poll<Option<Self::Item>> {
-        match self.next_block(cx) {
+        match self.next_block() {
             Ok(None) => Poll::Pending,
             Ok(Some(response)) => Poll::Ready(Some(Ok(response))),
             Err(err) => Poll::Ready(Some(Err(err))),
