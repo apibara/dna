@@ -76,7 +76,7 @@ impl<E: EnvironmentKind> StarkNetSourceNode<E> {
         let (block_tx, block_rx) = broadcast::channel(128);
 
         let server_addr: SocketAddr = "0.0.0.0:7171".parse()?;
-        let server = Server::new(chain.clone());
+        let server = Server::new(self.db.clone(), chain.clone());
         let mut server_handle = tokio::spawn({
             let ct = ct.clone();
             async move {

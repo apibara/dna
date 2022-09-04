@@ -3,16 +3,19 @@
 use std::{net::SocketAddr, pin::Pin, sync::Arc};
 
 use apibara_core::pb;
-use apibara_node::{chain_tracker::ChainTracker, db::libmdbx::EnvironmentKind};
+use apibara_node::{
+    chain_tracker::ChainTracker,
+    db::libmdbx::{Environment, EnvironmentKind},
+};
 use futures::{Stream, StreamExt};
 use prost::Message;
-use tokio::sync::broadcast::Receiver;
+use tokio::{sync::broadcast::Receiver, task::JoinError};
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_util::sync::CancellationToken;
 use tonic::{transport::Server as TonicServer, Request, Response, Status, Streaming};
 use tracing::{error, info};
 
-use crate::{core::Block, status_reporter::StatusReporter};
+use crate::{core::Block, health_reporter::HealthReporter, status_reporter::StatusReporter};
 
 type TonicResult<T> = std::result::Result<Response<T>, Status>;
 
@@ -95,6 +98,7 @@ where
 }
 
 pub struct Server<E: EnvironmentKind> {
+    db: Arc<Environment<E>>,
     chain: Arc<ChainTracker<Block, E>>,
 }
 
@@ -102,6 +106,8 @@ pub struct Server<E: EnvironmentKind> {
 pub enum ServerError {
     #[error("grpc transport error")]
     Transport(#[from] tonic::transport::Error),
+    #[error("error awaiting task")]
+    Task(#[from] JoinError),
 }
 
 pub type Result<T> = std::result::Result<T, ServerError>;
@@ -110,8 +116,8 @@ impl<E> Server<E>
 where
     E: EnvironmentKind,
 {
-    pub fn new(chain: Arc<ChainTracker<Block, E>>) -> Self {
-        Server { chain }
+    pub fn new(db: Arc<Environment<E>>, chain: Arc<ChainTracker<Block, E>>) -> Self {
+        Server { db, chain }
     }
 
     pub async fn start(
@@ -122,15 +128,29 @@ where
     ) -> Result<()> {
         let node_server = NodeServer::new(self.chain, block_rx);
 
+        let (mut health_reporter, health_service) = HealthReporter::new(self.db.clone());
+
+        let reporter_handle = tokio::spawn({
+            let ct = ct.clone();
+            async move { health_reporter.start(ct).await }
+        });
+
         info!(addr = ?addr, "starting server");
         TonicServer::builder()
             .add_service(node_server.into_service())
+            .add_service(health_service)
             .serve_with_shutdown(addr, {
+                let ct = ct.clone();
                 async move {
                     ct.cancelled().await;
                 }
             })
             .await?;
+
+        // signal health reporter to stop
+        ct.cancel();
+
+        reporter_handle.await?;
 
         Ok(())
     }
