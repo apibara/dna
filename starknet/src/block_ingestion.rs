@@ -132,10 +132,15 @@ where
                 break;
             }
 
-            self.fetch_and_broadcast_block(current_block_number, &ct)
+            current_block_number = self
+                .fetch_and_broadcast_block(current_block_number, &ct)
                 .await?;
 
-            current_block_number += 1;
+            if let Some(gap) = self.chain.gap()? {
+                info!(gap = %gap, "gap");
+                // TODO: periodically refresh head based on gap size
+                // if gap == 0, wait a bit.
+            }
         }
 
         Ok(())
@@ -146,14 +151,14 @@ where
         &self,
         block_number: u64,
         ct: &CancellationToken,
-    ) -> Result<()> {
+    ) -> Result<u64> {
         // fetch block
         let block = tokio::select! {
             block = self.block_builder.block_by_number_with_backoff(block_number, ct.clone()) => {
                 block?
             }
             _ = ct.cancelled() => {
-                return Ok(())
+                return Ok(0)
             }
         };
 
@@ -162,9 +167,12 @@ where
         match self.chain.update_indexed_block(block)? {
             ChainChange::Advance(blocks) => {
                 info!("chain advanced by {} blocks", blocks.len());
+                let mut next_block_number = 0;
                 for block in blocks {
+                    next_block_number = block.block_number + 1;
                     self.block_tx.send(BlockStreamMessage::Data(block))?;
                 }
+                return Ok(next_block_number)
             }
             ChainChange::Reorg(blocks) => {
                 info!("chain reorged by {} blocks", blocks.len());
@@ -175,8 +183,6 @@ where
                 todo!()
             }
         }
-
-        Ok(())
     }
 }
 

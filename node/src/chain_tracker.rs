@@ -95,6 +95,19 @@ where
         Ok(height)
     }
 
+    /// Returns the gap between the indexed block and the head, if any.
+    pub fn gap(&self) -> Result<Option<u64>> {
+        let indexed = match self.latest_indexed_block()? {
+            Some(block) => block.number(),
+            None => return Ok(None),
+        };
+        let height = match self.head_height()? {
+            Some(height) => height,
+            None => return Ok(None),
+        };
+        return Ok(Some(height - indexed));
+    }
+
     /// Returns a block in the canonical chain by its number or height.
     pub fn block_by_number(&self, number: u64) -> Result<Option<B>> {
         let txn = self.db.begin_ro_txn()?;
