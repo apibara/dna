@@ -1,7 +1,12 @@
 //! StarkNet provider.
-use std::{pin::Pin, sync::Arc, time::Duration};
+use std::{
+    convert::{TryFrom, TryInto},
+    pin::Pin,
+    sync::Arc,
+    time::Duration,
+};
 
-use anyhow::{Context, Error, Result};
+use anyhow::{anyhow, Context, Error, Result};
 use async_trait::async_trait;
 use backoff::ExponentialBackoff;
 use chrono::NaiveDateTime;
@@ -10,8 +15,8 @@ use starknet::{
     core::{types::FieldElement, utils::get_selector_from_name},
     providers::jsonrpc::{
         models::{
-            Block as SNBlock, BlockHashOrTag, BlockTag, EmittedEvent as SNEmittedEvent,
-            EventFilter as SNEventFilter,
+            BlockId, BlockTag, EmittedEvent as SNEmittedEvent, EventFilter as SNEventFilter,
+            MaybePendingBlockWithTxHashes as SNBlock,
         },
         HttpTransport, JsonRpcClient,
     },
@@ -66,8 +71,8 @@ impl StarkNetProvider {
         // use a fake block index to keep events of the same type sorted
         let mut fake_block_index = 0;
         let event_filter = SNEventFilter {
-            from_block: Some(from_block),
-            to_block: Some(to_block),
+            from_block: Some(BlockId::Number(from_block)),
+            to_block: Some(BlockId::Number(to_block)),
             address,
             keys: topics,
         };
@@ -100,26 +105,26 @@ impl StarkNetProvider {
 #[async_trait]
 impl ChainProvider for StarkNetProvider {
     async fn get_head_block(&self) -> Result<BlockHeader> {
-        let tag = BlockHashOrTag::Tag(BlockTag::Latest);
+        let tag = BlockId::Tag(BlockTag::Latest);
         let block = self
             .client
-            .get_block_by_hash(&tag)
+            .get_block_with_tx_hashes(&tag)
             .await
             .context("failed to fetch starknet head")?;
-        Ok(block.into())
+        block.try_into()
     }
 
     async fn get_block_by_hash(&self, hash: &BlockHash) -> Result<Option<BlockHeader>> {
         let hash_fe = hash
             .try_into()
             .context("failed to convert block hash to field element")?;
-        let hash = BlockHashOrTag::Hash(hash_fe);
+        let hash = BlockId::Hash(hash_fe);
         let block = self
             .client
-            .get_block_by_hash(&hash)
+            .get_block_with_tx_hashes(&hash)
             .await
             .context("failed to fetch starknet head")?;
-        Ok(Some(block.into()))
+        block.try_into().map(Option::Some)
     }
 
     async fn subscribe_blocks<'a>(
@@ -137,12 +142,12 @@ impl ChainProvider for StarkNetProvider {
                     let block: Result<BlockHeader> =
                         backoff::future::retry(ExponentialBackoff::default(), || async {
                             trace!("fetching starknet head");
-                            let tag = BlockHashOrTag::Tag(BlockTag::Latest);
+                            let tag = BlockId::Tag(BlockTag::Latest);
                             let block = client
-                                .get_block_by_hash(&tag)
+                                .get_block_with_tx_hashes(&tag)
                                 .await
                                 .context("failed to fetch starknet head")?;
-                            Ok(block.into())
+                            block.try_into().map_err(Into::into)
                         })
                         .await;
 
@@ -198,19 +203,25 @@ impl ChainProvider for StarkNetProvider {
     }
 }
 
-impl From<SNBlock> for BlockHeader {
-    fn from(b: SNBlock) -> Self {
-        let metadata = b.metadata;
-        let hash = BlockHash::from_bytes(&metadata.block_hash.to_bytes_be());
-        let parent_hash = BlockHash::from_bytes(&metadata.parent_hash.to_bytes_be());
-        let timestamp = NaiveDateTime::from_timestamp(metadata.accepted_time as i64, 0);
+impl TryFrom<SNBlock> for BlockHeader {
+    type Error = anyhow::Error;
 
-        BlockHeader {
+    fn try_from(b: SNBlock) -> Result<Self, Self::Error> {
+        let header = match b {
+            SNBlock::Block(block) => block.header,
+            SNBlock::PendingBlock(_) => return Err(anyhow!("Block is still pending")),
+        };
+
+        let hash = BlockHash::from_bytes(&header.block_hash.to_bytes_be());
+        let parent_hash = BlockHash::from_bytes(&header.parent_hash.to_bytes_be());
+        let timestamp = NaiveDateTime::from_timestamp(header.timestamp as i64, 0);
+
+        Ok(BlockHeader {
             hash,
             parent_hash: Some(parent_hash),
             timestamp,
-            number: metadata.block_number,
-        }
+            number: header.block_number,
+        })
     }
 }
 
