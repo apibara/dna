@@ -493,16 +493,19 @@ mod tests {
         assert_eq!(block.number, 3);
     }
 
+    #[ignore]
     #[test]
     pub fn test_reorg() {
         todo!()
     }
 
+    #[ignore]
     #[test]
     pub fn test_block_gap() {
         todo!()
     }
 
+    #[ignore]
     #[test]
     pub fn test_invalidate_blocks() {
         todo!()
