@@ -36,6 +36,7 @@ message Transaction {
     InvokeTransaction invoke = 1;
     DeployTransaction deploy = 2;
     DeclareTransaction declare = 3;
+    L1HandlerTransaction l1_handler = 4;
   }
 }
 
@@ -59,7 +60,19 @@ message DeclareTransaction {
   bytes sender_address = 3;
 }
 
-message DeployTransaction { TransactionCommon common = 1; }
+message DeployTransaction {
+  TransactionCommon common = 1;
+  repeated bytes constructor_calldata = 2;
+  bytes contract_address = 3;
+  bytes contract_address_salt = 4;
+}
+
+message L1HandlerTransaction {
+  TransactionCommon common = 1;
+  bytes contract_address = 2;
+  bytes entry_point_selector = 3;
+  repeated bytes calldata = 4;
+}
 
 message TransactionReceipt {
   oneof receipt {

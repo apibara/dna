@@ -1,6 +1,6 @@
 //! Ingest blocks from the node.
 
-use std::{collections::VecDeque, sync::Arc, task::Poll};
+use std::{collections::VecDeque, sync::Arc, task::Poll, time::Duration};
 
 use apibara_node::{
     chain_tracker::{ChainChange, ChainTracker, ChainTrackerError},
@@ -14,7 +14,7 @@ use tokio::sync::broadcast::{
 };
 use tokio_util::sync::CancellationToken;
 use tonic::Status;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 use crate::{
     block_builder::{BlockBuilder, BlockBuilderError},
@@ -103,7 +103,10 @@ where
     }
 
     pub async fn start(&self, ct: CancellationToken) -> Result<()> {
-        let current_head = self.block_builder.latest_block().await?;
+        let current_head = self
+            .block_builder
+            .latest_block_with_backoff(ct.clone())
+            .await?;
         self.chain.update_head(&current_head)?;
         info!(head = %current_head.block_hash.unwrap_or_default(), "updated head");
 
@@ -127,23 +130,70 @@ where
 
         let mut current_block_number = starting_block_number;
 
+        let mut head_refreshed_at = chrono::offset::Utc::now();
+
+        let far_head_refresh_interval =
+            chrono::Duration::from_std(Duration::from_secs(60)).expect("duration conversion");
+        let close_head_refresh_interval =
+            chrono::Duration::from_std(Duration::from_secs(10)).expect("duration conversion");
+        let sync_sleep_interval = Duration::from_secs(5);
+
         loop {
             if ct.is_cancelled() {
                 break;
             }
 
-            current_block_number = self
-                .fetch_and_broadcast_block(current_block_number, &ct)
-                .await?;
-
-            if let Some(gap) = self.chain.gap()? {
-                info!(gap = %gap, "gap");
-                // TODO: periodically refresh head based on gap size
-                // if gap == 0, wait a bit.
+            match self.chain.gap()? {
+                None => {
+                    current_block_number = self
+                        .fetch_and_broadcast_block(current_block_number, &ct)
+                        .await?;
+                }
+                Some(0) => {
+                    let head_height = self
+                        .chain
+                        .head_height()?
+                        .ok_or(BlockIngestorError::EmptyChain)?;
+                    current_block_number = self.fetch_and_broadcast_latest_block(&ct).await?;
+                    if current_block_number == head_height + 1 {
+                        tokio::time::sleep(sync_sleep_interval).await;
+                    }
+                }
+                Some(gap) => {
+                    let head_refresh_elapsed = chrono::offset::Utc::now() - head_refreshed_at;
+                    let should_refresh_head = (gap > 50
+                        && head_refresh_elapsed > far_head_refresh_interval)
+                        || (gap > 10 && head_refresh_elapsed > close_head_refresh_interval);
+                    if should_refresh_head {
+                        debug!("refresh head");
+                        let current_head = self
+                            .block_builder
+                            .latest_block_with_backoff(ct.clone())
+                            .await?;
+                        self.chain.update_head(&current_head)?;
+                        head_refreshed_at = chrono::offset::Utc::now();
+                    }
+                    current_block_number = self
+                        .fetch_and_broadcast_block(current_block_number, &ct)
+                        .await?;
+                }
             }
         }
 
         Ok(())
+    }
+    #[tracing::instrument(skip(self, ct))]
+    async fn fetch_and_broadcast_latest_block(&self, ct: &CancellationToken) -> Result<u64> {
+        let block = tokio::select! {
+            block = self.block_builder.latest_block_with_backoff(ct.clone()) => {
+                block?
+            }
+            _ = ct.cancelled() => {
+                return Ok(0)
+            }
+        };
+
+        self.apply_block(block)
     }
 
     #[tracing::instrument(skip(self, ct))]
@@ -152,7 +202,6 @@ where
         block_number: u64,
         ct: &CancellationToken,
     ) -> Result<u64> {
-        // fetch block
         let block = tokio::select! {
             block = self.block_builder.block_by_number_with_backoff(block_number, ct.clone()) => {
                 block?
@@ -162,17 +211,22 @@ where
             }
         };
 
+        self.apply_block(block)
+    }
+
+    fn apply_block(&self, block: Block) -> Result<u64> {
         info!(block_number = ?block.block_number, "got block");
+        let block_number = block.block_number;
 
         match self.chain.update_indexed_block(block)? {
             ChainChange::Advance(blocks) => {
                 info!("chain advanced by {} blocks", blocks.len());
-                let mut next_block_number = 0;
+                let mut next_block_number = block_number + 1;
                 for block in blocks {
                     next_block_number = block.block_number + 1;
                     self.block_tx.send(BlockStreamMessage::Data(block))?;
                 }
-                return Ok(next_block_number)
+                Ok(next_block_number)
             }
             ChainChange::Reorg(blocks) => {
                 info!("chain reorged by {} blocks", blocks.len());
@@ -181,6 +235,10 @@ where
             ChainChange::MissingBlock(block_number, block_hash) => {
                 info!("block is missing: {}/{}", block_number, block_hash);
                 todo!()
+            }
+            ChainChange::AlreadySeen => {
+                info!("block already seen");
+                Ok(block_number + 1)
             }
         }
     }

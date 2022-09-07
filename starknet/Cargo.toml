@@ -17,6 +17,7 @@ apibara-core = { path = "../core" }
 apibara-node = { path = "../node" }
 backoff = { version = "0.4.0", features = ["tokio"] }
 byte-unit = "4.0.14"
+chrono = "0.4.22"
 clap = { version = "3.2.17", features = ["env", "unicode", "cargo"] }
 ctrlc = "3.2.3"
 futures = "0.3.24"
@@ -24,7 +25,8 @@ hex = "0.4.3"
 opentelemetry = "0.17.0"
 prost = "0.11.0"
 prost-types = "0.11.1"
-starknet = { git = "https://github.com/xJonathanLEI/starknet-rs", rev = "23d1747c4aea084cc3726707edb11007b37e8433" }
+# starknet = { git = "https://github.com/xJonathanLEI/starknet-rs", rev = "23d1747c4aea084cc3726707edb11007b37e8433" }
+starknet = { git = "https://github.com/fracek/starknet-rs", rev = "ffdd0216b25bcdaae4f31a221308e3feb2f8148a" }
 thiserror = "1.0.32"
 tokio = { version = "1.20.1", features = ["full"] }
 tokio-stream = { version = "0.1.9", features = ["sync"] }

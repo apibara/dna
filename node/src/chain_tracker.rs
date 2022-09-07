@@ -51,6 +51,8 @@ pub enum ChainChange<B: Block> {
     Reorg(Vec<B>),
     /// Need to provide the requested block to make a decision.
     MissingBlock(u64, B::Hash),
+    /// The provided block already belongs to the chain.
+    AlreadySeen,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -105,7 +107,7 @@ where
             Some(height) => height,
             None => return Ok(None),
         };
-        return Ok(Some(height - indexed));
+        Ok(Some(height - indexed))
     }
 
     /// Returns a block in the canonical chain by its number or height.
@@ -175,6 +177,10 @@ where
                     ));
                 }
 
+                if block.number() == latest_block.number() && block.hash() == latest_block.hash() {
+                    return Ok(ChainChange::AlreadySeen);
+                }
+
                 // simple block application
                 if block.number() == latest_block.number() + 1
                     && latest_block.hash() == block.parent_hash()
@@ -189,8 +195,6 @@ where
 
                     return Ok(ChainChange::Advance(blocks));
                 }
-
-                // TODO: need to handle chain reorganization
 
                 todo!()
             }
