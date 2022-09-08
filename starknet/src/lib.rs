@@ -7,4 +7,4 @@ mod node;
 mod server;
 mod status_reporter;
 
-pub use node::{SourceNodeError, StarkNetSourceNode};
+pub use node::{start_starknet_source_node, SequencerGateway, SourceNodeError, StarkNetSourceNode};

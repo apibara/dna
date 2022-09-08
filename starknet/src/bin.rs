@@ -1,45 +1,32 @@
-use std::{fs, path::PathBuf, sync::Arc};
+use std::path::PathBuf;
 
 use anyhow::{anyhow, Result};
 use apibara_node::{
-    db::{
-        libmdbx::{Environment, Geometry, NoWriteMap},
-        node_data_dir, DatabaseClapCommandExt,
-    },
+    db::{node_data_dir, DatabaseClapCommandExt},
     otel::{init_opentelemetry, OpenTelemetryClapCommandExt},
 };
-use clap::{command, ArgMatches, Command};
-
-use apibara_starknet::StarkNetSourceNode;
+use apibara_starknet::{start_starknet_source_node, SequencerGateway};
+use clap::{arg, command, ArgGroup, ArgMatches, Command};
 
 async fn start(start_matches: &ArgMatches) -> Result<()> {
     init_opentelemetry()?;
 
     // Setup database
     let datadir = start_matches
-        .get_one::<PathBuf>("datadir")
-        .map(|p| Some(p.clone()))
+        .get_one::<String>("datadir")
+        .map(|p| Some(PathBuf::from(p)))
         .unwrap_or_else(|| node_data_dir("starknet"))
         .ok_or_else(|| anyhow!("could not get datadir"))?;
-    fs::create_dir_all(&datadir)?;
-    let min_size = byte_unit::n_gib_bytes!(10) as usize;
-    let max_size = byte_unit::n_gib_bytes!(100) as usize;
-    let growth_step = byte_unit::n_gib_bytes(2) as isize;
-    let db = Environment::<NoWriteMap>::new()
-        .set_geometry(Geometry {
-            size: Some(min_size..max_size),
-            growth_step: Some(growth_step),
-            shrink_threshold: None,
-            page_size: None,
-        })
-        .set_max_dbs(100)
-        .open(&datadir)?;
-    let db = Arc::new(db);
 
-    let node = StarkNetSourceNode::new(db);
-    node.start().await?;
+    let gateway = {
+        if start_matches.is_present("testnet") {
+            SequencerGateway::GoerliTestnet
+        } else {
+            SequencerGateway::Mainnet
+        }
+    };
 
-    Ok(())
+    Ok(start_starknet_source_node(datadir, gateway).await?)
 }
 
 #[tokio::main]
@@ -49,7 +36,14 @@ async fn main() -> Result<()> {
         .subcommand(
             Command::new("start")
                 .about("Start a StarkNet source node")
-                .data_dir_args(),
+                .data_dir_args()
+                .arg(arg!(--testnet "StarkNet Goerli test network").required(false))
+                .arg(arg!(--mainnet "StarkNet mainnet network").required(false))
+                .group(
+                    ArgGroup::new("sequencer_gateway")
+                        .args(&["testnet", "mainnet"])
+                        .multiple(false),
+                ),
         )
         .open_telemetry_args()
         .get_matches();

@@ -10,7 +10,7 @@ pub trait DatabaseClapCommandExt {
 
 impl<'help> DatabaseClapCommandExt for Command<'help> {
     fn data_dir_args(self) -> Self {
-        self.arg(arg![-d --datadir "Directory with node data"])
+        self.arg(arg![-d --datadir <DIR> "Directory with node data"].required(false))
     }
 }
 
