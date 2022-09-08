@@ -65,13 +65,15 @@ jobs:
         - apibara-starknet
         job:
         - os: ubuntu-latest
-          target: x86_64-unknown-linux-musl
-        - os: ubuntu-latest
-          target: aarch64-unknown-linux-musl
-        - os: macos-latest
-          target: x86_64-apple-darwin
-        - os: macos-latest
-          target: aarch64-apple-darwin
+          target: x86_64-unknown-linux-gnu
+        # - os: ubuntu-latest
+        #   target: aarch64-unknown-linux-gnu
+        # - os: macos-latest
+        #   target: x86_64-apple-darwin
+        # - os: macos-latest
+        #   target: aarch64-apple-darwin
+    env:
+      RUST_BACKTRACE: full
     steps:
     - name: checkout sources
       uses: actions/checkout@v2
@@ -89,19 +91,28 @@ jobs:
       with:
         repo-token: ${{ secrets.GITHUB_TOKEN }}
 
+    - name: apple m1 setup
+      if: matrix.job.target == 'aarch64-apple-darwin'
+      run: |
+        echo "SDKROOT=$(xcrun -sdk macosx --show-sdk-path)" >> $GITHUB_ENV
+        echo "MACOSX_DEPLOYMENT_TARGET=$(xcrun -sdk macosx --show-sdk-platform-version)" >> $GITHUB_ENV
+
     - name: cargo cache
       uses: Swatinem/rust-cache@v2
       with:
         key: ${{ matrix.binary }}-${{ matrix.job.os }}-${{ matrix.job.target }}
 
     - name: build ${{ matrix.binary }}
-      run: cargo build --bin ${{ matrix.binary }} --release
+      uses: actions-rs/cargo@v1
+      with:
+        command: build
+        args: --bin ${{ matrix.binary }} --release --target ${{ matrix.job.target }}
 
     - name: upload artifacts ${{ matrix.binary }}-${{ matrix.job.target }}
       uses: actions/upload-artifact@v3
       with:
         name: ${{ matrix.binary }}-${{ matrix.job.target }}
-        path: target/release/${{ matrix.binary }}
+        path: target/${{ matrix.job.target }}/release/${{ matrix.binary }}
         retention-days: 1
 
   docker_build:
@@ -116,10 +127,12 @@ jobs:
         - binary: apibara-starknet
           name: starknet
         target:
-        - rust: x86_64-unknown-linux-musl
-          alpine: amd64
-        - rust: aarch64-unknown-linux-musl
-          alpine: arm64v8
+        - rust: x86_64-unknown-linux-gnu
+          debian: amd64
+          docker: linux/amd64
+        # - rust: aarch64-unknown-linux-gnu
+        #   debian: arm64v8
+        #   docker: linux/arm64/v8
     steps:
     - name: setup docker buildx
       uses: docker/setup-buildx-action@v2
@@ -133,24 +146,27 @@ jobs:
     - name: create dockerfile
       run: |
         touch Dockerfile
-        echo "FROM ${{ matrix.target.alpine }}/alpine:3.16" >> Dockerfile
-        echo "COPY ${{ matrix.image.binary }} ${{ matrix.image.binary }}" >> Dockerfile
+        echo "FROM ${{ matrix.target.debian }}/debian:11.4-slim" >> Dockerfile
+        echo "COPY ${{ matrix.image.binary }} /usr/local/bin/${{ matrix.image.binary }}" >> Dockerfile
+        echo 'RUN ["chmod", "+x", "/usr/local/bin/${{ matrix.image.binary }}"]' >> Dockerfile
+        echo 'CMD ["/usr/local/bin/${{ matrix.image.binary }}"]' >> Dockerfile
 
     - name: build image
       uses: docker/build-push-action@v3
       with:
         context: .
         push: false
-        tags: apibara/${{ matrix.image.name }}:${{ github.sha }}-${{ matrix.target.alpine }}
+        tags: apibara/${{ matrix.image.name }}:${{ github.sha }}-${{ matrix.target.debian }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
-        outputs: type=docker,dest=apibara-${{ matrix.image.name }}-${{ matrix.target.alpine }}.tar
+        outputs: type=docker,dest=apibara-${{ matrix.image.name }}-${{ matrix.target.debian }}.tar
+        platforms: ${{ matrix.target.docker }}
 
     - name: upload artifact ${{ matrix.image.name }}
       uses: actions/upload-artifact@v3
       with:
-        name: apibara-${{ matrix.image.name }}-${{ matrix.target.alpine }}.tar
-        path: apibara-${{ matrix.image.name }}-${{ matrix.target.alpine }}.tar
+        name: apibara-${{ matrix.image.name }}-${{ matrix.target.debian }}.tar
+        path: apibara-${{ matrix.image.name }}-${{ matrix.target.debian }}.tar
         retention-days: 1
 
   docker_publish:
@@ -179,31 +195,31 @@ jobs:
         name: apibara-${{ matrix.image }}-amd64.tar
         path: .
 
-    - name: download ${{ matrix.image }}-arm64v8
-      uses: actions/download-artifact@v3
-      with:
-        name: apibara-${{ matrix.image }}-arm64v8.tar
-        path: .
+    # - name: download ${{ matrix.image }}-arm64v8
+    #   uses: actions/download-artifact@v3
+    #   with:
+    #     name: apibara-${{ matrix.image }}-arm64v8.tar
+    #     path: .
 
     - name: load docker images
       run: |
         ls -la
         docker image load --input apibara-${{ matrix.image }}-amd64.tar
-        docker image load --input apibara-${{ matrix.image }}-arm64v8.tar
+        # docker image load --input apibara-${{ matrix.image }}-arm64v8.tar
         docker image ls -a
 
     # create a manifest manually since the images are created by copying files into them
     - name: publish docker images to docker.io
       run: |
         docker tag apibara/${{ matrix.image }}:${{ github.sha }}-amd64 docker.io/apibara/${{ matrix.image }}:${{ github.sha }}-amd64
-        docker tag apibara/${{ matrix.image }}:${{ github.sha }}-arm64v8 docker.io/apibara/${{ matrix.image }}:${{ github.sha }}-arm64v8
+        # docker tag apibara/${{ matrix.image }}:${{ github.sha }}-arm64v8 docker.io/apibara/${{ matrix.image }}:${{ github.sha }}-arm64v8
 
         docker push docker.io/apibara/${{ matrix.image }}:${{ github.sha }}-amd64
-        docker push docker.io/apibara/${{ matrix.image }}:${{ github.sha }}-arm64v8
+        # docker push docker.io/apibara/${{ matrix.image }}:${{ github.sha }}-arm64v8
 
         docker manifest create docker.io/apibara/${{ matrix.image }}:${{ github.sha }} \
-          docker.io/apibara/${{ matrix.image }}:${{ github.sha }}-amd64 \
-          docker.io/apibara/${{ matrix.image }}:${{ github.sha }}-arm64v8
+          docker.io/apibara/${{ matrix.image }}:${{ github.sha }}-amd64
+        # docker.io/apibara/${{ matrix.image }}:${{ github.sha }}-arm64v8
         docker manifest push docker.io/apibara/${{ matrix.image }}:${{ github.sha }}
 
   update_preview_release:
@@ -243,10 +259,10 @@ jobs:
         binary:
         - apibara-starknet
         target:
-        - x86_64-unknown-linux-musl
-        - aarch64-unknown-linux-musl
-        - x86_64-apple-darwin
-        - aarch64-apple-darwin
+        - x86_64-unknown-linux-gnu
+        # - aarch64-unknown-linux-gnu
+        # - x86_64-apple-darwin
+        # - aarch64-apple-darwin
     steps:
     - name: login gh
       run: gh auth login --with-token < <(echo ${{ secrets.GITHUB_TOKEN }})
