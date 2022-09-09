@@ -23,7 +23,7 @@ use crate::{
 
 #[derive(Debug, Clone)]
 pub enum BlockStreamMessage {
-    Data(Block),
+    Data(Box<Block>),
     Reorg(u64),
 }
 
@@ -224,7 +224,8 @@ where
                 let mut next_block_number = block_number + 1;
                 for block in blocks {
                     next_block_number = block.block_number + 1;
-                    self.block_tx.send(BlockStreamMessage::Data(block))?;
+                    self.block_tx
+                        .send(BlockStreamMessage::Data(Box::new(block)))?;
                 }
                 Ok(next_block_number)
             }
@@ -292,7 +293,7 @@ where
             .map_err(|_| Status::internal("failed to load data"))?
             .ok_or_else(|| Status::unavailable("not started indexing"))?;
         self.block += 1;
-        Ok(BlockStreamMessage::Data(block))
+        Ok(BlockStreamMessage::Data(Box::new(block)))
     }
 }
 

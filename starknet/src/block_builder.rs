@@ -10,8 +10,9 @@ use starknet::{
 use tokio_util::sync::CancellationToken;
 
 use crate::core::{
-    transaction, Block, BlockHash, DeclareTransaction, DeployTransaction, InvokeTransaction,
-    L1HandlerTransaction, Transaction, TransactionCommon,
+    transaction, Block, BlockHash, BuiltinInstanceCounter, DeclareTransaction, DeployTransaction,
+    Event, ExecutionResources, InvokeTransaction, L1HandlerTransaction, L1ToL2Message,
+    L2ToL1Message, Transaction, TransactionCommon, TransactionReceipt,
 };
 
 pub struct BlockBuilder {
@@ -111,11 +112,13 @@ impl TryFrom<sn_types::Block> for Block {
         // some blocks don't specify version
         let starknet_version = block.starknet_version.clone().unwrap_or_default();
 
-        let transactions = block
-            .transactions
+        let transactions = block.transactions.iter().map(|tx| tx.into()).collect();
+
+        let transaction_receipts = block
+            .transaction_receipts
             .iter()
-            .map(|tx| tx.try_into())
-            .collect::<Result<Vec<_>>>()?;
+            .map(|rx| rx.into())
+            .collect();
 
         Ok(Block {
             block_hash: Some(block_hash),
@@ -127,6 +130,7 @@ impl TryFrom<sn_types::Block> for Block {
             timestamp: Some(timestamp),
             starknet_version,
             transactions,
+            transaction_receipts,
         })
     }
 }
@@ -138,38 +142,34 @@ impl From<FieldElement> for BlockHash {
     }
 }
 
-impl TryFrom<&sn_types::TransactionType> for Transaction {
-    type Error = BlockBuilderError;
-
-    fn try_from(tx: &sn_types::TransactionType) -> std::result::Result<Self, Self::Error> {
+impl From<&sn_types::TransactionType> for Transaction {
+    fn from(tx: &sn_types::TransactionType) -> Self {
         let inner = match tx {
             sn_types::TransactionType::Deploy(deploy) => {
-                let deploy = deploy.try_into()?;
+                let deploy = deploy.into();
                 transaction::Transaction::Deploy(deploy)
             }
             sn_types::TransactionType::Declare(declare) => {
-                let declare = declare.try_into()?;
+                let declare = declare.into();
                 transaction::Transaction::Declare(declare)
             }
             sn_types::TransactionType::InvokeFunction(invoke) => {
-                let invoke = invoke.try_into()?;
+                let invoke = invoke.into();
                 transaction::Transaction::Invoke(invoke)
             }
             sn_types::TransactionType::L1Handler(l1_handler) => {
-                let l1_handler = l1_handler.try_into()?;
+                let l1_handler = l1_handler.into();
                 transaction::Transaction::L1Handler(l1_handler)
             }
         };
-        Ok(Transaction {
+        Transaction {
             transaction: Some(inner),
-        })
+        }
     }
 }
 
-impl TryFrom<&sn_types::DeployTransaction> for DeployTransaction {
-    type Error = BlockBuilderError;
-
-    fn try_from(tx: &sn_types::DeployTransaction) -> std::result::Result<Self, Self::Error> {
+impl From<&sn_types::DeployTransaction> for DeployTransaction {
+    fn from(tx: &sn_types::DeployTransaction) -> Self {
         let contract_address = tx.contract_address.to_bytes_be().to_vec();
         let contract_address_salt = tx.contract_address_salt.to_bytes_be().to_vec();
         let constructor_calldata = tx
@@ -184,19 +184,17 @@ impl TryFrom<&sn_types::DeployTransaction> for DeployTransaction {
             signature: Vec::new(),
             nonce: Vec::new(),
         };
-        Ok(DeployTransaction {
+        DeployTransaction {
             common: Some(common),
             constructor_calldata,
             contract_address,
             contract_address_salt,
-        })
+        }
     }
 }
 
-impl TryFrom<&sn_types::DeclareTransaction> for DeclareTransaction {
-    type Error = BlockBuilderError;
-
-    fn try_from(tx: &sn_types::DeclareTransaction) -> std::result::Result<Self, Self::Error> {
+impl From<&sn_types::DeclareTransaction> for DeclareTransaction {
+    fn from(tx: &sn_types::DeclareTransaction) -> Self {
         let hash = tx.transaction_hash.to_bytes_be().to_vec();
         let max_fee = tx.max_fee.to_bytes_be().to_vec();
         let signature = tx
@@ -215,20 +213,16 @@ impl TryFrom<&sn_types::DeclareTransaction> for DeclareTransaction {
         let class_hash = tx.class_hash.to_bytes_be().to_vec();
         let sender_address = tx.sender_address.to_bytes_be().to_vec();
 
-        Ok(DeclareTransaction {
+        DeclareTransaction {
             common: Some(common),
             class_hash,
             sender_address,
-        })
+        }
     }
 }
 
-impl TryFrom<&sn_types::InvokeFunctionTransaction> for InvokeTransaction {
-    type Error = BlockBuilderError;
-
-    fn try_from(
-        tx: &sn_types::InvokeFunctionTransaction,
-    ) -> std::result::Result<Self, Self::Error> {
+impl From<&sn_types::InvokeFunctionTransaction> for InvokeTransaction {
+    fn from(tx: &sn_types::InvokeFunctionTransaction) -> Self {
         let hash = tx.transaction_hash.to_bytes_be().to_vec();
         let max_fee = tx.max_fee.to_bytes_be().to_vec();
         let signature = tx
@@ -250,19 +244,17 @@ impl TryFrom<&sn_types::InvokeFunctionTransaction> for InvokeTransaction {
             .iter()
             .map(|fe| fe.to_bytes_be().to_vec())
             .collect();
-        Ok(InvokeTransaction {
+        InvokeTransaction {
             common: Some(common),
             contract_address,
             entry_point_selector,
             calldata,
-        })
+        }
     }
 }
 
-impl TryFrom<&sn_types::L1HandlerTransaction> for L1HandlerTransaction {
-    type Error = BlockBuilderError;
-
-    fn try_from(tx: &sn_types::L1HandlerTransaction) -> std::result::Result<Self, Self::Error> {
+impl From<&sn_types::L1HandlerTransaction> for L1HandlerTransaction {
+    fn from(tx: &sn_types::L1HandlerTransaction) -> Self {
         let hash = tx.transaction_hash.to_bytes_be().to_vec();
         let common = TransactionCommon {
             hash,
@@ -278,12 +270,124 @@ impl TryFrom<&sn_types::L1HandlerTransaction> for L1HandlerTransaction {
             .iter()
             .map(|fe| fe.to_bytes_be().to_vec())
             .collect();
-        Ok(L1HandlerTransaction {
+        L1HandlerTransaction {
             common: Some(common),
             contract_address,
             entry_point_selector,
             calldata,
-        })
+        }
+    }
+}
+
+impl From<&sn_types::ConfirmedTransactionReceipt> for TransactionReceipt {
+    fn from(value: &sn_types::ConfirmedTransactionReceipt) -> Self {
+        let transaction_hash = value.transaction_hash.to_bytes_be().to_vec();
+        let actual_fee = value.actual_fee.to_bytes_be().to_vec();
+        let execution_resources: Option<ExecutionResources> =
+            value.execution_resources.as_ref().map(|er| er.into());
+
+        let l1_to_l2_consumed_message = value.l1_to_l2_consumed_message.as_ref().map(|m| m.into());
+
+        let l2_to_l1_messages = value.l2_to_l1_messages.iter().map(|m| m.into()).collect();
+
+        let events = value.events.iter().map(|m| m.into()).collect();
+
+        TransactionReceipt {
+            transaction_hash,
+            transaction_index: value.transaction_index,
+            execution_resources,
+            actual_fee,
+            l1_to_l2_consumed_message,
+            l2_to_l1_messages,
+            events,
+        }
+    }
+}
+
+impl From<&sn_types::ExecutionResources> for ExecutionResources {
+    fn from(value: &sn_types::ExecutionResources) -> Self {
+        let builtin_instance_counter = (&value.builtin_instance_counter).into();
+
+        ExecutionResources {
+            n_steps: value.n_steps,
+            n_memory_holes: value.n_memory_holes,
+            builtin_instance_counter: Some(builtin_instance_counter),
+        }
+    }
+}
+
+impl From<&sn_types::BuiltinInstanceCounter> for BuiltinInstanceCounter {
+    fn from(value: &sn_types::BuiltinInstanceCounter) -> Self {
+        BuiltinInstanceCounter {
+            pedersen_builtin: value.pedersen_builtin,
+            range_check_builtin: value.range_check_builtin,
+            bitwise_builtin: value.bitwise_builtin,
+            output_builtin: value.output_builtin,
+            ecdsa_builtin: value.ecdsa_builtin,
+            ec_op_builtin: value.ec_op_builtin,
+        }
+    }
+}
+
+impl From<&sn_types::L1ToL2Message> for L1ToL2Message {
+    fn from(value: &sn_types::L1ToL2Message) -> Self {
+        let from_address = value.from_address.as_bytes().to_vec();
+        let to_address = value.to_address.to_bytes_be().to_vec();
+        let selector = value.selector.to_bytes_be().to_vec();
+        let payload = value
+            .payload
+            .iter()
+            .map(|fe| fe.to_bytes_be().to_vec())
+            .collect();
+        let nonce = value
+            .nonce
+            .map(|n| n.to_bytes_be().to_vec())
+            .unwrap_or_default();
+        L1ToL2Message {
+            from_address,
+            to_address,
+            selector,
+            payload,
+            nonce,
+        }
+    }
+}
+
+impl From<&sn_types::L2ToL1Message> for L2ToL1Message {
+    fn from(value: &sn_types::L2ToL1Message) -> Self {
+        let from_address = value.from_address.to_bytes_be().to_vec();
+        let to_address = value.to_address.as_bytes().to_vec();
+        let payload = value
+            .payload
+            .iter()
+            .map(|fe| fe.to_bytes_be().to_vec())
+            .collect();
+        L2ToL1Message {
+            from_address,
+            to_address,
+            payload,
+        }
+    }
+}
+
+impl From<&sn_types::Event> for Event {
+    fn from(value: &sn_types::Event) -> Self {
+        let from_address = value.from_address.to_bytes_be().to_vec();
+        let keys = value
+            .keys
+            .iter()
+            .map(|fe| fe.to_bytes_be().to_vec())
+            .collect();
+        let data = value
+            .data
+            .iter()
+            .map(|fe| fe.to_bytes_be().to_vec())
+            .collect();
+        Event {
+            from_address,
+            keys,
+            data,
+        }
     }
 }
 
