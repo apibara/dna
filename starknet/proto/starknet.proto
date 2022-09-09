@@ -16,6 +16,7 @@ message Block {
   google.protobuf.Timestamp timestamp = 7;
   string starknet_version = 8;
   repeated Transaction transactions = 9;
+  repeated TransactionReceipt transaction_receipts = 10;
 }
 
 // The hash of a StarkNet block.
@@ -75,41 +76,42 @@ message L1HandlerTransaction {
 }
 
 message TransactionReceipt {
-  oneof receipt {
-    InvokeTransactionReceipt invoke = 1;
-    DeployTransactionReceipt deploy = 2;
-    DeclareTransactionReceipt declare = 3;
-  }
-}
-
-message TransactionReceiptCommon {
   bytes transaction_hash = 1;
-  bytes actual_fee = 2;
-  TransactionStatus status = 3;
-  string status_data = 4;
-  bytes block_hash = 5;
-  uint64 block_number = 6;
+  uint64 transaction_index = 2;
+  bytes actual_fee = 3;
+  ExecutionResources execution_resources = 4;
+  L1ToL2Message l1_to_l2_consumed_message = 5;
+  repeated L2ToL1Message l2_to_l1_messages = 6;
+  repeated Event events = 7;
 }
 
-message InvokeTransactionReceipt {
-  TransactionReceiptCommon common = 1;
-  repeated MessageToL1 messages_sent = 2;
-  MessageToL2 l1_origin_message = 3;
-  repeated Event events = 4;
+message ExecutionResources {
+  uint64 n_steps = 1;
+  uint64 n_memory_holes = 2;
+  BuiltinInstanceCounter builtin_instance_counter = 3;
 }
 
-message DeclareTransactionReceipt { TransactionReceiptCommon common = 1; }
-
-message DeployTransactionReceipt { TransactionReceiptCommon common = 1; }
-
-message MessageToL1 {
-  bytes to_address = 1;
-  repeated bytes payload = 2;
+message BuiltinInstanceCounter {
+  optional uint64 pedersen_builtin = 1;
+  optional uint64 range_check_builtin = 2;
+  optional uint64 bitwise_builtin = 3;
+  optional uint64 output_builtin = 4;
+  optional uint64 ecdsa_builtin = 5;
+  optional uint64 ec_op_builtin = 6;
 }
 
-message MessageToL2 {
+message L1ToL2Message {
   bytes from_address = 1;
-  repeated bytes payload = 2;
+  bytes to_address = 2;
+  bytes selector = 3;
+  repeated bytes payload = 4;
+  bytes nonce = 5;
+}
+
+message L2ToL1Message {
+  bytes from_address = 1;
+  bytes to_address = 2;
+  repeated bytes payload = 3;
 }
 
 message Event {
