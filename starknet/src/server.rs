@@ -2,13 +2,14 @@
 
 use std::{net::SocketAddr, pin::Pin, sync::Arc};
 
-use apibara_core::pb::{self, node_file_descriptor_set};
+use apibara_core::pb;
 use apibara_node::{
     chain_tracker::ChainTracker,
     db::libmdbx::{Environment, EnvironmentKind},
+    reflection::merge_encoded_node_service_descriptor_set,
 };
 use futures::{Stream, StreamExt};
-use prost::Message;
+use prost::{DecodeError, Message};
 use tokio::task::JoinError;
 use tokio_util::sync::CancellationToken;
 use tonic::{transport::Server as TonicServer, Request, Response, Status};
@@ -119,6 +120,8 @@ pub enum ServerError {
     Transport(#[from] tonic::transport::Error),
     #[error("error building reflection server")]
     ReflectionServer(#[from] tonic_reflection::server::Error),
+    #[error("error decoding file descriptor set")]
+    Prost(#[from] DecodeError),
     #[error("error awaiting task")]
     Task(#[from] JoinError),
 }
@@ -151,9 +154,45 @@ where
             async move { health_reporter.start(ct).await }
         });
 
+        /*
+        let starknet_set = prost_types::FileDescriptorSet::decode(starknet_file_descriptor_set()).unwrap();
+        for f in &starknet_set.file {
+            println!("file = {:?}", f.name());
+            println!("dep = {:?}", f.dependency);
+            println!("pub = {:?}", f.public_dependency);
+        }
+
+        println!("node");
+        let mut node_set = prost_types::FileDescriptorSet::decode(node_file_descriptor_set()).unwrap();
+        node_set.file[1].dependency.push("starknet.proto".to_string());
+        for f in &node_set.file {
+            println!("file = {:?}", f.name());
+            println!("dep = {:?}", f.dependency);
+            println!("pub = {:?}", f.public_dependency);
+        }
+
+        let mut final_file = Vec::default();
+        final_file.extend(starknet_set.file.into_iter());
+        final_file.extend(node_set.file.into_iter());
+        let final_set = prost_types::FileDescriptorSet {
+            file: final_file
+        };
+        println!("final");
+        for f in &final_set.file {
+            println!("file = {:?}", f.name());
+            println!("dep = {:?}", f.dependency);
+            println!("pub = {:?}", f.public_dependency);
+        }
+        */
+        let node_descriptor_set = merge_encoded_node_service_descriptor_set(
+            "starknet.proto",
+            starknet_file_descriptor_set(),
+        )?;
+
         let reflection_service = tonic_reflection::server::Builder::configure()
-            .register_encoded_file_descriptor_set(starknet_file_descriptor_set())
-            .register_encoded_file_descriptor_set(node_file_descriptor_set())
+            //.register_encoded_file_descriptor_set(starknet_file_descriptor_set())
+            //.register_encoded_file_descriptor_set(node_file_descriptor_set())
+            .register_file_descriptor_set(node_descriptor_set)
             .register_encoded_file_descriptor_set(
                 tonic_health::proto::GRPC_HEALTH_V1_FILE_DESCRIPTOR_SET,
             )
