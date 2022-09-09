@@ -310,7 +310,7 @@ impl<B: Block> ChainChange<B> {
 
 #[cfg(test)]
 mod tests {
-    use std::{f32::consts::E, sync::Arc};
+    use std::sync::Arc;
 
     use assert_matches::assert_matches;
     use libmdbx::{Environment, NoWriteMap};
