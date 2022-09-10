@@ -154,44 +154,12 @@ where
             async move { health_reporter.start(ct).await }
         });
 
-        /*
-        let starknet_set = prost_types::FileDescriptorSet::decode(starknet_file_descriptor_set()).unwrap();
-        for f in &starknet_set.file {
-            println!("file = {:?}", f.name());
-            println!("dep = {:?}", f.dependency);
-            println!("pub = {:?}", f.public_dependency);
-        }
-
-        println!("node");
-        let mut node_set = prost_types::FileDescriptorSet::decode(node_file_descriptor_set()).unwrap();
-        node_set.file[1].dependency.push("starknet.proto".to_string());
-        for f in &node_set.file {
-            println!("file = {:?}", f.name());
-            println!("dep = {:?}", f.dependency);
-            println!("pub = {:?}", f.public_dependency);
-        }
-
-        let mut final_file = Vec::default();
-        final_file.extend(starknet_set.file.into_iter());
-        final_file.extend(node_set.file.into_iter());
-        let final_set = prost_types::FileDescriptorSet {
-            file: final_file
-        };
-        println!("final");
-        for f in &final_set.file {
-            println!("file = {:?}", f.name());
-            println!("dep = {:?}", f.dependency);
-            println!("pub = {:?}", f.public_dependency);
-        }
-        */
         let node_descriptor_set = merge_encoded_node_service_descriptor_set(
             "starknet.proto",
             starknet_file_descriptor_set(),
         )?;
 
         let reflection_service = tonic_reflection::server::Builder::configure()
-            //.register_encoded_file_descriptor_set(starknet_file_descriptor_set())
-            //.register_encoded_file_descriptor_set(node_file_descriptor_set())
             .register_file_descriptor_set(node_descriptor_set)
             .register_encoded_file_descriptor_set(
                 tonic_health::proto::GRPC_HEALTH_V1_FILE_DESCRIPTOR_SET,
