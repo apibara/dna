@@ -10,7 +10,8 @@ use apibara_node::{
 };
 use futures::{Stream, StreamExt};
 use prost::{DecodeError, Message};
-use tokio::task::JoinError;
+use tokio::{sync::mpsc, task::JoinError};
+use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::CancellationToken;
 use tonic::{transport::Server as TonicServer, Request, Response, Status};
 use tracing::{error, info, warn};
@@ -27,17 +28,23 @@ type TonicResult<T> = std::result::Result<Response<T>, Status>;
 pub struct NodeServer<E: EnvironmentKind> {
     status_reporter: StatusReporter<E>,
     block_ingestor: Arc<BlockIngestor<E>>,
+    cts: CancellationToken,
 }
 
 impl<E> NodeServer<E>
 where
     E: EnvironmentKind,
 {
-    pub fn new(chain: Arc<ChainTracker<Block, E>>, block_ingestor: Arc<BlockIngestor<E>>) -> Self {
+    pub fn new(
+        chain: Arc<ChainTracker<Block, E>>,
+        block_ingestor: Arc<BlockIngestor<E>>,
+        cts: CancellationToken,
+    ) -> Self {
         let status_reporter = StatusReporter::new(chain);
         NodeServer {
             block_ingestor,
             status_reporter,
+            cts,
         }
     }
 
@@ -72,12 +79,17 @@ where
     ) -> TonicResult<Self::ConnectStream> {
         let request: pb::ConnectRequest = request.into_inner();
 
-        let stream = self
-            .block_ingestor
-            .stream_from_sequence(request.starting_sequence)
-            .map_err(|_| Status::internal("failed to stream backfilled blocks"))?;
+        let (tx, rx) = mpsc::channel(128);
 
-        let response = Box::pin(stream.map(|maybe_res| match maybe_res {
+        let mut streamer = self
+            .block_ingestor
+            .stream_from_sequence(request.starting_sequence, tx, self.cts.clone())
+            .await
+            .map_err(|_| Status::internal("failed to start streaming data"))?;
+
+        tokio::spawn(async move { streamer.start().await });
+
+        let response = Box::pin(ReceiverStream::new(rx).map(|maybe_res| match maybe_res {
             Err(err) => {
                 warn!(err = ?err, "stream failed");
                 Err(Status::internal("stream failed"))
@@ -145,7 +157,7 @@ where
     }
 
     pub async fn start(self, addr: SocketAddr, ct: CancellationToken) -> Result<()> {
-        let node_server = NodeServer::new(self.chain, self.block_ingestor);
+        let node_server = NodeServer::new(self.chain, self.block_ingestor, ct.clone());
 
         let (mut health_reporter, health_service) = HealthReporter::new(self.db.clone());
 
