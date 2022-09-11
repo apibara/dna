@@ -1,5 +1,19 @@
 # Changelog
 
+## Apibara 0.3.3
+
+### Added
+
+ - Add configuration from prefixed environment variables
+
+
+## Apibara 0.3.2
+
+### Added
+
+ - Update compatibility with StarkNet 0.10
+
+
 ## Apibara 0.3.1
 
 ### Added
