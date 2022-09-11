@@ -4,7 +4,7 @@ use std::{collections::HashMap, path::Path};
 
 use anyhow::Result;
 use figment::{
-    providers::{Format, Serialized, Toml},
+    providers::{Env, Format, Serialized, Toml},
     Figment,
 };
 use serde::{Deserialize, Serialize};
@@ -54,6 +54,7 @@ impl Configuration {
     pub fn from_path(path: &Path) -> Result<Configuration> {
         let config = Figment::from(Serialized::defaults(Configuration::default()))
             .merge(Toml::file(path))
+            .merge(Env::prefixed("APIBARA_"))
             .extract()?;
         Ok(config)
     }
