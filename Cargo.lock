@@ -2526,10 +2526,10 @@ dependencies = [
 [[package]]
 name = "tonic-reflection"
 version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0455f730d540a1484bffc3c55c94100b18a662597b982c2e9073f2c55c602616"
 dependencies = [
  "bytes",
+ "futures",
+ "futures-util",
  "prost",
  "prost-types",
  "tokio",
