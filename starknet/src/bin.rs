@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use anyhow::{anyhow, Result};
 use apibara_node::{
     db::{node_data_dir, DatabaseClapCommandExt},
-    otel::{init_opentelemetry, OpenTelemetryClapCommandExt},
+    o11y::{init_opentelemetry, OpenTelemetryClapCommandExt},
 };
 use apibara_starknet::{start_starknet_source_node, SequencerGateway};
 use clap::{arg, command, ArgGroup, ArgMatches, Command};
