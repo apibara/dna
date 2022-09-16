@@ -22,7 +22,6 @@ clap = { version = "3.2.17", features = ["env", "unicode", "cargo"] }
 ctrlc = { version = "3.2.3", features = ["termination"] }
 futures = "0.3.24"
 hex = "0.4.3"
-opentelemetry = "0.17.0"
 prost = "0.11.0"
 prost-types = "0.11.1"
 # starknet = { git = "https://github.com/xJonathanLEI/starknet-rs", rev = "cf2bd470836e2a12f126a8cce14bfbdda6ee926d" }

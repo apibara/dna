@@ -5,6 +5,7 @@ use std::{collections::VecDeque, sync::Arc, time::Duration};
 use apibara_node::{
     chain_tracker::{ChainChange, ChainTracker, ChainTrackerError},
     db::libmdbx::EnvironmentKind,
+    o11y::{self, ObservableCounter, ObservableGauge},
 };
 use starknet::providers::SequencerGatewayProvider;
 use tokio::sync::{
@@ -34,6 +35,7 @@ pub struct BlockIngestor<E: EnvironmentKind> {
     block_builder: BlockBuilder,
     block_tx: broadcast::Sender<BlockStreamMessage>,
     _block_rx: broadcast::Receiver<BlockStreamMessage>,
+    metrics: Metrics,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -62,6 +64,11 @@ pub struct BackfilledBlockStreamer<E: EnvironmentKind> {
     ct: CancellationToken,
 }
 
+pub struct Metrics {
+    ingested_blocks: ObservableCounter<u64>,
+    latest_block: ObservableGauge<u64>,
+}
+
 impl<E> BlockIngestor<E>
 where
     E: EnvironmentKind,
@@ -72,12 +79,14 @@ where
     ) -> Result<Self> {
         let block_builder = BlockBuilder::new(client);
         let (block_tx, block_rx) = broadcast::channel(MESSAGE_CHANNEL_SIZE);
+        let metrics = Metrics::new();
 
         Ok(BlockIngestor {
             chain,
             block_builder,
             block_tx,
             _block_rx: block_rx,
+            metrics,
         })
     }
 
@@ -192,6 +201,7 @@ where
 
         Ok(())
     }
+
     #[tracing::instrument(skip(self, ct))]
     async fn fetch_and_broadcast_latest_block(&self, ct: &CancellationToken) -> Result<u64> {
         let block = tokio::select! {
@@ -227,6 +237,7 @@ where
     fn apply_block(&self, block: Block) -> Result<u64> {
         info!(block_number = ?block.block_number, "got block");
         let block_number = block.block_number;
+        self.metrics.observe_ingested_block();
 
         match self.chain.update_indexed_block(block)? {
             ChainChange::Advance(blocks) => {
@@ -237,6 +248,7 @@ where
                     self.block_tx
                         .send(BlockStreamMessage::Data(Box::new(block)))?;
                 }
+                self.metrics.observe_latest_block(next_block_number - 1);
                 Ok(next_block_number)
             }
             ChainChange::Reorg(blocks) => {
@@ -355,5 +367,33 @@ where
             .ok_or_else(|| Status::unavailable("not started indexing"))?;
         self.block += 1;
         Ok(BlockStreamMessage::Data(Box::new(block)))
+    }
+}
+
+impl Metrics {
+    pub fn new() -> Metrics {
+        let meter = o11y::meter("apibara.com/starknet");
+        let ingested_blocks = meter
+            .u64_observable_counter("ingested_blocks")
+            .with_description("The number of ingested blocks")
+            .init();
+        let latest_block = meter
+            .u64_observable_gauge("latest_block")
+            .with_description("The sequence number of the latest ingested block")
+            .init();
+        Metrics {
+            ingested_blocks,
+            latest_block,
+        }
+    }
+
+    pub fn observe_ingested_block(&self) {
+        let cx = o11y::Context::current();
+        self.ingested_blocks.observe(&cx, 1, &[]);
+    }
+
+    pub fn observe_latest_block(&self, block: u64) {
+        let cx = o11y::Context::current();
+        self.latest_block.observe(&cx, block, &[]);
     }
 }

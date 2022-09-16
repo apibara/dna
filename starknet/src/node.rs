@@ -101,6 +101,7 @@ impl<E: EnvironmentKind> StarkNetSourceNode<E> {
     }
 
     pub async fn start(self) -> Result<()> {
+        info!("starting source node");
         // Setup cancellation for graceful shutdown
         let cts = CancellationToken::new();
         let ct = cts.clone();
