@@ -6,6 +6,7 @@ use apibara_core::pb;
 use apibara_node::{
     chain_tracker::ChainTracker,
     db::libmdbx::{Environment, EnvironmentKind},
+    o11y::{self, ObservableCounter},
     reflection::merge_encoded_node_service_descriptor_set,
 };
 use futures::{Stream, StreamExt};
@@ -29,6 +30,11 @@ pub struct NodeServer<E: EnvironmentKind> {
     status_reporter: StatusReporter<E>,
     block_ingestor: Arc<BlockIngestor<E>>,
     cts: CancellationToken,
+    metrics: Metrics,
+}
+
+struct Metrics {
+    rpc_call_count: ObservableCounter<u64>,
 }
 
 impl<E> NodeServer<E>
@@ -41,10 +47,13 @@ where
         cts: CancellationToken,
     ) -> Self {
         let status_reporter = StatusReporter::new(chain);
+        let metrics = Metrics::new();
+
         NodeServer {
             block_ingestor,
             status_reporter,
             cts,
+            metrics,
         }
     }
 
@@ -62,6 +71,7 @@ where
         &self,
         _request: Request<pb::StatusRequest>,
     ) -> TonicResult<pb::StatusResponse> {
+        self.metrics.observer_rpc_call();
         let status = self
             .status_reporter
             .status()
@@ -77,6 +87,7 @@ where
         &self,
         request: Request<pb::ConnectRequest>,
     ) -> TonicResult<Self::ConnectStream> {
+        self.metrics.observer_rpc_call();
         let request: pb::ConnectRequest = request.into_inner();
 
         let (tx, rx) = mpsc::channel(128);
@@ -197,5 +208,21 @@ where
         reporter_handle.await?;
 
         Ok(())
+    }
+}
+
+impl Metrics {
+    pub fn new() -> Metrics {
+        let meter = o11y::meter("apibara.com/starknet");
+        let rpc_call_count = meter
+            .u64_observable_counter("rpc_call_count")
+            .with_description("Number of rpc calls")
+            .init();
+        Metrics { rpc_call_count }
+    }
+
+    pub fn observer_rpc_call(&self) {
+        let cx = o11y::Context::current();
+        self.rpc_call_count.observe(&cx, 1, &[]);
     }
 }
