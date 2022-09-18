@@ -11,7 +11,7 @@ use opentelemetry_otlp::WithExportConfig;
 use tracing::dispatcher::SetGlobalDefaultError;
 
 pub use opentelemetry::metrics::{ObservableCounter, ObservableGauge};
-pub use opentelemetry::Context;
+pub use opentelemetry::{Context, KeyValue};
 
 #[derive(Debug, thiserror::Error)]
 pub enum OpenTelemetryInitError {
