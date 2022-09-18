@@ -15,7 +15,8 @@ use tokio::{sync::mpsc, task::JoinError};
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::CancellationToken;
 use tonic::{transport::Server as TonicServer, Request, Response, Status};
-use tracing::{error, info, warn};
+use tower_http::trace::{OnFailure, OnRequest, TraceLayer};
+use tracing::{error, info, warn, Span};
 
 use crate::{
     block_ingestion::{BlockIngestor, BlockStreamMessage},
@@ -30,11 +31,6 @@ pub struct NodeServer<E: EnvironmentKind> {
     status_reporter: StatusReporter<E>,
     block_ingestor: Arc<BlockIngestor<E>>,
     cts: CancellationToken,
-    metrics: Metrics,
-}
-
-struct Metrics {
-    rpc_call_count: ObservableCounter<u64>,
 }
 
 impl<E> NodeServer<E>
@@ -47,13 +43,11 @@ where
         cts: CancellationToken,
     ) -> Self {
         let status_reporter = StatusReporter::new(chain);
-        let metrics = Metrics::new();
 
         NodeServer {
             block_ingestor,
             status_reporter,
             cts,
-            metrics,
         }
     }
 
@@ -71,7 +65,6 @@ where
         &self,
         _request: Request<pb::StatusRequest>,
     ) -> TonicResult<pb::StatusResponse> {
-        self.metrics.observer_rpc_call();
         let status = self
             .status_reporter
             .status()
@@ -87,7 +80,6 @@ where
         &self,
         request: Request<pb::ConnectRequest>,
     ) -> TonicResult<Self::ConnectStream> {
-        self.metrics.observer_rpc_call();
         let request: pb::ConnectRequest = request.into_inner();
 
         let (tx, rx) = mpsc::channel(128);
@@ -151,6 +143,12 @@ pub enum ServerError {
 
 pub type Result<T> = std::result::Result<T, ServerError>;
 
+#[derive(Clone)]
+struct Metrics {
+    rpc_call_count: Arc<ObservableCounter<u64>>,
+    rpc_error_count: Arc<ObservableCounter<u64>>,
+}
+
 impl<E> Server<E>
 where
     E: EnvironmentKind,
@@ -189,8 +187,15 @@ where
             )
             .build()?;
 
+        let metrics = Metrics::new();
+
+        let tracing_layer = tower::ServiceBuilder::new()
+            .layer(TraceLayer::new_for_grpc().on_request(metrics))
+            .into_inner();
+
         info!(addr = ?addr, "starting server");
         TonicServer::builder()
+            .layer(tracing_layer)
             .add_service(node_server.into_service())
             .add_service(health_service)
             .add_service(reflection_service)
@@ -212,17 +217,40 @@ where
 }
 
 impl Metrics {
-    pub fn new() -> Metrics {
+    pub fn new() -> Self {
         let meter = o11y::meter("apibara.com/starknet");
         let rpc_call_count = meter
             .u64_observable_counter("rpc_call_count")
             .with_description("Number of rpc calls")
             .init();
-        Metrics { rpc_call_count }
+        let rpc_error_count = meter
+            .u64_observable_counter("rpc_error_count")
+            .with_description("Number of rpc calls that returned an error")
+            .init();
+        Metrics {
+            rpc_call_count: Arc::new(rpc_call_count),
+            rpc_error_count: Arc::new(rpc_error_count),
+        }
     }
+}
 
-    pub fn observer_rpc_call(&self) {
+impl OnRequest<hyper::Body> for Metrics {
+    fn on_request(&mut self, request: &hyper::Request<hyper::Body>, _span: &Span) {
         let cx = o11y::Context::current();
-        self.rpc_call_count.observe(&cx, 1, &[]);
+        let path = request.uri().path().to_string();
+        self.rpc_call_count
+            .observe(&cx, 1, &[o11y::KeyValue::new("grpc.path", path)]);
+    }
+}
+
+impl OnFailure<hyper::Body> for Metrics {
+    fn on_failure(
+        &mut self,
+        _failure_classification: hyper::Body,
+        _latency: std::time::Duration,
+        _span: &Span,
+    ) {
+        let cx = o11y::Context::current();
+        self.rpc_error_count.observe(&cx, 1, &[]);
     }
 }

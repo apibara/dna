@@ -101,6 +101,7 @@ dependencies = [
  "ctrlc",
  "futures",
  "hex",
+ "hyper",
  "prost",
  "prost-types",
  "starknet",
@@ -112,6 +113,8 @@ dependencies = [
  "tonic-build",
  "tonic-health",
  "tonic-reflection",
+ "tower",
+ "tower-http",
  "tracing",
  "url",
 ]
@@ -2653,6 +2656,7 @@ dependencies = [
  "tower",
  "tower-layer",
  "tower-service",
+ "tracing",
 ]
 
 [[package]]
