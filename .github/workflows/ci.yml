@@ -5,7 +5,6 @@ on:
   push:
     branches:
     - main
-    - develop
   pull_request:
 
 env:
@@ -171,7 +170,7 @@ jobs:
 
   docker_publish:
     name: publish docker image ${{ matrix.image }}
-    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     needs: docker_build
     strategy:
@@ -224,7 +223,7 @@ jobs:
 
   update_preview_release:
     name: update preview release
-    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: docker_publish
     runs-on: ubuntu-latest
     permissions: write-all
@@ -245,12 +244,12 @@ jobs:
           --prerelease \
           --target ${{ github.sha }} \
           --title "Preview" \
-          --notes "Preview build from the latest `develop` commit." \
+          --notes "Preview build from the latest `main` commit." \
           preview
 
   publish_preview_binaries:
     name: publish preview binaries, binary=${{ matrix.binary }}, target=${{ matrix.target }}
-    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: update_preview_release
     runs-on: ubuntu-latest
     permissions: write-all
