@@ -10,7 +10,12 @@ service Node {
   rpc Status(StatusRequest) returns (StatusResponse);
 
   // Connect to the node and start streaming data from it.
-  rpc Connect(ConnectRequest) returns (stream ConnectResponse);
+  rpc Connect(ConnectRequest) returns (stream ConnectResponse) {
+    option deprecated=true;
+  };
+
+  // Stream messages from the node.
+  rpc StreamMessages(StreamMessagesRequest) returns (stream StreamMessagesResponse);
 }
 
 // Status request. It's empty.
@@ -60,6 +65,20 @@ message ConnectRequest {
 
 // Message sent from the node to the client.
 message ConnectResponse {
+  oneof message {
+    Invalidate invalidate = 1;
+    Data data = 2;
+  }
+}
+
+// Message sent from the client to the node.
+message StreamMessagesRequest {
+  // Start streaming from the provided sequence number.
+  uint64 starting_sequence = 1;
+}
+
+// Message sent from the node to the client.
+message StreamMessagesResponse {
   oneof message {
     Invalidate invalidate = 1;
     Data data = 2;
