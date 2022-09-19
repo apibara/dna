@@ -19,7 +19,9 @@ async fn start(start_matches: &ArgMatches) -> Result<()> {
         .ok_or_else(|| anyhow!("could not get datadir"))?;
 
     let gateway = {
-        if start_matches.is_present("testnet") {
+        if let Some(custom) = start_matches.get_one::<String>("custom-network") {
+            SequencerGateway::from_custom_str(custom)?
+        } else if start_matches.is_present("testnet") {
             SequencerGateway::GoerliTestnet
         } else {
             SequencerGateway::Mainnet
@@ -39,9 +41,10 @@ async fn main() -> Result<()> {
                 .data_dir_args()
                 .arg(arg!(--testnet "StarkNet Goerli test network").required(false))
                 .arg(arg!(--mainnet "StarkNet mainnet network").required(false))
+                .arg(arg!(--"custom-network" <URL> "Custom StarkNet network").required(false))
                 .group(
                     ArgGroup::new("sequencer_gateway")
-                        .args(&["testnet", "mainnet"])
+                        .args(&["testnet", "mainnet", "custom-network"])
                         .multiple(false),
                 ),
         )

@@ -3,6 +3,7 @@
 //! This node indexes all StarkNet blocks and produces a stream of
 //! blocks with transaction data.
 use std::{
+    collections::HashMap,
     fs,
     net::{AddrParseError, SocketAddr},
     path::PathBuf,
@@ -19,6 +20,7 @@ use starknet::providers::SequencerGatewayProvider;
 use tokio::task::JoinError;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
+use url::Url;
 
 use crate::{
     block_ingestion::{BlockIngestor, BlockIngestorError},
@@ -27,6 +29,7 @@ use crate::{
 
 pub async fn start_starknet_source_node(datadir: PathBuf, gateway: SequencerGateway) -> Result<()> {
     // setup db
+    let datadir = datadir.join(gateway.network_name());
     fs::create_dir_all(&datadir)?;
     let min_size = byte_unit::n_gib_bytes!(10) as usize;
     let max_size = byte_unit::n_gib_bytes!(100) as usize;
@@ -43,10 +46,8 @@ pub async fn start_starknet_source_node(datadir: PathBuf, gateway: SequencerGate
     let db = Arc::new(db);
 
     // setup gateway client
-    let starknet_client = match gateway {
-        SequencerGateway::GoerliTestnet => SequencerGatewayProvider::starknet_alpha_goerli(),
-        SequencerGateway::Mainnet => SequencerGatewayProvider::starknet_alpha_mainnet(),
-    };
+    let (gateway_url, feeder_gateway_url) = gateway.gateway_url_pair()?;
+    let starknet_client = SequencerGatewayProvider::new(gateway_url, feeder_gateway_url);
     let starknet_client = Arc::new(starknet_client);
 
     let node = StarkNetSourceNode::new(db, starknet_client);
@@ -64,6 +65,7 @@ pub struct StarkNetSourceNode<E: EnvironmentKind> {
 pub enum SequencerGateway {
     GoerliTestnet,
     Mainnet,
+    Custom { url: String, name: Option<String> },
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -88,6 +90,8 @@ pub enum SourceNodeError {
     Server(#[from] ServerError),
     #[error("io error")]
     Io(#[from] std::io::Error),
+    #[error("error parsing custom gateway configuration")]
+    CustomGatewayConfiguration,
 }
 
 pub type Result<T> = std::result::Result<T, SourceNodeError>;
@@ -166,5 +170,108 @@ impl<E: EnvironmentKind> StarkNetSourceNode<E> {
             .map_err(|_| SourceNodeError::Shutdown)??;
 
         Ok(())
+    }
+}
+
+impl SequencerGateway {
+    /// Creates a `SequencerGateway` from a string.
+    ///
+    /// `custom` can be an http or https url, in that case the sequencer will
+    /// be called "custom".
+    /// If you pass a string with the format `url=http://...,name=my-name`, the
+    /// sequencer will use the provided url and name.
+    pub fn from_custom_str(custom: &str) -> Result<SequencerGateway> {
+        // user passed a url.
+        if custom.starts_with("http://") || custom.starts_with("https://") {
+            return Ok(SequencerGateway::Custom {
+                url: custom.to_string(),
+                name: None,
+            });
+        }
+        let mut config_map: HashMap<_, _> = custom
+            .split_terminator(',')
+            .filter_map(|entry| {
+                let mut parts = entry.splitn(2, '=');
+                let key = parts.next()?.trim();
+                let value = parts.next()?.trim();
+                Some((key.to_owned(), value.to_owned()))
+            })
+            .collect();
+
+        let url = config_map
+            .remove("url")
+            .ok_or(SourceNodeError::CustomGatewayConfiguration)?;
+        let name = config_map.remove("name");
+        Ok(SequencerGateway::Custom { url, name })
+    }
+
+    /// Returns the gateway and feeder gateway urls.
+    pub fn gateway_url_pair(&self) -> Result<(Url, Url)> {
+        match self {
+            SequencerGateway::Mainnet => Ok((
+                Url::parse("https://alpha-mainnet.starknet.io/gateway").unwrap(),
+                Url::parse("https://alpha-mainnet.starknet.io/feeder_gateway").unwrap(),
+            )),
+            SequencerGateway::GoerliTestnet => Ok((
+                Url::parse("https://alpha4.starknet.io/gateway").unwrap(),
+                Url::parse("https://alpha4.starknet.io/feeder_gateway").unwrap(),
+            )),
+            SequencerGateway::Custom { url, .. } => {
+                let base_url = Url::parse(url)?;
+                let gateway_url = base_url.join("gateway")?;
+                let feeder_gateway_url = base_url.join("feeder_gateway")?;
+                Ok((gateway_url, feeder_gateway_url))
+            }
+        }
+    }
+
+    pub fn network_name(&self) -> &str {
+        match self {
+            SequencerGateway::Mainnet => "mainnet",
+            SequencerGateway::GoerliTestnet => "testnet",
+            SequencerGateway::Custom { name, .. } => name.as_deref().unwrap_or("custom"),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SequencerGateway;
+
+    #[test]
+    pub fn test_sequencer_gateway_from_url() {
+        let gateway = SequencerGateway::from_custom_str("https://example.org/sn/").unwrap();
+        let (gateway_url, feeder_gateway_url) = gateway.gateway_url_pair().unwrap();
+        assert_eq!(gateway_url.as_str(), "https://example.org/sn/gateway");
+        assert_eq!(
+            feeder_gateway_url.as_str(),
+            "https://example.org/sn/feeder_gateway"
+        );
+        assert_eq!(gateway.network_name(), "custom");
+    }
+
+    #[test]
+    pub fn test_sequencer_gateway_from_url_without_name() {
+        let gateway = SequencerGateway::from_custom_str("url=https://example.org/sn/").unwrap();
+        let (gateway_url, feeder_gateway_url) = gateway.gateway_url_pair().unwrap();
+        assert_eq!(gateway_url.as_str(), "https://example.org/sn/gateway");
+        assert_eq!(
+            feeder_gateway_url.as_str(),
+            "https://example.org/sn/feeder_gateway"
+        );
+        assert_eq!(gateway.network_name(), "custom");
+    }
+
+    #[test]
+    pub fn test_sequencer_gateway_from_url_with_name() {
+        let gateway =
+            SequencerGateway::from_custom_str("name=abcd,url=https://example.org/sn/").unwrap();
+        let (gateway_url, feeder_gateway_url) = gateway.gateway_url_pair().unwrap();
+        assert_eq!(gateway_url.as_str(), "https://example.org/sn/gateway");
+        assert_eq!(
+            feeder_gateway_url.as_str(),
+            "https://example.org/sn/feeder_gateway"
+        );
+        assert_eq!(gateway.network_name(), "abcd");
     }
 }
