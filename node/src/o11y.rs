@@ -4,7 +4,10 @@ use clap::Command;
 use opentelemetry::{
     global,
     metrics::{Meter, MetricsError},
-    sdk::{export::metrics::aggregation::cumulative_temporality_selector, metrics::selectors},
+    sdk::{
+        self, export::metrics::aggregation::cumulative_temporality_selector, metrics::selectors,
+        Resource,
+    },
     trace::TraceError,
 };
 use opentelemetry_otlp::WithExportConfig;
@@ -45,7 +48,9 @@ pub fn init_opentelemetry() -> Result<(), OpenTelemetryInitError> {
     let _tracer = opentelemetry_otlp::new_pipeline()
         .tracing()
         .with_exporter(opentelemetry_otlp::new_exporter().tonic().with_env())
+        .with_trace_config(sdk::trace::config().with_resource(Resource::default()))
         .install_batch(opentelemetry::runtime::Tokio)?;
+
     let _meter = opentelemetry_otlp::new_pipeline()
         .metrics(
             selectors::simple::inexpensive(),
@@ -53,6 +58,8 @@ pub fn init_opentelemetry() -> Result<(), OpenTelemetryInitError> {
             opentelemetry::runtime::Tokio,
         )
         .with_exporter(opentelemetry_otlp::new_exporter().tonic().with_env())
+        .with_resource(Resource::default())
         .build()?;
+
     Ok(())
 }
