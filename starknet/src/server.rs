@@ -121,6 +121,62 @@ where
 
         Ok(Response::new(response))
     }
+
+    type StreamMessagesStream = Pin<
+        Box<
+            dyn Stream<Item = std::result::Result<pb::StreamMessagesResponse, Status>>
+                + Send
+                + 'static,
+        >,
+    >;
+
+    async fn stream_messages(
+        &self,
+        request: Request<pb::StreamMessagesRequest>,
+    ) -> TonicResult<Self::StreamMessagesStream> {
+        let request: pb::StreamMessagesRequest = request.into_inner();
+
+        let (tx, rx) = mpsc::channel(128);
+
+        let mut streamer = self
+            .block_ingestor
+            .stream_from_sequence(request.starting_sequence, tx, self.cts.clone())
+            .await
+            .map_err(|_| Status::internal("failed to start streaming data"))?;
+
+        tokio::spawn(async move { streamer.start().await });
+
+        let response = Box::pin(ReceiverStream::new(rx).map(|maybe_res| match maybe_res {
+            Err(err) => {
+                warn!(err = ?err, "stream failed");
+                Err(Status::internal("stream failed"))
+            }
+            Ok(BlockStreamMessage::Reorg(sequence)) => {
+                let invalidate = pb::Invalidate { sequence };
+                Ok(pb::StreamMessagesResponse {
+                    message: Some(pb::stream_messages_response::Message::Invalidate(
+                        invalidate,
+                    )),
+                })
+            }
+            Ok(BlockStreamMessage::Data(block)) => {
+                let inner_data = prost_types::Any {
+                    type_url: "type.googleapis.com/apibara.starknet.v1alpha1.Block".to_string(),
+                    value: block.encode_to_vec(),
+                };
+                let data = pb::Data {
+                    sequence: block.block_number,
+                    data: Some(inner_data),
+                };
+
+                Ok(pb::StreamMessagesResponse {
+                    message: Some(pb::stream_messages_response::Message::Data(data)),
+                })
+            }
+        }));
+
+        Ok(Response::new(response))
+    }
 }
 
 pub struct Server<E: EnvironmentKind> {
