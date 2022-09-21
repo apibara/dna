@@ -2,7 +2,7 @@
 
 use std::{net::SocketAddr, pin::Pin, sync::Arc};
 
-use apibara_core::pb;
+use apibara_core::node::pb;
 use apibara_node::{
     chain_tracker::ChainTracker,
     db::libmdbx::{Environment, EnvironmentKind},

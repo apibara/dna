@@ -1,0 +1,34 @@
+// # Apibara Application service.
+//
+// The application service is used to communicate between
+// the node and applications implemented in languages that are
+// not rust.
+syntax = "proto3";
+
+package apibara.application.v1alpha1;
+
+service Application {
+    // Called once on the node's first start.
+    // Used to initialize the node state.
+    rpc Init(InitRequest) returns (InitResponse);
+}
+
+// Init request. It's empty.
+message InitRequest {
+}
+
+// Init response. Returns information about the application.
+message InitResponse {
+    // List of input streams of this node.
+    repeated InputStream inputs = 1;
+}
+
+// Input stream description.
+message InputStream {
+    // Unique input id.
+    uint64 id = 1;
+    // Input stream url.
+    string url = 2;
+    // Input starting sequence.
+    uint64 starting_sequence = 3;
+}
