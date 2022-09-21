@@ -66,9 +66,11 @@ dependencies = [
 name = "apibara-node"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "apibara-core",
  "arrayvec",
  "assert_matches",
+ "async-trait",
  "byteorder",
  "clap",
  "dirs",

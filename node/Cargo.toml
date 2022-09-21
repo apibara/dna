@@ -3,9 +3,19 @@ name = "apibara-node"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "apibara_node"
+path = "src/lib.rs"
+
+[[bin]]
+name = "apibara-node"
+path = "src/bin.rs"
+
 [dependencies]
+anyhow = "=1.0.59"
 apibara-core = { path = "../core" }
 arrayvec = "0.7.2"
+async-trait = "0.1.57"
 byteorder = "1.4.3"
 clap = { version = "3.2.17", features = ["env", "unicode"] }
 dirs = "4.0.0"

@@ -71,54 +71,6 @@ where
         Ok(Response::new(status))
     }
 
-    type ConnectStream = Pin<
-        Box<dyn Stream<Item = std::result::Result<pb::ConnectResponse, Status>> + Send + 'static>,
-    >;
-
-    async fn connect(
-        &self,
-        request: Request<pb::ConnectRequest>,
-    ) -> TonicResult<Self::ConnectStream> {
-        let request: pb::ConnectRequest = request.into_inner();
-        let stream = self
-            .block_ingestor
-            .stream_from_sequence(request.starting_sequence, self.cts.clone())
-            .map_err(|_| Status::internal("failed to start message stream"))?;
-        let response = Box::pin(stream.map(|maybe_res| match maybe_res {
-            Err(err) => {
-                warn!(err = ?err, "stream failed");
-                Err(Status::internal("stream failed"))
-            }
-            Ok(BlockStreamMessage::Invalidate { sequence }) => {
-                let invalidate = pb::Invalidate {
-                    sequence: sequence.as_u64(),
-                };
-                Ok(pb::ConnectResponse {
-                    message: Some(pb::connect_response::Message::Invalidate(invalidate)),
-                })
-            }
-            Ok(BlockStreamMessage::Data {
-                data: block,
-                sequence,
-            }) => {
-                let inner_data = prost_types::Any {
-                    type_url: "type.googleapis.com/apibara.starknet.v1alpha1.Block".to_string(),
-                    value: block.encode_to_vec(),
-                };
-                let data = pb::Data {
-                    sequence: sequence.as_u64(),
-                    data: Some(inner_data),
-                };
-
-                Ok(pb::ConnectResponse {
-                    message: Some(pb::connect_response::Message::Data(data)),
-                })
-            }
-        }));
-
-        Ok(Response::new(response))
-    }
-
     type StreamMessagesStream = Pin<
         Box<
             dyn Stream<Item = std::result::Result<pb::StreamMessagesResponse, Status>>
