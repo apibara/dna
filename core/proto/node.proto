@@ -9,11 +9,6 @@ service Node {
   // Get information about the node and its status.
   rpc Status(StatusRequest) returns (StatusResponse);
 
-  // Connect to the node and start streaming data from it.
-  rpc Connect(ConnectRequest) returns (stream ConnectResponse) {
-    option deprecated=true;
-  };
-
   // Stream messages from the node.
   rpc StreamMessages(StreamMessagesRequest) returns (stream StreamMessagesResponse);
 }
