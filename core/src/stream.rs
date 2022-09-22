@@ -5,7 +5,7 @@ use std::ops::RangeInclusive;
 pub struct StreamId(u64);
 
 /// Stream message sequence number.
-#[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
+#[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Hash, Eq)]
 pub struct Sequence(u64);
 
 /// A range of sequence numbers. The range is inclusive.
@@ -37,5 +37,10 @@ impl Sequence {
     /// Returns the sequence number as `u64`.
     pub fn as_u64(&self) -> u64 {
         self.0
+    }
+
+    /// Returns the sequence number immediately after.
+    pub fn successor(&self) -> Sequence {
+        Sequence(self.0 + 1)
     }
 }
