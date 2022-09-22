@@ -14,10 +14,13 @@ futures = "0.3.23"
 libmdbx = "0.1.7"
 opentelemetry = { version = "0.18.0", features = ["trace", "metrics", "rt-tokio"] }
 opentelemetry-otlp = { version = "0.11.0", features = ["trace", "metrics", "grpc-tonic"] }
+pin-project = "1.0.12"
 prost = "0.11.0"
 prost-types = "0.11.1"
 thiserror = "1.0.32"
 tokio = { version = "1.20.1", features = ["full"] }
+tokio-stream = "0.1.10"
+tokio-util = "0.7.4"
 tracing = "0.1.36"
 tracing-opentelemetry = "0.17.4"
 tracing-subscriber = { version = "0.3.15", features = ["std", "env-filter"] }
