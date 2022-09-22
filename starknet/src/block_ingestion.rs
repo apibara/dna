@@ -1,22 +1,19 @@
 //! Ingest blocks from the node.
 
-use std::{collections::VecDeque, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 
+use apibara_core::stream::{Sequence, StreamMessage};
 use apibara_node::{
     chain_tracker::{ChainChange, ChainTracker, ChainTrackerError},
     db::libmdbx::EnvironmentKind,
+    message_stream::{self, BackfilledMessageStream},
     o11y::{self, ObservableCounter, ObservableGauge},
 };
+use futures::{Stream, TryStreamExt};
 use starknet::providers::SequencerGatewayProvider;
-use tokio::sync::{
-    broadcast::{
-        self,
-        error::{SendError, TryRecvError},
-    },
-    mpsc,
-};
+use tokio::sync::broadcast::{self, error::SendError};
+use tokio_stream::wrappers::BroadcastStream;
 use tokio_util::sync::CancellationToken;
-use tonic::Status;
 use tracing::{debug, error, info};
 
 use crate::{
@@ -24,11 +21,7 @@ use crate::{
     core::Block,
 };
 
-#[derive(Debug, Clone)]
-pub enum BlockStreamMessage {
-    Data(Box<Block>),
-    Reorg(u64),
-}
+pub type BlockStreamMessage = StreamMessage<Block>;
 
 pub struct BlockIngestor<E: EnvironmentKind> {
     chain: Arc<ChainTracker<Block, E>>,
@@ -53,16 +46,6 @@ pub enum BlockIngestorError {
 pub type Result<T> = std::result::Result<T, BlockIngestorError>;
 
 const MESSAGE_CHANNEL_SIZE: usize = 128;
-
-pub struct BackfilledBlockStreamer<E: EnvironmentKind> {
-    tx: mpsc::Sender<std::result::Result<BlockStreamMessage, Status>>,
-    chain: Arc<ChainTracker<Block, E>>,
-    block: u64,
-    indexed: u64,
-    rx: broadcast::Receiver<BlockStreamMessage>,
-    buffer: VecDeque<BlockStreamMessage>,
-    ct: CancellationToken,
-}
 
 pub struct Metrics {
     ingested_blocks: ObservableCounter<u64>,
@@ -90,35 +73,37 @@ where
         })
     }
 
-    /// Subscribe to new chain blocks and reorganizations.
-    pub fn subscribe(&self) -> broadcast::Receiver<BlockStreamMessage> {
-        self.block_tx.subscribe()
+    /// Creates a new stream of live blockchain blocks and reorgs.
+    pub fn live_stream(
+        &self,
+    ) -> impl Stream<Item = std::result::Result<BlockStreamMessage, Box<dyn std::error::Error>>>
+    {
+        let receiver = self.block_tx.subscribe();
+        BroadcastStream::new(receiver).map_err(|err| Box::new(err) as Box<dyn std::error::Error>)
     }
 
-    pub async fn stream_from_sequence(
+    pub fn stream_from_sequence(
         &self,
         starting_sequence: u64,
-        tx: mpsc::Sender<std::result::Result<BlockStreamMessage, Status>>,
         ct: CancellationToken,
-    ) -> Result<BackfilledBlockStreamer<E>> {
+    ) -> Result<impl Stream<Item = message_stream::Result<StreamMessage<Block>>>> {
+        info!(start = %starting_sequence, "start stream");
         let indexed = self
             .chain
             .latest_indexed_block()?
             .ok_or(BlockIngestorError::EmptyChain)?
             .block_number;
-        let rx = self.subscribe();
 
-        info!(start = %starting_sequence, "start stream");
-
-        Ok(BackfilledBlockStreamer {
-            tx,
-            rx,
-            chain: self.chain.clone(),
-            block: starting_sequence,
-            indexed,
-            buffer: VecDeque::default(),
+        let current = Sequence::from_u64(starting_sequence);
+        let latest = Sequence::from_u64(indexed);
+        let live = self.live_stream();
+        Ok(BackfilledMessageStream::new(
+            current,
+            latest,
+            self.chain.clone(),
+            live,
             ct,
-        })
+        ))
     }
 
     pub async fn start(&self, ct: CancellationToken) -> Result<()> {
@@ -245,8 +230,9 @@ where
                 let mut next_block_number = block_number + 1;
                 for block in blocks {
                     next_block_number = block.block_number + 1;
-                    self.block_tx
-                        .send(BlockStreamMessage::Data(Box::new(block)))?;
+                    let sequence = Sequence::from_u64(block.block_number);
+                    let message = BlockStreamMessage::new_data(sequence, block);
+                    self.block_tx.send(message)?;
                 }
                 self.metrics.observe_latest_block(next_block_number - 1);
                 Ok(next_block_number)
@@ -264,109 +250,6 @@ where
                 Ok(block_number + 1)
             }
         }
-    }
-}
-
-impl<E> BackfilledBlockStreamer<E>
-where
-    E: EnvironmentKind,
-{
-    pub async fn start(&mut self) -> std::result::Result<(), Status> {
-        loop {
-            if self.ct.is_cancelled() {
-                return Ok(());
-            }
-            // send backlog in batches
-            self.send_next_block_batch().await?;
-
-            // check for new live blocks
-            match self.rx.try_recv() {
-                Err(TryRecvError::Empty) => (),
-                Err(_) => {
-                    return Err(Status::internal(
-                        "failed to communicate with block ingestor",
-                    ))
-                }
-                Ok(BlockStreamMessage::Reorg(invalidate_after)) => {
-                    if invalidate_after > self.indexed {
-                        // TODO: drop messages that were invalidated
-                        todo!()
-                    }
-                    todo!()
-                }
-                Ok(BlockStreamMessage::Data(block)) => {
-                    info!(block_number = %block.block_number, "received live block data");
-                    self.buffer.push_front(BlockStreamMessage::Data(block));
-
-                    // keep buffer reasonably sized
-                    while self.buffer.len() > 50 {
-                        self.buffer.pop_front();
-                    }
-
-                    // keep tracking the first "live" block to send
-                    if let Some(BlockStreamMessage::Data(block)) = self.buffer.front() {
-                        self.indexed = block.block_number;
-                    }
-                }
-            }
-
-            if self.block >= self.indexed {
-                info!("finished sending backfilled blocks");
-                break;
-            }
-        }
-
-        while let Some(block) = self.buffer.pop_front() {
-            if self.ct.is_cancelled() {
-                return Ok(());
-            }
-            self.tx
-                .send(Ok(block))
-                .await
-                .map_err(|_| Status::internal("failed to stream block"))?;
-        }
-        info!("finished sending buffer");
-
-        loop {
-            if self.ct.is_cancelled() {
-                return Ok(());
-            }
-            // send live events
-            let block = self
-                .rx
-                .recv()
-                .await
-                .map_err(|_| Status::internal("failed to stream block"))?;
-            self.tx
-                .send(Ok(block))
-                .await
-                .map_err(|_| Status::internal("failed to stream block"))?;
-        }
-    }
-
-    pub async fn send_next_block_batch(&mut self) -> std::result::Result<(), Status> {
-        for _ in 1..100 {
-            let block = self.next_backfilled_block()?;
-            self.tx
-                .send(Ok(block))
-                .await
-                .map_err(|_| Status::internal("failed to stream block"))?;
-            if self.block >= self.indexed {
-                return Ok(());
-            }
-        }
-        Ok(())
-    }
-
-    fn next_backfilled_block(&mut self) -> std::result::Result<BlockStreamMessage, Status> {
-        // backfill
-        let block = self
-            .chain
-            .block_by_number(self.block)
-            .map_err(|_| Status::internal("failed to load data"))?
-            .ok_or_else(|| Status::unavailable("not started indexing"))?;
-        self.block += 1;
-        Ok(BlockStreamMessage::Data(Box::new(block)))
     }
 }
 

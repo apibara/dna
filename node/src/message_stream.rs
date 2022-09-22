@@ -28,12 +28,14 @@ use tokio_util::sync::CancellationToken;
 
 use crate::message_storage::MessageStorage;
 
+pub type LiveStreamItem<M> = std::result::Result<StreamMessage<M>, Box<dyn std::error::Error>>;
+
 #[pin_project]
 pub struct BackfilledMessageStream<M, S, L>
 where
     M: MessageData,
     S: MessageStorage<M>,
-    L: Stream<Item = StreamMessage<M>>,
+    L: Stream<Item = LiveStreamItem<M>>,
 {
     storage: S,
     #[pin]
@@ -51,7 +53,9 @@ pub enum BackfilledMessageStreamError {
     #[error("message with sequence {sequence} not found")]
     MessageNotFound { sequence: u64 },
     #[error("error retrieving data from message storage")]
-    Storage(#[from] Box<dyn std::error::Error>),
+    Storage(Box<dyn std::error::Error>),
+    #[error("error retrieving data from live stream")]
+    LiveStream(Box<dyn std::error::Error>),
 }
 
 pub type Result<T> = std::result::Result<T, BackfilledMessageStreamError>;
@@ -67,7 +71,7 @@ impl<M, S, L> BackfilledMessageStream<M, S, L>
 where
     M: MessageData,
     S: MessageStorage<M>,
-    L: Stream<Item = StreamMessage<M>>,
+    L: Stream<Item = LiveStreamItem<M>>,
 {
     /// Creates a new `MessageStreamer`.
     ///
@@ -91,61 +95,11 @@ where
     }
 }
 
-impl<M: MessageData> State<M> {
-    fn new(current: Sequence, latest: Sequence) -> Self {
-        State {
-            current,
-            latest,
-            buffer: VecDeque::default(),
-        }
-    }
-
-    fn current(&self) -> &Sequence {
-        &self.current
-    }
-
-    fn increment_current(&mut self) {
-        self.current = Sequence::from_u64(self.current.as_u64() + 1);
-    }
-
-    fn update_latest(&mut self, sequence: Sequence) {
-        self.latest = sequence;
-    }
-
-    fn update_current(&mut self, sequence: Sequence) {
-        self.current = sequence;
-    }
-
-    fn add_live_message(&mut self, sequence: Sequence, message: M) {
-        self.buffer.push_back((sequence, message));
-
-        // trim buffer size to always be ~50 elements
-        while self.buffer.len() > 50 {
-            self.buffer.pop_front();
-        }
-    }
-
-    fn clear_buffer(&mut self) {
-        self.buffer.clear();
-    }
-
-    fn buffer_has_sequence(&self, sequence: &Sequence) -> bool {
-        match self.buffer.front() {
-            None => false,
-            Some((seq, _)) => seq <= sequence,
-        }
-    }
-
-    fn pop_buffer(&mut self) -> Option<(Sequence, M)> {
-        self.buffer.pop_front()
-    }
-}
-
 impl<M, S, L> Stream for BackfilledMessageStream<M, S, L>
 where
     M: MessageData,
     S: MessageStorage<M>,
-    L: Stream<Item = StreamMessage<M>>,
+    L: Stream<Item = LiveStreamItem<M>>,
 {
     type Item = Result<StreamMessage<M>>;
 
@@ -208,7 +162,10 @@ where
 
         if let Some(message) = live_message {
             match message {
-                StreamMessage::Invalidate { sequence } => {
+                Err(err) => {
+                    return Poll::Ready(Some(Err(BackfilledMessageStreamError::LiveStream(err))))
+                }
+                Ok(StreamMessage::Invalidate { sequence }) => {
                     // clear buffer just in case
                     this.state.clear_buffer();
                     this.state.update_latest(sequence);
@@ -226,7 +183,7 @@ where
                     cx.waker().wake_by_ref();
                     return Poll::Pending;
                 }
-                StreamMessage::Data { sequence, data } => {
+                Ok(StreamMessage::Data { sequence, data }) => {
                     this.state.update_latest(sequence);
 
                     // just send the message to the stream if it's the current one
@@ -295,6 +252,56 @@ where
     }
 }
 
+impl<M: MessageData> State<M> {
+    fn new(current: Sequence, latest: Sequence) -> Self {
+        State {
+            current,
+            latest,
+            buffer: VecDeque::default(),
+        }
+    }
+
+    fn current(&self) -> &Sequence {
+        &self.current
+    }
+
+    fn increment_current(&mut self) {
+        self.current = Sequence::from_u64(self.current.as_u64() + 1);
+    }
+
+    fn update_latest(&mut self, sequence: Sequence) {
+        self.latest = sequence;
+    }
+
+    fn update_current(&mut self, sequence: Sequence) {
+        self.current = sequence;
+    }
+
+    fn add_live_message(&mut self, sequence: Sequence, message: M) {
+        self.buffer.push_back((sequence, message));
+
+        // trim buffer size to always be ~50 elements
+        while self.buffer.len() > 50 {
+            self.buffer.pop_front();
+        }
+    }
+
+    fn clear_buffer(&mut self) {
+        self.buffer.clear();
+    }
+
+    fn buffer_has_sequence(&self, sequence: &Sequence) -> bool {
+        match self.buffer.front() {
+            None => false,
+            Some((seq, _)) => seq <= sequence,
+        }
+    }
+
+    fn pop_buffer(&mut self) -> Option<(Sequence, M)> {
+        self.buffer.pop_front()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::{
@@ -334,24 +341,14 @@ mod tests {
     #[derive(Debug, thiserror::Error)]
     pub enum TestMessageStorageError {}
 
+    impl TestMessageStorage {
+        pub fn insert(&mut self, sequence: &Sequence, message: &TestMessage) {
+            self.messages.insert(sequence.clone(), message.clone());
+        }
+    }
+
     impl MessageStorage<TestMessage> for Arc<Mutex<TestMessageStorage>> {
         type Error = TestMessageStorageError;
-
-        fn insert(
-            &mut self,
-            sequence: &Sequence,
-            message: &TestMessage,
-        ) -> Result<(), Self::Error> {
-            self.lock()
-                .unwrap()
-                .messages
-                .insert(sequence.clone(), message.clone());
-            Ok(())
-        }
-
-        fn invalidate(&mut self, _sequence: &Sequence) -> Result<usize, Self::Error> {
-            unimplemented!()
-        }
 
         fn get(&self, sequence: &Sequence) -> Result<Option<TestMessage>, Self::Error> {
             Ok(self.lock().unwrap().messages.get(sequence).cloned())
@@ -360,13 +357,14 @@ mod tests {
 
     #[tokio::test]
     pub async fn test_transition_between_backfilled_and_live() {
-        let mut storage = Arc::new(Mutex::new(TestMessageStorage::default()));
+        let storage = Arc::new(Mutex::new(TestMessageStorage::default()));
 
         for sequence in 0..10 {
             let message = TestMessage::new(sequence);
             storage
-                .insert(&Sequence::from_u64(sequence), &message)
-                .unwrap();
+                .lock()
+                .unwrap()
+                .insert(&Sequence::from_u64(sequence), &message);
         }
 
         let (live_tx, live_rx) = mpsc::channel(256);
@@ -382,10 +380,10 @@ mod tests {
         );
 
         live_tx
-            .send(StreamMessage::new_data(
+            .send(Ok(StreamMessage::new_data(
                 Sequence::from_u64(10),
                 TestMessage::new(10),
-            ))
+            )))
             .await
             .unwrap();
 
@@ -404,9 +402,9 @@ mod tests {
         for sequence in 11..100 {
             let message = TestMessage::new(sequence);
             let sequence = Sequence::from_u64(sequence);
-            storage.insert(&sequence, &message).unwrap();
+            storage.lock().unwrap().insert(&sequence, &message);
             let message = StreamMessage::new_data(sequence, message);
-            live_tx.send(message).await.unwrap();
+            live_tx.send(Ok(message)).await.unwrap();
         }
 
         for sequence in 11..100 {
@@ -435,7 +433,7 @@ mod tests {
             let message = TestMessage::new(sequence);
             let sequence = Sequence::from_u64(sequence);
             let message = StreamMessage::new_data(sequence, message);
-            live_tx.send(message).await.unwrap();
+            live_tx.send(Ok(message)).await.unwrap();
         }
 
         for sequence in 15..20 {
@@ -446,7 +444,7 @@ mod tests {
 
     #[tokio::test]
     pub async fn test_invalidate_data_after_current() {
-        let mut storage = Arc::new(Mutex::new(TestMessageStorage::default()));
+        let storage = Arc::new(Mutex::new(TestMessageStorage::default()));
 
         let (live_tx, live_rx) = mpsc::channel(256);
         let live_stream = ReceiverStream::new(live_rx);
@@ -464,30 +462,30 @@ mod tests {
         for sequence in 0..5 {
             let message = TestMessage::new(sequence);
             let sequence = Sequence::from_u64(sequence);
-            storage.insert(&sequence, &message).unwrap();
+            storage.lock().unwrap().insert(&sequence, &message);
         }
 
         // live stream some messages
         for sequence in 5..10 {
             let message = TestMessage::new(sequence);
             let sequence = Sequence::from_u64(sequence);
-            storage.insert(&sequence, &message).unwrap();
+            storage.lock().unwrap().insert(&sequence, &message);
             let message = StreamMessage::new_data(sequence, message);
-            live_tx.send(message).await.unwrap();
+            live_tx.send(Ok(message)).await.unwrap();
         }
 
         // invalidate all messages with sequence >= 8
         let sequence = Sequence::from_u64(8);
         let message = StreamMessage::new_invalidate(sequence);
-        live_tx.send(message).await.unwrap();
+        live_tx.send(Ok(message)).await.unwrap();
 
         // then send some more messages
         for sequence in 8..12 {
             let message = TestMessage::new(sequence);
             let sequence = Sequence::from_u64(sequence);
-            storage.insert(&sequence, &message).unwrap();
+            storage.lock().unwrap().insert(&sequence, &message);
             let message = StreamMessage::new_data(sequence, message);
-            live_tx.send(message).await.unwrap();
+            live_tx.send(Ok(message)).await.unwrap();
         }
 
         // notice there is no invalidate message because it happened for a
@@ -501,7 +499,7 @@ mod tests {
 
     #[tokio::test]
     pub async fn test_invalidate_before_current() {
-        let mut storage = Arc::new(Mutex::new(TestMessageStorage::default()));
+        let storage = Arc::new(Mutex::new(TestMessageStorage::default()));
 
         let (live_tx, live_rx) = mpsc::channel(256);
         let live_stream = ReceiverStream::new(live_rx);
@@ -519,16 +517,16 @@ mod tests {
         for sequence in 0..5 {
             let message = TestMessage::new(sequence);
             let sequence = Sequence::from_u64(sequence);
-            storage.insert(&sequence, &message).unwrap();
+            storage.lock().unwrap().insert(&sequence, &message);
         }
 
         // live stream some messages
         for sequence in 5..10 {
             let message = TestMessage::new(sequence);
             let sequence = Sequence::from_u64(sequence);
-            storage.insert(&sequence, &message).unwrap();
+            storage.lock().unwrap().insert(&sequence, &message);
             let message = StreamMessage::new_data(sequence, message);
-            live_tx.send(message).await.unwrap();
+            live_tx.send(Ok(message)).await.unwrap();
         }
 
         // now stream messages up to 9
@@ -541,15 +539,15 @@ mod tests {
         // invalidate all messages with sequence >= 8
         let sequence = Sequence::from_u64(8);
         let message = StreamMessage::new_invalidate(sequence);
-        live_tx.send(message).await.unwrap();
+        live_tx.send(Ok(message)).await.unwrap();
 
         // then send some more messages
         for sequence in 8..12 {
             let message = TestMessage::new(sequence);
             let sequence = Sequence::from_u64(sequence);
-            storage.insert(&sequence, &message).unwrap();
+            storage.lock().unwrap().insert(&sequence, &message);
             let message = StreamMessage::new_data(sequence, message);
-            live_tx.send(message).await.unwrap();
+            live_tx.send(Ok(message)).await.unwrap();
         }
 
         // received invalidate message

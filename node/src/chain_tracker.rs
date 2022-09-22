@@ -1,11 +1,15 @@
 //! # Track the chain's head
 use std::{marker::PhantomData, sync::Arc};
 
+use apibara_core::stream::Sequence;
 use libmdbx::{Environment, EnvironmentKind, Error as MdbxError, Transaction, TransactionKind, RW};
 
-use crate::db::{
-    tables::{self, Block, BlockHash},
-    KeyDecodeError, MdbxRWTransactionExt, MdbxTransactionExt, TableCursor,
+use crate::{
+    db::{
+        tables::{self, Block, BlockHash},
+        KeyDecodeError, MdbxRWTransactionExt, MdbxTransactionExt, TableCursor,
+    },
+    message_storage::MessageStorage,
 };
 
 /// Track the chain's state.
@@ -308,10 +312,23 @@ impl<B: Block> ChainChange<B> {
     }
 }
 
+impl<B, E> MessageStorage<B> for Arc<ChainTracker<B, E>>
+where
+    B: Block,
+    E: EnvironmentKind,
+{
+    type Error = ChainTrackerError;
+
+    fn get(&self, sequence: &Sequence) -> std::result::Result<Option<B>, Self::Error> {
+        self.block_by_number(sequence.as_u64())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
 
+    use apibara_core::stream::MessageData;
     use assert_matches::assert_matches;
     use libmdbx::{Environment, NoWriteMap};
     use prost::Message;
@@ -372,6 +389,8 @@ mod tests {
             &self.hash
         }
     }
+
+    impl MessageData for TestBlock {}
 
     impl Block for TestBlock {
         type Hash = TestBlockHash;

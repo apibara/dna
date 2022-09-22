@@ -2,6 +2,7 @@
 
 use std::{io::Cursor, marker::PhantomData};
 
+use apibara_core::stream::MessageData;
 use byteorder::{BigEndian, ReadBytesExt};
 use prost::Message;
 
@@ -16,7 +17,7 @@ pub trait BlockHash:
 }
 
 /// A blockchain block with the associated hash type.
-pub trait Block: Send + Sync + Default + prost::Message + std::fmt::Debug {
+pub trait Block: Send + Sync + MessageData {
     type Hash: BlockHash;
 
     /// Returns the block number or height.

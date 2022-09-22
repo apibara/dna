@@ -10,16 +10,6 @@ use crate::db::{tables, MdbxRWTransactionExt, MdbxTransactionExt, TableCursor};
 pub trait MessageStorage<M: MessageData> {
     type Error: std::error::Error + Send + Sync + 'static;
 
-    /// Insert the given `message` in the store.
-    ///
-    /// Expect `sequence` to be the successor of the current highest sequence number.
-    fn insert(&mut self, sequence: &Sequence, message: &M) -> std::result::Result<(), Self::Error>;
-
-    /// Delete all messages with sequence number greater than or equal the given `sequence`.
-    ///
-    /// Returns the number of messages deleted.
-    fn invalidate(&mut self, sequence: &Sequence) -> std::result::Result<usize, Self::Error>;
-
     /// Retrieves a message with the given sequencer number, if any.
     fn get(&self, sequence: &Sequence) -> std::result::Result<Option<M>, Self::Error>;
 }
@@ -63,28 +53,10 @@ where
         })
     }
 
-    /// Returns an iterator over all messages, starting at the given `start` index.
-    pub fn iter_from(&self, start: &Sequence) -> Result<MessageIterator<'_, E, M>> {
-        let txn = self.db.begin_ro_txn()?;
-        let table = txn.open_table::<tables::MessageTable<M>>()?;
-        let mut cursor = table.cursor()?;
-        let current = cursor.seek_exact(start)?.map(|v| Ok(v.1));
-        Ok(MessageIterator {
-            cursor,
-            _txn: txn,
-            current,
-        })
-    }
-}
-
-impl<E, M> MessageStorage<M> for MdbxMessageStorage<E, M>
-where
-    E: EnvironmentKind,
-    M: MessageData,
-{
-    type Error = MdbxMessageStorageError;
-
-    fn insert(&mut self, sequence: &Sequence, message: &M) -> Result<()> {
+    /// Insert the given `message` in the store.
+    ///
+    /// Expect `sequence` to be the successor of the current highest sequence number.
+    pub fn insert(&mut self, sequence: &Sequence, message: &M) -> Result<()> {
         let txn = self.db.begin_rw_txn()?;
         let table = txn.open_table::<tables::MessageTable<M>>()?;
         let mut cursor = table.cursor()?;
@@ -116,7 +88,10 @@ where
         }
     }
 
-    fn invalidate(&mut self, sequence: &Sequence) -> Result<usize> {
+    /// Delete all messages with sequence number greater than or equal the given `sequence`.
+    ///
+    /// Returns the number of messages deleted.
+    pub fn invalidate(&mut self, sequence: &Sequence) -> Result<usize> {
         let txn = self.db.begin_rw_txn()?;
         let table = txn.open_table::<tables::MessageTable<M>>()?;
         let mut cursor = table.cursor()?;
@@ -137,6 +112,27 @@ where
         txn.commit()?;
         Ok(count)
     }
+
+    /// Returns an iterator over all messages, starting at the given `start` index.
+    pub fn iter_from(&self, start: &Sequence) -> Result<MessageIterator<'_, E, M>> {
+        let txn = self.db.begin_ro_txn()?;
+        let table = txn.open_table::<tables::MessageTable<M>>()?;
+        let mut cursor = table.cursor()?;
+        let current = cursor.seek_exact(start)?.map(|v| Ok(v.1));
+        Ok(MessageIterator {
+            cursor,
+            _txn: txn,
+            current,
+        })
+    }
+}
+
+impl<E, M> MessageStorage<M> for MdbxMessageStorage<E, M>
+where
+    E: EnvironmentKind,
+    M: MessageData,
+{
+    type Error = MdbxMessageStorageError;
 
     fn get(&self, sequence: &Sequence) -> Result<Option<M>> {
         let txn = self.db.begin_rw_txn()?;
@@ -178,7 +174,7 @@ mod tests {
 
     use crate::db::MdbxEnvironmentExt;
 
-    use super::{MdbxMessageStorage, MessageStorage};
+    use super::MdbxMessageStorage;
 
     #[derive(Clone, PartialEq, prost::Message)]
     pub struct Transfer {

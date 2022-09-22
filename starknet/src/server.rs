@@ -11,8 +11,7 @@ use apibara_node::{
 };
 use futures::{Stream, StreamExt};
 use prost::{DecodeError, Message};
-use tokio::{sync::mpsc, task::JoinError};
-use tokio_stream::wrappers::ReceiverStream;
+use tokio::task::JoinError;
 use tokio_util::sync::CancellationToken;
 use tonic::{transport::Server as TonicServer, Request, Response, Status};
 use tower_http::trace::{OnFailure, OnRequest, TraceLayer};
@@ -81,35 +80,33 @@ where
         request: Request<pb::ConnectRequest>,
     ) -> TonicResult<Self::ConnectStream> {
         let request: pb::ConnectRequest = request.into_inner();
-
-        let (tx, rx) = mpsc::channel(128);
-
-        let mut streamer = self
+        let stream = self
             .block_ingestor
-            .stream_from_sequence(request.starting_sequence, tx, self.cts.clone())
-            .await
-            .map_err(|_| Status::internal("failed to start streaming data"))?;
-
-        tokio::spawn(async move { streamer.start().await });
-
-        let response = Box::pin(ReceiverStream::new(rx).map(|maybe_res| match maybe_res {
+            .stream_from_sequence(request.starting_sequence, self.cts.clone())
+            .map_err(|_| Status::internal("failed to start message stream"))?;
+        let response = Box::pin(stream.map(|maybe_res| match maybe_res {
             Err(err) => {
                 warn!(err = ?err, "stream failed");
                 Err(Status::internal("stream failed"))
             }
-            Ok(BlockStreamMessage::Reorg(sequence)) => {
-                let invalidate = pb::Invalidate { sequence };
+            Ok(BlockStreamMessage::Invalidate { sequence }) => {
+                let invalidate = pb::Invalidate {
+                    sequence: sequence.as_u64(),
+                };
                 Ok(pb::ConnectResponse {
                     message: Some(pb::connect_response::Message::Invalidate(invalidate)),
                 })
             }
-            Ok(BlockStreamMessage::Data(block)) => {
+            Ok(BlockStreamMessage::Data {
+                data: block,
+                sequence,
+            }) => {
                 let inner_data = prost_types::Any {
                     type_url: "type.googleapis.com/apibara.starknet.v1alpha1.Block".to_string(),
                     value: block.encode_to_vec(),
                 };
                 let data = pb::Data {
-                    sequence: block.block_number,
+                    sequence: sequence.as_u64(),
                     data: Some(inner_data),
                 };
 
@@ -135,37 +132,35 @@ where
         request: Request<pb::StreamMessagesRequest>,
     ) -> TonicResult<Self::StreamMessagesStream> {
         let request: pb::StreamMessagesRequest = request.into_inner();
-
-        let (tx, rx) = mpsc::channel(128);
-
-        let mut streamer = self
+        let stream = self
             .block_ingestor
-            .stream_from_sequence(request.starting_sequence, tx, self.cts.clone())
-            .await
-            .map_err(|_| Status::internal("failed to start streaming data"))?;
-
-        tokio::spawn(async move { streamer.start().await });
-
-        let response = Box::pin(ReceiverStream::new(rx).map(|maybe_res| match maybe_res {
+            .stream_from_sequence(request.starting_sequence, self.cts.clone())
+            .map_err(|_| Status::internal("failed to start message stream"))?;
+        let response = Box::pin(stream.map(|maybe_res| match maybe_res {
             Err(err) => {
                 warn!(err = ?err, "stream failed");
                 Err(Status::internal("stream failed"))
             }
-            Ok(BlockStreamMessage::Reorg(sequence)) => {
-                let invalidate = pb::Invalidate { sequence };
+            Ok(BlockStreamMessage::Invalidate { sequence }) => {
+                let invalidate = pb::Invalidate {
+                    sequence: sequence.as_u64(),
+                };
                 Ok(pb::StreamMessagesResponse {
                     message: Some(pb::stream_messages_response::Message::Invalidate(
                         invalidate,
                     )),
                 })
             }
-            Ok(BlockStreamMessage::Data(block)) => {
+            Ok(BlockStreamMessage::Data {
+                data: block,
+                sequence,
+            }) => {
                 let inner_data = prost_types::Any {
                     type_url: "type.googleapis.com/apibara.starknet.v1alpha1.Block".to_string(),
                     value: block.encode_to_vec(),
                 };
                 let data = pb::Data {
-                    sequence: block.block_number,
+                    sequence: sequence.as_u64(),
                     data: Some(inner_data),
                 };
 
