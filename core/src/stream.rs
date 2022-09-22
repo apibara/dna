@@ -1,4 +1,4 @@
-use std::ops::RangeInclusive;
+use std::{fmt::Debug, ops::RangeInclusive};
 
 /// Unique id for an input stream.
 #[derive(Debug, Copy, Clone)]
@@ -42,5 +42,54 @@ impl Sequence {
     /// Returns the sequence number immediately after.
     pub fn successor(&self) -> Sequence {
         Sequence(self.0 + 1)
+    }
+
+    /// Returns the sequence number immediately before.
+    ///
+    /// Notice that this will panic if called on `Sequence(0)`.
+    pub fn predecessor(&self) -> Sequence {
+        Sequence(self.0 - 1)
+    }
+}
+
+pub trait MessageData: prost::Message + Default {}
+
+/// Message sent over the stream.
+#[derive(Debug)]
+pub enum StreamMessage<D: MessageData> {
+    Invalidate { sequence: Sequence },
+    Data { sequence: Sequence, data: D },
+}
+
+impl<D> StreamMessage<D>
+where
+    D: MessageData,
+{
+    /// Creates a new `Invalidate` message.
+    pub fn new_invalidate(sequence: Sequence) -> Self {
+        Self::Invalidate { sequence }
+    }
+
+    /// Creates a new `Data` message.
+    pub fn new_data(sequence: Sequence, data: D) -> Self {
+        Self::Data { sequence, data }
+    }
+
+    /// Returns the sequence number associated with the message.
+    pub fn sequence(&self) -> &Sequence {
+        match self {
+            Self::Invalidate { sequence } => sequence,
+            Self::Data { sequence, .. } => sequence,
+        }
+    }
+
+    /// Returns true if it's a data message.
+    pub fn is_data(&self) -> bool {
+        matches!(self, Self::Data { .. })
+    }
+
+    /// Returns true if it's an invalidate message.
+    pub fn is_invalidate(&self) -> bool {
+        matches!(self, Self::Invalidate { .. })
     }
 }

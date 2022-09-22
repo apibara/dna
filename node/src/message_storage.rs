@@ -2,21 +2,18 @@
 
 use std::{marker::PhantomData, sync::Arc};
 
-use apibara_core::stream::Sequence;
+use apibara_core::stream::{MessageData, Sequence};
 use libmdbx::{Environment, EnvironmentKind, Error as MdbxError, Transaction, RO};
 
-use crate::{
-    db::{tables, MdbxRWTransactionExt, MdbxTransactionExt, TableCursor},
-    message::Message,
-};
+use crate::db::{tables, MdbxRWTransactionExt, MdbxTransactionExt, TableCursor};
 
-pub trait MessageStorage<M: Message> {
+pub trait MessageStorage<M: MessageData> {
     type Error: std::error::Error + Send + Sync + 'static;
 
     /// Insert the given `message` in the store.
     ///
-    /// Expect message's sequence to be the successor of the current highest sequence number.
-    fn insert(&mut self, message: &M) -> std::result::Result<(), Self::Error>;
+    /// Expect `sequence` to be the successor of the current highest sequence number.
+    fn insert(&mut self, sequence: &Sequence, message: &M) -> std::result::Result<(), Self::Error>;
 
     /// Delete all messages with sequence number greater than or equal the given `sequence`.
     ///
@@ -28,7 +25,7 @@ pub trait MessageStorage<M: Message> {
 }
 
 /// Store messages in mdbx.
-pub struct MdbxMessageStorage<E: EnvironmentKind, M: Message> {
+pub struct MdbxMessageStorage<E: EnvironmentKind, M: MessageData> {
     db: Arc<Environment<E>>,
     phantom: PhantomData<M>,
 }
@@ -44,7 +41,7 @@ pub enum MdbxMessageStorageError {
 
 pub type Result<T> = std::result::Result<T, MdbxMessageStorageError>;
 
-pub struct MessageIterator<'txn, E: EnvironmentKind, M: Message + Default> {
+pub struct MessageIterator<'txn, E: EnvironmentKind, M: MessageData> {
     _txn: Transaction<'txn, RO, E>,
     current: Option<Result<M>>,
     cursor: TableCursor<'txn, tables::MessageTable<M>, RO>,
@@ -53,7 +50,7 @@ pub struct MessageIterator<'txn, E: EnvironmentKind, M: Message + Default> {
 impl<E, M> MdbxMessageStorage<E, M>
 where
     E: EnvironmentKind,
-    M: Message + Default,
+    M: MessageData,
 {
     /// Create a new message store, persisting data to the given mdbx environment.
     pub fn new(db: Arc<Environment<E>>) -> Result<Self> {
@@ -83,16 +80,15 @@ where
 impl<E, M> MessageStorage<M> for MdbxMessageStorage<E, M>
 where
     E: EnvironmentKind,
-    M: Message,
+    M: MessageData,
 {
     type Error = MdbxMessageStorageError;
 
-    fn insert(&mut self, message: &M) -> Result<()> {
+    fn insert(&mut self, sequence: &Sequence, message: &M) -> Result<()> {
         let txn = self.db.begin_rw_txn()?;
         let table = txn.open_table::<tables::MessageTable<M>>()?;
         let mut cursor = table.cursor()?;
 
-        let sequence = message.sequence();
         match cursor.last()? {
             None => {
                 // First element, assert sequence is 0
@@ -102,7 +98,7 @@ where
                         actual: sequence.as_u64(),
                     });
                 }
-                cursor.put(&sequence, message)?;
+                cursor.put(sequence, message)?;
                 txn.commit()?;
                 Ok(())
             }
@@ -113,7 +109,7 @@ where
                         actual: sequence.as_u64(),
                     });
                 }
-                cursor.put(&sequence, message)?;
+                cursor.put(sequence, message)?;
                 txn.commit()?;
                 Ok(())
             }
@@ -153,7 +149,7 @@ where
 impl<'txn, E, M> Iterator for MessageIterator<'txn, E, M>
 where
     E: EnvironmentKind,
-    M: Message + Default,
+    M: MessageData,
 {
     type Item = Result<M>;
 
@@ -176,29 +172,23 @@ where
 mod tests {
     use std::sync::Arc;
 
-    use apibara_core::stream::Sequence;
+    use apibara_core::stream::{MessageData, Sequence};
     use libmdbx::{Environment, NoWriteMap};
     use tempfile::tempdir;
 
-    use crate::{db::MdbxEnvironmentExt, message::Message};
+    use crate::db::MdbxEnvironmentExt;
 
     use super::{MdbxMessageStorage, MessageStorage};
 
     #[derive(Clone, PartialEq, prost::Message)]
     pub struct Transfer {
-        #[prost(uint64, tag = "1")]
-        pub sequence: u64,
-        #[prost(string, tag = "2")]
+        #[prost(string, tag = "1")]
         pub sender: String,
-        #[prost(string, tag = "3")]
+        #[prost(string, tag = "2")]
         pub receiver: String,
     }
 
-    impl Message for Transfer {
-        fn sequence(&self) -> Sequence {
-            Sequence::from_u64(self.sequence)
-        }
-    }
+    impl MessageData for Transfer {}
 
     #[test]
     pub fn test_message_storage() {
@@ -208,30 +198,27 @@ mod tests {
 
         // first message must have index 0
         let t0_bad_sequence = Transfer {
-            sequence: 1,
             sender: "ABC".to_string(),
             receiver: "XYZ".to_string(),
         };
-        assert!(storage.insert(&t0_bad_sequence).is_err());
+        assert!(storage
+            .insert(&Sequence::from_u64(1), &t0_bad_sequence)
+            .is_err());
 
         let t0 = Transfer {
-            sequence: 0,
             sender: "ABC".to_string(),
             receiver: "XYZ".to_string(),
         };
-        storage.insert(&t0).unwrap();
+        storage.insert(&Sequence::from_u64(0), &t0).unwrap();
 
         // next message must have index 1
-        let mut t1 = Transfer {
-            sequence: 0,
+        let t1 = Transfer {
             sender: "AOE".to_string(),
             receiver: "TNS".to_string(),
         };
-        assert!(storage.insert(&t1).is_err());
-        t1.sequence = 2;
-        assert!(storage.insert(&t1).is_err());
-        t1.sequence = 1;
-        storage.insert(&t1).unwrap();
+        assert!(storage.insert(&Sequence::from_u64(0), &t1).is_err());
+        assert!(storage.insert(&Sequence::from_u64(2), &t1).is_err());
+        storage.insert(&Sequence::from_u64(1), &t1).unwrap();
 
         let all_messages = storage
             .iter_from(&Sequence::from_u64(0))
@@ -259,12 +246,9 @@ mod tests {
         assert!(all_messages[0] == t0);
 
         // insert value again
-        t1.sequence = 0;
-        assert!(storage.insert(&t1).is_err());
-        t1.sequence = 2;
-        assert!(storage.insert(&t1).is_err());
-        t1.sequence = 1;
-        storage.insert(&t1).unwrap();
+        assert!(storage.insert(&Sequence::from_u64(0), &t1).is_err());
+        assert!(storage.insert(&Sequence::from_u64(2), &t1).is_err());
+        storage.insert(&Sequence::from_u64(1), &t1).unwrap();
 
         let all_messages = storage
             .iter_from(&Sequence::from_u64(1))

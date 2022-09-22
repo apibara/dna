@@ -21,19 +21,19 @@
 
 use std::{collections::VecDeque, marker::PhantomData, pin::Pin, task::Poll};
 
-use apibara_core::stream::Sequence;
+use apibara_core::stream::{MessageData, Sequence, StreamMessage};
 use futures::Stream;
 use pin_project::pin_project;
 use tokio_util::sync::CancellationToken;
 
-use crate::{message::Message, message_storage::MessageStorage};
+use crate::message_storage::MessageStorage;
 
 #[pin_project]
 pub struct BackfilledMessageStream<M, S, L>
 where
-    M: Message,
+    M: MessageData,
     S: MessageStorage<M>,
-    L: Stream<Item = M>,
+    L: Stream<Item = StreamMessage<M>>,
 {
     storage: S,
     #[pin]
@@ -57,17 +57,17 @@ pub enum BackfilledMessageStreamError {
 pub type Result<T> = std::result::Result<T, BackfilledMessageStreamError>;
 
 #[derive(Debug)]
-struct State<M: Message> {
+struct State<M: MessageData> {
     current: Sequence,
     latest: Sequence,
-    buffer: VecDeque<M>,
+    buffer: VecDeque<(Sequence, M)>,
 }
 
 impl<M, S, L> BackfilledMessageStream<M, S, L>
 where
-    M: Message,
+    M: MessageData,
     S: MessageStorage<M>,
-    L: Stream<Item = M>,
+    L: Stream<Item = StreamMessage<M>>,
 {
     /// Creates a new `MessageStreamer`.
     ///
@@ -91,7 +91,7 @@ where
     }
 }
 
-impl<M: Message> State<M> {
+impl<M: MessageData> State<M> {
     fn new(current: Sequence, latest: Sequence) -> Self {
         State {
             current,
@@ -108,20 +108,16 @@ impl<M: Message> State<M> {
         self.current = Sequence::from_u64(self.current.as_u64() + 1);
     }
 
-    fn update_state_with_live_message(&mut self, message: &M) -> Result<()> {
-        let sequence = message.sequence();
+    fn update_latest(&mut self, sequence: Sequence) {
         self.latest = sequence;
-        Ok(())
     }
 
-    fn update_state_with_sent_message(&mut self, message: &M) -> Result<()> {
-        let sequence = message.sequence();
+    fn update_current(&mut self, sequence: Sequence) {
         self.current = sequence;
-        Ok(())
     }
 
-    fn add_live_message(&mut self, message: M) {
-        self.buffer.push_back(message);
+    fn add_live_message(&mut self, sequence: Sequence, message: M) {
+        self.buffer.push_back((sequence, message));
 
         // trim buffer size to always be ~50 elements
         while self.buffer.len() > 50 {
@@ -129,25 +125,29 @@ impl<M: Message> State<M> {
         }
     }
 
+    fn clear_buffer(&mut self) {
+        self.buffer.clear();
+    }
+
     fn buffer_has_sequence(&self, sequence: &Sequence) -> bool {
         match self.buffer.front() {
             None => false,
-            Some(m) => &m.sequence() <= sequence,
+            Some((seq, _)) => seq <= sequence,
         }
     }
 
-    fn pop_buffer(&mut self) -> Option<M> {
+    fn pop_buffer(&mut self) -> Option<(Sequence, M)> {
         self.buffer.pop_front()
     }
 }
 
 impl<M, S, L> Stream for BackfilledMessageStream<M, S, L>
 where
-    M: Message,
+    M: MessageData,
     S: MessageStorage<M>,
-    L: Stream<Item = M>,
+    L: Stream<Item = StreamMessage<M>>,
 {
-    type Item = Result<M>;
+    type Item = Result<StreamMessage<M>>;
 
     fn poll_next(
         self: Pin<&mut Self>,
@@ -158,7 +158,8 @@ where
             return Poll::Ready(None);
         }
 
-        // there are three possible actions, depending on the stream state:
+        // when receiving a `StreamMessage::Data` message the stream can perform
+        // three possible actions, depending on the stream state:
         //
         // current < latest:
         //   live stream: used to keep latest updated
@@ -169,6 +170,15 @@ where
         // current > latest:
         //   live stream: used to keep track of state, but data is not sent
         //   storage: not used
+        //
+        // when receiving a `StreamMessage::Invalidate` message the stream
+        // can perform:
+        //
+        // current < invalidate:
+        //   update latest from invalidate
+        // current >= invalidate:
+        //   update current and latest from invalidate
+        //   send invalidate message to stream
 
         let current = self.state.current;
         let latest = self.state.latest;
@@ -197,25 +207,42 @@ where
         };
 
         if let Some(message) = live_message {
-            match this.state.update_state_with_live_message(&message) {
-                Ok(_) => {}
-                Err(err) => return Poll::Ready(Some(Err(err))),
-            }
+            match message {
+                StreamMessage::Invalidate { sequence } => {
+                    // clear buffer just in case
+                    this.state.clear_buffer();
+                    this.state.update_latest(sequence);
 
-            // just send the message to the stream if it's the current one
-            if current == message.sequence() {
-                match this.state.update_state_with_sent_message(&message) {
-                    Ok(_) => {}
-                    Err(err) => return Poll::Ready(Some(Err(err))),
+                    // all messages after `sequence` (inclusive) are now invalidated.
+                    // forward invalidate message
+                    if current >= sequence {
+                        this.state.update_current(sequence);
+                        let message = StreamMessage::Invalidate { sequence };
+                        return Poll::Ready(Some(Ok(message)));
+                    }
+
+                    // buffer data was invalidated and new state updated
+                    // let's stop here and start again
+                    cx.waker().wake_by_ref();
+                    return Poll::Pending;
                 }
-                this.state.increment_current();
-                return Poll::Ready(Some(Ok(message)));
-            }
+                StreamMessage::Data { sequence, data } => {
+                    this.state.update_latest(sequence);
 
-            // no point in adding messages that won't be sent
-            if current < message.sequence() {
-                // add message to buffer
-                this.state.add_live_message(message);
+                    // just send the message to the stream if it's the current one
+                    if current == sequence {
+                        this.state.update_current(sequence);
+                        this.state.increment_current();
+                        let message = StreamMessage::Data { sequence, data };
+                        return Poll::Ready(Some(Ok(message)));
+                    }
+
+                    // no point in adding messages that won't be sent
+                    if current < sequence {
+                        // add message to buffer
+                        this.state.add_live_message(sequence, data);
+                    }
+                }
             }
         }
 
@@ -235,8 +262,9 @@ where
                         sequence,
                     })));
                 }
-                Some(message) => {
+                Some((sequence, data)) => {
                     this.state.increment_current();
+                    let message = StreamMessage::Data { sequence, data };
                     return Poll::Ready(Some(Ok(message)));
                 }
             }
@@ -255,7 +283,12 @@ where
                 })))
             }
             Ok(Some(message)) => {
+                let sequence = *this.state.current();
                 this.state.increment_current();
+                let message = StreamMessage::Data {
+                    sequence,
+                    data: message,
+                };
                 Poll::Ready(Some(Ok(message)))
             }
         }
@@ -269,13 +302,13 @@ mod tests {
         sync::{Arc, Mutex},
     };
 
-    use apibara_core::stream::Sequence;
+    use apibara_core::stream::{MessageData, Sequence, StreamMessage};
     use futures::StreamExt;
     use tokio::sync::mpsc;
     use tokio_stream::wrappers::ReceiverStream;
     use tokio_util::sync::CancellationToken;
 
-    use crate::{message::Message, message_storage::MessageStorage};
+    use crate::message_storage::MessageStorage;
 
     use super::BackfilledMessageStream;
 
@@ -285,11 +318,7 @@ mod tests {
         pub sequence: u64,
     }
 
-    impl Message for TestMessage {
-        fn sequence(&self) -> Sequence {
-            Sequence::from_u64(self.sequence)
-        }
-    }
+    impl MessageData for TestMessage {}
 
     impl TestMessage {
         pub fn new(sequence: u64) -> TestMessage {
@@ -308,11 +337,15 @@ mod tests {
     impl MessageStorage<TestMessage> for Arc<Mutex<TestMessageStorage>> {
         type Error = TestMessageStorageError;
 
-        fn insert(&mut self, message: &TestMessage) -> Result<(), Self::Error> {
+        fn insert(
+            &mut self,
+            sequence: &Sequence,
+            message: &TestMessage,
+        ) -> Result<(), Self::Error> {
             self.lock()
                 .unwrap()
                 .messages
-                .insert(message.sequence(), message.clone());
+                .insert(sequence.clone(), message.clone());
             Ok(())
         }
 
@@ -331,7 +364,9 @@ mod tests {
 
         for sequence in 0..10 {
             let message = TestMessage::new(sequence);
-            storage.insert(&message).unwrap();
+            storage
+                .insert(&Sequence::from_u64(sequence), &message)
+                .unwrap();
         }
 
         let (live_tx, live_rx) = mpsc::channel(256);
@@ -346,7 +381,13 @@ mod tests {
             ct,
         );
 
-        live_tx.send(TestMessage::new(10)).await.unwrap();
+        live_tx
+            .send(StreamMessage::new_data(
+                Sequence::from_u64(10),
+                TestMessage::new(10),
+            ))
+            .await
+            .unwrap();
 
         // first 10 messages come from storage
         for sequence in 0..10 {
@@ -362,7 +403,9 @@ mod tests {
         // publishing to live stream
         for sequence in 11..100 {
             let message = TestMessage::new(sequence);
-            storage.insert(&message).unwrap();
+            let sequence = Sequence::from_u64(sequence);
+            storage.insert(&sequence, &message).unwrap();
+            let message = StreamMessage::new_data(sequence, message);
             live_tx.send(message).await.unwrap();
         }
 
@@ -390,12 +433,135 @@ mod tests {
 
         for sequence in 10..20 {
             let message = TestMessage::new(sequence);
+            let sequence = Sequence::from_u64(sequence);
+            let message = StreamMessage::new_data(sequence, message);
             live_tx.send(message).await.unwrap();
         }
 
         for sequence in 15..20 {
             let message = stream.next().await.unwrap().unwrap();
             assert_eq!(message.sequence().as_u64(), sequence);
+        }
+    }
+
+    #[tokio::test]
+    pub async fn test_invalidate_data_after_current() {
+        let mut storage = Arc::new(Mutex::new(TestMessageStorage::default()));
+
+        let (live_tx, live_rx) = mpsc::channel(256);
+        let live_stream = ReceiverStream::new(live_rx);
+        let ct = CancellationToken::new();
+
+        let mut stream = BackfilledMessageStream::new(
+            Sequence::from_u64(0),
+            Sequence::from_u64(9),
+            storage.clone(),
+            live_stream,
+            ct,
+        );
+
+        // add some messages to storage
+        for sequence in 0..5 {
+            let message = TestMessage::new(sequence);
+            let sequence = Sequence::from_u64(sequence);
+            storage.insert(&sequence, &message).unwrap();
+        }
+
+        // live stream some messages
+        for sequence in 5..10 {
+            let message = TestMessage::new(sequence);
+            let sequence = Sequence::from_u64(sequence);
+            storage.insert(&sequence, &message).unwrap();
+            let message = StreamMessage::new_data(sequence, message);
+            live_tx.send(message).await.unwrap();
+        }
+
+        // invalidate all messages with sequence >= 8
+        let sequence = Sequence::from_u64(8);
+        let message = StreamMessage::new_invalidate(sequence);
+        live_tx.send(message).await.unwrap();
+
+        // then send some more messages
+        for sequence in 8..12 {
+            let message = TestMessage::new(sequence);
+            let sequence = Sequence::from_u64(sequence);
+            storage.insert(&sequence, &message).unwrap();
+            let message = StreamMessage::new_data(sequence, message);
+            live_tx.send(message).await.unwrap();
+        }
+
+        // notice there is no invalidate message because it happened for a
+        // message sequence that was never streamed
+        for sequence in 0..12 {
+            let message = stream.next().await.unwrap().unwrap();
+            assert_eq!(message.sequence().as_u64(), sequence);
+            assert!(message.is_data());
+        }
+    }
+
+    #[tokio::test]
+    pub async fn test_invalidate_before_current() {
+        let mut storage = Arc::new(Mutex::new(TestMessageStorage::default()));
+
+        let (live_tx, live_rx) = mpsc::channel(256);
+        let live_stream = ReceiverStream::new(live_rx);
+        let ct = CancellationToken::new();
+
+        let mut stream = BackfilledMessageStream::new(
+            Sequence::from_u64(0),
+            Sequence::from_u64(9),
+            storage.clone(),
+            live_stream,
+            ct,
+        );
+
+        // add some messages to storage
+        for sequence in 0..5 {
+            let message = TestMessage::new(sequence);
+            let sequence = Sequence::from_u64(sequence);
+            storage.insert(&sequence, &message).unwrap();
+        }
+
+        // live stream some messages
+        for sequence in 5..10 {
+            let message = TestMessage::new(sequence);
+            let sequence = Sequence::from_u64(sequence);
+            storage.insert(&sequence, &message).unwrap();
+            let message = StreamMessage::new_data(sequence, message);
+            live_tx.send(message).await.unwrap();
+        }
+
+        // now stream messages up to 9
+        for sequence in 0..10 {
+            let message = stream.next().await.unwrap().unwrap();
+            assert_eq!(message.sequence().as_u64(), sequence);
+            assert!(message.is_data());
+        }
+
+        // invalidate all messages with sequence >= 8
+        let sequence = Sequence::from_u64(8);
+        let message = StreamMessage::new_invalidate(sequence);
+        live_tx.send(message).await.unwrap();
+
+        // then send some more messages
+        for sequence in 8..12 {
+            let message = TestMessage::new(sequence);
+            let sequence = Sequence::from_u64(sequence);
+            storage.insert(&sequence, &message).unwrap();
+            let message = StreamMessage::new_data(sequence, message);
+            live_tx.send(message).await.unwrap();
+        }
+
+        // received invalidate message
+        let message = stream.next().await.unwrap().unwrap();
+        assert_eq!(message.sequence().as_u64(), 8);
+        assert!(message.is_invalidate());
+
+        // resume messages
+        for sequence in 8..12 {
+            let message = stream.next().await.unwrap().unwrap();
+            assert_eq!(message.sequence().as_u64(), sequence);
+            assert!(message.is_data());
         }
     }
 }
