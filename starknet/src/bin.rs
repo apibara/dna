@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, time::Duration};
 
 use anyhow::{anyhow, Result};
 use apibara_node::{
@@ -6,7 +6,7 @@ use apibara_node::{
     o11y::{init_opentelemetry, OpenTelemetryClapCommandExt},
 };
 use apibara_starknet::{start_starknet_source_node, SequencerGateway};
-use clap::{arg, command, ArgGroup, ArgMatches, Command};
+use clap::{arg, command, value_parser, ArgGroup, ArgMatches, Command};
 
 async fn start(start_matches: &ArgMatches) -> Result<()> {
     init_opentelemetry()?;
@@ -28,7 +28,9 @@ async fn start(start_matches: &ArgMatches) -> Result<()> {
         }
     };
 
-    Ok(start_starknet_source_node(datadir, gateway).await?)
+    let poll_interval = start_matches.get_one::<u64>("poll-interval").unwrap(); // safe to unwrap as format is checked by clap
+
+    Ok(start_starknet_source_node(datadir, gateway, Duration::from_millis(*poll_interval)).await?)
 }
 
 #[tokio::main]
@@ -42,6 +44,12 @@ async fn main() -> Result<()> {
                 .arg(arg!(--testnet "StarkNet Goerli test network").required(false))
                 .arg(arg!(--mainnet "StarkNet mainnet network").required(false))
                 .arg(arg!(--"custom-network" <URL> "Custom StarkNet network").required(false))
+                .arg(
+                    arg!(--"poll-interval" "Custom poll interval in ms")
+                        .required(false)
+                        .value_parser(value_parser!(u64))
+                        .default_value("5000"),
+                )
                 .group(
                     ArgGroup::new("sequencer_gateway")
                         .args(&["testnet", "mainnet", "custom-network"])
