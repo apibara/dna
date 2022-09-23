@@ -106,7 +106,7 @@ where
         ))
     }
 
-    pub async fn start(&self, ct: CancellationToken) -> Result<()> {
+    pub async fn start(&self, ct: CancellationToken, poll_interval: Duration) -> Result<()> {
         let current_head = self
             .block_builder
             .latest_block_with_backoff(ct.clone())
@@ -140,7 +140,7 @@ where
             chrono::Duration::from_std(Duration::from_secs(60)).expect("duration conversion");
         let close_head_refresh_interval =
             chrono::Duration::from_std(Duration::from_secs(10)).expect("duration conversion");
-        let sync_sleep_interval = Duration::from_secs(5);
+        let sync_sleep_interval = poll_interval;
 
         loop {
             if ct.is_cancelled() {

@@ -27,7 +27,11 @@ use crate::{
     server::{Server, ServerError},
 };
 
-pub async fn start_starknet_source_node(datadir: PathBuf, gateway: SequencerGateway) -> Result<()> {
+pub async fn start_starknet_source_node(
+    datadir: PathBuf,
+    gateway: SequencerGateway,
+    poll_interval: Duration,
+) -> Result<()> {
     // setup db
     let datadir = datadir.join(gateway.network_name());
     fs::create_dir_all(&datadir)?;
@@ -50,7 +54,7 @@ pub async fn start_starknet_source_node(datadir: PathBuf, gateway: SequencerGate
     let starknet_client = SequencerGatewayProvider::new(gateway_url, feeder_gateway_url);
     let starknet_client = Arc::new(starknet_client);
 
-    let node = StarkNetSourceNode::new(db, starknet_client);
+    let node = StarkNetSourceNode::new(db, starknet_client, poll_interval);
     node.start().await?;
     Ok(())
 }
@@ -58,6 +62,7 @@ pub async fn start_starknet_source_node(datadir: PathBuf, gateway: SequencerGate
 pub struct StarkNetSourceNode<E: EnvironmentKind> {
     db: Arc<Environment<E>>,
     sequencer_provider: Arc<SequencerGatewayProvider>,
+    poll_interval: Duration,
 }
 
 /// StarkNet sequencer gateway address.
@@ -97,10 +102,15 @@ pub enum SourceNodeError {
 pub type Result<T> = std::result::Result<T, SourceNodeError>;
 
 impl<E: EnvironmentKind> StarkNetSourceNode<E> {
-    pub fn new(db: Arc<Environment<E>>, sequencer_provider: Arc<SequencerGatewayProvider>) -> Self {
+    pub fn new(
+        db: Arc<Environment<E>>,
+        sequencer_provider: Arc<SequencerGatewayProvider>,
+        poll_interval: Duration,
+    ) -> Self {
         StarkNetSourceNode {
             db,
             sequencer_provider,
+            poll_interval,
         }
     }
 
@@ -126,7 +136,7 @@ impl<E: EnvironmentKind> StarkNetSourceNode<E> {
             let block_ingestor = block_ingestor.clone();
             async move {
                 block_ingestor
-                    .start(ct)
+                    .start(ct, self.poll_interval)
                     .await
                     .map_err(SourceNodeError::BlockIngestion)
             }
