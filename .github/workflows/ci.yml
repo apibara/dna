@@ -65,12 +65,12 @@ jobs:
         job:
         - os: ubuntu-latest
           target: x86_64-unknown-linux-gnu
-        # - os: ubuntu-latest
-        #   target: aarch64-unknown-linux-gnu
-        # - os: macos-latest
-        #   target: x86_64-apple-darwin
-        # - os: macos-latest
-        #   target: aarch64-apple-darwin
+        - os: ubuntu-latest
+          target: aarch64-unknown-linux-gnu
+        - os: macos-latest
+          target: x86_64-apple-darwin
+        - os: macos-latest
+          target: aarch64-apple-darwin
     env:
       RUST_BACKTRACE: full
     steps:
@@ -95,6 +95,17 @@ jobs:
       run: |
         echo "SDKROOT=$(xcrun -sdk macosx --show-sdk-path)" >> $GITHUB_ENV
         echo "MACOSX_DEPLOYMENT_TARGET=$(xcrun -sdk macosx --show-sdk-platform-version)" >> $GITHUB_ENV
+
+    - name: linux aarch64 setup
+      if: matrix.job.target == 'aarch64-unknown-linux-gnu'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu libc6-dev-arm64-cross
+        echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+        echo "CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+        echo "CXX_aarch64_unknown_linux_gnu=aarch64-linux-gnu-g+" >> $GITHUB_ENV
+        echo "BINDGEN_EXTRA_CLANG_ARGS_aarch64_unknown_linux_gnu="--sysroot=/usr/aarch64-linux-gnu"" >> $GITHUB_ENV
+        echo "PKG_CONFIG_PATH="/usr/lib/aarch64-linux-gnu/pkgconfig/:${PKG_CONFIG_PATH}"" >> $GITHUB_ENV
 
     - name: cargo cache
       uses: Swatinem/rust-cache@v2
@@ -129,9 +140,9 @@ jobs:
         - rust: x86_64-unknown-linux-gnu
           debian: amd64
           docker: linux/amd64
-        # - rust: aarch64-unknown-linux-gnu
-        #   debian: arm64v8
-        #   docker: linux/arm64/v8
+        - rust: aarch64-unknown-linux-gnu
+          debian: arm64v8
+          docker: linux/arm64/v8
     steps:
     - name: setup docker buildx
       uses: docker/setup-buildx-action@v2
@@ -194,31 +205,31 @@ jobs:
         name: apibara-${{ matrix.image }}-amd64.tar
         path: .
 
-    # - name: download ${{ matrix.image }}-arm64v8
-    #   uses: actions/download-artifact@v3
-    #   with:
-    #     name: apibara-${{ matrix.image }}-arm64v8.tar
-    #     path: .
+    - name: download ${{ matrix.image }}-arm64v8
+      uses: actions/download-artifact@v3
+      with:
+        name: apibara-${{ matrix.image }}-arm64v8.tar
+        path: .
 
     - name: load docker images
       run: |
         ls -la
         docker image load --input apibara-${{ matrix.image }}-amd64.tar
-        # docker image load --input apibara-${{ matrix.image }}-arm64v8.tar
+        docker image load --input apibara-${{ matrix.image }}-arm64v8.tar
         docker image ls -a
 
     # create a manifest manually since the images are created by copying files into them
     - name: publish docker images to docker.io
       run: |
         docker tag apibara/${{ matrix.image }}:${{ github.sha }}-amd64 docker.io/apibara/${{ matrix.image }}:${{ github.sha }}-amd64
-        # docker tag apibara/${{ matrix.image }}:${{ github.sha }}-arm64v8 docker.io/apibara/${{ matrix.image }}:${{ github.sha }}-arm64v8
+        docker tag apibara/${{ matrix.image }}:${{ github.sha }}-arm64v8 docker.io/apibara/${{ matrix.image }}:${{ github.sha }}-arm64v8
 
         docker push docker.io/apibara/${{ matrix.image }}:${{ github.sha }}-amd64
-        # docker push docker.io/apibara/${{ matrix.image }}:${{ github.sha }}-arm64v8
+        docker push docker.io/apibara/${{ matrix.image }}:${{ github.sha }}-arm64v8
 
         docker manifest create docker.io/apibara/${{ matrix.image }}:${{ github.sha }} \
-          docker.io/apibara/${{ matrix.image }}:${{ github.sha }}-amd64
-        # docker.io/apibara/${{ matrix.image }}:${{ github.sha }}-arm64v8
+          docker.io/apibara/${{ matrix.image }}:${{ github.sha }}-amd64 \
+          docker.io/apibara/${{ matrix.image }}:${{ github.sha }}-arm64v8
         docker manifest push docker.io/apibara/${{ matrix.image }}:${{ github.sha }}
 
   update_preview_release:
@@ -259,9 +270,9 @@ jobs:
         - apibara-starknet
         target:
         - x86_64-unknown-linux-gnu
-        # - aarch64-unknown-linux-gnu
-        # - x86_64-apple-darwin
-        # - aarch64-apple-darwin
+        - aarch64-unknown-linux-gnu
+        - x86_64-apple-darwin
+        - aarch64-apple-darwin
     steps:
     - name: login gh
       run: gh auth login --with-token < <(echo ${{ secrets.GITHUB_TOKEN }})
