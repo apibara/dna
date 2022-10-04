@@ -84,7 +84,7 @@ pub enum SourceNodeError {
     #[error("error waiting tokio task")]
     Join(#[from] JoinError),
     #[error("error ingesting block")]
-    BlockIngestion(#[from] BlockIngestorError),
+    BlockIngestion(#[from] Box<BlockIngestorError>),
     #[error("error tracking chain state")]
     ChainTracker(#[from] ChainTrackerError),
     #[error("node did not shutdown gracefully")]
@@ -129,7 +129,8 @@ impl<E: EnvironmentKind> StarkNetSourceNode<E> {
         let chain = ChainTracker::new(self.db.clone())?;
         let chain = Arc::new(chain);
 
-        let block_ingestor = BlockIngestor::new(chain.clone(), self.sequencer_provider)?;
+        let block_ingestor = BlockIngestor::new(chain.clone(), self.sequencer_provider)
+            .map_err(|err| SourceNodeError::BlockIngestion(Box::new(err)))?;
         let block_ingestor = Arc::new(block_ingestor);
         let mut block_ingestor_handle = tokio::spawn({
             let ct = ct.clone();
@@ -138,7 +139,7 @@ impl<E: EnvironmentKind> StarkNetSourceNode<E> {
                 block_ingestor
                     .start(ct, self.poll_interval)
                     .await
-                    .map_err(SourceNodeError::BlockIngestion)
+                    .map_err(|err| SourceNodeError::BlockIngestion(Box::new(err)))
             }
         });
 
