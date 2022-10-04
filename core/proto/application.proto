@@ -7,10 +7,18 @@ syntax = "proto3";
 
 package apibara.application.v1alpha1;
 
+import "google/protobuf/any.proto";
+
 service Application {
     // Called once on the node's first start.
     // Used to initialize the node state.
     rpc Init(InitRequest) returns (InitResponse);
+
+    // Called when the application receives data from an input stream.
+    //
+    // The response contains messages that will be forwarded to the
+    // output stream.
+    rpc ReceiveData(ReceiveDataRequest) returns (ReceiveDataResponse);
 }
 
 // Init request. It's empty.
@@ -31,4 +39,17 @@ message InputStream {
     string url = 2;
     // Input starting sequence.
     uint64 starting_sequence = 3;
+}
+
+message ReceiveDataRequest {
+    // The input the data comes from.
+    uint64 input_id = 1;
+    // The message sequence number.
+    uint64 sequence = 2;
+    // The data.
+    google.protobuf.Any data = 3;
+}
+
+message ReceiveDataResponse {
+    repeated google.protobuf.Any data = 1;
 }
