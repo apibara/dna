@@ -6,7 +6,7 @@ use apibara_core::stream::MessageData;
 use apibara_node::db::{tables, KeyDecodeError};
 use starknet::core::types::FieldElement;
 
-mod pb {
+pub mod pb {
     tonic::include_proto!("apibara.starknet.v1alpha1");
 
     pub(crate) const FILE_DESCRIPTOR_SET: &[u8] =

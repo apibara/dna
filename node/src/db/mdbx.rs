@@ -1,8 +1,8 @@
-use std::{marker::PhantomData, path::Path};
+use std::{marker::PhantomData, ops::Range, path::Path};
 
 use libmdbx::{
-    Cursor, Database, DatabaseFlags, Environment, EnvironmentKind, Error as MdbxError, TableObject,
-    Transaction, TransactionKind, WriteFlags, RW,
+    Cursor, Database, DatabaseFlags, Environment, EnvironmentBuilder, EnvironmentKind,
+    Error as MdbxError, Geometry, TableObject, Transaction, TransactionKind, WriteFlags, RW,
 };
 use prost::Message;
 
@@ -36,10 +36,20 @@ where
 /// Result value of any mdbx operation.
 pub type MdbxResult<T> = Result<T, MdbxError>;
 
+/// Configure and open a mdbx environment.
+pub struct MdbxEnvironmentBuilder<E: EnvironmentKind> {
+    env: EnvironmentBuilder<E>,
+    max_dbs: usize,
+    geometry: Geometry<Range<usize>>,
+}
+
 /// Extension methods over mdbx environment.
 pub trait MdbxEnvironmentExt<E: EnvironmentKind> {
-    /// Open and configure a mdbx environment.
+    /// Open a mdbx environment with the default configuration.
     fn open(path: &Path) -> MdbxResult<Environment<E>>;
+
+    /// Creates a new mdbx environment builder.
+    fn builder() -> MdbxEnvironmentBuilder<E>;
 }
 
 /// Extension methods over mdbx RO and RW transactions.
@@ -59,6 +69,55 @@ impl<E: EnvironmentKind> MdbxEnvironmentExt<E> for Environment<E> {
         let mut builder = Environment::new();
         builder.set_max_dbs(16);
         builder.open(path)
+    }
+
+    fn builder() -> MdbxEnvironmentBuilder<E> {
+        MdbxEnvironmentBuilder::new()
+    }
+}
+
+impl<E: EnvironmentKind> MdbxEnvironmentBuilder<E> {
+    /// Create a new environment builder.
+    pub fn new() -> MdbxEnvironmentBuilder<E> {
+        let env = Environment::new();
+        // set reasonable default geometry.
+        let min_size = byte_unit::n_gib_bytes!(10) as usize;
+        let max_size = byte_unit::n_gib_bytes!(100) as usize;
+        let growth_step = byte_unit::n_gib_bytes(2) as isize;
+        let geometry = Geometry {
+            size: Some(min_size..max_size),
+            growth_step: Some(growth_step),
+            shrink_threshold: None,
+            page_size: None,
+        };
+        MdbxEnvironmentBuilder {
+            env,
+            max_dbs: 100,
+            geometry,
+        }
+    }
+
+    /// Change the database size in GiB.
+    pub fn with_size_gib(mut self, min_size: usize, max_size: usize) -> Self {
+        let min_size = byte_unit::n_gib_bytes(min_size as u128) as usize;
+        let max_size = byte_unit::n_gib_bytes(max_size as u128) as usize;
+        self.geometry.size = Some(min_size..max_size);
+        self
+    }
+
+    /// Change the database growth size in GiB.
+    pub fn with_growth_step_gib(mut self, step: isize) -> Self {
+        let step = byte_unit::n_gib_bytes(step as u128) as isize;
+        self.geometry.growth_step = Some(step);
+        self
+    }
+
+    /// Open the environment.
+    pub fn open(mut self, path: &Path) -> MdbxResult<Environment<E>> {
+        self.env
+            .set_geometry(self.geometry)
+            .set_max_dbs(self.max_dbs)
+            .open(path)
     }
 }
 

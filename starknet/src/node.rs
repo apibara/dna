@@ -13,7 +13,10 @@ use std::{
 
 use apibara_node::{
     chain_tracker::{ChainTracker, ChainTrackerError},
-    db::libmdbx::{Environment, EnvironmentKind, Error as MdbxError, Geometry, NoWriteMap},
+    db::{
+        libmdbx::{Environment, EnvironmentKind, Error as MdbxError, NoWriteMap},
+        MdbxEnvironmentExt,
+    },
 };
 use futures::future;
 use starknet::providers::SequencerGatewayProvider;
@@ -35,17 +38,9 @@ pub async fn start_starknet_source_node(
     // setup db
     let datadir = datadir.join(gateway.network_name());
     fs::create_dir_all(&datadir)?;
-    let min_size = byte_unit::n_gib_bytes!(10) as usize;
-    let max_size = byte_unit::n_gib_bytes!(100) as usize;
-    let growth_step = byte_unit::n_gib_bytes(2) as isize;
-    let db = Environment::<NoWriteMap>::new()
-        .set_geometry(Geometry {
-            size: Some(min_size..max_size),
-            growth_step: Some(growth_step),
-            shrink_threshold: None,
-            page_size: None,
-        })
-        .set_max_dbs(100)
+    let db = Environment::<NoWriteMap>::builder()
+        .with_size_gib(10, 100)
+        .with_growth_step_gib(2)
         .open(&datadir)?;
     let db = Arc::new(db);
 
