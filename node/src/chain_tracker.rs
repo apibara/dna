@@ -328,7 +328,6 @@ where
 mod tests {
     use std::sync::Arc;
 
-    use apibara_core::stream::MessageData;
     use assert_matches::assert_matches;
     use libmdbx::{Environment, NoWriteMap};
     use prost::Message;
@@ -389,8 +388,6 @@ mod tests {
             &self.hash
         }
     }
-
-    impl MessageData for TestBlock {}
 
     impl Block for TestBlock {
         type Hash = TestBlockHash;

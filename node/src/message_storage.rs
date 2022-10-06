@@ -168,7 +168,7 @@ where
 mod tests {
     use std::sync::Arc;
 
-    use apibara_core::stream::{MessageData, Sequence};
+    use apibara_core::stream::Sequence;
     use libmdbx::{Environment, NoWriteMap};
     use tempfile::tempdir;
 
@@ -183,8 +183,6 @@ mod tests {
         #[prost(string, tag = "2")]
         pub receiver: String,
     }
-
-    impl MessageData for Transfer {}
 
     #[test]
     pub fn test_message_storage() {
