@@ -2,7 +2,6 @@
 
 use core::fmt;
 
-use apibara_core::stream::MessageData;
 use apibara_node::db::{tables, KeyDecodeError};
 use starknet::core::types::FieldElement;
 
@@ -43,8 +42,6 @@ impl tables::BlockHash for BlockHash {
         BlockHash { hash }
     }
 }
-
-impl MessageData for Block {}
 
 impl tables::Block for Block {
     type Hash = BlockHash;

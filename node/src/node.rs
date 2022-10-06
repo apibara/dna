@@ -1,18 +1,34 @@
+use std::sync::Arc;
+
+use libmdbx::{Environment, EnvironmentKind};
 use tokio_stream::StreamExt;
 
 use crate::{
-    application::{pb, Application},
+    application::Application,
     input::{InputMixer, InputMixerError, MixedInputStreamError},
+    message_storage::{MdbxMessageStorage, MdbxMessageStorageError},
+    sequencer::{Sequencer, SequencerError},
 };
-use apibara_core::node::pb as node_pb;
+use apibara_core::{
+    node::pb as node_pb,
+    stream::{Sequence, StreamId},
+};
 use tracing::error;
 
-pub struct Node<A: Application> {
+pub struct Node<A: Application, E: EnvironmentKind> {
     application: A,
+    sequencer: Sequencer<E>,
+    message_storage: MdbxMessageStorage<E, A::Message>,
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum NodeError {
+    #[error("sequencer error")]
+    Sequencer(#[from] SequencerError),
+    #[error("message storage error")]
+    MessageStorage(#[from] MdbxMessageStorageError),
+    #[error("message contains no data")]
+    EmptyMessage,
     #[error("application error")]
     Application(#[from] Box<dyn std::error::Error + Send + Sync + 'static>),
     #[error("error configuring input mixer")]
@@ -25,24 +41,35 @@ pub enum NodeError {
 
 pub type Result<T> = std::result::Result<T, NodeError>;
 
-impl<A> Node<A>
+impl<A, E> Node<A, E>
 where
     A: Application,
+    E: EnvironmentKind,
 {
     /// Start building a new node.
-    pub fn with_application(application: A) -> Node<A> {
-        Node { application }
+    pub fn with_application(db: Arc<Environment<E>>, application: A) -> Result<Node<A, E>> {
+        let sequencer = Sequencer::new(db.clone())?;
+        let message_storage = MdbxMessageStorage::new(db)?;
+        Ok(Node {
+            application,
+            sequencer,
+            message_storage,
+        })
     }
 
     /// Start the node.
     pub async fn start(mut self) -> Result<()> {
-        let init_req = pb::InitRequest {};
+        // load configuration from previous run, if it exists.
+
+        // if it doesn't then request it to the application.
         let init_response = self
             .application
-            .init(init_req)
+            .init()
             .await
             .map_err(|err| NodeError::Application(Box::new(err)))?;
+        // now store configuration into storage for the next launch.
 
+        // configure inputs to start from where they left previously.
         let input_mixer = InputMixer::new_from_pb(init_response.inputs);
         let mut input_stream = input_mixer.stream_messages().await?;
 
@@ -76,18 +103,20 @@ where
     }
 
     async fn handle_data(&mut self, input_id: u64, data: node_pb::Data) -> Result<()> {
-        let receive_data_req = pb::ReceiveDataRequest {
-            input_id,
-            sequence: data.sequence,
-            data: data.data,
-        };
-        let response = self
+        let input_id = StreamId::from_u64(input_id);
+        let sequence = Sequence::from_u64(data.sequence);
+        // TODO: should it check the type url?
+        let raw_data = data.data.ok_or(NodeError::EmptyMessage)?.value;
+        let messages = self
             .application
-            .receive_data(receive_data_req)
+            .receive_data(&input_id, &sequence, &raw_data)
             .await
             .map_err(|err| NodeError::Application(Box::new(err)))?;
-        let messages = response.data;
+
+        // store messages and assign them a sequence number
+        // let output_sequence = self.sequencer.register(&stream_id, &input_seq, messages.len() + 1)?;
         println!("messages = {:?}", messages);
+
         Ok(())
     }
 

@@ -121,6 +121,12 @@ impl<E: EnvironmentKind> MdbxEnvironmentBuilder<E> {
     }
 }
 
+impl<E: EnvironmentKind> Default for MdbxEnvironmentBuilder<E> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<'env, K, E> MdbxTransactionExt<K, E> for Transaction<'env, K, E>
 where
     K: TransactionKind,
