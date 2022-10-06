@@ -309,7 +309,7 @@ mod tests {
         sync::{Arc, Mutex},
     };
 
-    use apibara_core::stream::{MessageData, Sequence, StreamMessage};
+    use apibara_core::stream::{Sequence, StreamMessage};
     use futures::StreamExt;
     use tokio::sync::mpsc;
     use tokio_stream::wrappers::ReceiverStream;
@@ -324,8 +324,6 @@ mod tests {
         #[prost(uint64, tag = "1")]
         pub sequence: u64,
     }
-
-    impl MessageData for TestMessage {}
 
     impl TestMessage {
         pub fn new(sequence: u64) -> TestMessage {
@@ -343,7 +341,7 @@ mod tests {
 
     impl TestMessageStorage {
         pub fn insert(&mut self, sequence: &Sequence, message: &TestMessage) {
-            self.messages.insert(sequence.clone(), message.clone());
+            self.messages.insert(*sequence, message.clone());
         }
     }
 
