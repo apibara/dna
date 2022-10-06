@@ -8,4 +8,6 @@ mod server;
 mod status_reporter;
 
 pub use crate::core::pb;
-pub use crate::node::{start_starknet_source_node, SequencerGateway, SourceNodeError, StarkNetSourceNode};
+pub use crate::node::{
+    start_starknet_source_node, SequencerGateway, SourceNodeError, StarkNetSourceNode,
+};

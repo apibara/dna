@@ -54,6 +54,8 @@ impl Sequence {
 
 pub trait MessageData: prost::Message + Default {}
 
+impl<T> MessageData for T where T: prost::Message + Default {}
+
 /// Message sent over the stream.
 #[derive(Debug, Clone)]
 pub enum StreamMessage<D: MessageData> {
