@@ -119,8 +119,12 @@ where
             .map_err(|err| NodeError::Application(Box::new(err)))?;
 
         // store messages and assign them a sequence number
-        // let output_sequence = self.sequencer.register(&stream_id, &input_seq, messages.len() + 1)?;
-        println!("messages = {:?}", messages);
+        let output_sequence = self
+            .sequencer
+            .register(&input_id, &sequence, messages.len())?;
+        for (index, sequence) in output_sequence.enumerate() {
+            self.message_storage.insert(&sequence, &messages[index])?;
+        }
 
         Ok(())
     }

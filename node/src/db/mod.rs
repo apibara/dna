@@ -21,7 +21,9 @@ pub mod tables {
     };
     pub use super::message_storage::MessageTable;
     pub use super::node::InputStreamTable;
-    pub use super::sequencer::{SequencerState, SequencerStateTable};
+    pub use super::sequencer::{
+        SequencerState, SequencerStateTable, StreamState, StreamStateTable,
+    };
 }
 
 pub mod libmdbx {

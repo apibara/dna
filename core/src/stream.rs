@@ -1,15 +1,16 @@
-use std::{fmt::Debug, ops::RangeInclusive};
+use std::{fmt::Debug, ops::Range};
 
 /// Unique id for an input stream.
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
 pub struct StreamId(u64);
 
 /// Stream message sequence number.
 #[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Hash, Eq)]
 pub struct Sequence(u64);
 
-/// A range of sequence numbers. The range is inclusive.
-pub type SequenceRange = RangeInclusive<Sequence>;
+/// A range of sequence numbers. The range is non-inclusive.
+#[derive(Debug, Clone, PartialEq, Hash, Eq)]
+pub struct SequenceRange(Range<u64>);
 
 impl StreamId {
     /// Create a `StreamId` from a `u64`.
@@ -49,6 +50,45 @@ impl Sequence {
     /// Notice that this will panic if called on `Sequence(0)`.
     pub fn predecessor(&self) -> Sequence {
         Sequence(self.0 - 1)
+    }
+}
+
+impl SequenceRange {
+    /// Creates a new sequence range.
+    pub fn new_from_u64(start_index: u64, end_index: u64) -> SequenceRange {
+        SequenceRange(start_index..end_index)
+    }
+
+    /// Creates a new sequence range.
+    pub fn new(start_index: &Sequence, end_index: &Sequence) -> SequenceRange {
+        Self::new_from_u64(start_index.as_u64(), end_index.as_u64())
+    }
+
+    /// Returns the lower bound of the range, inclusive.
+    pub fn start(&self) -> Sequence {
+        Sequence::from_u64(self.0.start)
+    }
+
+    /// Returns the upper bound of the range, exclusive.
+    pub fn end(&self) -> Sequence {
+        Sequence::from_u64(self.0.end)
+    }
+
+    /// Returns true if the range contains no items.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+impl Iterator for SequenceRange {
+    type Item = Sequence;
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.0.size_hint()
+    }
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next().map(Sequence::from_u64)
     }
 }
 
