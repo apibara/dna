@@ -2,7 +2,7 @@
 
 use std::{sync::Arc, time::Duration};
 
-use apibara_core::stream::{Sequence, StreamMessage};
+use apibara_core::stream::{RawMessageData, Sequence, StreamMessage};
 use apibara_node::{
     chain_tracker::{ChainChange, ChainTracker, ChainTrackerError},
     db::libmdbx::EnvironmentKind,
@@ -10,6 +10,7 @@ use apibara_node::{
     o11y::{self, ObservableCounter, ObservableGauge},
 };
 use futures::{Stream, TryStreamExt};
+use prost::Message;
 use starknet::providers::SequencerGatewayProvider;
 use tokio::sync::broadcast::{self, error::SendError};
 use tokio_stream::wrappers::BroadcastStream;
@@ -231,7 +232,8 @@ where
                 for block in blocks {
                     next_block_number = block.block_number + 1;
                     let sequence = Sequence::from_u64(block.block_number);
-                    let message = BlockStreamMessage::new_data(sequence, block);
+                    let raw_block = RawMessageData::from_vec(block.encode_to_vec());
+                    let message = BlockStreamMessage::new_data(sequence, raw_block);
                     self.block_tx.send(message)?;
                 }
                 self.metrics.observe_latest_block(next_block_number - 1);

@@ -1,4 +1,4 @@
-use std::{fmt::Debug, ops::Range};
+use std::{fmt::Debug, marker::PhantomData, ops::Range};
 
 /// Unique id for an input stream.
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
@@ -96,11 +96,25 @@ pub trait MessageData: prost::Message + Default {}
 
 impl<T> MessageData for T where T: prost::Message + Default {}
 
+/// A [MessageData] that is never decoded.
+///
+/// Use this in place of a [Vec] of bytes to not lose type safety.
+#[derive(Debug, Clone)]
+pub struct RawMessageData<M: MessageData> {
+    data: Vec<u8>,
+    _phantom: PhantomData<M>,
+}
+
 /// Message sent over the stream.
 #[derive(Debug, Clone)]
 pub enum StreamMessage<D: MessageData> {
-    Invalidate { sequence: Sequence },
-    Data { sequence: Sequence, data: D },
+    Invalidate {
+        sequence: Sequence,
+    },
+    Data {
+        sequence: Sequence,
+        data: RawMessageData<D>,
+    },
 }
 
 impl<D> StreamMessage<D>
@@ -113,7 +127,7 @@ where
     }
 
     /// Creates a new `Data` message.
-    pub fn new_data(sequence: Sequence, data: D) -> Self {
+    pub fn new_data(sequence: Sequence, data: RawMessageData<D>) -> Self {
         Self::Data { sequence, data }
     }
 
@@ -133,5 +147,23 @@ where
     /// Returns true if it's an invalidate message.
     pub fn is_invalidate(&self) -> bool {
         matches!(self, Self::Invalidate { .. })
+    }
+}
+
+impl<D> RawMessageData<D>
+where
+    D: MessageData,
+{
+    /// Creates a new [RawMessageData] from [Vec].
+    pub fn from_vec(data: Vec<u8>) -> Self {
+        RawMessageData {
+            data,
+            _phantom: PhantomData::default(),
+        }
+    }
+
+    /// Returns the bytes content of the message.
+    pub fn as_bytes(&self) -> &[u8] {
+        self.data.as_ref()
     }
 }

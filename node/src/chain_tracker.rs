@@ -1,7 +1,7 @@
 //! # Track the chain's head
 use std::{marker::PhantomData, sync::Arc};
 
-use apibara_core::stream::Sequence;
+use apibara_core::stream::{RawMessageData, Sequence};
 use libmdbx::{Environment, EnvironmentKind, Error as MdbxError, Transaction, TransactionKind, RW};
 
 use crate::{
@@ -319,8 +319,16 @@ where
 {
     type Error = ChainTrackerError;
 
-    fn get(&self, sequence: &Sequence) -> std::result::Result<Option<B>, Self::Error> {
-        self.block_by_number(sequence.as_u64())
+    fn get(
+        &self,
+        sequence: &Sequence,
+    ) -> std::result::Result<Option<RawMessageData<B>>, Self::Error> {
+        // TODO: avoid roundtrip encoding-decoding of block data.
+        let block = self
+            .block_by_number(sequence.as_u64())?
+            .map(|b| b.encode_to_vec())
+            .map(RawMessageData::from_vec);
+        Ok(block)
     }
 }
 

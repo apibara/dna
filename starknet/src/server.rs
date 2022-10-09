@@ -10,7 +10,7 @@ use apibara_node::{
     reflection::merge_encoded_node_service_descriptor_set,
 };
 use futures::{Stream, StreamExt};
-use prost::{DecodeError, Message};
+use prost::DecodeError;
 use tokio::task::JoinError;
 use tokio_util::sync::CancellationToken;
 use tonic::{transport::Server as TonicServer, Request, Response, Status};
@@ -109,7 +109,7 @@ where
             }) => {
                 let inner_data = prost_types::Any {
                     type_url: "type.googleapis.com/apibara.starknet.v1alpha1.Block".to_string(),
-                    value: block.encode_to_vec(),
+                    value: block.as_bytes().to_vec(),
                 };
                 let data = pb::Data {
                     sequence: sequence.as_u64(),
