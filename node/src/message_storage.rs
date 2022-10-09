@@ -2,8 +2,8 @@
 
 use std::{marker::PhantomData, sync::Arc};
 
-use apibara_core::stream::{MessageData, Sequence};
-use libmdbx::{Environment, EnvironmentKind, Error as MdbxError, Transaction, RO};
+use apibara_core::stream::{MessageData, RawMessageData, Sequence};
+use libmdbx::{Environment, EnvironmentKind, Error as MdbxError, Transaction, RO, RW};
 
 use crate::db::{tables, MdbxRWTransactionExt, MdbxTransactionExt, TableCursor};
 
@@ -11,7 +11,10 @@ pub trait MessageStorage<M: MessageData> {
     type Error: std::error::Error + Send + Sync + 'static;
 
     /// Retrieves a message with the given sequencer number, if any.
-    fn get(&self, sequence: &Sequence) -> std::result::Result<Option<M>, Self::Error>;
+    fn get(
+        &self,
+        sequence: &Sequence,
+    ) -> std::result::Result<Option<RawMessageData<M>>, Self::Error>;
 }
 
 /// Store messages in mdbx.
@@ -134,11 +137,17 @@ where
 {
     type Error = MdbxMessageStorageError;
 
-    fn get(&self, sequence: &Sequence) -> Result<Option<M>> {
+    fn get(&self, sequence: &Sequence) -> Result<Option<RawMessageData<M>>> {
         let txn = self.db.begin_rw_txn()?;
         let table = txn.open_table::<tables::MessageTable<M>>()?;
+        // TODO: refactor to load directly bytes without a roundtrip encoding-decoding.
         let mut cursor = table.cursor()?;
-        Ok(cursor.seek_exact(sequence)?.map(|t| t.1))
+        let data = cursor
+            .seek_exact(sequence)?
+            .map(|t| t.1)
+            .map(|m| m.encode_to_vec())
+            .map(RawMessageData::from_vec);
+        Ok(data)
     }
 }
 

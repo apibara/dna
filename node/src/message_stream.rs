@@ -21,7 +21,7 @@
 
 use std::{collections::VecDeque, marker::PhantomData, pin::Pin, task::Poll};
 
-use apibara_core::stream::{MessageData, Sequence, StreamMessage};
+use apibara_core::stream::{MessageData, RawMessageData, Sequence, StreamMessage};
 use futures::Stream;
 use pin_project::pin_project;
 use tokio_util::sync::CancellationToken;
@@ -64,7 +64,7 @@ pub type Result<T> = std::result::Result<T, BackfilledMessageStreamError>;
 struct State<M: MessageData> {
     current: Sequence,
     latest: Sequence,
-    buffer: VecDeque<(Sequence, M)>,
+    buffer: VecDeque<(Sequence, RawMessageData<M>)>,
 }
 
 impl<M, S, L> BackfilledMessageStream<M, S, L>
@@ -277,7 +277,7 @@ impl<M: MessageData> State<M> {
         self.current = sequence;
     }
 
-    fn add_live_message(&mut self, sequence: Sequence, message: M) {
+    fn add_live_message(&mut self, sequence: Sequence, message: RawMessageData<M>) {
         self.buffer.push_back((sequence, message));
 
         // trim buffer size to always be ~50 elements
@@ -297,7 +297,7 @@ impl<M: MessageData> State<M> {
         }
     }
 
-    fn pop_buffer(&mut self) -> Option<(Sequence, M)> {
+    fn pop_buffer(&mut self) -> Option<(Sequence, RawMessageData<M>)> {
         self.buffer.pop_front()
     }
 }
@@ -309,8 +309,9 @@ mod tests {
         sync::{Arc, Mutex},
     };
 
-    use apibara_core::stream::{Sequence, StreamMessage};
+    use apibara_core::stream::{RawMessageData, Sequence, StreamMessage};
     use futures::StreamExt;
+    use prost::Message;
     use tokio::sync::mpsc;
     use tokio_stream::wrappers::ReceiverStream;
     use tokio_util::sync::CancellationToken;
@@ -329,11 +330,16 @@ mod tests {
         pub fn new(sequence: u64) -> TestMessage {
             TestMessage { sequence }
         }
+
+        pub fn new_raw(sequence: u64) -> RawMessageData<TestMessage> {
+            let data = Self::new(sequence).encode_to_vec();
+            RawMessageData::from_vec(data)
+        }
     }
 
     #[derive(Debug, Default)]
     pub struct TestMessageStorage {
-        messages: HashMap<Sequence, TestMessage>,
+        messages: HashMap<Sequence, RawMessageData<TestMessage>>,
     }
 
     #[derive(Debug, thiserror::Error)]
@@ -341,14 +347,22 @@ mod tests {
 
     impl TestMessageStorage {
         pub fn insert(&mut self, sequence: &Sequence, message: &TestMessage) {
-            self.messages.insert(*sequence, message.clone());
+            let message = RawMessageData::from_vec(message.encode_to_vec());
+            self.insert_raw(sequence, message);
+        }
+
+        pub fn insert_raw(&mut self, sequence: &Sequence, message: RawMessageData<TestMessage>) {
+            self.messages.insert(*sequence, message);
         }
     }
 
     impl MessageStorage<TestMessage> for Arc<Mutex<TestMessageStorage>> {
         type Error = TestMessageStorageError;
 
-        fn get(&self, sequence: &Sequence) -> Result<Option<TestMessage>, Self::Error> {
+        fn get(
+            &self,
+            sequence: &Sequence,
+        ) -> Result<Option<RawMessageData<TestMessage>>, Self::Error> {
             Ok(self.lock().unwrap().messages.get(sequence).cloned())
         }
     }
@@ -380,7 +394,7 @@ mod tests {
         live_tx
             .send(Ok(StreamMessage::new_data(
                 Sequence::from_u64(10),
-                TestMessage::new(10),
+                TestMessage::new_raw(10),
             )))
             .await
             .unwrap();
@@ -398,9 +412,12 @@ mod tests {
         // simulate node adding messages to storage (for persistence) while
         // publishing to live stream
         for sequence in 11..100 {
-            let message = TestMessage::new(sequence);
+            let message = TestMessage::new_raw(sequence);
             let sequence = Sequence::from_u64(sequence);
-            storage.lock().unwrap().insert(&sequence, &message);
+            storage
+                .lock()
+                .unwrap()
+                .insert_raw(&sequence, message.clone());
             let message = StreamMessage::new_data(sequence, message);
             live_tx.send(Ok(message)).await.unwrap();
         }
@@ -428,7 +445,7 @@ mod tests {
         );
 
         for sequence in 10..20 {
-            let message = TestMessage::new(sequence);
+            let message = TestMessage::new_raw(sequence);
             let sequence = Sequence::from_u64(sequence);
             let message = StreamMessage::new_data(sequence, message);
             live_tx.send(Ok(message)).await.unwrap();
@@ -465,9 +482,12 @@ mod tests {
 
         // live stream some messages
         for sequence in 5..10 {
-            let message = TestMessage::new(sequence);
+            let message = TestMessage::new_raw(sequence);
             let sequence = Sequence::from_u64(sequence);
-            storage.lock().unwrap().insert(&sequence, &message);
+            storage
+                .lock()
+                .unwrap()
+                .insert_raw(&sequence, message.clone());
             let message = StreamMessage::new_data(sequence, message);
             live_tx.send(Ok(message)).await.unwrap();
         }
@@ -479,9 +499,12 @@ mod tests {
 
         // then send some more messages
         for sequence in 8..12 {
-            let message = TestMessage::new(sequence);
+            let message = TestMessage::new_raw(sequence);
             let sequence = Sequence::from_u64(sequence);
-            storage.lock().unwrap().insert(&sequence, &message);
+            storage
+                .lock()
+                .unwrap()
+                .insert_raw(&sequence, message.clone());
             let message = StreamMessage::new_data(sequence, message);
             live_tx.send(Ok(message)).await.unwrap();
         }
@@ -520,9 +543,12 @@ mod tests {
 
         // live stream some messages
         for sequence in 5..10 {
-            let message = TestMessage::new(sequence);
+            let message = TestMessage::new_raw(sequence);
             let sequence = Sequence::from_u64(sequence);
-            storage.lock().unwrap().insert(&sequence, &message);
+            storage
+                .lock()
+                .unwrap()
+                .insert_raw(&sequence, message.clone());
             let message = StreamMessage::new_data(sequence, message);
             live_tx.send(Ok(message)).await.unwrap();
         }
@@ -541,9 +567,12 @@ mod tests {
 
         // then send some more messages
         for sequence in 8..12 {
-            let message = TestMessage::new(sequence);
+            let message = TestMessage::new_raw(sequence);
             let sequence = Sequence::from_u64(sequence);
-            storage.lock().unwrap().insert(&sequence, &message);
+            storage
+                .lock()
+                .unwrap()
+                .insert_raw(&sequence, message.clone());
             let message = StreamMessage::new_data(sequence, message);
             live_tx.send(Ok(message)).await.unwrap();
         }
