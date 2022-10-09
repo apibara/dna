@@ -3,6 +3,7 @@ use std::{marker::PhantomData, sync::Arc};
 
 use apibara_core::stream::{RawMessageData, Sequence};
 use libmdbx::{Environment, EnvironmentKind, Error as MdbxError, Transaction, TransactionKind, RW};
+use prost::DecodeError;
 
 use crate::{
     db::{
@@ -65,6 +66,8 @@ pub enum ChainTrackerError {
     Database(#[from] MdbxError),
     #[error("error decoding key from database")]
     KeyDecodeError(#[from] KeyDecodeError),
+    #[error("error decoding block data")]
+    BlockDecodeError(#[from] DecodeError),
     #[error("invalid block number (expected {expected}, given {given})")]
     InvalidBlockNumber { expected: u64, given: u64 },
     #[error("missing chain's head")]
@@ -117,6 +120,17 @@ where
     /// Returns a block in the canonical chain by its number or height.
     pub fn block_by_number(&self, number: u64) -> Result<Option<B>> {
         let txn = self.db.begin_ro_txn()?;
+        let block = self
+            .block_by_func_with_txn(&txn, |canon_cursor| canon_cursor.seek_exact(&number))?
+            .map(|b| b.to_proto())
+            .transpose()?;
+        txn.commit()?;
+        Ok(block)
+    }
+
+    /// Returns a block in the canonical chain by its number or height. This function does not decode the block data.
+    pub fn raw_block_by_number(&self, number: u64) -> Result<Option<RawMessageData<B>>> {
+        let txn = self.db.begin_ro_txn()?;
         let block =
             self.block_by_func_with_txn(&txn, |canon_cursor| canon_cursor.seek_exact(&number))?;
         txn.commit()?;
@@ -126,7 +140,10 @@ where
     /// Returns the most recently indexed block.
     pub fn latest_indexed_block(&self) -> Result<Option<B>> {
         let txn = self.db.begin_ro_txn()?;
-        let block = self.block_by_func_with_txn(&txn, |canon_cursor| canon_cursor.last())?;
+        let block = self
+            .block_by_func_with_txn(&txn, |canon_cursor| canon_cursor.last())?
+            .map(|b| b.to_proto())
+            .transpose()?;
         txn.commit()?;
         Ok(block)
     }
@@ -230,7 +247,7 @@ where
         &self,
         txn: &Transaction<'_, K, E>,
         func: F,
-    ) -> Result<Option<B>>
+    ) -> Result<Option<RawMessageData<B>>>
     where
         F: Fn(
             &mut TableCursor<'_, tables::CanonicalBlockTable<B::Hash>, K>,
@@ -248,7 +265,7 @@ where
         };
         let mut block_cursor = txn.open_table::<tables::BlockTable<B>>()?.cursor()?;
         let block = block_cursor
-            .seek_exact(&(block_number, block_hash))?
+            .seek_exact_raw(&(block_number, block_hash))?
             .map(|(_, block)| block);
         Ok(block)
     }
@@ -323,11 +340,7 @@ where
         &self,
         sequence: &Sequence,
     ) -> std::result::Result<Option<RawMessageData<B>>, Self::Error> {
-        // TODO: avoid roundtrip encoding-decoding of block data.
-        let block = self
-            .block_by_number(sequence.as_u64())?
-            .map(|b| b.encode_to_vec())
-            .map(RawMessageData::from_vec);
+        let block = self.raw_block_by_number(sequence.as_u64())?;
         Ok(block)
     }
 }

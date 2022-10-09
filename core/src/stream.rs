@@ -166,4 +166,9 @@ where
     pub fn as_bytes(&self) -> &[u8] {
         self.data.as_ref()
     }
+
+    /// Decodes the raw message to a [prost::Message].
+    pub fn to_proto(&self) -> Result<D, prost::DecodeError> {
+        D::decode(self.data.as_ref())
+    }
 }

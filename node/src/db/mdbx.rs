@@ -1,5 +1,6 @@
 use std::{marker::PhantomData, ops::Range, path::Path};
 
+use apibara_core::stream::{MessageData, RawMessageData};
 use libmdbx::{
     Cursor, Database, DatabaseFlags, Environment, EnvironmentBuilder, EnvironmentKind,
     Error as MdbxError, Geometry, TableObject, Transaction, TransactionKind, WriteFlags, RW,
@@ -169,6 +170,21 @@ where
 }
 
 #[derive(Debug, Clone)]
+struct RawTableObjectWrapper<T: MessageData>(RawMessageData<T>);
+
+impl<'txn, T> TableObject<'txn> for RawTableObjectWrapper<T>
+where
+    T: MessageData,
+{
+    fn decode(data_val: &[u8]) -> MdbxResult<Self>
+    where
+        Self: Sized,
+    {
+        Ok(Self(RawMessageData::from_vec(data_val.to_vec())))
+    }
+}
+
+#[derive(Debug, Clone)]
 struct TableKeyWrapper<T>(T);
 
 impl<'txn, T> TableObject<'txn> for TableKeyWrapper<T>
@@ -242,6 +258,15 @@ where
     /// Position at the specified key.
     pub fn seek_exact(&mut self, key: &T::Key) -> MdbxResult<Option<(T::Key, T::Value)>> {
         map_kv_result::<T>(self.cursor.set_key(key.encode().as_ref()))
+    }
+
+    /// Position at the specified key and return the raw value .
+    #[allow(clippy::type_complexity)]
+    pub fn seek_exact_raw(
+        &mut self,
+        key: &T::Key,
+    ) -> MdbxResult<Option<(T::Key, RawMessageData<T::Value>)>> {
+        raw_map_kv_result::<T>(self.cursor.set_key(key.encode().as_ref()))
     }
 
     /// Position at the first key greater than or equal to the specified key.
@@ -325,6 +350,19 @@ where
 fn map_kv_result<T>(
     t: MdbxResult<Option<(TableKeyWrapper<T::Key>, TableObjectWrapper<T::Value>)>>,
 ) -> MdbxResult<Option<(T::Key, T::Value)>>
+where
+    T: Table,
+{
+    if let Some((k, v)) = t? {
+        return Ok(Some((k.0, v.0)));
+    }
+    Ok(None)
+}
+
+#[allow(clippy::type_complexity)]
+fn raw_map_kv_result<T>(
+    t: MdbxResult<Option<(TableKeyWrapper<T::Key>, RawTableObjectWrapper<T::Value>)>>,
+) -> MdbxResult<Option<(T::Key, RawMessageData<T::Value>)>>
 where
     T: Table,
 {

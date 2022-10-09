@@ -140,13 +140,8 @@ where
     fn get(&self, sequence: &Sequence) -> Result<Option<RawMessageData<M>>> {
         let txn = self.db.begin_rw_txn()?;
         let table = txn.open_table::<tables::MessageTable<M>>()?;
-        // TODO: refactor to load directly bytes without a roundtrip encoding-decoding.
         let mut cursor = table.cursor()?;
-        let data = cursor
-            .seek_exact(sequence)?
-            .map(|t| t.1)
-            .map(|m| m.encode_to_vec())
-            .map(RawMessageData::from_vec);
+        let data = cursor.seek_exact_raw(sequence)?.map(|t| t.1);
         Ok(data)
     }
 }
