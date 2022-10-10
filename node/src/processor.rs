@@ -1,26 +1,30 @@
 //! Input stream processor.
 
-use std::{marker::PhantomData, pin::Pin, sync::Arc};
+use std::{
+    pin::Pin,
+    sync::Arc,
+    task::{self, Poll},
+};
 
 use apibara_core::{
     application::pb as app_pb,
     node::pb as node_pb,
     stream::{MessageData, RawMessageData, Sequence, StreamId, StreamMessage},
 };
-use futures::{channel::mpsc::SendError, Stream};
+use futures::Stream;
 use libmdbx::{Environment, EnvironmentKind, Error as MdbxError};
+use pin_project::pin_project;
 use prost::Message;
-use tokio::sync::{broadcast, Mutex};
+use tokio::sync::{broadcast, Mutex, MutexGuard};
 use tokio_stream::{wrappers::BroadcastStream, StreamExt};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
 use crate::{
     application::Application,
-    db::{tables, MdbxRWTransactionExt, MdbxTransactionExt},
     input::{InputMixer, InputMixerError, MixedInputStreamError},
-    message_storage::{MdbxMessageStorage, MdbxMessageStorageError, MessageStorage},
-    message_stream::{self, BackfilledMessageStream, BackfilledMessageStreamError, LiveStreamItem},
+    message_storage::{MdbxMessageStorage, MdbxMessageStorageError},
+    message_stream::{BackfilledMessageStream, BackfilledMessageStreamError},
     sequencer::{Sequencer, SequencerError},
 };
 
@@ -47,14 +51,8 @@ pub struct Processor<A: Application + Send, E: EnvironmentKind> {
     db: Arc<Environment<E>>,
     sequencer: Sequencer<E>,
     storage: Arc<MdbxMessageStorage<E, A::Message>>,
-    configuration: ProcessorConfiguration<E>,
     message_tx: broadcast::Sender<ProcessorMessage<A::Message>>,
     _message_rx: broadcast::Receiver<ProcessorMessage<A::Message>>,
-}
-
-/// Holds the [Processor] configuration.
-pub struct ProcessorConfiguration<E: EnvironmentKind> {
-    db: Arc<Environment<E>>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -88,7 +86,10 @@ pub type Result<T> = std::result::Result<T, ProcessorError>;
 
 const MESSAGE_CHANNEL_SIZE: usize = 128;
 
+/// Used to give a simpler type parameter to [BackfilledMessageStream].
+#[pin_project]
 pub struct LiveStream<M: MessageData> {
+    #[pin]
     inner: BroadcastStream<StreamMessage<M>>,
 }
 
@@ -99,13 +100,8 @@ where
 {
     /// Creates a new stream processor with the given application.
     pub fn new(db: Arc<Environment<E>>, application: A) -> Result<Self> {
-        let txn = db.begin_rw_txn()?;
-        txn.ensure_table::<tables::InputStreamTable>(None)?;
-        txn.commit()?;
-
         let sequencer = Sequencer::new(db.clone())?;
         let storage = MdbxMessageStorage::new(db.clone())?;
-        let configuration = ProcessorConfiguration::new(db)?;
 
         let (message_tx, message_rx) = broadcast::channel(MESSAGE_CHANNEL_SIZE);
 
@@ -114,18 +110,22 @@ where
             db,
             sequencer,
             storage: Arc::new(storage),
-            configuration,
             message_tx,
             _message_rx: message_rx,
         })
+    }
+
+    /// Locks the application mutex and returns its value.
+    pub async fn application(&self) -> MutexGuard<'_, A> {
+        self.application.lock().await
     }
 
     /// Starts the input stream processor.
     ///
     /// The processor will start indexing messages from its inputs,
     /// generating a new sequence of output messages.
-    pub async fn start(&self, ct: CancellationToken) -> Result<()> {
-        let input_mixer = self.init_application().await?;
+    pub async fn start(&self, inputs: &[app_pb::InputStream], ct: CancellationToken) -> Result<()> {
+        let input_mixer = self.init_input_mixer(inputs).await?;
         let mut input_stream = input_mixer.stream_messages().await?;
 
         // enter main loop. keep streaming messages from the inputs and pass them to the application.
@@ -150,44 +150,25 @@ where
         LiveStream { inner }
     }
 
-    async fn init_application(&self) -> Result<InputMixer> {
-        let input_streams = match self.configuration.input_streams()? {
-            None => {
-                info!("first start. loading config from app");
-                let mut application = self.application.lock().await;
-                // first time starting the application. retrieve config from it.
-                let init_response = application
-                    .init()
-                    .await
-                    .map_err(|err| ProcessorError::Application(Box::new(err)))?;
+    async fn init_input_mixer(&self, inputs: &[app_pb::InputStream]) -> Result<InputMixer> {
+        // check whether inputs already started streaming, if that's the case start from where it left.
+        let mut inputs_with_starting_sequence = Vec::default();
+        for input in inputs {
+            let stream_id = StreamId::from_u64(input.id);
+            let starting_input_sequence = self
+                .sequencer
+                .input_sequence(&stream_id)?
+                .map(|seq| seq.successor())
+                .unwrap_or_else(|| Sequence::from_u64(input.starting_sequence));
 
-                self.configuration
-                    .set_input_streams(&init_response.inputs)?;
-
-                init_response.inputs
-            }
-            Some(inputs) => {
-                // check whether inputs already started streaming, if that's the case start from where it left.
-                let mut inputs_with_starting_sequence = Vec::default();
-                for input in inputs {
-                    let stream_id = StreamId::from_u64(input.id);
-                    let starting_input_sequence = self
-                        .sequencer
-                        .input_sequence(&stream_id)?
-                        .map(|seq| seq.successor())
-                        .unwrap_or_else(|| Sequence::from_u64(input.starting_sequence));
-
-                    info!(stream_id = ?stream_id, url = %input.url, starting_sequence = %starting_input_sequence.as_u64(), "loading input stream config");
-                    inputs_with_starting_sequence.push(app_pb::InputStream {
-                        id: stream_id.as_u64(),
-                        starting_sequence: starting_input_sequence.as_u64(),
-                        url: input.url,
-                    });
-                }
-                inputs_with_starting_sequence
-            }
-        };
-        let input_mixer = InputMixer::new_from_pb(input_streams);
+            info!(stream_id = ?stream_id, url = %input.url, starting_sequence = %starting_input_sequence.as_u64(), "loading input stream config");
+            inputs_with_starting_sequence.push(app_pb::InputStream {
+                id: stream_id.as_u64(),
+                starting_sequence: starting_input_sequence.as_u64(),
+                url: input.url.clone(),
+            });
+        }
+        let input_mixer = InputMixer::new_from_pb(inputs_with_starting_sequence);
         Ok(input_mixer)
     }
 
@@ -284,59 +265,21 @@ where
     }
 }
 
-impl<M: MessageData> Stream for LiveStream<M> {
+impl<M: MessageData + 'static> Stream for LiveStream<M> {
     type Item = std::result::Result<StreamMessage<M>, Box<dyn std::error::Error>>;
 
     fn poll_next(
         self: Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Option<Self::Item>> {
-        todo!()
-    }
-}
-
-impl<E: EnvironmentKind> ProcessorConfiguration<E> {
-    /// Creates a new configuration.
-    pub fn new(db: Arc<Environment<E>>) -> Result<Self> {
-        let txn = db.begin_rw_txn()?;
-        txn.ensure_table::<tables::InputStreamTable>(None)?;
-        txn.commit()?;
-        Ok(ProcessorConfiguration { db })
-    }
-
-    /// Returns a list of the processor input streams.
-    ///
-    /// Returns [None] if no configuration is stored for the processor.
-    pub fn input_streams(&self) -> Result<Option<Vec<app_pb::InputStream>>> {
-        let txn = self.db.begin_ro_txn()?;
-        let mut inputs_cursor = txn.open_table::<tables::InputStreamTable>()?.cursor()?;
-        let mut maybe_input_stream = inputs_cursor.first()?;
-
-        if maybe_input_stream.is_none() {
-            txn.commit()?;
-            return Ok(None);
+        cx: &mut task::Context<'_>,
+    ) -> task::Poll<Option<Self::Item>> {
+        let mut this = self.project();
+        match Pin::new(&mut this.inner).poll_next(cx) {
+            Poll::Pending => Poll::Pending,
+            Poll::Ready(None) => Poll::Ready(None),
+            Poll::Ready(Some(message)) => {
+                let res = message.map_err(|err| Box::new(err) as Box<dyn std::error::Error>);
+                Poll::Ready(Some(res))
+            }
         }
-
-        let mut inputs = Vec::default();
-        while let Some((_, input_stream)) = maybe_input_stream {
-            inputs.push(input_stream);
-            maybe_input_stream = inputs_cursor.next()?;
-        }
-        txn.commit()?;
-
-        Ok(Some(inputs))
-    }
-
-    /// Stores the given input streams for later runs.
-    pub fn set_input_streams(&self, inputs: &[app_pb::InputStream]) -> Result<()> {
-        let txn = self.db.begin_rw_txn()?;
-        let mut inputs_cursor = txn.open_table::<tables::InputStreamTable>()?.cursor()?;
-        for input in inputs {
-            let stream_id = StreamId::from_u64(input.id);
-            inputs_cursor.seek_exact(&stream_id)?;
-            inputs_cursor.put(&stream_id, input)?;
-        }
-        txn.commit()?;
-        Ok(())
     }
 }

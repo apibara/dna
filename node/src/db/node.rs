@@ -1,17 +1,26 @@
 //! Node related tables.
 
-use apibara_core::{application::pb, stream::StreamId};
+use apibara_core::application::pb;
 
 use super::Table;
 
-#[derive(Debug, Clone, Copy, Default)]
-pub struct InputStreamTable {}
+/// Contains the node configuration.
+#[derive(Clone, prost::Message)]
+pub struct Configuration {
+    #[prost(message, repeated, tag = "1")]
+    pub inputs: ::prost::alloc::vec::Vec<pb::InputStream>,
+    #[prost(message, tag = "2")]
+    pub output: Option<pb::OutputStream>,
+}
 
-impl Table for InputStreamTable {
-    type Key = StreamId;
-    type Value = pb::InputStream;
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ConfigurationTable {}
+
+impl Table for ConfigurationTable {
+    type Key = ();
+    type Value = Configuration;
 
     fn db_name() -> &'static str {
-        "InputStream"
+        "Configuration"
     }
 }
