@@ -59,7 +59,7 @@ where
     /// Insert the given `message` in the store.
     ///
     /// Expect `sequence` to be the successor of the current highest sequence number.
-    pub fn insert(&mut self, sequence: &Sequence, message: &M) -> Result<()> {
+    pub fn insert(&self, sequence: &Sequence, message: &M) -> Result<()> {
         let txn = self.db.begin_rw_txn()?;
         let table = txn.open_table::<tables::MessageTable<M>>()?;
         let mut cursor = table.cursor()?;
@@ -94,7 +94,7 @@ where
     /// Delete all messages with sequence number greater than or equal the given `sequence`.
     ///
     /// Returns the number of messages deleted.
-    pub fn invalidate(&mut self, sequence: &Sequence) -> Result<usize> {
+    pub fn invalidate(&self, sequence: &Sequence) -> Result<usize> {
         let txn = self.db.begin_rw_txn()?;
         let table = txn.open_table::<tables::MessageTable<M>>()?;
         let mut cursor = table.cursor()?;
