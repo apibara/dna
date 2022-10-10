@@ -46,7 +46,7 @@ where
         output: &app_pb::OutputStream,
         ct: CancellationToken,
     ) -> Result<(), ServerError> {
-        let server = ServerImpl::new(self.producer, ct.clone());
+        let server = ServerImpl::new(self.producer, output.message_type.clone(), ct.clone());
 
         let node_descriptor_set = merge_encoded_node_service_descriptor_set(
             &output.filename,
@@ -77,6 +77,7 @@ where
 
 struct ServerImpl<P: MessageProducer> {
     producer: Arc<P>,
+    type_url: String,
     cts: CancellationToken,
 }
 
@@ -84,8 +85,13 @@ impl<P> ServerImpl<P>
 where
     P: MessageProducer,
 {
-    pub fn new(producer: Arc<P>, cts: CancellationToken) -> Self {
-        ServerImpl { producer, cts }
+    pub fn new(producer: Arc<P>, output_type: String, cts: CancellationToken) -> Self {
+        let type_url = format!("type.googleapis.com/{}", output_type);
+        ServerImpl {
+            producer,
+            type_url,
+            cts,
+        }
     }
 
     pub fn into_service(self) -> node_pb::node_server::NodeServer<ServerImpl<P>> {
@@ -126,34 +132,37 @@ where
             .stream_from_sequence(&starting_sequence, self.cts.clone())
             .map_err(|_| Status::internal("failed to start message stream"))?;
 
-        let response = Box::pin(stream.map(|maybe_res| match maybe_res {
-            Err(err) => {
-                warn!(err = ?err, "stream error");
-                Err(Status::internal("stream error"))
-            }
-            Ok(StreamMessage::Invalidate { sequence }) => {
-                let invalidate = node_pb::Invalidate {
-                    sequence: sequence.as_u64(),
-                };
-                Ok(node_pb::StreamMessagesResponse {
-                    message: Some(node_pb::stream_messages_response::Message::Invalidate(
-                        invalidate,
-                    )),
-                })
-            }
-            Ok(StreamMessage::Data { sequence, data }) => {
-                let inner_data = prost_types::Any {
-                    type_url: "type.googleapis.com/apibara.starknet.v1alpha1.Event".to_string(),
-                    value: data.as_bytes().to_vec(),
-                };
-                let data = node_pb::Data {
-                    sequence: sequence.as_u64(),
-                    data: Some(inner_data),
-                };
+        let response = Box::pin(stream.map({
+            let type_url = self.type_url.clone();
+            move |maybe_res| match maybe_res {
+                Err(err) => {
+                    warn!(err = ?err, "stream error");
+                    Err(Status::internal("stream error"))
+                }
+                Ok(StreamMessage::Invalidate { sequence }) => {
+                    let invalidate = node_pb::Invalidate {
+                        sequence: sequence.as_u64(),
+                    };
+                    Ok(node_pb::StreamMessagesResponse {
+                        message: Some(node_pb::stream_messages_response::Message::Invalidate(
+                            invalidate,
+                        )),
+                    })
+                }
+                Ok(StreamMessage::Data { sequence, data }) => {
+                    let inner_data = prost_types::Any {
+                        type_url: type_url.clone(),
+                        value: data.as_bytes().to_vec(),
+                    };
+                    let data = node_pb::Data {
+                        sequence: sequence.as_u64(),
+                        data: Some(inner_data),
+                    };
 
-                Ok(node_pb::StreamMessagesResponse {
-                    message: Some(node_pb::stream_messages_response::Message::Data(data)),
-                })
+                    Ok(node_pb::StreamMessagesResponse {
+                        message: Some(node_pb::stream_messages_response::Message::Data(data)),
+                    })
+                }
             }
         }));
 

@@ -2396,6 +2396,8 @@ dependencies = [
  "prost-types",
  "thiserror",
  "tokio",
+ "tonic",
+ "tonic-build",
 ]
 
 [[package]]

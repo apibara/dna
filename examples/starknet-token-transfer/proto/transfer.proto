@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package example.org.v1alpha1;
+
+import "google/protobuf/timestamp.proto";
+
+message Transfer {
+  bytes from_address = 1;
+  bytes to_address = 2;
+  bytes token_id_or_amount = 3;
+  BlockHash block_hash = 4;
+  uint64 block_number = 5;
+  google.protobuf.Timestamp timestamp = 6;
+  bytes transaction_hash = 7;
+  uint32 log_index = 8;
+}
+
+message BlockHash { bytes hash = 1; }
