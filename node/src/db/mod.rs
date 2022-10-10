@@ -20,7 +20,7 @@ pub mod tables {
         Block, BlockHash, BlockTable, CanonicalBlock, CanonicalBlockTable,
     };
     pub use super::message_storage::MessageTable;
-    pub use super::node::InputStreamTable;
+    pub use super::node::{Configuration, ConfigurationTable};
     pub use super::sequencer::{
         SequencerState, SequencerStateTable, StreamState, StreamStateTable,
     };

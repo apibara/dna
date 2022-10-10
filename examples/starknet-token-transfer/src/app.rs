@@ -29,6 +29,7 @@ impl Application for SimpleApplication {
         };
         let output = pb::OutputStream {
             message_type: "Event".to_string(),
+            filename: "starknet.proto".to_string(),
             file_descriptor_proto: starknet_pb::starknet_file_descriptor_set().to_vec(),
         };
         Ok(pb::InitResponse {
