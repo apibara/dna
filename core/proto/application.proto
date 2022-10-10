@@ -34,7 +34,7 @@ message InitResponse {
 
 // Output stream description.
 message OutputStream {
-  // Type name of the output message type.
+  // Type name of the output message type, including package name.
   string message_type = 1;
   // Name of the file used to generate `file_descriptor_proto`.
   string filename = 2;
