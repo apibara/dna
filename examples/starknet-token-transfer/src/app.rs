@@ -27,8 +27,13 @@ impl Application for SimpleApplication {
             url: "goerli.starknet.stream.apibara.com:443".to_string(),
             starting_sequence: 100_000,
         };
+        let output = pb::OutputStream {
+            message_type: "Event".to_string(),
+            file_descriptor_proto: starknet_pb::starknet_file_descriptor_set().to_vec(),
+        };
         Ok(pb::InitResponse {
             inputs: vec![input],
+            output: Some(output),
         })
     }
 

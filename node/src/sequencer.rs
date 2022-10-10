@@ -134,7 +134,7 @@ impl<E: EnvironmentKind> Sequencer<E> {
     /// Returns a sequence range for the output. Notice that if `output_len == 0`, then
     /// the output range is empty.
     pub fn register(
-        &mut self,
+        &self,
         stream_id: &StreamId,
         sequence: &Sequence,
         output_len: usize,
@@ -204,7 +204,7 @@ impl<E: EnvironmentKind> Sequencer<E> {
     /// Invalidates all messages received after (inclusive) `(stream_id, sequence)`.
     ///
     /// Returns the sequence number of the first invalidated messages of the output stream.
-    pub fn invalidate(&mut self, stream_id: &StreamId, sequence: &Sequence) -> Result<Sequence> {
+    pub fn invalidate(&self, stream_id: &StreamId, sequence: &Sequence) -> Result<Sequence> {
         let txn = self.db.begin_rw_txn()?;
         let mut sequencer_cursor = txn.open_table::<tables::SequencerStateTable>()?.cursor()?;
         let mut stream_cursor = txn.open_table::<tables::StreamStateTable>()?.cursor()?;

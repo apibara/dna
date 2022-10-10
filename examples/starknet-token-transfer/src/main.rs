@@ -23,6 +23,6 @@ async fn main() -> Result<()> {
         .with_size_gib(2, 20)
         .open(&datadir)?;
     let db = Arc::new(db);
-    Node::with_application(db, app)?.start().await?;
+    Node::new(db, app)?.start().await?;
     Ok(())
 }
