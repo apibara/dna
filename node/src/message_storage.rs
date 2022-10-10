@@ -146,6 +146,22 @@ where
     }
 }
 
+impl<E, M> MessageStorage<M> for Arc<MdbxMessageStorage<E, M>>
+where
+    E: EnvironmentKind,
+    M: MessageData,
+{
+    type Error = MdbxMessageStorageError;
+
+    fn get(&self, sequence: &Sequence) -> Result<Option<RawMessageData<M>>> {
+        let txn = self.db.begin_rw_txn()?;
+        let table = txn.open_table::<tables::MessageTable<M>>()?;
+        let mut cursor = table.cursor()?;
+        let data = cursor.seek_exact_raw(sequence)?.map(|t| t.1);
+        Ok(data)
+    }
+}
+
 impl<'txn, E, M> Iterator for MessageIterator<'txn, E, M>
 where
     E: EnvironmentKind,

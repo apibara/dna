@@ -5,11 +5,13 @@ use std::{marker::PhantomData, pin::Pin, sync::Arc};
 use apibara_core::{
     application::pb as app_pb,
     node::pb as node_pb,
-    stream::{Sequence, StreamId},
+    stream::{MessageData, RawMessageData, Sequence, StreamId, StreamMessage},
 };
+use futures::{channel::mpsc::SendError, Stream};
 use libmdbx::{Environment, EnvironmentKind, Error as MdbxError};
-use tokio::sync::Mutex;
-use tokio_stream::StreamExt;
+use prost::Message;
+use tokio::sync::{broadcast, Mutex};
+use tokio_stream::{wrappers::BroadcastStream, StreamExt};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
@@ -17,16 +19,37 @@ use crate::{
     application::Application,
     db::{tables, MdbxRWTransactionExt, MdbxTransactionExt},
     input::{InputMixer, InputMixerError, MixedInputStreamError},
-    message_storage::{MdbxMessageStorage, MdbxMessageStorageError},
+    message_storage::{MdbxMessageStorage, MdbxMessageStorageError, MessageStorage},
+    message_stream::{self, BackfilledMessageStream, BackfilledMessageStreamError, LiveStreamItem},
     sequencer::{Sequencer, SequencerError},
 };
+
+/// A service that allow streaming of messages.
+pub trait MessageProducer: Send + Sync + 'static {
+    type Message: MessageData;
+    type Error: std::error::Error + Send + Sync + 'static;
+    type Stream: Stream<
+            Item = std::result::Result<StreamMessage<Self::Message>, BackfilledMessageStreamError>,
+        > + Send;
+
+    fn stream_from_sequence(
+        &self,
+        starting_sequence: &Sequence,
+        ct: CancellationToken,
+    ) -> std::result::Result<Self::Stream, Self::Error>;
+}
+
+pub type ProcessorMessage<M> = StreamMessage<M>;
 
 /// Service to processor messages from the input stream.
 pub struct Processor<A: Application + Send, E: EnvironmentKind> {
     application: Mutex<A>,
+    db: Arc<Environment<E>>,
     sequencer: Sequencer<E>,
-    storage: MdbxMessageStorage<E, A::Message>,
+    storage: Arc<MdbxMessageStorage<E, A::Message>>,
     configuration: ProcessorConfiguration<E>,
+    message_tx: broadcast::Sender<ProcessorMessage<A::Message>>,
+    _message_rx: broadcast::Receiver<ProcessorMessage<A::Message>>,
 }
 
 /// Holds the [Processor] configuration.
@@ -48,6 +71,11 @@ pub enum ProcessorError {
     InputStream(#[from] MixedInputStreamError),
     #[error("application error")]
     Application(#[from] Box<dyn std::error::Error + Send + Sync + 'static>),
+    #[error("error broadcasting message")]
+    Broadcast,
+    // TODO: add back error information
+    #[error("error streaming messages")]
+    BackfilledMessageStream,
     #[error("error locking application")]
     ApplicationLock,
     #[error("message contains no data")]
@@ -57,6 +85,12 @@ pub enum ProcessorError {
 }
 
 pub type Result<T> = std::result::Result<T, ProcessorError>;
+
+const MESSAGE_CHANNEL_SIZE: usize = 128;
+
+pub struct LiveStream<M: MessageData> {
+    inner: BroadcastStream<StreamMessage<M>>,
+}
 
 impl<A, E> Processor<A, E>
 where
@@ -73,12 +107,16 @@ where
         let storage = MdbxMessageStorage::new(db.clone())?;
         let configuration = ProcessorConfiguration::new(db)?;
 
+        let (message_tx, message_rx) = broadcast::channel(MESSAGE_CHANNEL_SIZE);
+
         Ok(Processor {
             application: Mutex::new(application),
             db,
             sequencer,
-            storage,
+            storage: Arc::new(storage),
             configuration,
+            message_tx,
+            _message_rx: message_rx,
         })
     }
 
@@ -102,6 +140,14 @@ where
                 .ok_or(ProcessorError::InputStreamClosed)?;
             self.handle_input_message(input_id, message).await?;
         }
+    }
+
+    /// Subscribe to new output messages.
+    fn live_stream(&self) -> LiveStream<A::Message> {
+        let receiver = self.message_tx.subscribe();
+        let inner = BroadcastStream::new(receiver);
+        //    .map(|maybe_val| maybe_val.map_err(|err| Box::new(err) as Box<dyn std::error::Error>))
+        LiveStream { inner }
     }
 
     async fn init_application(&self) -> Result<InputMixer> {
@@ -183,7 +229,13 @@ where
                 .register_with_txn(&input_id, &sequence, messages.len(), &txn)?;
 
         for (index, sequence) in output_sequence.enumerate() {
-            self.storage.insert(&sequence, &messages[index])?;
+            self.storage
+                .insert_with_txn(&sequence, &messages[index], &txn)?;
+            let raw_data = RawMessageData::from_vec(messages[index].encode_to_vec());
+            let message = StreamMessage::new_data(sequence, raw_data);
+            self.message_tx
+                .send(message)
+                .map_err(|_| ProcessorError::Broadcast)?;
         }
 
         txn.commit()?;
@@ -196,6 +248,49 @@ where
         _input_id: u64,
         _invalidate: node_pb::Invalidate,
     ) -> Result<()> {
+        todo!()
+    }
+}
+
+impl<A, E> MessageProducer for Processor<A, E>
+where
+    A: Application,
+    E: EnvironmentKind,
+{
+    type Message = A::Message;
+    type Error = ProcessorError;
+    type Stream = BackfilledMessageStream<
+        Self::Message,
+        Arc<MdbxMessageStorage<E, A::Message>>,
+        LiveStream<A::Message>,
+    >;
+
+    fn stream_from_sequence(
+        &self,
+        starting_sequence: &Sequence,
+        ct: CancellationToken,
+    ) -> std::result::Result<Self::Stream, Self::Error> {
+        info!(start = ?starting_sequence, "start stream");
+        let latest = self.sequencer.next_output_sequence_start()?;
+        let live = self.live_stream();
+        let stream = BackfilledMessageStream::new(
+            *starting_sequence,
+            latest,
+            self.storage.clone(),
+            live,
+            ct,
+        );
+        Ok(stream)
+    }
+}
+
+impl<M: MessageData> Stream for LiveStream<M> {
+    type Item = std::result::Result<StreamMessage<M>, Box<dyn std::error::Error>>;
+
+    fn poll_next(
+        self: Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
         todo!()
     }
 }

@@ -15,7 +15,7 @@ pub struct MessageTable<M: Message> {
 
 impl<M> Table for MessageTable<M>
 where
-    M: Message + Default,
+    M: Message + Default + Clone,
 {
     type Key = Sequence;
     type Value = M;
