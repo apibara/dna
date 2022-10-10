@@ -31,7 +31,7 @@ pub trait TableKey: Send + Sync + Sized {
 
 pub trait Table: Send + Sync {
     type Key: TableKey;
-    type Value: Message + Default;
+    type Value: Message + Default + Clone;
 
     fn db_name() -> &'static str;
 }

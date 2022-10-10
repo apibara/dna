@@ -157,7 +157,7 @@ struct TableObjectWrapper<T>(T);
 
 impl<'txn, T> TableObject<'txn> for TableObjectWrapper<T>
 where
-    T: Message + Default,
+    T: Message + Default + Clone,
 {
     fn decode(data_val: &[u8]) -> MdbxResult<Self>
     where

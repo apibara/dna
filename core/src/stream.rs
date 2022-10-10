@@ -92,9 +92,9 @@ impl Iterator for SequenceRange {
     }
 }
 
-pub trait MessageData: prost::Message + Default {}
+pub trait MessageData: prost::Message + Default + Clone {}
 
-impl<T> MessageData for T where T: prost::Message + Default {}
+impl<T> MessageData for T where T: prost::Message + Default + Clone {}
 
 /// A [MessageData] that is never decoded.
 ///
