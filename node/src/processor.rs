@@ -84,7 +84,7 @@ pub enum ProcessorError {
 
 pub type Result<T> = std::result::Result<T, ProcessorError>;
 
-const MESSAGE_CHANNEL_SIZE: usize = 128;
+const MESSAGE_CHANNEL_SIZE: usize = 1024;
 
 /// Used to give a simpler type parameter to [BackfilledMessageStream].
 #[pin_project]
