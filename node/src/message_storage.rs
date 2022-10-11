@@ -61,6 +61,18 @@ where
     /// Expect `sequence` to be the successor of the current highest sequence number.
     pub fn insert(&self, sequence: &Sequence, message: &M) -> Result<()> {
         let txn = self.db.begin_rw_txn()?;
+        self.insert_with_txn(sequence, message, &txn)?;
+        txn.commit()?;
+        Ok(())
+    }
+
+    /// Same as `insert` but using the given [Transaction].
+    pub fn insert_with_txn(
+        &self,
+        sequence: &Sequence,
+        message: &M,
+        txn: &Transaction<RW, E>,
+    ) -> Result<()> {
         let table = txn.open_table::<tables::MessageTable<M>>()?;
         let mut cursor = table.cursor()?;
 
@@ -74,7 +86,6 @@ where
                     });
                 }
                 cursor.put(sequence, message)?;
-                txn.commit()?;
                 Ok(())
             }
             Some((prev_sequence, _)) => {
@@ -85,7 +96,6 @@ where
                     });
                 }
                 cursor.put(sequence, message)?;
-                txn.commit()?;
                 Ok(())
             }
         }
@@ -96,6 +106,17 @@ where
     /// Returns the number of messages deleted.
     pub fn invalidate(&self, sequence: &Sequence) -> Result<usize> {
         let txn = self.db.begin_rw_txn()?;
+        let invalidated = self.invalidate_with_txn(sequence, &txn)?;
+        txn.commit()?;
+        Ok(invalidated)
+    }
+
+    /// Same as `invalidate` but using the given [Transaction].
+    pub fn invalidate_with_txn(
+        &self,
+        sequence: &Sequence,
+        txn: &Transaction<RW, E>,
+    ) -> Result<usize> {
         let table = txn.open_table::<tables::MessageTable<M>>()?;
         let mut cursor = table.cursor()?;
 
@@ -112,7 +133,6 @@ where
                 }
             }
         }
-        txn.commit()?;
         Ok(count)
     }
 
@@ -208,7 +228,7 @@ mod tests {
     pub fn test_message_storage() {
         let path = tempdir().unwrap();
         let db = Environment::<NoWriteMap>::open(path.path()).unwrap();
-        let mut storage = MdbxMessageStorage::<_, Transfer>::new(Arc::new(db)).unwrap();
+        let storage = MdbxMessageStorage::<_, Transfer>::new(Arc::new(db)).unwrap();
 
         // first message must have index 0
         let t0_bad_sequence = Transfer {

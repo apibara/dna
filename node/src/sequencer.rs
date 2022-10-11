@@ -127,7 +127,6 @@ impl<E: EnvironmentKind> Sequencer<E> {
         txn.commit()?;
         Ok(Sequencer { db })
     }
-
     /// Register a new input message `(stream_id, sequence)` that generates
     /// `output_len` output messages.
     ///
@@ -194,9 +193,6 @@ impl<E: EnvironmentKind> Sequencer<E> {
             output_sequence_end: Some(output_sequence_end.as_u64()),
         };
         sequencer_cursor.put(&(*stream_id, *sequence), &new_sequencer_state)?;
-
-        // Finish updating data.
-        txn.commit()?;
 
         Ok(output_sequence)
     }
@@ -370,7 +366,7 @@ mod tests {
     pub fn test_sequencer() {
         let path = tempdir().unwrap();
         let db = Environment::<NoWriteMap>::open(path.path()).unwrap();
-        let mut sequencer = Sequencer::new(Arc::new(db)).unwrap();
+        let sequencer = Sequencer::new(Arc::new(db)).unwrap();
 
         let s_a = StreamId::from_u64(0);
         let s_b = StreamId::from_u64(1);
