@@ -40,6 +40,11 @@ impl Sequence {
         self.0
     }
 
+    /// Returns true if the sequence number is 0.
+    pub fn is_zero(&self) -> bool {
+        self.0 == 0
+    }
+
     /// Returns the sequence number immediately after.
     pub fn successor(&self) -> Sequence {
         Sequence(self.0 + 1)

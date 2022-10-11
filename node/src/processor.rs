@@ -253,6 +253,11 @@ where
     ) -> std::result::Result<Self::Stream, Self::Error> {
         info!(start = ?starting_sequence, "start stream");
         let latest = self.sequencer.next_output_sequence_start()?;
+        let latest = if latest.is_zero() {
+            latest
+        } else {
+            latest.predecessor()
+        };
         let live = self.live_stream();
         let stream = BackfilledMessageStream::new(
             *starting_sequence,
