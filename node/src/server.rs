@@ -8,13 +8,17 @@ use apibara_core::{
     stream::{Sequence, StreamMessage},
 };
 use futures::Stream;
+use opentelemetry::metrics::ObservableCounter;
 use prost::DecodeError;
 use tokio_stream::StreamExt;
 use tokio_util::sync::CancellationToken;
 use tonic::{transport::Server as TonicServer, Request, Response, Status};
-use tracing::warn;
+use tower_http::trace::{OnFailure, OnRequest, TraceLayer};
+use tracing::{warn, Span};
 
-use crate::{processor::MessageProducer, reflection::merge_encoded_node_service_descriptor_set};
+use crate::{
+    o11y, processor::MessageProducer, reflection::merge_encoded_node_service_descriptor_set,
+};
 
 pub struct Server<P: MessageProducer> {
     producer: Arc<P>,
@@ -60,7 +64,13 @@ where
             )
             .build()?;
 
+        let metrics = Metrics::new();
+        let tracing_layer = tower::ServiceBuilder::new()
+            .layer(TraceLayer::new_for_grpc().on_request(metrics))
+            .into_inner();
+
         TonicServer::builder()
+            .layer(tracing_layer)
             .add_service(server.into_service())
             .add_service(reflection_service)
             .serve_with_shutdown(addr, {
@@ -167,5 +177,50 @@ where
         }));
 
         Ok(Response::new(response))
+    }
+}
+
+#[derive(Clone)]
+struct Metrics {
+    rpc_call_count: Arc<ObservableCounter<u64>>,
+    rpc_error_count: Arc<ObservableCounter<u64>>,
+}
+
+impl Metrics {
+    pub fn new() -> Self {
+        let meter = o11y::meter("apibara.com/starknet");
+        let rpc_call_count = meter
+            .u64_observable_counter("rpc_call_count")
+            .with_description("Number of rpc calls")
+            .init();
+        let rpc_error_count = meter
+            .u64_observable_counter("rpc_error_count")
+            .with_description("Number of rpc calls that returned an error")
+            .init();
+        Metrics {
+            rpc_call_count: Arc::new(rpc_call_count),
+            rpc_error_count: Arc::new(rpc_error_count),
+        }
+    }
+}
+
+impl OnRequest<hyper::Body> for Metrics {
+    fn on_request(&mut self, request: &hyper::Request<hyper::Body>, _span: &Span) {
+        let cx = o11y::Context::current();
+        let path = request.uri().path().to_string();
+        self.rpc_call_count
+            .observe(&cx, 1, &[o11y::KeyValue::new("grpc.path", path)]);
+    }
+}
+
+impl OnFailure<hyper::Body> for Metrics {
+    fn on_failure(
+        &mut self,
+        _failure_classification: hyper::Body,
+        _latency: std::time::Duration,
+        _span: &Span,
+    ) {
+        let cx = o11y::Context::current();
+        self.rpc_error_count.observe(&cx, 1, &[]);
     }
 }
