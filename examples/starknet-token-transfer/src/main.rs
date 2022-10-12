@@ -1,6 +1,6 @@
 mod app;
 
-use std::sync::Arc;
+use std::{net::SocketAddr, sync::Arc};
 
 use anyhow::{anyhow, Result};
 
@@ -23,6 +23,7 @@ async fn main() -> Result<()> {
         .with_size_gib(2, 20)
         .open(&datadir)?;
     let db = Arc::new(db);
-    Node::new(db, app)?.start().await?;
+    let address: SocketAddr = "0.0.0.0:7172".parse()?;
+    Node::new(db, app)?.with_address(address).start().await?;
     Ok(())
 }

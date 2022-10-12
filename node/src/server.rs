@@ -20,8 +20,13 @@ use crate::{
     o11y, processor::MessageProducer, reflection::merge_encoded_node_service_descriptor_set,
 };
 
+lazy_static::lazy_static! {
+    static ref DEFAULT_ADDRESS: SocketAddr = "0.0.0.0:7171".parse().unwrap();
+}
+
 pub struct Server<P: MessageProducer> {
     producer: Arc<P>,
+    address: SocketAddr,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -40,13 +45,21 @@ where
 {
     /// Creates a new stream server.
     pub fn new(producer: Arc<P>) -> Self {
-        Server { producer }
+        Server {
+            producer,
+            address: *DEFAULT_ADDRESS,
+        }
+    }
+
+    /// Changes the server address.
+    pub fn with_address(mut self, address: SocketAddr) -> Self {
+        self.address = address;
+        self
     }
 
     /// Starts the grpc server.
     pub async fn start(
         self,
-        addr: SocketAddr,
         output: &app_pb::OutputStream,
         ct: CancellationToken,
     ) -> Result<(), ServerError> {
@@ -73,7 +86,7 @@ where
             .layer(tracing_layer)
             .add_service(server.into_service())
             .add_service(reflection_service)
-            .serve_with_shutdown(addr, {
+            .serve_with_shutdown(self.address, {
                 let ct = ct.clone();
                 async move {
                     ct.cancelled().await;

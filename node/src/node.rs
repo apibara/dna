@@ -53,14 +53,17 @@ where
         })
     }
 
+    /// Changes the gRPC server address.
+    pub fn with_address(mut self, address: SocketAddr) -> Self {
+        self.server = self.server.with_address(address);
+        self
+    }
+
     /// Start the node.
     pub async fn start(self) -> Result<()> {
         init_opentelemetry()?;
 
         let configuration = self.init_configuration().await?;
-
-        // TODO: addr comes from config.
-        let addr: SocketAddr = "0.0.0.0:7172".parse().unwrap();
 
         // Root cancellation token.
         let cts = CancellationToken::new();
@@ -85,7 +88,7 @@ where
                 let ct = cts.clone();
                 async move {
                     self.server
-                        .start(addr, &output, ct)
+                        .start(&output, ct)
                         .await
                         .map_err(NodeError::Server)
                 }
