@@ -77,6 +77,7 @@ dependencies = [
  "dirs",
  "env_logger",
  "futures",
+ "hyper",
  "libmdbx",
  "opentelemetry 0.18.0",
  "opentelemetry-otlp",
