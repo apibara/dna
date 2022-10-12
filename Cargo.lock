@@ -78,6 +78,7 @@ dependencies = [
  "env_logger",
  "futures",
  "hyper",
+ "lazy_static",
  "libmdbx",
  "opentelemetry 0.18.0",
  "opentelemetry-otlp",
