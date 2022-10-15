@@ -101,6 +101,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "apibara-sdk"
+version = "0.1.0"
+dependencies = [
+ "apibara-core",
+ "apibara-node",
+]
+
+[[package]]
 name = "apibara-starknet"
 version = "0.1.0"
 dependencies = [
@@ -2389,8 +2397,7 @@ name = "starknet-token-transfer-example"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "apibara-core",
- "apibara-node",
+ "apibara-sdk",
  "apibara-starknet",
  "hex",
  "lazy_static",

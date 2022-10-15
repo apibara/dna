@@ -4,7 +4,7 @@ use std::{net::SocketAddr, sync::Arc};
 
 use anyhow::{anyhow, Result};
 
-use apibara_node::{
+use apibara_sdk::{
     db::{
         libmdbx::{Environment, NoWriteMap},
         node_data_dir, MdbxEnvironmentExt,

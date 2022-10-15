@@ -1,5 +1,8 @@
-use apibara_core::stream::{Sequence, StreamId};
-use apibara_node::application::{pb as app_pb, Application};
+use apibara_sdk::{
+    application::Application,
+    pb::application as app_pb,
+    stream::{Sequence, StreamId},
+};
 use apibara_starknet::pb::{self as starknet_pb};
 use prost::{DecodeError, Message};
 
@@ -27,7 +30,7 @@ pub enum SimpleApplicationError {
     DecodeError(#[from] DecodeError),
 }
 
-#[apibara_node::async_trait]
+#[apibara_sdk::async_trait]
 impl Application for SimpleApplication {
     type Message = pb::Transfer;
     type Error = SimpleApplicationError;
