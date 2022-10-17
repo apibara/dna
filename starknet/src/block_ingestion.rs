@@ -15,7 +15,7 @@ use starknet::providers::SequencerGatewayProvider;
 use tokio::sync::broadcast::{self, error::SendError};
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 use crate::{
     block_builder::{BlockBuilder, BlockBuilderError},
@@ -42,6 +42,8 @@ pub enum BlockIngestorError {
     Broadcast(#[from] SendError<BlockStreamMessage>),
     #[error("chain not started syncing")]
     EmptyChain,
+    #[error("chain is missing a block")]
+    MissingBlock { block_number: u64 },
 }
 
 pub type Result<T> = std::result::Result<T, BlockIngestorError>;
@@ -125,10 +127,65 @@ where
                 .await?;
 
             if block.block_hash != latest_block.block_hash {
-                error!("reorg while offline");
-                todo!()
+                let stored_block_hash = latest_block.block_hash.unwrap_or_default();
+                let stored_block_height = latest_block.block_number;
+
+                let chain_block_hash = block.block_hash.unwrap_or_default();
+                let chain_block_height = block.block_number;
+
+                warn!(
+                    stored_block_hash = %stored_block_hash,
+                    stored_block_height = %stored_block_height,
+                    chain_block_hash = %chain_block_hash,
+                    chain_block_height = %chain_block_height,
+                    "reorg while offline. start recovery"
+                );
+
+                let mut stored_block_number = latest_block.block_number;
+                loop {
+                    if stored_block_number == 0 {
+                        unreachable!("reached block 0 while checking for offline reorg");
+                    }
+
+                    let stored_block = self.chain.block_by_number(stored_block_number - 1)?.ok_or(
+                        BlockIngestorError::MissingBlock {
+                            block_number: stored_block_number - 1,
+                        },
+                    )?;
+                    let chain_block = self
+                        .block_builder
+                        .block_by_number_with_backoff(stored_block.block_number, ct.clone())
+                        .await?;
+
+                    if stored_block.block_hash == chain_block.block_hash {
+                        let block_hash = stored_block.block_hash.unwrap_or_default();
+
+                        info!(
+                            block_number = %stored_block.block_number,
+                            block_hash = %block_hash,
+                            "found common ancestor. invalidating data"
+                        );
+
+                        self.chain.invalidate(stored_block.block_number + 1)?;
+
+                        starting_block_number = stored_block.block_number + 1;
+                        break;
+                    }
+
+                    let stored_block_hash = stored_block.block_hash.unwrap_or_default();
+                    let chain_block_hash = chain_block.block_hash.unwrap_or_default();
+                    info!(
+                        block_number = %stored_block.block_number,
+                        stored_block_hash = %stored_block_hash,
+                        chain_block_hash = %chain_block_hash,
+                        "blocks did not match"
+                    );
+
+                    stored_block_number = stored_block.block_number;
+                }
+            } else {
+                starting_block_number = latest_block.block_number + 1;
             }
-            starting_block_number = latest_block.block_number + 1;
         }
 
         info!(block_number = %starting_block_number, "starting block ingestion");
@@ -221,7 +278,7 @@ where
     }
 
     fn apply_block(&self, block: Block) -> Result<u64> {
-        info!(block_number = ?block.block_number, "got block");
+        info!(block_number = %block.block_number, "got block");
         let block_number = block.block_number;
         self.metrics.observe_ingested_block();
 

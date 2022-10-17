@@ -74,6 +74,10 @@ pub enum ChainTrackerError {
     MissingHead,
     #[error("inconsistent database state")]
     InconsistentState,
+    #[error(
+        "invalid invalidate block number (expected less than or equal {expected}, given {given})"
+    )]
+    InvalidInvalidateBlock { expected: u64, given: u64 },
 }
 
 pub type Result<T> = std::result::Result<T, ChainTrackerError>;
@@ -220,6 +224,42 @@ where
                 todo!()
             }
         }
+    }
+
+    /// Invalidates all blocks with number greater than or equal to `block_number`.
+    ///
+    /// Returns the number of blocks that were deleted because of this invalidation.
+    pub fn invalidate(&self, block_number: u64) -> Result<usize> {
+        let head_height = self.head_height()?.ok_or(ChainTrackerError::MissingHead)?;
+        if block_number > head_height {
+            return Err(ChainTrackerError::InvalidInvalidateBlock {
+                expected: head_height,
+                given: block_number,
+            });
+        }
+
+        let txn = self.db.begin_rw_txn()?;
+        let mut block_cursor = txn.open_table::<tables::BlockTable<B>>()?.cursor()?;
+        let mut canon_cursor = txn
+            .open_table::<tables::CanonicalBlockTable<B::Hash>>()?
+            .cursor()?;
+        let mut maybe_canon = canon_cursor.last()?;
+        let mut count = 0;
+        loop {
+            let (canon_block_number, block) =
+                maybe_canon.ok_or(ChainTrackerError::InconsistentState)?;
+            if canon_block_number < block_number {
+                break;
+            }
+            let block_hash = B::Hash::from_slice(&block.hash)?;
+            block_cursor.seek_exact(&(canon_block_number, block_hash))?;
+            block_cursor.del()?;
+            canon_cursor.del()?;
+            count += 1;
+            maybe_canon = canon_cursor.last()?;
+        }
+        txn.commit()?;
+        Ok(count)
     }
 
     fn store_block_with_cursor(
@@ -542,9 +582,52 @@ mod tests {
         todo!()
     }
 
-    #[ignore]
     #[test]
     pub fn test_invalidate_blocks() {
-        todo!()
+        let chain = new_chain_tracker();
+
+        let genesis = TestBlock {
+            number: 0,
+            hash: TestBlockHash::new(0, 0),
+            parent_hash: TestBlockHash::new(0, 0),
+        };
+
+        let head = TestBlock {
+            number: 3,
+            hash: TestBlockHash::new(3, 0),
+            parent_hash: TestBlockHash::new(2, 0),
+        };
+        let block_1 = TestBlock {
+            number: 1,
+            hash: TestBlockHash::new(1, 0),
+            parent_hash: TestBlockHash::new(0, 0),
+        };
+        let block_2 = TestBlock {
+            number: 2,
+            hash: TestBlockHash::new(2, 0),
+            parent_hash: TestBlockHash::new(1, 0),
+        };
+
+        chain.update_head(&head).unwrap();
+        chain.update_indexed_block(genesis).unwrap();
+        chain.update_indexed_block(block_1).unwrap();
+        chain.update_indexed_block(block_2.clone()).unwrap();
+        chain.update_indexed_block(head).unwrap();
+
+        let block = chain.latest_indexed_block().unwrap().unwrap();
+        assert_eq!(block.number, 3);
+        assert_eq!(chain.head_height().unwrap(), Some(3));
+
+        // invalidate block 2 and 3
+        let count = chain.invalidate(2).unwrap();
+        assert_eq!(count, 2);
+
+        // block 1 is now the head
+        assert_eq!(chain.head_height().unwrap(), Some(1));
+
+        // insert block 2 again.
+        chain.update_indexed_block(block_2).unwrap();
+        let block = chain.latest_indexed_block().unwrap().unwrap();
+        assert_eq!(block.number, 2);
     }
 }
