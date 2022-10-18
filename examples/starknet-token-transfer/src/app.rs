@@ -82,6 +82,9 @@ impl Application for SimpleApplication {
                 Some(starknet_pb::transaction::Transaction::L1Handler(handler)) => {
                     handler.common.as_ref()
                 }
+                Some(starknet_pb::transaction::Transaction::DeployAccount(handler)) => {
+                    handler.common.as_ref()
+                }
             };
 
             let transaction_hash = common.map(|tx| tx.hash.clone()).unwrap_or_default();

@@ -10,9 +10,10 @@ use starknet::{
 use tokio_util::sync::CancellationToken;
 
 use crate::core::{
-    transaction, Block, BlockHash, BuiltinInstanceCounter, DeclareTransaction, DeployTransaction,
-    Event, ExecutionResources, InvokeTransaction, L1HandlerTransaction, L1ToL2Message,
-    L2ToL1Message, Transaction, TransactionCommon, TransactionReceipt,
+    transaction, Block, BlockHash, BuiltinInstanceCounter, DeclareTransaction,
+    DeployAccountTransaction, DeployTransaction, Event, ExecutionResources, InvokeTransaction,
+    L1HandlerTransaction, L1ToL2Message, L2ToL1Message, Transaction, TransactionCommon,
+    TransactionReceipt,
 };
 
 pub struct BlockBuilder {
@@ -161,6 +162,10 @@ impl From<&sn_types::TransactionType> for Transaction {
                 let l1_handler = l1_handler.into();
                 transaction::Transaction::L1Handler(l1_handler)
             }
+            sn_types::TransactionType::DeployAccount(deploy_account) => {
+                let deploy_account = deploy_account.into();
+                transaction::Transaction::DeployAccount(deploy_account)
+            }
         };
         Transaction {
             transaction: Some(inner),
@@ -178,17 +183,56 @@ impl From<&sn_types::DeployTransaction> for DeployTransaction {
             .map(|fe| fe.to_bytes_be().to_vec())
             .collect();
         let hash = tx.transaction_hash.to_bytes_be().to_vec();
+        let class_hash = tx.class_hash.to_bytes_be().to_vec();
         let common = TransactionCommon {
             hash,
             max_fee: Vec::new(),
             signature: Vec::new(),
             nonce: Vec::new(),
+            version: tx.version.to_bytes_be().to_vec(),
         };
         DeployTransaction {
             common: Some(common),
             constructor_calldata,
             contract_address,
             contract_address_salt,
+            class_hash,
+        }
+    }
+}
+
+impl From<&sn_types::DeployAccountTransaction> for DeployAccountTransaction {
+    fn from(tx: &sn_types::DeployAccountTransaction) -> Self {
+        let contract_address = tx.contract_address.to_bytes_be().to_vec();
+        let contract_address_salt = tx.contract_address_salt.to_bytes_be().to_vec();
+        let constructor_calldata = tx
+            .constructor_calldata
+            .iter()
+            .map(|fe| fe.to_bytes_be().to_vec())
+            .collect();
+        let class_hash = tx.class_hash.to_bytes_be().to_vec();
+        let hash = tx.transaction_hash.to_bytes_be().to_vec();
+        let max_fee = tx.max_fee.to_bytes_be().to_vec();
+        let signature = tx
+            .signature
+            .iter()
+            .map(|fe| fe.to_bytes_be().to_vec())
+            .collect();
+        let nonce = tx.nonce.to_bytes_be().to_vec();
+        let version = tx.version.to_bytes_be().to_vec();
+        let common = TransactionCommon {
+            hash,
+            max_fee,
+            signature,
+            nonce,
+            version,
+        };
+        DeployAccountTransaction {
+            common: Some(common),
+            constructor_calldata,
+            contract_address,
+            contract_address_salt,
+            class_hash,
         }
     }
 }
@@ -203,11 +247,13 @@ impl From<&sn_types::DeclareTransaction> for DeclareTransaction {
             .map(|fe| fe.to_bytes_be().to_vec())
             .collect();
         let nonce = tx.nonce.to_bytes_be().to_vec();
+        let version = tx.version.to_bytes_be().to_vec();
         let common = TransactionCommon {
             hash,
             max_fee,
             signature,
             nonce,
+            version,
         };
 
         let class_hash = tx.class_hash.to_bytes_be().to_vec();
@@ -230,15 +276,20 @@ impl From<&sn_types::InvokeFunctionTransaction> for InvokeTransaction {
             .iter()
             .map(|fe| fe.to_bytes_be().to_vec())
             .collect();
+        let version = tx.version.to_bytes_be().to_vec();
         let common = TransactionCommon {
             hash,
             max_fee,
             signature,
             nonce: Vec::new(),
+            version,
         };
 
         let contract_address = tx.contract_address.to_bytes_be().to_vec();
-        let entry_point_selector = tx.entry_point_selector.to_bytes_be().to_vec();
+        let entry_point_selector = tx
+            .entry_point_selector
+            .map(|s| s.to_bytes_be().to_vec())
+            .unwrap_or_default();
         let calldata = tx
             .calldata
             .iter()
@@ -256,11 +307,13 @@ impl From<&sn_types::InvokeFunctionTransaction> for InvokeTransaction {
 impl From<&sn_types::L1HandlerTransaction> for L1HandlerTransaction {
     fn from(tx: &sn_types::L1HandlerTransaction) -> Self {
         let hash = tx.transaction_hash.to_bytes_be().to_vec();
+        let version = tx.version.to_bytes_be().to_vec();
         let common = TransactionCommon {
             hash,
             max_fee: Vec::default(),
             signature: Vec::default(),
             nonce: Vec::new(),
+            version,
         };
 
         let contract_address = tx.contract_address.to_bytes_be().to_vec();

@@ -26,7 +26,7 @@ hyper = "0.14.20"
 prost = "0.11.0"
 prost-types = "0.11.1"
 # starknet = { git = "https://github.com/xJonathanLEI/starknet-rs", rev = "cf2bd470836e2a12f126a8cce14bfbdda6ee926d" }
-starknet = { git = "https://github.com/fracek/starknet-rs", rev = "0cb7f798b51e8b8ee7626d2033e9e5a0f2a82b52" }
+starknet = { git = "https://github.com/fracek/starknet-rs", rev = "92780a9d8be4bb37a43ed2516810bacb84c6b536" }
 thiserror = "1.0.32"
 tokio = { version = "1.20.1", features = ["full"] }
 tokio-stream = { version = "0.1.9", features = ["sync"] }

@@ -38,6 +38,7 @@ message Transaction {
     DeployTransaction deploy = 2;
     DeclareTransaction declare = 3;
     L1HandlerTransaction l1_handler = 4;
+    DeployAccountTransaction deploy_account = 5;
   }
 }
 
@@ -46,6 +47,7 @@ message TransactionCommon {
   bytes max_fee = 2;
   repeated bytes signature = 3;
   bytes nonce = 4;
+  bytes version = 5;
 }
 
 message InvokeTransaction {
@@ -66,6 +68,7 @@ message DeployTransaction {
   repeated bytes constructor_calldata = 2;
   bytes contract_address = 3;
   bytes contract_address_salt = 4;
+  bytes class_hash = 5;
 }
 
 message L1HandlerTransaction {
@@ -73,6 +76,14 @@ message L1HandlerTransaction {
   bytes contract_address = 2;
   bytes entry_point_selector = 3;
   repeated bytes calldata = 4;
+}
+
+message DeployAccountTransaction {
+  TransactionCommon common = 1;
+  repeated bytes constructor_calldata = 2;
+  bytes contract_address = 3;
+  bytes contract_address_salt = 4;
+  bytes class_hash = 5;
 }
 
 message TransactionReceipt {
