@@ -1,17 +1,19 @@
 //! gRPC server.
 
-use std::{net::SocketAddr, pin::Pin, sync::Arc};
+use std::{net::SocketAddr, pin::Pin, sync::Arc, time::Duration};
 
 use apibara_core::node::pb;
 use apibara_node::{
     chain_tracker::ChainTracker,
     db::libmdbx::{Environment, EnvironmentKind},
+    heartbeat::HeartbeatStreamExt,
     o11y::{self, ObservableCounter},
     reflection::merge_encoded_node_service_descriptor_set,
 };
-use futures::{Stream, StreamExt};
+use futures::Stream;
 use prost::DecodeError;
 use tokio::task::JoinError;
+use tokio_stream::StreamExt;
 use tokio_util::sync::CancellationToken;
 use tonic::{transport::Server as TonicServer, Request, Response, Status};
 use tower_http::trace::{OnFailure, OnRequest, TraceLayer};
@@ -29,6 +31,7 @@ type TonicResult<T> = std::result::Result<Response<T>, Status>;
 pub struct NodeServer<E: EnvironmentKind> {
     status_reporter: StatusReporter<E>,
     block_ingestor: Arc<BlockIngestor<E>>,
+    heartbeat_interval: Duration,
     cts: CancellationToken,
 }
 
@@ -42,10 +45,13 @@ where
         cts: CancellationToken,
     ) -> Self {
         let status_reporter = StatusReporter::new(chain);
+        // This value should come from config.
+        let heartbeat_interval = Duration::from_secs(30);
 
         NodeServer {
             block_ingestor,
             status_reporter,
+            heartbeat_interval,
             cts,
         }
     }
@@ -88,39 +94,53 @@ where
             .block_ingestor
             .stream_from_sequence(request.starting_sequence, self.cts.clone())
             .map_err(|_| Status::internal("failed to start message stream"))?;
-        let response = Box::pin(stream.map(|maybe_res| match maybe_res {
-            Err(err) => {
-                warn!(err = ?err, "stream failed");
-                Err(Status::internal("stream failed"))
-            }
-            Ok(BlockStreamMessage::Invalidate { sequence }) => {
-                let invalidate = pb::Invalidate {
-                    sequence: sequence.as_u64(),
-                };
-                Ok(pb::StreamMessagesResponse {
-                    message: Some(pb::stream_messages_response::Message::Invalidate(
-                        invalidate,
-                    )),
-                })
-            }
-            Ok(BlockStreamMessage::Data {
-                data: block,
-                sequence,
-            }) => {
-                let inner_data = prost_types::Any {
-                    type_url: "type.googleapis.com/apibara.starknet.v1alpha1.Block".to_string(),
-                    value: block.as_bytes().to_vec(),
-                };
-                let data = pb::Data {
-                    sequence: sequence.as_u64(),
-                    data: Some(inner_data),
-                };
+        let response =
+            Box::pin(
+                stream
+                    .heartbeat(self.heartbeat_interval)
+                    .map(|maybe_res| match maybe_res {
+                        Err(_) => {
+                            let heartbeat = pb::Heartbeat {};
+                            Ok(pb::StreamMessagesResponse {
+                                message: Some(pb::stream_messages_response::Message::Heartbeat(
+                                    heartbeat,
+                                )),
+                            })
+                        }
+                        Ok(Err(err)) => {
+                            warn!(err = ?err, "stream failed");
+                            Err(Status::internal("stream failed"))
+                        }
+                        Ok(Ok(BlockStreamMessage::Invalidate { sequence })) => {
+                            let invalidate = pb::Invalidate {
+                                sequence: sequence.as_u64(),
+                            };
+                            Ok(pb::StreamMessagesResponse {
+                                message: Some(pb::stream_messages_response::Message::Invalidate(
+                                    invalidate,
+                                )),
+                            })
+                        }
+                        Ok(Ok(BlockStreamMessage::Data {
+                            data: block,
+                            sequence,
+                        })) => {
+                            let inner_data = prost_types::Any {
+                                type_url: "type.googleapis.com/apibara.starknet.v1alpha1.Block"
+                                    .to_string(),
+                                value: block.as_bytes().to_vec(),
+                            };
+                            let data = pb::Data {
+                                sequence: sequence.as_u64(),
+                                data: Some(inner_data),
+                            };
 
-                Ok(pb::StreamMessagesResponse {
-                    message: Some(pb::stream_messages_response::Message::Data(data)),
-                })
-            }
-        }));
+                            Ok(pb::StreamMessagesResponse {
+                                message: Some(pb::stream_messages_response::Message::Data(data)),
+                            })
+                        }
+                    }),
+            );
 
         Ok(Response::new(response))
     }
