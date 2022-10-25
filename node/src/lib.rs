@@ -1,6 +1,7 @@
 pub mod application;
 pub mod chain_tracker;
 pub mod db;
+pub mod heartbeat;
 pub mod input;
 pub mod message_storage;
 pub mod message_stream;
