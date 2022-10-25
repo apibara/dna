@@ -2269,7 +2269,7 @@ checksum = "6e63cff320ae2c57904679ba7cb63280a3dc4613885beafb148ee7bf9aa9042d"
 [[package]]
 name = "starknet"
 version = "0.2.0"
-source = "git+https://github.com/fracek/starknet-rs?rev=92780a9d8be4bb37a43ed2516810bacb84c6b536#92780a9d8be4bb37a43ed2516810bacb84c6b536"
+source = "git+https://github.com/xJonathanLEI/starknet-rs?rev=72702f6465a941bfb53692a1e40944aa797efa85#72702f6465a941bfb53692a1e40944aa797efa85"
 dependencies = [
  "starknet-accounts",
  "starknet-contract",
@@ -2282,7 +2282,7 @@ dependencies = [
 [[package]]
 name = "starknet-accounts"
 version = "0.1.0"
-source = "git+https://github.com/fracek/starknet-rs?rev=92780a9d8be4bb37a43ed2516810bacb84c6b536#92780a9d8be4bb37a43ed2516810bacb84c6b536"
+source = "git+https://github.com/xJonathanLEI/starknet-rs?rev=72702f6465a941bfb53692a1e40944aa797efa85#72702f6465a941bfb53692a1e40944aa797efa85"
 dependencies = [
  "async-trait",
  "starknet-core",
@@ -2294,7 +2294,7 @@ dependencies = [
 [[package]]
 name = "starknet-contract"
 version = "0.1.0"
-source = "git+https://github.com/fracek/starknet-rs?rev=92780a9d8be4bb37a43ed2516810bacb84c6b536#92780a9d8be4bb37a43ed2516810bacb84c6b536"
+source = "git+https://github.com/xJonathanLEI/starknet-rs?rev=72702f6465a941bfb53692a1e40944aa797efa85#72702f6465a941bfb53692a1e40944aa797efa85"
 dependencies = [
  "rand",
  "serde",
@@ -2308,7 +2308,7 @@ dependencies = [
 [[package]]
 name = "starknet-core"
 version = "0.2.0"
-source = "git+https://github.com/fracek/starknet-rs?rev=92780a9d8be4bb37a43ed2516810bacb84c6b536#92780a9d8be4bb37a43ed2516810bacb84c6b536"
+source = "git+https://github.com/xJonathanLEI/starknet-rs?rev=72702f6465a941bfb53692a1e40944aa797efa85#72702f6465a941bfb53692a1e40944aa797efa85"
 dependencies = [
  "base64",
  "ethereum-types",
@@ -2326,7 +2326,7 @@ dependencies = [
 [[package]]
 name = "starknet-crypto"
 version = "0.1.0"
-source = "git+https://github.com/fracek/starknet-rs?rev=92780a9d8be4bb37a43ed2516810bacb84c6b536#92780a9d8be4bb37a43ed2516810bacb84c6b536"
+source = "git+https://github.com/xJonathanLEI/starknet-rs?rev=72702f6465a941bfb53692a1e40944aa797efa85#72702f6465a941bfb53692a1e40944aa797efa85"
 dependencies = [
  "crypto-bigint",
  "hex",
@@ -2344,7 +2344,7 @@ dependencies = [
 [[package]]
 name = "starknet-ff"
 version = "0.1.0"
-source = "git+https://github.com/fracek/starknet-rs?rev=92780a9d8be4bb37a43ed2516810bacb84c6b536#92780a9d8be4bb37a43ed2516810bacb84c6b536"
+source = "git+https://github.com/xJonathanLEI/starknet-rs?rev=72702f6465a941bfb53692a1e40944aa797efa85#72702f6465a941bfb53692a1e40944aa797efa85"
 dependencies = [
  "ark-ff",
  "bigdecimal",
@@ -2359,7 +2359,7 @@ dependencies = [
 [[package]]
 name = "starknet-macros"
 version = "0.1.0"
-source = "git+https://github.com/fracek/starknet-rs?rev=92780a9d8be4bb37a43ed2516810bacb84c6b536#92780a9d8be4bb37a43ed2516810bacb84c6b536"
+source = "git+https://github.com/xJonathanLEI/starknet-rs?rev=72702f6465a941bfb53692a1e40944aa797efa85#72702f6465a941bfb53692a1e40944aa797efa85"
 dependencies = [
  "starknet-core",
  "syn",
@@ -2368,7 +2368,7 @@ dependencies = [
 [[package]]
 name = "starknet-providers"
 version = "0.2.0"
-source = "git+https://github.com/fracek/starknet-rs?rev=92780a9d8be4bb37a43ed2516810bacb84c6b536#92780a9d8be4bb37a43ed2516810bacb84c6b536"
+source = "git+https://github.com/xJonathanLEI/starknet-rs?rev=72702f6465a941bfb53692a1e40944aa797efa85#72702f6465a941bfb53692a1e40944aa797efa85"
 dependencies = [
  "async-trait",
  "auto_impl",
@@ -2384,7 +2384,7 @@ dependencies = [
 [[package]]
 name = "starknet-signers"
 version = "0.1.0"
-source = "git+https://github.com/fracek/starknet-rs?rev=92780a9d8be4bb37a43ed2516810bacb84c6b536#92780a9d8be4bb37a43ed2516810bacb84c6b536"
+source = "git+https://github.com/xJonathanLEI/starknet-rs?rev=72702f6465a941bfb53692a1e40944aa797efa85#72702f6465a941bfb53692a1e40944aa797efa85"
 dependencies = [
  "async-trait",
  "starknet-core",
