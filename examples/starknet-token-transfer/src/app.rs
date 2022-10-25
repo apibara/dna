@@ -5,6 +5,7 @@ use apibara_sdk::{
 };
 use apibara_starknet::pb::{self as starknet_pb};
 use prost::{DecodeError, Message};
+use tracing::info;
 
 lazy_static::lazy_static! {
     // pedersen hash of `Transfer`.
@@ -63,6 +64,8 @@ impl Application for SimpleApplication {
         let block_hash = pb::BlockHash {
             hash: block_hash.hash,
         };
+
+        info!(block = %block.block_number, "receive data");
 
         let mut transfers = Vec::default();
 

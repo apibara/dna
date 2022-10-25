@@ -4,6 +4,7 @@ use std::{
     pin::Pin,
     sync::Arc,
     task::{self, Poll},
+    time::Duration,
 };
 
 use apibara_core::{
@@ -80,6 +81,8 @@ pub enum ProcessorError {
     EmptyMessage,
     #[error("input stream was closed")]
     InputStreamClosed,
+    #[error("input stream timed out")]
+    InputStreamTimeout,
 }
 
 pub type Result<T> = std::result::Result<T, ProcessorError>;
@@ -128,17 +131,28 @@ where
         let input_mixer = self.init_input_mixer(inputs).await?;
         let mut input_stream = input_mixer.stream_messages().await?;
 
+        // timeout is the heartbeat interval (30 secs) + a reasonable interval (15 secs)
+        let receive_message_timeout = Duration::from_secs(45);
         // enter main loop. keep streaming messages from the inputs and pass them to the application.
         loop {
             if ct.is_cancelled() {
                 return Ok(());
             }
 
-            let (input_id, message) = input_stream
-                .try_next()
-                .await?
-                .ok_or(ProcessorError::InputStreamClosed)?;
-            self.handle_input_message(input_id, message).await?;
+            match tokio::time::timeout(receive_message_timeout, input_stream.next()).await {
+                Err(_) => {
+                    error!("stream input timeout");
+                    return Err(ProcessorError::InputStreamTimeout);
+                }
+                Ok(None) => {
+                    error!("stream input closed");
+                    return Err(ProcessorError::InputStreamClosed);
+                }
+                Ok(Some(maybe_message)) => {
+                    let (input_id, message) = maybe_message?;
+                    self.handle_input_message(input_id, message).await?;
+                }
+            }
         }
     }
 
@@ -146,7 +160,6 @@ where
     fn live_stream(&self) -> LiveStream<A::Message> {
         let receiver = self.message_tx.subscribe();
         let inner = BroadcastStream::new(receiver);
-        //    .map(|maybe_val| maybe_val.map_err(|err| Box::new(err) as Box<dyn std::error::Error>))
         LiveStream { inner }
     }
 
