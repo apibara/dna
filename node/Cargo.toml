@@ -28,7 +28,7 @@ prost = "0.11.0"
 prost-types = "0.11.1"
 thiserror = "1.0.32"
 tokio = { version = "1.20.1", features = ["full"] }
-tokio-stream = "0.1.10"
+tokio-stream = { version = "0.1.10", features = ["sync"] }
 tokio-util = "0.7.4"
 tonic = { version = "0.8.2", features = ["tls", "tls-roots"] }
 tonic-health = "0.7.0"
