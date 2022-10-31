@@ -131,7 +131,7 @@ where
                     latest = %latest_block.block_number,
                     "chain shrunk. invalidate"
                 );
-                self.chain.invalidate(current_head.block_number + 1)?;
+                self.chain.invalidate(current_head.block_number)?;
             }
         }
 
@@ -224,6 +224,7 @@ where
 
             match self.chain.gap()? {
                 None => {
+                    debug!(block_number = %current_block_number, "gap is none");
                     current_block_number = self
                         .fetch_and_broadcast_block(current_block_number, &ct)
                         .await?;
@@ -233,6 +234,7 @@ where
                         .chain
                         .head_height()?
                         .ok_or(BlockIngestorError::EmptyChain)?;
+                    debug!(block_number = %head_height, "gap is 0");
                     current_block_number = self.fetch_and_broadcast_latest_block(&ct).await?;
                     if current_block_number == head_height + 1 {
                         tokio::time::sleep(sync_sleep_interval).await;
@@ -252,6 +254,7 @@ where
                         self.chain.update_head(&current_head)?;
                         head_refreshed_at = chrono::offset::Utc::now();
                     }
+                    debug!(block_number = %current_block_number, gap = %gap, "has gap");
                     current_block_number = self
                         .fetch_and_broadcast_block(current_block_number, &ct)
                         .await?;
