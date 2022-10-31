@@ -115,9 +115,26 @@ where
             .latest_block_with_backoff(ct.clone())
             .await?;
         self.chain.update_head(&current_head)?;
-        info!(head = %current_head.block_hash.unwrap_or_default(), "updated head");
+        info!(
+            hash = %current_head.block_hash.unwrap_or_default(),
+            number = %current_head.block_number,
+            "updated head"
+        );
 
         let mut starting_block_number = 0;
+        if let Some(latest_block) = self.chain.latest_indexed_block()? {
+            info!("check shrunk reorg while offline");
+
+            if current_head.block_number < latest_block.block_number {
+                info!(
+                    head = %current_head.block_number,
+                    latest = %latest_block.block_number,
+                    "chain shrunk. invalidate"
+                );
+                self.chain.invalidate(current_head.block_number + 1)?;
+            }
+        }
+
         if let Some(latest_block) = self.chain.latest_indexed_block()? {
             info!("check reorg while offline");
 
