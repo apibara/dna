@@ -51,9 +51,9 @@ jobs:
       if: matrix.check == 'clippy'
       run: cargo clippy
 
-    - name: cargo test
+    - name: cargo unit test
       if: matrix.check == 'test'
-      run: cargo test --all
+      run: cargo test --all --lib
 
   build_binaries:
     name: build ${{ matrix.binary }}, target=${{ matrix.job.target }}, os=${{ matrix.job.os }}
