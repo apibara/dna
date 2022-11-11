@@ -7,6 +7,7 @@ use apibara_node::{
 };
 use apibara_starknet::{start_starknet_source_node, SequencerGateway};
 use clap::{arg, command, value_parser, ArgGroup, ArgMatches, Command};
+use tokio_util::sync::CancellationToken;
 
 async fn start(start_matches: &ArgMatches) -> Result<()> {
     init_opentelemetry()?;
@@ -29,8 +30,18 @@ async fn start(start_matches: &ArgMatches) -> Result<()> {
     };
 
     let poll_interval = start_matches.get_one::<u64>("poll-interval").unwrap(); // safe to unwrap as format is checked by clap
+    let poll_interval = Duration::from_millis(*poll_interval);
 
-    Ok(start_starknet_source_node(datadir, gateway, Duration::from_millis(*poll_interval)).await?)
+    // Setup cancellation for graceful shutdown
+    let cts = CancellationToken::new();
+    ctrlc::set_handler({
+        let cts = cts.clone();
+        move || {
+            cts.cancel();
+        }
+    })?;
+
+    Ok(start_starknet_source_node(datadir, gateway, poll_interval, cts.clone()).await?)
 }
 
 #[tokio::main]

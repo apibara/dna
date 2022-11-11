@@ -34,6 +34,7 @@ pub async fn start_starknet_source_node(
     datadir: PathBuf,
     gateway: SequencerGateway,
     poll_interval: Duration,
+    ct: CancellationToken,
 ) -> Result<()> {
     // setup db
     let datadir = datadir.join(gateway.network_name());
@@ -50,7 +51,7 @@ pub async fn start_starknet_source_node(
     let starknet_client = Arc::new(starknet_client);
 
     let node = StarkNetSourceNode::new(db, starknet_client, poll_interval);
-    node.start().await?;
+    node.start(ct).await?;
     Ok(())
 }
 
@@ -109,18 +110,8 @@ impl<E: EnvironmentKind> StarkNetSourceNode<E> {
         }
     }
 
-    pub async fn start(self) -> Result<()> {
+    pub async fn start(self, ct: CancellationToken) -> Result<()> {
         info!("starting source node");
-        // Setup cancellation for graceful shutdown
-        let cts = CancellationToken::new();
-        let ct = cts.clone();
-        ctrlc::set_handler({
-            let cts = cts.clone();
-            move || {
-                cts.cancel();
-            }
-        })?;
-
         let chain = ChainTracker::new(self.db.clone())?;
         let chain = Arc::new(chain);
 
@@ -165,7 +156,7 @@ impl<E: EnvironmentKind> StarkNetSourceNode<E> {
         info!(res = ?res, "terminated");
 
         // Then signal to all other tasks to stop
-        cts.cancel();
+        ct.cancel();
 
         // Then wait for them to complete, but not for _too long_
         // TODO: this panics because it polls a completed join handle.
