@@ -41,6 +41,7 @@ impl InputMixer {
             let mut client = NodeClient::connect(url).await?;
             let stream_request = node_pb::StreamMessagesRequest {
                 starting_sequence: input_config.starting_sequence,
+                include_pending: false,
             };
             let client_stream = client.stream_messages(stream_request).await?.into_inner();
             inner.insert(input_config.id, client_stream);

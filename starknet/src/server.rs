@@ -139,6 +139,26 @@ where
                                 message: Some(pb::stream_messages_response::Message::Data(data)),
                             })
                         }
+                        Ok(Ok(BlockStreamMessage::Pending {
+                            data: block,
+                            sequence,
+                        })) => {
+                            let inner_data = prost_types::Any {
+                                type_url: "type.googleapis.com/apibara.starknet.v1alpha1.Block"
+                                    .to_string(),
+                                value: block.as_bytes().to_vec(),
+                            };
+                            let pending = pb::Data {
+                                sequence: sequence.as_u64(),
+                                data: Some(inner_data),
+                            };
+
+                            Ok(pb::StreamMessagesResponse {
+                                message: Some(pb::stream_messages_response::Message::Pending(
+                                    pending,
+                                )),
+                            })
+                        }
                     }),
             );
 

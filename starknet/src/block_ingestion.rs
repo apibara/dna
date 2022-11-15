@@ -20,6 +20,7 @@ use tracing::{debug, error, info, warn};
 use crate::{
     block_builder::{BlockBuilder, BlockBuilderError},
     core::Block,
+    pb::BlockHash,
 };
 
 pub type BlockStreamMessage = StreamMessage<Block>;
@@ -225,7 +226,7 @@ where
             match self.chain.gap()? {
                 None => {
                     debug!(block_number = %current_block_number, "gap is none");
-                    current_block_number = self
+                    (current_block_number, _) = self
                         .fetch_and_broadcast_block(current_block_number, &ct)
                         .await?;
                 }
@@ -235,7 +236,23 @@ where
                         .head_height()?
                         .ok_or(BlockIngestorError::EmptyChain)?;
                     debug!(block_number = %head_height, "gap is 0");
-                    current_block_number = self.fetch_and_broadcast_latest_block(&ct).await?;
+                    let (next_block_number, current_block_hash) =
+                        self.fetch_and_broadcast_latest_block(&ct).await?;
+                    current_block_number = next_block_number;
+                    let pending_block = self.block_builder.fetch_pending_block().await?;
+                    if let Some(mut pending_block) = pending_block {
+                        if current_block_hash.is_some()
+                            && pending_block.parent_block_hash == current_block_hash
+                        {
+                            info!("pending block");
+                            // change pending block number to the next block's height.
+                            pending_block.block_number = head_height + 1;
+                            let sequence = Sequence::from_u64(pending_block.block_number);
+                            let raw_block = RawMessageData::from_vec(pending_block.encode_to_vec());
+                            let message = BlockStreamMessage::new_pending(sequence, raw_block);
+                            self.block_tx.send(message)?;
+                        }
+                    }
                     if current_block_number == head_height + 1 {
                         tokio::time::sleep(sync_sleep_interval).await;
                     }
@@ -255,7 +272,7 @@ where
                         head_refreshed_at = chrono::offset::Utc::now();
                     }
                     debug!(block_number = %current_block_number, gap = %gap, "has gap");
-                    current_block_number = self
+                    (current_block_number, _) = self
                         .fetch_and_broadcast_block(current_block_number, &ct)
                         .await?;
                 }
@@ -266,13 +283,16 @@ where
     }
 
     #[tracing::instrument(skip(self, ct))]
-    async fn fetch_and_broadcast_latest_block(&self, ct: &CancellationToken) -> Result<u64> {
+    async fn fetch_and_broadcast_latest_block(
+        &self,
+        ct: &CancellationToken,
+    ) -> Result<(u64, Option<BlockHash>)> {
         let block = tokio::select! {
             block = self.block_builder.latest_block_with_backoff(ct.clone()) => {
                 block?
             }
             _ = ct.cancelled() => {
-                return Ok(0)
+                return Ok((0, None))
             }
         };
 
@@ -284,24 +304,25 @@ where
         &self,
         block_number: u64,
         ct: &CancellationToken,
-    ) -> Result<u64> {
+    ) -> Result<(u64, Option<BlockHash>)> {
         let block = tokio::select! {
             block = self.block_builder.block_by_number_with_backoff(block_number, ct.clone()) => {
                 block?
             }
             _ = ct.cancelled() => {
-                return Ok(0)
+                return Ok((0, None))
             }
         };
 
         self.apply_block(block)
     }
 
-    fn apply_block(&self, block: Block) -> Result<u64> {
+    fn apply_block(&self, block: Block) -> Result<(u64, Option<BlockHash>)> {
         info!(block_number = %block.block_number, "got block");
         let block_number = block.block_number;
         self.metrics.observe_ingested_block();
 
+        let mut current_block_hash = block.block_hash.clone();
         match self.chain.update_indexed_block(block)? {
             ChainChange::Advance(blocks) => {
                 info!("chain advanced by {} blocks", blocks.len());
@@ -309,12 +330,13 @@ where
                 for block in blocks {
                     next_block_number = block.block_number + 1;
                     let sequence = Sequence::from_u64(block.block_number);
+                    current_block_hash = block.block_hash.clone();
                     let raw_block = RawMessageData::from_vec(block.encode_to_vec());
                     let message = BlockStreamMessage::new_data(sequence, raw_block);
                     self.block_tx.send(message)?;
                 }
                 self.metrics.observe_latest_block(next_block_number - 1);
-                Ok(next_block_number)
+                Ok((next_block_number, current_block_hash))
             }
             ChainChange::Reorg(blocks) => {
                 info!("chain reorged by {} blocks", blocks.len());
@@ -326,7 +348,7 @@ where
             }
             ChainChange::AlreadySeen => {
                 info!("block already seen");
-                Ok(block_number + 1)
+                Ok((block_number + 1, current_block_hash))
             }
         }
     }

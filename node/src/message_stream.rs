@@ -200,6 +200,12 @@ where
                         this.state.add_live_message(sequence, data);
                     }
                 }
+                Ok(StreamMessage::Pending { sequence, data }) => {
+                    if sequence == current {
+                        let message = StreamMessage::Pending { sequence, data };
+                        return Poll::Ready(Some(Ok(message)));
+                    }
+                }
             }
         }
 

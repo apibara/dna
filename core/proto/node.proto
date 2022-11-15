@@ -70,6 +70,8 @@ message ConnectResponse {
 message StreamMessagesRequest {
   // Start streaming from the provided sequence number.
   uint64 starting_sequence = 1;
+  // Include pending blocks.
+  bool include_pending = 2;
 }
 
 // Message sent from the node to the client.
@@ -78,6 +80,7 @@ message StreamMessagesResponse {
     Invalidate invalidate = 1;
     Data data = 2;
     Heartbeat heartbeat = 3;
+    Data pending = 4;
   }
 }
 

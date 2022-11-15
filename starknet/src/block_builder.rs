@@ -31,6 +31,9 @@ pub enum BlockBuilderError {
 
 pub type Result<T> = std::result::Result<T, BlockBuilderError>;
 
+/// Type used only to `TryFrom` for pending blocks.
+struct PendingBlock(Block);
+
 impl BlockBuilder {
     /// Creates a new [BlockBuilder] with the given StarkNet JSON-RPC client.
     pub fn new(client: Arc<SequencerGatewayProvider>) -> Self {
@@ -59,6 +62,21 @@ impl BlockBuilder {
     ) -> Result<Block> {
         let fetch = || self.fetch_block(sn_types::BlockId::Number(block_number), &ct);
         backoff::future::retry(self.exponential_backoff.clone(), fetch).await
+    }
+
+    #[tracing::instrument(level = "debug", skip(self))]
+    pub async fn fetch_pending_block(&self) -> Result<Option<Block>> {
+        // ignore errors fetching pending blocks
+        match self.client.get_block(sn_types::BlockId::Pending).await {
+            Err(_) => Ok(None),
+            Ok(block) => {
+                if block.status != sn_types::BlockStatus::Pending {
+                    return Ok(None);
+                }
+                let block: PendingBlock = block.try_into()?;
+                Ok(Some(block.0))
+            }
+        }
     }
 
     async fn fetch_block(
@@ -133,6 +151,55 @@ impl TryFrom<sn_types::Block> for Block {
             transactions,
             transaction_receipts,
         })
+    }
+}
+
+impl TryFrom<sn_types::Block> for PendingBlock {
+    type Error = BlockBuilderError;
+
+    fn try_from(block: sn_types::Block) -> std::result::Result<Self, Self::Error> {
+        let block_hash = block.block_hash.map(|h| h.into());
+        let parent_block_hash = block.parent_block_hash.into();
+        // should use next block number
+        let block_number = block.block_number.unwrap_or_default();
+        // some blocks have no sequencer address
+        let sequencer_address = block
+            .sequencer_address
+            .map(|f| f.to_bytes_be().to_vec())
+            .unwrap_or_default();
+        let state_root = block
+            .state_root
+            .map(|r| r.to_bytes_be().to_vec())
+            .unwrap_or_default();
+        let gas_price = block.gas_price.to_bytes_be().to_vec();
+        let timestamp = prost_types::Timestamp {
+            nanos: 0,
+            seconds: block.timestamp as i64,
+        };
+        // some blocks don't specify version
+        let starknet_version = block.starknet_version.clone().unwrap_or_default();
+
+        let transactions = block.transactions.iter().map(|tx| tx.into()).collect();
+
+        let transaction_receipts = block
+            .transaction_receipts
+            .iter()
+            .map(|rx| rx.into())
+            .collect();
+
+        let block = Block {
+            block_hash,
+            parent_block_hash: Some(parent_block_hash),
+            block_number,
+            sequencer_address,
+            state_root,
+            gas_price,
+            timestamp: Some(timestamp),
+            starknet_version,
+            transactions,
+            transaction_receipts,
+        };
+        Ok(PendingBlock(block))
     }
 }
 
