@@ -186,6 +186,20 @@ where
                         message: Some(node_pb::stream_messages_response::Message::Data(data)),
                     })
                 }
+                Ok(StreamMessage::Pending { sequence, data }) => {
+                    let inner_data = prost_types::Any {
+                        type_url: type_url.clone(),
+                        value: data.as_bytes().to_vec(),
+                    };
+                    let pending = node_pb::Data {
+                        sequence: sequence.as_u64(),
+                        data: Some(inner_data),
+                    };
+
+                    Ok(node_pb::StreamMessagesResponse {
+                        message: Some(node_pb::stream_messages_response::Message::Pending(pending)),
+                    })
+                }
             }
         }));
 

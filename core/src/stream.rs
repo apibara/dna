@@ -120,6 +120,10 @@ pub enum StreamMessage<D: MessageData> {
         sequence: Sequence,
         data: RawMessageData<D>,
     },
+    Pending {
+        sequence: Sequence,
+        data: RawMessageData<D>,
+    },
 }
 
 impl<D> StreamMessage<D>
@@ -136,11 +140,17 @@ where
         Self::Data { sequence, data }
     }
 
+    /// Creates a new `Pending` message.
+    pub fn new_pending(sequence: Sequence, data: RawMessageData<D>) -> Self {
+        Self::Pending { sequence, data }
+    }
+
     /// Returns the sequence number associated with the message.
     pub fn sequence(&self) -> &Sequence {
         match self {
             Self::Invalidate { sequence } => sequence,
             Self::Data { sequence, .. } => sequence,
+            Self::Pending { sequence, .. } => sequence,
         }
     }
 
@@ -152,6 +162,11 @@ where
     /// Returns true if it's an invalidate message.
     pub fn is_invalidate(&self) -> bool {
         matches!(self, Self::Invalidate { .. })
+    }
+
+    /// Returns true if it's a pending message.
+    pub fn is_pending(&self) -> bool {
+        matches!(self, Self::Pending { .. })
     }
 }
 

@@ -202,6 +202,7 @@ where
                 self.handle_invalidate(input_id, invalidate).await
             }
             Some(node_pb::stream_messages_response::Message::Heartbeat(_)) => Ok(()),
+            Some(node_pb::stream_messages_response::Message::Pending(_)) => Ok(()),
         }
     }
 
