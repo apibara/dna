@@ -40,6 +40,7 @@ pub trait MessageProducer: Send + Sync + 'static {
     fn stream_from_sequence(
         &self,
         starting_sequence: &Sequence,
+        pending_interval: Option<Duration>,
         ct: CancellationToken,
     ) -> std::result::Result<Self::Stream, Self::Error>;
 }
@@ -264,6 +265,7 @@ where
     fn stream_from_sequence(
         &self,
         starting_sequence: &Sequence,
+        pending_interval: Option<Duration>,
         ct: CancellationToken,
     ) -> std::result::Result<Self::Stream, Self::Error> {
         info!(start = ?starting_sequence, "start stream");
@@ -279,6 +281,7 @@ where
             latest,
             self.storage.clone(),
             live,
+            pending_interval,
             ct,
         );
         Ok(stream)

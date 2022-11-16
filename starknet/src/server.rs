@@ -90,10 +90,23 @@ where
         request: Request<pb::StreamMessagesRequest>,
     ) -> TonicResult<Self::StreamMessagesStream> {
         let request: pb::StreamMessagesRequest = request.into_inner();
+
+        let pending_interval = if request.pending_block_interval_seconds == 0 {
+            None
+        } else {
+            let interval = Duration::from_secs(request.pending_block_interval_seconds as u64);
+            Some(interval)
+        };
+
         let stream = self
             .block_ingestor
-            .stream_from_sequence(request.starting_sequence, self.cts.clone())
+            .stream_from_sequence(
+                request.starting_sequence,
+                pending_interval,
+                self.cts.clone(),
+            )
             .map_err(|_| Status::internal("failed to start message stream"))?;
+
         let response =
             Box::pin(
                 stream
