@@ -1,6 +1,6 @@
 //! Stream gRPC server.
 
-use std::{net::SocketAddr, pin::Pin, sync::Arc};
+use std::{net::SocketAddr, pin::Pin, sync::Arc, time::Duration};
 
 use apibara_core::{
     application::pb as app_pb,
@@ -149,10 +149,18 @@ where
         request: Request<node_pb::StreamMessagesRequest>,
     ) -> TonicResult<Self::StreamMessagesStream> {
         let request: node_pb::StreamMessagesRequest = request.into_inner();
+
         let starting_sequence = Sequence::from_u64(request.starting_sequence);
+        let pending_interval = if request.pending_block_interval_seconds == 0 {
+            None
+        } else {
+            let interval = Duration::from_secs(request.pending_block_interval_seconds as u64);
+            Some(interval)
+        };
+
         let stream = self
             .producer
-            .stream_from_sequence(&starting_sequence, self.cts.clone())
+            .stream_from_sequence(&starting_sequence, pending_interval, self.cts.clone())
             .map_err(|_| Status::internal("failed to start message stream"))?;
 
         let response = Box::pin(stream.map({

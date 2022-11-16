@@ -19,11 +19,12 @@
 //!            Storage
 //! ```
 
-use std::{collections::VecDeque, marker::PhantomData, pin::Pin, task::Poll};
+use std::{collections::VecDeque, marker::PhantomData, pin::Pin, task::Poll, time::Duration};
 
 use apibara_core::stream::{MessageData, RawMessageData, Sequence, StreamMessage};
 use futures::Stream;
 use pin_project::pin_project;
+use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 
 use crate::message_storage::MessageStorage;
@@ -42,6 +43,7 @@ where
     live: L,
     // state is in its own struct to play nicely with pin.
     state: State<M>,
+    pending_interval: Option<Duration>,
     ct: CancellationToken,
     _phantom: PhantomData<M>,
 }
@@ -65,6 +67,8 @@ struct State<M: MessageData> {
     current: Sequence,
     latest: Sequence,
     buffer: VecDeque<(Sequence, RawMessageData<M>)>,
+    pending_deadline: Option<Instant>,
+    pending_interval: Option<Duration>,
 }
 
 impl<M, S, L> BackfilledMessageStream<M, S, L>
@@ -83,12 +87,14 @@ where
         latest: Sequence,
         storage: S,
         live: L,
+        pending_interval: Option<Duration>,
         ct: CancellationToken,
     ) -> Self {
         BackfilledMessageStream {
             storage,
             live,
-            state: State::new(current, latest),
+            state: State::new(current, latest, pending_interval),
+            pending_interval,
             ct,
             _phantom: PhantomData::default(),
         }
@@ -190,6 +196,7 @@ where
                     if current == sequence {
                         this.state.update_current(sequence);
                         this.state.increment_current();
+                        this.state.reset_pending_deadline();
                         let message = StreamMessage::Data { sequence, data };
                         return Poll::Ready(Some(Ok(message)));
                     }
@@ -201,8 +208,9 @@ where
                     }
                 }
                 Ok(StreamMessage::Pending { sequence, data }) => {
-                    if sequence == current {
+                    if sequence == current && this.state.is_pending_deadline_exceeded() {
                         let message = StreamMessage::Pending { sequence, data };
+                        this.state.reset_pending_deadline();
                         return Poll::Ready(Some(Ok(message)));
                     }
                 }
@@ -227,6 +235,8 @@ where
                 }
                 Some((sequence, data)) => {
                     this.state.increment_current();
+                    // close enough to head of chain, get ready to send pending messages
+                    this.state.reset_pending_deadline();
                     let message = StreamMessage::Data { sequence, data };
                     return Poll::Ready(Some(Ok(message)));
                 }
@@ -259,11 +269,14 @@ where
 }
 
 impl<M: MessageData> State<M> {
-    fn new(current: Sequence, latest: Sequence) -> Self {
+    fn new(current: Sequence, latest: Sequence, pending_interval: Option<Duration>) -> Self {
+        let pending_deadline = pending_interval.map(|i| Instant::now() + i);
         State {
             current,
             latest,
             buffer: VecDeque::default(),
+            pending_interval,
+            pending_deadline,
         }
     }
 
@@ -305,6 +318,16 @@ impl<M: MessageData> State<M> {
 
     fn pop_buffer(&mut self) -> Option<(Sequence, RawMessageData<M>)> {
         self.buffer.pop_front()
+    }
+
+    fn reset_pending_deadline(&mut self) {
+        self.pending_deadline = self.pending_interval.map(|i| Instant::now() + i);
+    }
+
+    fn is_pending_deadline_exceeded(&self) -> bool {
+        self.pending_deadline
+            .map(|d| d <= Instant::now())
+            .unwrap_or(false)
     }
 }
 
@@ -394,6 +417,7 @@ mod tests {
             Sequence::from_u64(9),
             storage.clone(),
             live_stream,
+            None,
             ct,
         );
 
@@ -447,6 +471,7 @@ mod tests {
             Sequence::from_u64(9),
             storage.clone(),
             live_stream,
+            None,
             ct,
         );
 
@@ -476,6 +501,7 @@ mod tests {
             Sequence::from_u64(9),
             storage.clone(),
             live_stream,
+            None,
             ct,
         );
 
@@ -537,6 +563,7 @@ mod tests {
             Sequence::from_u64(9),
             storage.clone(),
             live_stream,
+            None,
             ct,
         );
 

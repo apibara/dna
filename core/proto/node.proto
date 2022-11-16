@@ -70,8 +70,8 @@ message ConnectResponse {
 message StreamMessagesRequest {
   // Start streaming from the provided sequence number.
   uint64 starting_sequence = 1;
-  // Include pending blocks.
-  bool include_pending = 2;
+  // If greater than 0, send pending blocks at the specified interval.
+  uint32 pending_block_interval_seconds = 2;
 }
 
 // Message sent from the node to the client.

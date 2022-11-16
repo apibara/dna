@@ -89,6 +89,7 @@ where
     pub fn stream_from_sequence(
         &self,
         starting_sequence: u64,
+        pending_interval: Option<Duration>,
         ct: CancellationToken,
     ) -> Result<impl Stream<Item = message_stream::Result<StreamMessage<Block>>>> {
         info!(start = %starting_sequence, "start stream");
@@ -106,6 +107,7 @@ where
             latest,
             self.chain.clone(),
             live,
+            pending_interval,
             ct,
         ))
     }
