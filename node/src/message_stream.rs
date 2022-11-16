@@ -26,6 +26,7 @@ use futures::Stream;
 use pin_project::pin_project;
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
+use tracing::debug;
 
 use crate::message_storage::MessageStorage;
 
@@ -62,12 +63,24 @@ pub enum BackfilledMessageStreamError {
 
 pub type Result<T> = std::result::Result<T, BackfilledMessageStreamError>;
 
+/// Deadline for sending pending messages.
+#[derive(Debug)]
+enum PendingDeadline {
+    /// Don't send any pending messages.
+    None,
+    /// Send pending message immediately, ignoring any deadline.
+    /// Used to send a pending messages immediately after a new data message.
+    Immediately,
+    /// Send after instant.
+    Deadline(Instant),
+}
+
 #[derive(Debug)]
 struct State<M: MessageData> {
     current: Sequence,
     latest: Sequence,
     buffer: VecDeque<(Sequence, RawMessageData<M>)>,
-    pending_deadline: Option<Instant>,
+    pending_deadline: PendingDeadline,
     pending_interval: Option<Duration>,
 }
 
@@ -172,6 +185,7 @@ where
                     return Poll::Ready(Some(Err(BackfilledMessageStreamError::LiveStream(err))))
                 }
                 Ok(StreamMessage::Invalidate { sequence }) => {
+                    debug!(sequence = ?sequence, "live invalidate");
                     // clear buffer just in case
                     this.state.clear_buffer();
                     this.state.update_latest(sequence);
@@ -179,6 +193,7 @@ where
                     // all messages after `sequence` (inclusive) are now invalidated.
                     // forward invalidate message
                     if current >= sequence {
+                        debug!(sequence = ?sequence, "send live invalidate");
                         this.state.update_current(sequence);
                         let message = StreamMessage::Invalidate { sequence };
                         return Poll::Ready(Some(Ok(message)));
@@ -190,13 +205,15 @@ where
                     return Poll::Pending;
                 }
                 Ok(StreamMessage::Data { sequence, data }) => {
+                    debug!(sequence = ?sequence, "live data");
                     this.state.update_latest(sequence);
 
                     // just send the message to the stream if it's the current one
                     if current == sequence {
+                        debug!(sequence = ?sequence, "send live data");
                         this.state.update_current(sequence);
                         this.state.increment_current();
-                        this.state.reset_pending_deadline();
+                        this.state.reset_pending_deadline_to_immediately();
                         let message = StreamMessage::Data { sequence, data };
                         return Poll::Ready(Some(Ok(message)));
                     }
@@ -208,7 +225,9 @@ where
                     }
                 }
                 Ok(StreamMessage::Pending { sequence, data }) => {
+                    debug!(sequence = ?sequence, "live pending");
                     if sequence == current && this.state.is_pending_deadline_exceeded() {
+                        debug!(sequence = ?sequence, "send live pending");
                         let message = StreamMessage::Pending { sequence, data };
                         this.state.reset_pending_deadline();
                         return Poll::Ready(Some(Ok(message)));
@@ -235,8 +254,6 @@ where
                 }
                 Some((sequence, data)) => {
                     this.state.increment_current();
-                    // close enough to head of chain, get ready to send pending messages
-                    this.state.reset_pending_deadline();
                     let message = StreamMessage::Data { sequence, data };
                     return Poll::Ready(Some(Ok(message)));
                 }
@@ -270,7 +287,9 @@ where
 
 impl<M: MessageData> State<M> {
     fn new(current: Sequence, latest: Sequence, pending_interval: Option<Duration>) -> Self {
-        let pending_deadline = pending_interval.map(|i| Instant::now() + i);
+        let pending_deadline = pending_interval
+            .map(|_| PendingDeadline::Immediately)
+            .unwrap_or(PendingDeadline::None);
         State {
             current,
             latest,
@@ -320,14 +339,23 @@ impl<M: MessageData> State<M> {
         self.buffer.pop_front()
     }
 
+    fn reset_pending_deadline_to_immediately(&mut self) {
+        self.pending_deadline = PendingDeadline::Immediately;
+    }
+
     fn reset_pending_deadline(&mut self) {
-        self.pending_deadline = self.pending_interval.map(|i| Instant::now() + i);
+        self.pending_deadline = self
+            .pending_interval
+            .map(|i| PendingDeadline::Deadline(Instant::now() + i))
+            .unwrap_or(PendingDeadline::None);
     }
 
     fn is_pending_deadline_exceeded(&self) -> bool {
-        self.pending_deadline
-            .map(|d| d <= Instant::now())
-            .unwrap_or(false)
+        match self.pending_deadline {
+            PendingDeadline::None => false,
+            PendingDeadline::Immediately => true,
+            PendingDeadline::Deadline(deadline) => deadline <= Instant::now(),
+        }
     }
 }
 
