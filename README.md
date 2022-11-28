@@ -28,6 +28,7 @@ more about each one of them.
 
  - `core`: types shared by all other crates.
  - `node`: used to build and run Apibara nodes.
+ - `starknet`: StarkNet source node.
  - `cli`: the CLI interface to manage and start Apibara nodes.
 
 

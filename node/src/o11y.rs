@@ -15,6 +15,8 @@ use tracing::dispatcher::SetGlobalDefaultError;
 
 pub use opentelemetry::metrics::{ObservableCounter, ObservableGauge};
 pub use opentelemetry::{Context, KeyValue};
+use tracing_opentelemetry::MetricsLayer;
+use tracing_subscriber::{prelude::*, EnvFilter};
 
 #[derive(Debug, thiserror::Error)]
 pub enum OpenTelemetryInitError {
@@ -42,16 +44,12 @@ pub fn meter(name: &'static str) -> Meter {
 }
 
 pub fn init_opentelemetry() -> Result<(), OpenTelemetryInitError> {
-    env_logger::init();
+    // filter traces by crate/level
+    let otel_env_filter = EnvFilter::try_from_default_env().unwrap_or(EnvFilter::new("INFO"));
+    let log_env_filter = EnvFilter::try_from_default_env().unwrap_or(EnvFilter::new("INFO"));
 
     // Both tracer and meter are configured with environment variables.
-    let _tracer = opentelemetry_otlp::new_pipeline()
-        .tracing()
-        .with_exporter(opentelemetry_otlp::new_exporter().tonic().with_env())
-        .with_trace_config(sdk::trace::config().with_resource(Resource::default()))
-        .install_batch(opentelemetry::runtime::Tokio)?;
-
-    let _meter = opentelemetry_otlp::new_pipeline()
+    let meter = opentelemetry_otlp::new_pipeline()
         .metrics(
             selectors::simple::inexpensive(),
             cumulative_temporality_selector(),
@@ -60,6 +58,28 @@ pub fn init_opentelemetry() -> Result<(), OpenTelemetryInitError> {
         .with_exporter(opentelemetry_otlp::new_exporter().tonic().with_env())
         .with_resource(Resource::default())
         .build()?;
+
+    let tracer = opentelemetry_otlp::new_pipeline()
+        .tracing()
+        .with_exporter(opentelemetry_otlp::new_exporter().tonic().with_env())
+        .with_trace_config(sdk::trace::config().with_resource(Resource::default()))
+        .install_batch(opentelemetry::runtime::Tokio)?;
+
+    // export traces and metrics to otel
+    let otel_trace_layer = tracing_opentelemetry::layer().with_tracer(tracer);
+    let otel_metrics_layer = MetricsLayer::new(meter);
+    let otel_layer = otel_trace_layer
+        .and_then(otel_metrics_layer)
+        .and_then(otel_env_filter);
+
+    // display traces on stdout
+
+    let logtree_layer = tracing_tree::HierarchicalLayer::new(2).and_then(log_env_filter);
+
+    tracing_subscriber::Registry::default()
+        .with(otel_layer)
+        .with(logtree_layer)
+        .init();
 
     Ok(())
 }
