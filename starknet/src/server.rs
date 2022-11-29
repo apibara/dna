@@ -17,7 +17,7 @@ use tokio_stream::StreamExt;
 use tokio_util::sync::CancellationToken;
 use tonic::{transport::Server as TonicServer, Request, Response, Status};
 use tower_http::trace::{OnFailure, OnRequest, TraceLayer};
-use tracing::{error, info, warn, Span};
+use tracing::{debug, error, info, info_span, warn, Span};
 
 use crate::{
     block_ingestion::{BlockIngestor, BlockStreamMessage},
@@ -70,6 +70,7 @@ where
         &self,
         _request: Request<pb::StatusRequest>,
     ) -> TonicResult<pb::StatusResponse> {
+        info!("received status request");
         let status = self
             .status_reporter
             .status()
@@ -90,6 +91,8 @@ where
         request: Request<pb::StreamMessagesRequest>,
     ) -> TonicResult<Self::StreamMessagesStream> {
         let request: pb::StreamMessagesRequest = request.into_inner();
+
+        info!(starting_sequence = %request.starting_sequence, "stream messages");
 
         let pending_interval = if request.pending_block_interval_seconds == 0 {
             None
@@ -113,6 +116,7 @@ where
                     .heartbeat(self.heartbeat_interval)
                     .map(|maybe_res| match maybe_res {
                         Err(_) => {
+                            debug!("sending heartbeat");
                             let heartbeat = pb::Heartbeat {};
                             Ok(pb::StreamMessagesResponse {
                                 message: Some(pb::stream_messages_response::Message::Heartbeat(
@@ -143,6 +147,7 @@ where
                                     .to_string(),
                                 value: block.as_bytes().to_vec(),
                             };
+
                             let data = pb::Data {
                                 sequence: sequence.as_u64(),
                                 data: Some(inner_data),
@@ -251,6 +256,7 @@ where
 
         info!(addr = ?addr, "starting server");
         TonicServer::builder()
+            .trace_fn(|_| info_span!("node_server"))
             .layer(tracing_layer)
             .add_service(node_server.into_service())
             .add_service(health_service)
