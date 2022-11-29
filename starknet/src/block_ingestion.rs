@@ -9,6 +9,7 @@ use apibara_node::{
     message_stream::{self, BackfilledMessageStream},
     o11y::{self, ObservableCounter, ObservableGauge},
 };
+use chrono::{DateTime, Utc};
 use futures::{Stream, TryStreamExt};
 use prost::Message;
 use starknet::providers::SequencerGatewayProvider;
@@ -51,9 +52,22 @@ pub type Result<T> = std::result::Result<T, BlockIngestorError>;
 
 const MESSAGE_CHANNEL_SIZE: usize = 128;
 
+lazy_static::lazy_static! {
+    static ref FAR_HEAD_REFRESH_INTERVAL: chrono::Duration = chrono::Duration::from_std(Duration::from_secs(60)).expect("far head refresh interval");
+    static ref CLOSE_HEAD_REFRESH_INTERVAL: chrono::Duration = chrono::Duration::from_std(Duration::from_secs(10)).expect("close head refresh interval");
+}
+
 pub struct Metrics {
     ingested_blocks: ObservableCounter<u64>,
     latest_block: ObservableGauge<u64>,
+}
+
+/// Tracks ingestor state.
+#[derive(Debug)]
+struct LoopState {
+    head_refreshed_at: DateTime<Utc>,
+    current_block_number: u64,
+    sync_sleep_interval: Duration,
 }
 
 impl<E> BlockIngestor<E>
@@ -210,15 +224,7 @@ where
 
         info!(block_number = %starting_block_number, "starting block ingestion");
 
-        let mut current_block_number = starting_block_number;
-
-        let mut head_refreshed_at = chrono::offset::Utc::now();
-
-        let far_head_refresh_interval =
-            chrono::Duration::from_std(Duration::from_secs(60)).expect("duration conversion");
-        let close_head_refresh_interval =
-            chrono::Duration::from_std(Duration::from_secs(10)).expect("duration conversion");
-        let sync_sleep_interval = poll_interval;
+        let mut loop_state = LoopState::new(starting_block_number, poll_interval);
 
         loop {
             if ct.is_cancelled() {
@@ -227,59 +233,97 @@ where
 
             match self.chain.gap()? {
                 None => {
-                    debug!(block_number = %current_block_number, "gap is none");
-                    (current_block_number, _) = self
-                        .fetch_and_broadcast_block(current_block_number, &ct)
-                        .await?;
+                    self.fetch_initial_block(&mut loop_state, &ct).await?;
                 }
                 Some(0) => {
-                    let head_height = self
-                        .chain
-                        .head_height()?
-                        .ok_or(BlockIngestorError::EmptyChain)?;
-                    debug!(block_number = %head_height, "gap is 0");
-                    let (next_block_number, current_block_hash) =
-                        self.fetch_and_broadcast_latest_block(&ct).await?;
-                    current_block_number = next_block_number;
-                    let pending_block = self.block_builder.fetch_pending_block().await?;
-                    if let Some(mut pending_block) = pending_block {
-                        if current_block_hash.is_some()
-                            && pending_block.parent_block_hash == current_block_hash
-                        {
-                            info!("pending block");
-                            // change pending block number to the next block's height.
-                            pending_block.block_number = head_height + 1;
-                            let sequence = Sequence::from_u64(pending_block.block_number);
-                            let raw_block = RawMessageData::from_vec(pending_block.encode_to_vec());
-                            let message = BlockStreamMessage::new_pending(sequence, raw_block);
-                            self.block_tx.send(message)?;
-                        }
-                    }
-                    if current_block_number == head_height + 1 {
-                        tokio::time::sleep(sync_sleep_interval).await;
-                    }
+                    self.fetch_block_at_head(&mut loop_state, &ct).await?;
                 }
                 Some(gap) => {
-                    let head_refresh_elapsed = chrono::offset::Utc::now() - head_refreshed_at;
-                    let should_refresh_head = (gap > 50
-                        && head_refresh_elapsed > far_head_refresh_interval)
-                        || (gap > 10 && head_refresh_elapsed > close_head_refresh_interval);
-                    if should_refresh_head {
-                        debug!("refresh head");
-                        let current_head = self
-                            .block_builder
-                            .latest_block_with_backoff(ct.clone())
-                            .await?;
-                        self.chain.update_head(&current_head)?;
-                        head_refreshed_at = chrono::offset::Utc::now();
-                    }
-                    debug!(block_number = %current_block_number, gap = %gap, "has gap");
-                    (current_block_number, _) = self
-                        .fetch_and_broadcast_block(current_block_number, &ct)
-                        .await?;
+                    self.fetch_lagging_block(&mut loop_state, gap, &ct).await?;
                 }
             }
         }
+
+        Ok(())
+    }
+
+    #[tracing::instrument(skip(self, ct))]
+    async fn fetch_initial_block(
+        &self,
+        state: &mut LoopState,
+        ct: &CancellationToken,
+    ) -> Result<()> {
+        debug!(block_number = %state.current_block_number, "gap is none");
+        let (current_block_number, _) = self
+            .fetch_and_broadcast_block(state.current_block_number, ct)
+            .await?;
+        state.set_current_block_number(current_block_number);
+        Ok(())
+    }
+
+    #[tracing::instrument(skip(self, ct))]
+    async fn fetch_block_at_head(
+        &self,
+        state: &mut LoopState,
+        ct: &CancellationToken,
+    ) -> Result<()> {
+        let head_height = self
+            .chain
+            .head_height()?
+            .ok_or(BlockIngestorError::EmptyChain)?;
+        debug!(block_number = %head_height, "gap is 0");
+
+        let (next_block_number, current_block_hash) =
+            self.fetch_and_broadcast_latest_block(ct).await?;
+
+        state.set_current_block_number(next_block_number);
+        let pending_block = self.block_builder.fetch_pending_block().await?;
+
+        if let Some(mut pending_block) = pending_block {
+            if current_block_hash.is_some() && pending_block.parent_block_hash == current_block_hash
+            {
+                info!("pending block");
+                // change pending block number to the next block's height.
+                pending_block.block_number = head_height + 1;
+                let sequence = Sequence::from_u64(pending_block.block_number);
+                let raw_block = RawMessageData::from_vec(pending_block.encode_to_vec());
+                let message = BlockStreamMessage::new_pending(sequence, raw_block);
+                self.block_tx.send(message)?;
+            }
+        }
+        if state.current_block_number == head_height + 1 {
+            tokio::time::sleep(state.sync_sleep_interval).await;
+        }
+        Ok(())
+    }
+
+    #[tracing::instrument(skip(self, ct))]
+    async fn fetch_lagging_block(
+        &self,
+        state: &mut LoopState,
+        gap: u64,
+        ct: &CancellationToken,
+    ) -> Result<()> {
+        let head_refresh_elapsed = chrono::offset::Utc::now() - state.head_refreshed_at;
+
+        let should_refresh_head = (gap > 50 && head_refresh_elapsed > *FAR_HEAD_REFRESH_INTERVAL)
+            || (gap > 10 && head_refresh_elapsed > *CLOSE_HEAD_REFRESH_INTERVAL);
+
+        if should_refresh_head {
+            debug!("refresh head");
+            let current_head = self
+                .block_builder
+                .latest_block_with_backoff(ct.clone())
+                .await?;
+            self.chain.update_head(&current_head)?;
+            state.set_head_refreshed_at_now();
+        }
+
+        debug!(block_number = %state.current_block_number, gap = %gap, "has gap");
+        let (current_block_number, _) = self
+            .fetch_and_broadcast_block(state.current_block_number, ct)
+            .await?;
+        state.set_current_block_number(current_block_number);
 
         Ok(())
     }
@@ -319,6 +363,7 @@ where
         self.apply_block(block)
     }
 
+    #[tracing::instrument(skip(self, block))]
     fn apply_block(&self, block: Block) -> Result<(u64, Option<BlockHash>)> {
         info!(block_number = %block.block_number, "got block");
         let block_number = block.block_number;
@@ -353,6 +398,25 @@ where
                 Ok((block_number + 1, current_block_hash))
             }
         }
+    }
+}
+
+impl LoopState {
+    pub fn new(starting_block_number: u64, sync_sleep_interval: Duration) -> LoopState {
+        let head_refreshed_at = chrono::offset::Utc::now();
+        LoopState {
+            head_refreshed_at,
+            current_block_number: starting_block_number,
+            sync_sleep_interval,
+        }
+    }
+
+    pub fn set_current_block_number(&mut self, block: u64) {
+        self.current_block_number = block;
+    }
+
+    pub fn set_head_refreshed_at_now(&mut self) {
+        self.head_refreshed_at = chrono::offset::Utc::now();
     }
 }
 

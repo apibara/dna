@@ -126,6 +126,7 @@ dependencies = [
  "futures",
  "hex",
  "hyper",
+ "lazy_static",
  "prost",
  "prost-types",
  "starknet",

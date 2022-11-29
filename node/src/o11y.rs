@@ -45,8 +45,10 @@ pub fn meter(name: &'static str) -> Meter {
 
 pub fn init_opentelemetry() -> Result<(), OpenTelemetryInitError> {
     // filter traces by crate/level
-    let otel_env_filter = EnvFilter::try_from_default_env().unwrap_or(EnvFilter::new("INFO"));
-    let log_env_filter = EnvFilter::try_from_default_env().unwrap_or(EnvFilter::new("INFO"));
+    let otel_env_filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("INFO"));
+    let log_env_filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("INFO"));
 
     // Both tracer and meter are configured with environment variables.
     let meter = opentelemetry_otlp::new_pipeline()
