@@ -23,6 +23,7 @@ ctrlc = { version = "3.2.3", features = ["termination"] }
 futures = "0.3.24"
 hex = "0.4.3"
 hyper = "0.14.20"
+lazy_static = "1.4.0"
 prost = "0.11.0"
 prost-types = "0.11.1"
 starknet = { git = "https://github.com/xJonathanLEI/starknet-rs", rev = "72702f6465a941bfb53692a1e40944aa797efa85" }
