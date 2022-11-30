@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use apibara_core::node::pb::{
+use apibara_core::node::v1alpha1::pb::{
     status_response, InputSyncingStatus, StatusResponse, SyncedStatus, SyncingStatus,
 };
 use apibara_node::{
@@ -60,7 +60,7 @@ where
                 })
             }
             (_, _) => {
-                let not_started = apibara_core::node::pb::NotStartedStatus {};
+                let not_started = apibara_core::node::v1alpha1::pb::NotStartedStatus {};
                 Ok(StatusResponse {
                     message: Some(status_response::Message::NotStarted(not_started)),
                 })

@@ -9,7 +9,7 @@ use std::{
 
 use apibara_core::{
     application::pb as app_pb,
-    node::pb as node_pb,
+    node::v1alpha1::pb as node_pb,
     stream::{MessageData, RawMessageData, Sequence, StreamId, StreamMessage},
 };
 use futures::Stream;

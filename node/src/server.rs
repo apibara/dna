@@ -4,7 +4,7 @@ use std::{net::SocketAddr, pin::Pin, sync::Arc, time::Duration};
 
 use apibara_core::{
     application::pb as app_pb,
-    node::pb as node_pb,
+    node::v1alpha1::pb as node_pb,
     stream::{Sequence, StreamMessage},
 };
 use futures::Stream;
