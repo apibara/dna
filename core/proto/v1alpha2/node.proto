@@ -1,0 +1,103 @@
+// Apibara Node service.
+syntax = "proto3";
+
+package apibara.node.v1alpha2;
+
+import "google/protobuf/any.proto";
+
+service Node {
+  // Get information about the node and its status.
+  rpc Status(StatusRequest) returns (StatusResponse);
+
+  // Stream data from the node.
+  rpc StreamData(stream StreamDataRequest) returns (stream StreamDataResponse);
+}
+
+// Status request. It's empty.
+message StatusRequest {}
+
+// Status response. Returns information about the node's stream.
+message StatusResponse {
+  oneof message {
+    SyncingStatus syncing = 1;
+    SyncedStatus synced = 2;
+    NotStartedStatus not_started = 3;
+  }
+}
+
+// Node is syncing with their sources.
+message SyncingStatus {
+  // The latest sequence number.
+  uint64 sequence = 1;
+  // The syncing status of each input.
+  repeated InputSyncingStatus inputs = 2;
+}
+
+// Syncing status of the node's input.
+message InputSyncingStatus {
+  // Latest sequence number.
+  uint64 head = 1;
+  // Latest indexed sequenced number.
+  uint64 indexed = 2;
+}
+
+// Node is fully synced.
+message SyncedStatus {
+  // The latest sequence number.
+  uint64 sequence = 1;
+}
+
+// Node didn't start syncing.
+message NotStartedStatus {}
+
+// Request data to be streamed.
+message StreamDataRequest {
+  // Used by the client to uniquely identify a stream.
+  // All streams use `stream_id = 0` by default.
+  optional uint64 stream_id = 1;
+  // Start streaming from the provided cursor.
+  bytes starting_cursor = 2;
+  // Return data with the specified finality.
+  // If not specified, defaults to `DATA_STATUS_ACCEPTED`.
+  optional DataFinality finality = 3;
+  // Return data according to the stream-specific filter.
+  google.protobuf.Any filter = 4;
+}
+
+// Contains the data requested from the client.
+message StreamDataResponse {
+  // The stream id.
+  uint64 stream_id = 1;
+  oneof message {
+    Invalidate Invalidate = 2;
+    Data data = 3;
+    Heartbeat heartbeat = 4;
+  }
+}
+
+// Data finality.
+enum DataFinality {
+  DATA_STATUS_UNKNOWN = 0;
+  // Data was received, but is not part of the canonical chain yet.
+  DATA_STATUS_PENDING = 1;
+  // Data is now part of the canonical chain, but could still be invalidated.
+  DATA_STATUS_ACCEPTED = 2;
+  // Data is finalized and cannot be invalidated.
+  DATA_STATUS_FINALIZED = 3;
+}
+
+// Invalidate data after the given cursor.
+message Invalidate { bytes cursor = 1; }
+
+// A batch of data.
+message Data {
+  // Cursor of the last item in the batch.
+  bytes end_cursor = 1;
+  // The finality status of the data in the batch.
+  DataFinality finality = 2;
+  // The stream data.
+  repeated bytes data = 3;
+}
+
+// Sent to clients to check if stream is still connected.
+message Heartbeat {}
