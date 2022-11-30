@@ -2,7 +2,7 @@
 
 use std::{sync::Arc, time::Duration};
 
-use apibara_core::node::pb;
+use apibara_core::node::v1alpha1::pb;
 use apibara_node::db::{
     libmdbx::{Environment, EnvironmentKind, Error as MdbxError},
     tables, MdbxTransactionExt,

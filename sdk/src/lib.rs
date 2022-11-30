@@ -10,5 +10,5 @@ pub use apibara_node::node;
 /// Contains protobuf definitions.
 pub mod pb {
     pub use apibara_core::application::pb as application;
-    pub use apibara_core::node::pb as node;
+    pub use apibara_core::node::v1alpha1::pb as node;
 }

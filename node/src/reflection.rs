@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use apibara_core::node::pb::node_file_descriptor_set;
+use apibara_core::node::v1alpha1::pb::node_file_descriptor_set;
 use prost::{DecodeError, Message};
 use prost_types::{FileDescriptorProto, FileDescriptorSet};
 

@@ -2,7 +2,7 @@ use std::{pin::Pin, task};
 
 use apibara_core::{
     application::pb as app_pb,
-    node::pb::{self as node_pb, node_client::NodeClient},
+    node::v1alpha1::pb::{self as node_pb, node_client::NodeClient},
 };
 use futures::{Stream, StreamExt};
 use tokio_stream::StreamMap;
