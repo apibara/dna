@@ -26,7 +26,8 @@ hyper = "0.14.20"
 lazy_static = "1.4.0"
 prost = "0.11.0"
 prost-types = "0.11.1"
-starknet = { git = "https://github.com/xJonathanLEI/starknet-rs", rev = "72702f6465a941bfb53692a1e40944aa797efa85" }
+# starknet = { git = "https://github.com/xJonathanLEI/starknet-rs", rev = "0e45a6f379e60d38d41603a0a2a6e6060a95a092" }
+starknet = { git = "https://github.com/Matthew-Herman/starknet-rs", rev = "3835c4a3a469142b650c06a75666f1b0084f74f0" }
 thiserror = "1.0.32"
 tokio = { version = "1.20.1", features = ["full"] }
 tokio-stream = { version = "0.1.10", features = ["sync"] }

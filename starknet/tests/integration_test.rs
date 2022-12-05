@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use apibara_starknet::{start_starknet_source_node, SequencerGateway};
+use apibara_starknet::{start_starknet_source_node, HttpProvider};
 use starknet::{
     accounts::{Account, Call, SingleOwnerAccount},
     core::{chain_id, types::FieldElement, utils::get_selector_from_name},
@@ -17,8 +17,7 @@ async fn test_starknet_integration() -> Result<()> {
     seed_devnet_transactions(&starknet_provider).await?;
 
     let datadir = tempfile::tempdir()?;
-    let sequencer_gateway =
-        SequencerGateway::from_custom_str("http://localhost:5050/feeder_gateway")?;
+    let sequencer_gateway = HttpProvider::from_custom_str("http://localhost:5050/feeder_gateway")?;
 
     let cts = CancellationToken::new();
 
