@@ -1,22 +1,35 @@
-// # Apibara StarkNet Support
+// Apibara StarkNet Support
 syntax = "proto3";
 
-package apibara.starknet.v1alpha1;
+package apibara.starknet.v1alpha2;
 
 import "google/protobuf/timestamp.proto";
 
 // A StarkNet block.
 message Block {
+  BlockStatus status = 1;
+  BlockHeader header = 2;
+  repeated Transaction transactions = 3;
+  repeated TransactionReceipt receipts = 4;
+}
+
+// Block header.
+message BlockHeader {
   BlockHash block_hash = 1;
   BlockHash parent_block_hash = 2;
   uint64 block_number = 3;
   bytes sequencer_address = 4;
-  bytes state_root = 5;
-  bytes gas_price = 6;
-  google.protobuf.Timestamp timestamp = 7;
-  string starknet_version = 8;
-  repeated Transaction transactions = 9;
-  repeated TransactionReceipt transaction_receipts = 10;
+  bytes new_root = 5;
+  google.protobuf.Timestamp timestamp = 6;
+}
+
+// Status of a block.
+enum BlockStatus {
+  BLOCK_STATUS_UNSPECIFIED = 0;
+  BLOCK_STATUS_PENDING = 1;
+  BLOCK_STATUS_ACCEPTED_ON_L2 = 2;
+  BLOCK_STATUS_ACCEPTED_ON_L1 = 3;
+  BLOCK_STATUS_REJECTED = 4;
 }
 
 // The hash of a StarkNet block.
@@ -33,65 +46,65 @@ enum TransactionStatus {
 }
 
 message Transaction {
+  TransactionMeta meta = 1;
   oneof transaction {
-    InvokeTransaction invoke = 1;
-    DeployTransaction deploy = 2;
-    DeclareTransaction declare = 3;
-    L1HandlerTransaction l1_handler = 4;
-    DeployAccountTransaction deploy_account = 5;
+    InvokeTransactionV0 invoke_v0 = 2;
+    InvokeTransactionV1 invoke_v1 = 3;
+    DeployTransaction deploy = 4;
+    DeclareTransaction declare = 5;
+    L1HandlerTransaction l1_handler = 6;
+    DeployAccountTransaction deploy_account = 7;
   }
 }
 
-message TransactionCommon {
+message TransactionMeta {
   bytes hash = 1;
   bytes max_fee = 2;
   repeated bytes signature = 3;
   bytes nonce = 4;
-  bytes version = 5;
+  uint64 version = 5;
 }
 
-message InvokeTransaction {
-  TransactionCommon common = 1;
-  bytes contract_address = 2;
-  bytes entry_point_selector = 3;
-  repeated bytes calldata = 4;
+message InvokeTransactionV0 {
+  bytes contract_address = 1;
+  bytes entry_point_selector = 2;
+  repeated bytes calldata = 3;
+}
+
+message InvokeTransactionV1 {
+  bytes sender_address = 1;
+  repeated bytes calldata = 2;
 }
 
 message DeclareTransaction {
-  TransactionCommon common = 1;
-  bytes class_hash = 2;
-  bytes sender_address = 3;
+  bytes class_hash = 1;
+  bytes sender_address = 2;
 }
 
 message DeployTransaction {
-  TransactionCommon common = 1;
   repeated bytes constructor_calldata = 2;
-  bytes contract_address = 3;
-  bytes contract_address_salt = 4;
-  bytes class_hash = 5;
+  bytes contract_address_salt = 3;
+  bytes class_hash = 4;
 }
 
 message L1HandlerTransaction {
-  TransactionCommon common = 1;
   bytes contract_address = 2;
   bytes entry_point_selector = 3;
   repeated bytes calldata = 4;
 }
 
 message DeployAccountTransaction {
-  TransactionCommon common = 1;
   repeated bytes constructor_calldata = 2;
-  bytes contract_address = 3;
-  bytes contract_address_salt = 4;
-  bytes class_hash = 5;
+  bytes contract_address_salt = 3;
+  bytes class_hash = 4;
 }
 
 message TransactionReceipt {
   bytes transaction_hash = 1;
   uint64 transaction_index = 2;
   bytes actual_fee = 3;
-  ExecutionResources execution_resources = 4;
-  L1ToL2Message l1_to_l2_consumed_message = 5;
+  // ExecutionResources execution_resources = 4;
+  // L1ToL2Message l1_to_l2_consumed_message = 5;
   repeated L2ToL1Message l2_to_l1_messages = 6;
   repeated Event events = 7;
 }
@@ -120,9 +133,8 @@ message L1ToL2Message {
 }
 
 message L2ToL1Message {
-  bytes from_address = 1;
-  bytes to_address = 2;
-  repeated bytes payload = 3;
+  bytes to_address = 1;
+  repeated bytes payload = 2;
 }
 
 message Event {

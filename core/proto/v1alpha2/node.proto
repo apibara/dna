@@ -3,8 +3,6 @@ syntax = "proto3";
 
 package apibara.node.v1alpha2;
 
-import "google/protobuf/any.proto";
-
 service Node {
   // Get information about the node and its status.
   rpc Status(StatusRequest) returns (StatusResponse);
@@ -61,7 +59,7 @@ message StreamDataRequest {
   // If not specified, defaults to `DATA_STATUS_ACCEPTED`.
   optional DataFinality finality = 3;
   // Return data according to the stream-specific filter.
-  google.protobuf.Any filter = 4;
+  bytes filter = 4;
 }
 
 // Contains the data requested from the client.
