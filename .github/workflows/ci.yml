@@ -17,7 +17,7 @@ jobs:
     strategy:
       matrix:
         os:
-        - ubuntu-latest
+        - ubuntu-22.04
         check:
         - fmt
         - clippy
@@ -63,9 +63,9 @@ jobs:
         binary:
         - apibara-starknet
         job:
-        - os: ubuntu-latest
+        - os: ubuntu-22.04
           target: x86_64-unknown-linux-gnu
-        - os: ubuntu-latest
+        - os: ubuntu-22.04
           target: aarch64-unknown-linux-gnu
         - os: macos-latest
           target: x86_64-apple-darwin
@@ -127,7 +127,7 @@ jobs:
 
   docker_build:
     name: build docker image ${{ matrix.image.binary }}, target=${{ matrix.target.rust }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     needs:
     - build_binaries
     - check
@@ -182,7 +182,7 @@ jobs:
   docker_publish:
     name: publish docker image ${{ matrix.image }}
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     needs: docker_build
     strategy:
       matrix:
@@ -236,7 +236,7 @@ jobs:
     name: update preview release
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: docker_publish
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     permissions: write-all
     steps:
     - name: checkout sources
@@ -262,7 +262,7 @@ jobs:
     name: publish preview binaries, binary=${{ matrix.binary }}, target=${{ matrix.target }}
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: update_preview_release
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     permissions: write-all
     strategy:
       matrix:
