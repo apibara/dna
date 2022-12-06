@@ -291,6 +291,11 @@ where
                 self.block_tx.send(message)?;
             }
         }
+        debug!(
+            current_block_number = %state.current_block_number,
+            head_height = %head_height,
+            "check sleep condition"
+        );
         if state.current_block_number == head_height + 1 {
             tokio::time::sleep(state.sync_sleep_interval).await;
         }
