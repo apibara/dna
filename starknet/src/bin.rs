@@ -38,7 +38,7 @@ async fn start(start_matches: &ArgMatches) -> Result<()> {
         }
     })?;
 
-    node.build()?.start(cts.clone()).await;
+    node.build()?.start(cts.clone()).await?;
 
     Ok(())
 }
