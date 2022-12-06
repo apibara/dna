@@ -156,7 +156,7 @@ jobs:
     - name: create dockerfile
       run: |
         touch Dockerfile
-        echo "FROM ${{ matrix.target.debian }}/debian:11.4-slim" >> Dockerfile
+        echo "FROM ${{ matrix.target.debian }}/debian:bookworm-slim" >> Dockerfile
         echo "COPY ${{ matrix.image.binary }} /usr/local/bin/${{ matrix.image.binary }}" >> Dockerfile
         echo 'RUN ["chmod", "+x", "/usr/local/bin/${{ matrix.image.binary }}"]' >> Dockerfile
         echo 'CMD ["/usr/local/bin/${{ matrix.image.binary }}"]' >> Dockerfile
