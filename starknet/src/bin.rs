@@ -30,7 +30,7 @@ async fn start(start_matches: &ArgMatches) -> Result<()> {
     };
 
     let poll_interval = start_matches.get_one::<u64>("poll-interval").unwrap(); // safe to unwrap as format is checked by clap
-    let poll_interval = Duration::from_millis(*poll_interval);
+    let poll_interval = Duration::from_secs(*poll_interval);
 
     // Setup cancellation for graceful shutdown
     let cts = CancellationToken::new();
