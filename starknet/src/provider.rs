@@ -1,11 +1,11 @@
 //! Connect to the sequencer gateway.
 use starknet::{
-    core::types::{FieldElement, FromByteArrayError},
+    core::types::{state_update, FieldElement, FromByteArrayError},
     providers::jsonrpc,
 };
 use url::Url;
 
-use crate::core::{pb::v1alpha2, BlockHash};
+use crate::core::{pb::v1alpha2, BlockHash, GlobalBlockId, InvalidBlockHashSize};
 
 #[derive(Debug, Clone)]
 pub enum BlockId {
@@ -19,7 +19,16 @@ pub enum BlockId {
 pub trait Provider {
     type Error: std::error::Error + Send + Sync + 'static;
 
+    /// Get the most recent accepted block number and hash.
+    async fn get_head(&self) -> Result<GlobalBlockId, Self::Error>;
+
+    /// Get a specific block.
     async fn get_block(&self, id: &BlockId) -> Result<v1alpha2::Block, Self::Error>;
+
+    /// Get state update for a specific block.
+    async fn get_state_update(&self, id: &BlockId) -> Result<v1alpha2::StateUpdate, Self::Error>;
+
+    /// Get receipt for a specific transaction.
     async fn get_transaction_receipt(
         &self,
         hash: &[u8],
@@ -43,6 +52,10 @@ pub enum HttpProviderError {
     UnexpectedPendingBlock,
     #[error("expected pending block, but received non pending block")]
     ExpectedPendingBlock,
+    #[error("failed to parse block id")]
+    InvalidBlockId(#[from] FromByteArrayError),
+    #[error("failed to parse block hash")]
+    InvalidBlockHash(#[from] InvalidBlockHashSize),
 }
 
 impl HttpProvider {
@@ -60,8 +73,19 @@ impl Provider for HttpProvider {
     type Error = HttpProviderError;
 
     #[tracing::instrument(skip(self))]
+    async fn get_head(&self) -> Result<GlobalBlockId, Self::Error> {
+        let hash_and_number = self
+            .provider
+            .block_hash_and_number()
+            .await
+            .map_err(|err| HttpProviderError::Provider(Box::new(err)))?;
+        let hash = (&hash_and_number.block_hash).try_into()?;
+        Ok(GlobalBlockId::new(hash_and_number.block_number, hash))
+    }
+
+    #[tracing::instrument(skip(self))]
     async fn get_block(&self, id: &BlockId) -> Result<v1alpha2::Block, Self::Error> {
-        let block_id = id.try_into().unwrap();
+        let block_id = id.try_into()?;
         let block = self
             .provider
             .get_block_with_txs(&block_id)
@@ -83,6 +107,18 @@ impl Provider for HttpProvider {
                 todo!()
             }
         }
+    }
+
+    #[tracing::instrument(skip(self))]
+    async fn get_state_update(&self, id: &BlockId) -> Result<v1alpha2::StateUpdate, Self::Error> {
+        let block_id = id.try_into()?;
+        let state_update = self
+            .provider
+            .get_state_update(&block_id)
+            .await
+            .map_err(|err| HttpProviderError::Provider(Box::new(err)))?
+            .into();
+        Ok(state_update)
     }
 
     #[tracing::instrument(skip(self, hash))]
@@ -138,6 +174,7 @@ impl From<jsonrpc::models::BlockWithTxs> for v1alpha2::Block {
             header: Some(header),
             transactions,
             receipts: Vec::default(),
+            state_update: None,
         }
     }
 }
@@ -536,5 +573,85 @@ impl<'a> TryFrom<TransactionHash<'a>> for FieldElement {
         let mut buf = [0; 32];
         buf[..hash_len].copy_from_slice(value.0);
         FieldElement::from_bytes_be(&buf)
+    }
+}
+
+impl From<jsonrpc::models::StateUpdate> for v1alpha2::StateUpdate {
+    fn from(update: jsonrpc::models::StateUpdate) -> Self {
+        let new_root = update.new_root.to_bytes_be().to_vec();
+        let old_root = update.old_root.to_bytes_be().to_vec();
+        let state_diff = update.state_diff.into();
+        v1alpha2::StateUpdate {
+            new_root,
+            old_root,
+            state_diff: Some(state_diff),
+        }
+    }
+}
+
+impl From<jsonrpc::models::StateDiff> for v1alpha2::StateDiff {
+    fn from(diff: jsonrpc::models::StateDiff) -> Self {
+        let storage_diffs = diff.storage_diffs.iter().map(|d| d.into()).collect();
+        let declared_contracts = diff
+            .declared_contract_hashes
+            .iter()
+            .map(|d| d.into())
+            .collect();
+        let deployed_contracts = diff.deployed_contracts.iter().map(|d| d.into()).collect();
+        let nonces = diff.nonces.iter().map(|d| d.into()).collect();
+        v1alpha2::StateDiff {
+            storage_diffs,
+            declared_contracts,
+            deployed_contracts,
+            nonces,
+        }
+    }
+}
+
+impl From<&jsonrpc::models::ContractStorageDiffItem> for v1alpha2::StorageDiff {
+    fn from(diff: &jsonrpc::models::ContractStorageDiffItem) -> Self {
+        let contract_address = diff.address.to_bytes_be().to_vec();
+        let storage_entries = diff.storage_entries.iter().map(|e| e.into()).collect();
+        v1alpha2::StorageDiff {
+            contract_address,
+            storage_entries,
+        }
+    }
+}
+
+impl From<&jsonrpc::models::StorageEntry> for v1alpha2::StorageEntry {
+    fn from(diff: &jsonrpc::models::StorageEntry) -> Self {
+        let key = diff.key.to_bytes_be().to_vec();
+        let value = diff.value.to_bytes_be().to_vec();
+        v1alpha2::StorageEntry { key, value }
+    }
+}
+
+impl From<&FieldElement> for v1alpha2::DeclaredContract {
+    fn from(diff: &FieldElement) -> Self {
+        let class_hash = diff.to_bytes_be().to_vec();
+        v1alpha2::DeclaredContract { class_hash }
+    }
+}
+
+impl From<&jsonrpc::models::DeployedContractItem> for v1alpha2::DeployedContract {
+    fn from(diff: &jsonrpc::models::DeployedContractItem) -> Self {
+        let contract_address = diff.address.to_bytes_be().to_vec();
+        let class_hash = diff.class_hash.to_bytes_be().to_vec();
+        v1alpha2::DeployedContract {
+            contract_address,
+            class_hash,
+        }
+    }
+}
+
+impl From<&jsonrpc::models::NonceUpdate> for v1alpha2::NonceUpdate {
+    fn from(diff: &jsonrpc::models::NonceUpdate) -> Self {
+        let contract_address = diff.contract_address.to_bytes_be().to_vec();
+        let nonce = diff.nonce.to_bytes_be().to_vec();
+        v1alpha2::NonceUpdate {
+            contract_address,
+            nonce,
+        }
     }
 }

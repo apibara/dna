@@ -8,6 +8,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::info;
 
 use crate::{
+    db::tables,
     ingestion::{BlockIngestion, BlockIngestionError},
     provider::{HttpProviderError, Provider},
     HttpProvider,
@@ -27,6 +28,8 @@ where
 pub enum StarkNetNodeError {
     #[error("failed while ingesting blocks")]
     BlockIngestion(BlockIngestionError),
+    #[error("database operation failed")]
+    Database(#[from] libmdbx::Error),
 }
 
 impl<G, E> StarkNetNode<G, E>
@@ -50,10 +53,11 @@ where
     }
 
     /// Starts the node.
-    pub async fn start(self, ct: CancellationToken) {
+    pub async fn start(self, ct: CancellationToken) -> Result<(), StarkNetNodeError> {
         info!("starting starknet node");
+        self.ensure_tables()?;
 
-        let block_ingestion = BlockIngestion::new(self.sequencer_provider.clone());
+        let block_ingestion = BlockIngestion::new(self.sequencer_provider.clone(), self.db.clone());
 
         let mut block_ingestion_handle = tokio::spawn({
             let ct = ct.clone();
@@ -70,6 +74,13 @@ where
             }
         }
         todo!()
+    }
+
+    fn ensure_tables(&self) -> Result<(), StarkNetNodeError> {
+        let txn = self.db.begin_rw_txn()?;
+        tables::ensure(&txn)?;
+        txn.commit()?;
+        Ok(())
     }
 }
 

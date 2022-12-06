@@ -119,6 +119,7 @@ dependencies = [
  "assert_matches",
  "backoff",
  "byte-unit",
+ "byteorder",
  "chrono",
  "clap",
  "ctrlc",

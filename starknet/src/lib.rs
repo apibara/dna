@@ -1,4 +1,5 @@
 pub mod core;
+pub mod db;
 pub mod head;
 pub mod ingestion;
 pub mod node;
