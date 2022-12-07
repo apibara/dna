@@ -12,6 +12,7 @@ use tracing::{debug, info};
 use crate::{
     core::{pb::v1alpha2, BlockHash, GlobalBlockId},
     db::tables,
+    ingestion::finalized::FinalizedBlockIngestion,
     provider::{BlockId, Provider},
 };
 
@@ -38,15 +39,9 @@ where
     }
 
     pub async fn start(self, ct: CancellationToken) -> Result<(), BlockIngestionError> {
-        let current_head = self
-            .provider
-            .get_head()
-            .map_err(BlockIngestionError::provider)
-            .await?;
-
         let latest_indexed = match self.storage.latest_indexed_block()? {
             Some(block) => block,
-            None => self.ingest_genesis_block(ct.clone()).await?,
+            None => self.ingest_genesis_block().await?,
         };
 
         info!(
@@ -54,14 +49,17 @@ where
             "latest indexed block"
         );
 
-        todo!()
+        self.into_finalized_block_ingestion()
+            .start(latest_indexed, ct)
+            .await
     }
 
-    #[tracing::instrument(skip(self, ct))]
-    async fn ingest_genesis_block(
-        &self,
-        ct: CancellationToken,
-    ) -> Result<GlobalBlockId, BlockIngestionError> {
+    fn into_finalized_block_ingestion(self) -> FinalizedBlockIngestion<G, E> {
+        FinalizedBlockIngestion::new(self.provider, self.storage, self.downloader)
+    }
+
+    #[tracing::instrument(skip(self))]
+    async fn ingest_genesis_block(&self) -> Result<GlobalBlockId, BlockIngestionError> {
         info!("ingest genesis block");
         let block_id = BlockId::Number(0);
         let block = self
@@ -80,33 +78,5 @@ where
         txn.commit()?;
         self.storage.update_canonical_block(&global_id)?;
         Ok(global_id)
-    }
-
-    #[tracing::instrument(skip(self, ct))]
-    async fn ingest_block_by_number(
-        &self,
-        block_number: u64,
-        ct: CancellationToken,
-    ) -> Result<(), BlockIngestionError> {
-        let block_id = BlockId::Number(block_number);
-        let block = self
-            .provider
-            .get_block(&block_id)
-            .await
-            .map_err(|err| BlockIngestionError::Provider(Box::new(err)))?;
-
-        // check block contains header and hash.
-        let block_header = block
-            .header
-            .ok_or(BlockIngestionError::MissingBlockHeader)?;
-        let block_hash = block_header
-            .block_hash
-            .ok_or(BlockIngestionError::MissingBlockHash)?;
-
-        // store block header
-        // store block body (transactions)
-        // retrieve and store block receipts
-
-        todo!()
     }
 }
