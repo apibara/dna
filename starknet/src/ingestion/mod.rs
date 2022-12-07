@@ -1,6 +1,7 @@
 mod chain;
 mod downloader;
 mod error;
+mod finalized;
 mod started;
 mod storage;
 

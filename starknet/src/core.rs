@@ -41,6 +41,12 @@ pub mod pb {
                 write!(f, "0x{}", hex::encode(&self.hash))
             }
         }
+
+        impl BlockStatus {
+            pub fn is_finalized(&self) -> bool {
+                *self == BlockStatus::AcceptedOnL1
+            }
+        }
     }
 }
 

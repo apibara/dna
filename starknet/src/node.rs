@@ -70,7 +70,11 @@ where
         });
 
         tokio::select! {
-            _ = &mut block_ingestion_handle => {
+            ret = &mut block_ingestion_handle => {
+                info!(
+                    result = ?ret,
+                    "block ingestion terminated"
+                );
             }
         }
         todo!()
