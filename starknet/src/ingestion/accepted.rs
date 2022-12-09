@@ -51,11 +51,24 @@ where
             "start ingesting accepted blocks"
         );
 
+        // TODO: check if block was reorged while offline.
+
         let mut current_head = self.refresh_head().await?;
 
         debug!(
             current_head = %current_head,
             "got current head"
+        );
+
+        // if we're in the accepted block ingestion, there must be at least one finalized block
+        let mut finalized_block = self
+            .storage
+            .latest_finalized_block()?
+            .ok_or(BlockIngestionError::InconsistentDatabase)?;
+
+        debug!(
+            finalized_block = %finalized_block,
+            "got finalized block"
         );
 
         let mut previous_block = latest_indexed;
@@ -71,6 +84,17 @@ where
                 if new_current_head != current_head {
                     current_head = new_current_head;
                     info!(current_head = %current_head, "refreshed head");
+
+                    while let Some(new_finalized_block) = self
+                        .refresh_finalized_block_status(finalized_block.number() + 1)
+                        .await?
+                    {
+                        info!(
+                            block_id = %new_finalized_block,
+                            "refreshed finalized block"
+                        );
+                        finalized_block = new_finalized_block
+                    }
                     continue;
                 }
                 let sleep = tokio::time::sleep(self.config.head_refresh_interval);
@@ -110,6 +134,29 @@ where
             .await
             .map_err(BlockIngestionError::provider)?;
         Ok(current_head)
+    }
+
+    #[tracing::instrument(skip(self))]
+    async fn refresh_finalized_block_status(
+        &self,
+        number: u64,
+    ) -> Result<Option<GlobalBlockId>, BlockIngestionError> {
+        let global_id = self.storage.canonical_block_id_by_number(number)?;
+        let block_id = BlockId::Hash(*global_id.hash());
+        let block = self
+            .provider
+            .get_block(&block_id)
+            .await
+            .map_err(BlockIngestionError::provider)?;
+
+        if !block.status().is_finalized() {
+            return Ok(None);
+        }
+
+        let mut txn = self.storage.begin_txn()?;
+        txn.write_status(&global_id, block.status())?;
+        txn.commit()?;
+        Ok(Some(global_id))
     }
 
     #[tracing::instrument(skip(self))]

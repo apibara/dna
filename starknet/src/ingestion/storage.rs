@@ -33,6 +33,7 @@ impl<E: EnvironmentKind> IngestionStorage<E> {
         IngestionStorage { db }
     }
 
+    /// Returns the id of the last block that was inserted in the canonical chain.
     pub fn latest_indexed_block(&self) -> Result<Option<GlobalBlockId>, BlockIngestionError> {
         let txn = self.db.begin_ro_txn()?;
         let mut cursor = txn.open_table::<tables::CanonicalChainTable>()?.cursor()?;
@@ -45,6 +46,45 @@ impl<E: EnvironmentKind> IngestionStorage<E> {
         };
         txn.commit()?;
         Ok(block_id)
+    }
+
+    pub fn canonical_block_id_by_number(
+        &self,
+        number: u64,
+    ) -> Result<GlobalBlockId, BlockIngestionError> {
+        let txn = self.db.begin_ro_txn()?;
+        let mut cursor = txn.open_table::<tables::CanonicalChainTable>()?.cursor()?;
+        let (_, block_hash) = cursor
+            .seek_exact(&number)?
+            .ok_or(BlockIngestionError::BlockNotCanonical)?;
+        let block_hash = (&block_hash).try_into()?;
+        let block_id = GlobalBlockId::new(number, block_hash);
+        txn.commit()?;
+        Ok(block_id)
+    }
+
+    /// Returns the id of the last block that was finalized.
+    pub fn latest_finalized_block(&self) -> Result<Option<GlobalBlockId>, BlockIngestionError> {
+        let txn = self.db.begin_ro_txn()?;
+        let mut canon_cursor = txn.open_table::<tables::CanonicalChainTable>()?.cursor()?;
+        let mut status_cursor = txn.open_table::<tables::BlockStatusTable>()?.cursor()?;
+        let mut maybe_block_id = canon_cursor.last()?;
+        while let Some((block_num, block_hash)) = maybe_block_id {
+            let block_hash = (&block_hash).try_into()?;
+            let block_id = GlobalBlockId::new(block_num, block_hash);
+            let (_, status) = status_cursor
+                .seek_exact(&block_id)?
+                .ok_or(BlockIngestionError::InconsistentDatabase)?;
+
+            if status.status().is_finalized() {
+                txn.commit()?;
+                return Ok(Some(block_id));
+            }
+
+            maybe_block_id = canon_cursor.prev()?;
+        }
+        txn.commit()?;
+        Ok(None)
     }
 
     pub fn update_canonical_block(

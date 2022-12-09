@@ -16,6 +16,10 @@ pub enum BlockIngestionError {
     MissingBlockHash,
     #[error("transaction is missing data")]
     MalformedTransaction,
+    #[error("database is in an inconsistent state")]
+    InconsistentDatabase,
+    #[error("tried to access a block as canonical, but it's not")]
+    BlockNotCanonical,
     #[error(transparent)]
     InvalidBlockHash(#[from] InvalidBlockHashSize),
     #[error(transparent)]
