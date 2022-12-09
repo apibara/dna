@@ -1,23 +1,23 @@
 //! Ingest finalized block data.
-use std::{error::Error, sync::Arc, time::Duration};
+use std::sync::Arc;
 
-use apibara_node::db::{
-    libmdbx::{Environment, EnvironmentKind, Error as MdbxError},
-    MdbxRWTransactionExt,
-};
-use futures::{stream, StreamExt, TryFutureExt};
+use apibara_node::db::libmdbx::EnvironmentKind;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info};
 
 use crate::{
-    core::{pb::v1alpha2, BlockHash, GlobalBlockId},
-    db::tables,
+    core::GlobalBlockId,
+    ingestion::accepted::AcceptedBlockIngestion,
     provider::{BlockId, Provider},
 };
 
-use super::{downloader::Downloader, error::BlockIngestionError, storage::IngestionStorage};
+use super::{
+    config::BlockIngestionConfig, downloader::Downloader, error::BlockIngestionError,
+    storage::IngestionStorage,
+};
 
 pub struct FinalizedBlockIngestion<G: Provider + Send, E: EnvironmentKind> {
+    config: BlockIngestionConfig,
     provider: Arc<G>,
     downloader: Downloader<G>,
     storage: IngestionStorage<E>,
@@ -26,7 +26,7 @@ pub struct FinalizedBlockIngestion<G: Provider + Send, E: EnvironmentKind> {
 #[derive(Debug)]
 enum IngestResult {
     Ingested(GlobalBlockId),
-    TransitionToAccepted,
+    TransitionToAccepted(GlobalBlockId),
 }
 
 impl<G, E> FinalizedBlockIngestion<G, E>
@@ -34,8 +34,14 @@ where
     G: Provider + Send,
     E: EnvironmentKind,
 {
-    pub fn new(provider: Arc<G>, storage: IngestionStorage<E>, downloader: Downloader<G>) -> Self {
+    pub fn new(
+        provider: Arc<G>,
+        storage: IngestionStorage<E>,
+        config: BlockIngestionConfig,
+    ) -> Self {
+        let downloader = Downloader::new(provider.clone(), config.rpc_concurrency);
         FinalizedBlockIngestion {
+            config,
             provider,
             storage,
             downloader,
@@ -54,7 +60,7 @@ where
 
         let mut current_block = latest_indexed;
 
-        loop {
+        let latest_indexed = loop {
             if ct.is_cancelled() {
                 return Ok(());
             }
@@ -64,11 +70,19 @@ where
                 IngestResult::Ingested(global_id) => {
                     current_block = global_id;
                 }
-                IngestResult::TransitionToAccepted => {
-                    todo!()
+                IngestResult::TransitionToAccepted(global_id) => {
+                    info!(
+                        block_id = %global_id,
+                        "transition to ingest accepted"
+                    );
+                    break current_block;
                 }
             }
-        }
+        };
+
+        AcceptedBlockIngestion::new(self.provider, self.storage, self.config)
+            .start(latest_indexed, ct)
+            .await
     }
 
     #[tracing::instrument(skip(self))]
@@ -87,11 +101,11 @@ where
             .await
             .map_err(BlockIngestionError::provider)?;
 
-        if !block.status().is_finalized() {
-            return Ok(IngestResult::TransitionToAccepted);
-        }
-
         let global_id = GlobalBlockId::from_block(&block)?;
+
+        if !block.status().is_finalized() {
+            return Ok(IngestResult::TransitionToAccepted(global_id));
+        }
 
         let mut txn = self.storage.begin_txn()?;
         self.downloader

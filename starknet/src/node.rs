@@ -9,7 +9,7 @@ use tracing::info;
 
 use crate::{
     db::tables,
-    ingestion::{BlockIngestion, BlockIngestionError},
+    ingestion::{BlockIngestion, BlockIngestionConfig, BlockIngestionError},
     provider::{HttpProviderError, Provider},
     HttpProvider,
 };
@@ -57,7 +57,12 @@ where
         info!("starting starknet node");
         self.ensure_tables()?;
 
-        let block_ingestion = BlockIngestion::new(self.sequencer_provider.clone(), self.db.clone());
+        // TODO: config from command line
+        let block_ingestion = BlockIngestion::new(
+            self.sequencer_provider.clone(),
+            self.db.clone(),
+            BlockIngestionConfig::default(),
+        );
 
         let mut block_ingestion_handle = tokio::spawn({
             let ct = ct.clone();

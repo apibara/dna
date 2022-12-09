@@ -2,10 +2,11 @@ use std::fmt::{Debug, Display};
 
 use starknet::core::types::{FieldElement, FromByteArrayError};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub struct BlockHash([u8; 32]);
 
 /// Global identifier for blocks.
+#[derive(Copy, Clone, PartialEq)]
 pub struct GlobalBlockId(u64, BlockHash);
 
 #[derive(Debug, thiserror::Error)]

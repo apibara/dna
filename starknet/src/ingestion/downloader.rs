@@ -3,8 +3,7 @@
 use std::sync::Arc;
 
 use apibara_node::db::libmdbx::EnvironmentKind;
-use futures::{stream, StreamExt, TryFutureExt};
-use tracing::{debug, info};
+use futures::{stream, StreamExt};
 
 use crate::{
     core::{pb::v1alpha2, GlobalBlockId},
@@ -84,7 +83,7 @@ where
             .into_iter()
             .collect::<Result<Vec<_>, BlockIngestionError>>()?;
 
-        let block_id = BlockId::Hash(global_id.hash().clone());
+        let block_id = BlockId::Hash(*global_id.hash());
         let state_update = self
             .provider
             .get_state_update(&block_id)

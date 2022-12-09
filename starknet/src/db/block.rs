@@ -26,7 +26,7 @@ impl TableKey for BlockHash {
     type Encoded = [u8; 32];
 
     fn encode(&self) -> Self::Encoded {
-        self.clone().into_bytes()
+        (*self).into_bytes()
     }
 
     fn decode(b: &[u8]) -> Result<Self, KeyDecodeError> {

@@ -1,24 +1,23 @@
 //! First step of block ingestion.
-use std::{error::Error, sync::Arc, time::Duration};
+use std::sync::Arc;
 
-use apibara_node::db::{
-    libmdbx::{Environment, EnvironmentKind, Error as MdbxError},
-    MdbxRWTransactionExt,
-};
-use futures::{stream, StreamExt, TryFutureExt};
+use apibara_node::db::libmdbx::EnvironmentKind;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, info};
+use tracing::info;
 
 use crate::{
-    core::{pb::v1alpha2, BlockHash, GlobalBlockId},
-    db::tables,
+    core::GlobalBlockId,
     ingestion::finalized::FinalizedBlockIngestion,
     provider::{BlockId, Provider},
 };
 
-use super::{downloader::Downloader, error::BlockIngestionError, storage::IngestionStorage};
+use super::{
+    accepted::AcceptedBlockIngestion, config::BlockIngestionConfig, downloader::Downloader,
+    error::BlockIngestionError, storage::IngestionStorage,
+};
 
 pub struct StartedBlockIngestion<G: Provider + Send, E: EnvironmentKind> {
+    config: BlockIngestionConfig,
     provider: Arc<G>,
     downloader: Downloader<G>,
     storage: IngestionStorage<E>,
@@ -29,9 +28,14 @@ where
     G: Provider + Send,
     E: EnvironmentKind,
 {
-    pub fn new(provider: Arc<G>, storage: IngestionStorage<E>, receipt_concurrency: usize) -> Self {
-        let downloader = Downloader::new(provider.clone(), receipt_concurrency);
+    pub fn new(
+        provider: Arc<G>,
+        storage: IngestionStorage<E>,
+        config: BlockIngestionConfig,
+    ) -> Self {
+        let downloader = Downloader::new(provider.clone(), config.rpc_concurrency);
         StartedBlockIngestion {
+            config,
             provider,
             storage,
             downloader,
@@ -49,13 +53,41 @@ where
             "latest indexed block"
         );
 
-        self.into_finalized_block_ingestion()
-            .start(latest_indexed, ct)
-            .await
+        // check if should jump to accepted ingestion directly based
+        // on the status of the latest indexed block.
+        if self.is_block_accepted(&latest_indexed).await? {
+            self.into_accepted_block_ingestion()
+                .start(latest_indexed, ct)
+                .await
+        } else {
+            self.into_finalized_block_ingestion()
+                .start(latest_indexed, ct)
+                .await
+        }
+    }
+
+    fn into_accepted_block_ingestion(self) -> AcceptedBlockIngestion<G, E> {
+        AcceptedBlockIngestion::new(self.provider, self.storage, self.config)
     }
 
     fn into_finalized_block_ingestion(self) -> FinalizedBlockIngestion<G, E> {
-        FinalizedBlockIngestion::new(self.provider, self.storage, self.downloader)
+        FinalizedBlockIngestion::new(self.provider, self.storage, self.config)
+    }
+
+    async fn is_block_accepted(
+        &self,
+        global_id: &GlobalBlockId,
+    ) -> Result<bool, BlockIngestionError> {
+        let block_id = BlockId::Hash(*global_id.hash());
+        let block = self
+            .provider
+            .get_block(&block_id)
+            .await
+            .map_err(BlockIngestionError::provider)?;
+
+        // blocks can be either finalized (accepted on l1)), accepted (on l2) or aborted.
+        // if a block was aborted, then it was not finalized
+        Ok(!block.status().is_finalized())
     }
 
     #[tracing::instrument(skip(self))]
