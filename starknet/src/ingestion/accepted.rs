@@ -79,7 +79,7 @@ where
                 return Ok(());
             }
 
-            if current_block_number >= current_head.number() {
+            if current_block_number > current_head.number() {
                 let new_current_head = self.refresh_head().await?;
                 if new_current_head != current_head {
                     current_head = new_current_head;
