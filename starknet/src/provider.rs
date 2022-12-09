@@ -1,6 +1,6 @@
 //! Connect to the sequencer gateway.
 use starknet::{
-    core::types::{state_update, FieldElement, FromByteArrayError},
+    core::types::{FieldElement, FromByteArrayError},
     providers::jsonrpc,
 };
 use url::Url;
@@ -100,7 +100,7 @@ impl Provider for HttpProvider {
                 let block = block.into();
                 Ok(block)
             }
-            jsonrpc::models::MaybePendingBlockWithTxs::PendingBlock(block) => {
+            jsonrpc::models::MaybePendingBlockWithTxs::PendingBlock(_block) => {
                 if !id.is_pending() {
                     return Err(HttpProviderError::ExpectedPendingBlock);
                 }

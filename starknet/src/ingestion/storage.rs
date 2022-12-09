@@ -8,8 +8,8 @@ use apibara_node::db::{
 };
 
 use crate::{
+    core::pb::v1alpha2,
     core::GlobalBlockId,
-    core::{pb::v1alpha2, BlockHash},
     db::{self, tables},
 };
 
