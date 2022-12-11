@@ -5,6 +5,63 @@ package apibara.starknet.v1alpha2;
 
 import "google/protobuf/timestamp.proto";
 
+
+// Filter describing what data to return for each block.
+message Filter {
+  repeated TransactionFilter transactions = 1;
+  repeated ReceiptFilter receipts = 2;
+}
+
+// Filter transactions.
+message TransactionFilter {
+  oneof message {
+    DeployTransactionFilter deploy = 4;
+    DeclareTransactionFilter declare = 5;
+  }
+}
+
+// Receive deploy transactions.
+message DeployTransactionFilter {
+  // Filter by contract address salt.
+  bytes contract_address_salt = 1;
+  // Filter by class hash.
+  bytes class_hash = 2;
+}
+
+// Receive declare transactions.
+message DeclareTransactionFilter {
+  // Filter by class hash.
+  bytes class_hash = 1;
+  // Filter by sender address.
+  bytes sender_address = 2;
+}
+
+// Filter receipts.
+message ReceiptFilter {
+  oneof message {
+    L2ToL1MessageFilter l2_to_l1_messages = 2;
+    EventFilter evets = 3;
+  }
+}
+
+// Filter by L2 to L1 messages.
+message L2ToL1MessageFilter {
+  // Filter by destination address.
+  bytes to_address = 1;
+  // Filter payloads that prefix-match the given data.
+  repeated bytes payload = 2;
+}
+
+// Filter by events.
+message EventFilter {
+  // Filter by contract emitting the event.
+  bytes from_address = 1;
+  // Filter keys that prefix-match the given data.
+  repeated bytes keys = 2;
+  // Filter data that prefix-match the given data.
+  repeated bytes data = 3;
+}
+
 // A StarkNet block.
 message Block {
   BlockStatus status = 1;

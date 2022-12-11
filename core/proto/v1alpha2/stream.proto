@@ -3,50 +3,10 @@ syntax = "proto3";
 
 package apibara.node.v1alpha2;
 
-service Node {
-  // Get information about the node and its status.
-  rpc Status(StatusRequest) returns (StatusResponse);
-
+service Stream {
   // Stream data from the node.
   rpc StreamData(stream StreamDataRequest) returns (stream StreamDataResponse);
 }
-
-// Status request. It's empty.
-message StatusRequest {}
-
-// Status response. Returns information about the node's stream.
-message StatusResponse {
-  oneof message {
-    SyncingStatus syncing = 1;
-    SyncedStatus synced = 2;
-    NotStartedStatus not_started = 3;
-  }
-}
-
-// Node is syncing with their sources.
-message SyncingStatus {
-  // The latest sequence number.
-  uint64 sequence = 1;
-  // The syncing status of each input.
-  repeated InputSyncingStatus inputs = 2;
-}
-
-// Syncing status of the node's input.
-message InputSyncingStatus {
-  // Latest sequence number.
-  uint64 head = 1;
-  // Latest indexed sequenced number.
-  uint64 indexed = 2;
-}
-
-// Node is fully synced.
-message SyncedStatus {
-  // The latest sequence number.
-  uint64 sequence = 1;
-}
-
-// Node didn't start syncing.
-message NotStartedStatus {}
 
 // Request data to be streamed.
 message StreamDataRequest {

@@ -9,6 +9,12 @@ pub struct BlockHash([u8; 32]);
 #[derive(Copy, Clone, PartialEq)]
 pub struct GlobalBlockId(u64, BlockHash);
 
+#[derive(Debug, Clone)]
+pub enum IngestionMessage {
+    Finalized(GlobalBlockId),
+    Accepted(GlobalBlockId),
+}
+
 #[derive(Debug, thiserror::Error)]
 #[error("invalid block hash size")]
 pub struct InvalidBlockHashSize {

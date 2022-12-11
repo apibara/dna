@@ -7,6 +7,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build_server(true)
         .file_descriptor_set_path(out_dir.join("node_descriptor.bin"))
         .compile(&["proto/v1alpha1/node.proto"], &["proto"])?;
+
     tonic_build::configure()
         .build_client(true)
         .build_server(true)
