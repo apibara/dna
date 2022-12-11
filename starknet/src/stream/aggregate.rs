@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use apibara_node::db::libmdbx::{self, Environment, EnvironmentKind};
 
-use crate::core::{pb::v1alpha2, GlobalBlockId};
+use crate::core::{pb::starknet::v1alpha2, GlobalBlockId};
 
 pub trait BlockDataAggregator {
     type Error: std::error::Error + Send + Sync + 'static;

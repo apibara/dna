@@ -3,6 +3,8 @@ syntax = "proto3";
 
 package apibara.node.v1alpha2;
 
+import "v1alpha2/starknet.proto";
+
 service Stream {
   // Stream data from the node.
   rpc StreamData(stream StreamDataRequest) returns (stream StreamDataResponse);
@@ -19,7 +21,7 @@ message StreamDataRequest {
   // If not specified, defaults to `DATA_STATUS_ACCEPTED`.
   optional DataFinality finality = 3;
   // Return data according to the stream-specific filter.
-  bytes filter = 4;
+  apibara.starknet.v1alpha2.Filter filter = 4;
 }
 
 // Contains the data requested from the client.
@@ -54,7 +56,7 @@ message Data {
   // The finality status of the data in the batch.
   DataFinality finality = 2;
   // The stream data.
-  repeated bytes data = 3;
+  repeated apibara.starknet.v1alpha2.Block data = 3;
 }
 
 // Sent to clients to check if stream is still connected.

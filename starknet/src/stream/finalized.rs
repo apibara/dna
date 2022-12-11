@@ -6,7 +6,7 @@ use futures::Stream;
 use pin_project::pin_project;
 use tokio_util::sync::CancellationToken;
 
-use crate::core::{IngestionMessage, GlobalBlockId};
+use crate::core::{GlobalBlockId, IngestionMessage};
 
 use super::aggregate::BlockDataAggregator;
 

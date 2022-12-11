@@ -6,6 +6,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build_client(false)
         .build_server(true)
         .file_descriptor_set_path(out_dir.join("starknet_descriptor_v1alpha2.bin"))
-        .compile(&["proto/v1alpha2/starknet.proto"], &["proto"])?;
+        .compile(
+            &[
+                "proto/v1alpha2/stream.proto",
+                "proto/v1alpha2/starknet.proto",
+            ],
+            &["proto"],
+        )?;
     Ok(())
 }

@@ -3,7 +3,7 @@
 use apibara_node::db::Table;
 use prost::Message;
 
-use crate::core::{pb::v1alpha2, GlobalBlockId};
+use crate::core::{pb::starknet::v1alpha2, GlobalBlockId};
 
 /// Store block body.
 #[derive(Debug, Clone, Copy, Default)]

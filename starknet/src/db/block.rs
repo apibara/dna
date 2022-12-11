@@ -6,7 +6,7 @@ use apibara_node::db::{KeyDecodeError, Table, TableKey};
 use byteorder::{BigEndian, ReadBytesExt};
 use prost::Message;
 
-use crate::core::{pb::v1alpha2, BlockHash, GlobalBlockId};
+use crate::core::{pb::starknet::v1alpha2, BlockHash, GlobalBlockId};
 
 /// Store block status.
 #[derive(Debug, Clone, Copy, Default)]
