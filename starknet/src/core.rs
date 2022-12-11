@@ -33,25 +33,40 @@ pub enum InvalidBlock {
 }
 
 pub mod pb {
-    pub mod v1alpha2 {
-        tonic::include_proto!("apibara.starknet.v1alpha2");
+    pub mod starknet {
+        pub mod v1alpha2 {
+            tonic::include_proto!("apibara.starknet.v1alpha2");
 
-        pub(crate) const FILE_DESCRIPTOR_SET: &[u8] =
-            tonic::include_file_descriptor_set!("starknet_descriptor_v1alpha2");
+            pub(crate) const FILE_DESCRIPTOR_SET: &[u8] =
+                tonic::include_file_descriptor_set!("starknet_descriptor_v1alpha2");
 
-        pub fn starknet_file_descriptor_set() -> &'static [u8] {
-            FILE_DESCRIPTOR_SET
-        }
+            pub fn starknet_file_descriptor_set() -> &'static [u8] {
+                FILE_DESCRIPTOR_SET
+            }
 
-        impl std::fmt::Display for BlockHash {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                write!(f, "0x{}", hex::encode(&self.hash))
+            impl std::fmt::Display for BlockHash {
+                fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                    write!(f, "0x{}", hex::encode(&self.hash))
+                }
+            }
+
+            impl BlockStatus {
+                pub fn is_finalized(&self) -> bool {
+                    *self == BlockStatus::AcceptedOnL1
+                }
             }
         }
+    }
 
-        impl BlockStatus {
-            pub fn is_finalized(&self) -> bool {
-                *self == BlockStatus::AcceptedOnL1
+    pub mod stream {
+        pub mod v1alpha2 {
+            tonic::include_proto!("apibara.node.v1alpha2");
+
+            pub(crate) const FILE_DESCRIPTOR_SET: &[u8] =
+                tonic::include_file_descriptor_set!("starknet_descriptor_v1alpha2");
+
+            pub fn stream_file_descriptor_set() -> &'static [u8] {
+                FILE_DESCRIPTOR_SET
             }
         }
     }
@@ -84,7 +99,7 @@ impl GlobalBlockId {
         GlobalBlockId(number, hash)
     }
 
-    pub fn from_block(block: &pb::v1alpha2::Block) -> Result<Self, InvalidBlock> {
+    pub fn from_block(block: &pb::starknet::v1alpha2::Block) -> Result<Self, InvalidBlock> {
         let header = block.header.as_ref().ok_or(InvalidBlock::MissingHeader)?;
         let hash = header
             .block_hash
@@ -120,17 +135,17 @@ impl TryFrom<&FieldElement> for BlockHash {
     }
 }
 
-impl TryFrom<&self::pb::v1alpha2::BlockHash> for BlockHash {
+impl TryFrom<&self::pb::starknet::v1alpha2::BlockHash> for BlockHash {
     type Error = InvalidBlockHashSize;
 
-    fn try_from(value: &self::pb::v1alpha2::BlockHash) -> Result<Self, Self::Error> {
+    fn try_from(value: &self::pb::starknet::v1alpha2::BlockHash) -> Result<Self, Self::Error> {
         BlockHash::from_slice(&value.hash)
     }
 }
 
-impl From<&BlockHash> for self::pb::v1alpha2::BlockHash {
+impl From<&BlockHash> for self::pb::starknet::v1alpha2::BlockHash {
     fn from(h: &BlockHash) -> Self {
-        use self::pb::v1alpha2;
+        use self::pb::starknet::v1alpha2;
 
         let hash = h.as_bytes().to_vec();
 

@@ -5,7 +5,7 @@ use starknet::{
 };
 use url::Url;
 
-use crate::core::{pb::v1alpha2, BlockHash, GlobalBlockId, InvalidBlockHashSize};
+use crate::core::{pb::starknet::v1alpha2, BlockHash, GlobalBlockId, InvalidBlockHashSize};
 
 #[derive(Debug, Clone)]
 pub enum BlockId {

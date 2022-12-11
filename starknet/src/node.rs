@@ -1,4 +1,11 @@
-use std::{fs, marker::PhantomData, path::PathBuf, sync::Arc, time::Duration};
+use std::{
+    fs,
+    marker::PhantomData,
+    net::{AddrParseError, SocketAddr},
+    path::PathBuf,
+    sync::Arc,
+    time::Duration,
+};
 
 use apibara_node::db::{
     libmdbx::{self, Environment, EnvironmentKind},
@@ -11,6 +18,7 @@ use crate::{
     db::tables,
     ingestion::{BlockIngestion, BlockIngestionConfig, BlockIngestionError},
     provider::{HttpProviderError, Provider},
+    server::{Server, ServerError},
     HttpProvider,
 };
 
@@ -30,6 +38,10 @@ pub enum StarkNetNodeError {
     BlockIngestion(BlockIngestionError),
     #[error("database operation failed")]
     Database(#[from] libmdbx::Error),
+    #[error("server error")]
+    Server(#[from] ServerError),
+    #[error("error parsing server address")]
+    AddressParseError(#[from] AddrParseError),
 }
 
 impl<G, E> StarkNetNode<G, E>
@@ -74,15 +86,30 @@ where
             }
         });
 
+        // TODO: configure from command line
+        let server_addr: SocketAddr = "0.0.0.0:7171".parse()?;
+        let server = Server::new(self.db.clone());
+        let mut server_handle = tokio::spawn({
+            let ct = ct.clone();
+            async move {
+                server
+                    .start(server_addr, ct)
+                    .await
+                    .map_err(StarkNetNodeError::Server)
+            }
+        });
+
+        // TODO: based on which handles terminates first, it needs to wait
+        // for the other handle to terminate too.
         tokio::select! {
-            ret = &mut block_ingestion_handle => {
-                info!(
-                    result = ?ret,
-                    "block ingestion terminated"
-                );
+            _ = &mut block_ingestion_handle => {
+            }
+            _ = &mut server_handle => {
             }
         }
-        todo!()
+
+        info!("terminated. bye");
+        Ok(())
     }
 
     fn ensure_tables(&self) -> Result<(), StarkNetNodeError> {

@@ -1,6 +1,6 @@
 //! Canonical chain.
 
-use crate::core::pb::v1alpha2;
+use crate::core::pb::starknet::v1alpha2;
 use apibara_node::db::Table;
 
 /// Store canonical chain.

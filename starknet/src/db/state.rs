@@ -2,7 +2,7 @@
 
 use apibara_node::db::Table;
 
-use crate::core::{pb::v1alpha2, GlobalBlockId};
+use crate::core::{pb::starknet::v1alpha2, GlobalBlockId};
 
 /// Store state updates.
 #[derive(Debug, Clone, Copy, Default)]

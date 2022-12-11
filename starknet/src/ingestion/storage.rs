@@ -8,7 +8,7 @@ use apibara_node::db::{
 };
 
 use crate::{
-    core::pb::v1alpha2,
+    core::pb::starknet::v1alpha2,
     core::GlobalBlockId,
     db::{self, tables},
 };

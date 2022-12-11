@@ -3,6 +3,7 @@ pub mod db;
 pub mod ingestion;
 pub mod node;
 pub mod provider;
+pub mod server;
 pub mod stream;
 
 pub use crate::node::StarkNetNode;

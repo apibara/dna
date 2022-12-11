@@ -6,7 +6,7 @@ use apibara_node::db::libmdbx::EnvironmentKind;
 use futures::{stream, StreamExt};
 
 use crate::{
-    core::{pb::v1alpha2, GlobalBlockId},
+    core::{pb::starknet::v1alpha2, GlobalBlockId},
     provider::{BlockId, Provider},
 };
 
