@@ -25,6 +25,7 @@ futures = "0.3.24"
 hex = "0.4.3"
 hyper = "0.14.20"
 lazy_static = "1.4.0"
+pin-project = "1.0.12"
 prost = "0.11.0"
 prost-types = "0.11.1"
 # starknet = { git = "https://github.com/xJonathanLEI/starknet-rs", rev = "0e45a6f379e60d38d41603a0a2a6e6060a95a092" }
