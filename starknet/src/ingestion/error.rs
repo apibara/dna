@@ -24,6 +24,8 @@ pub enum BlockIngestionError {
     InvalidBlockHash(#[from] InvalidBlockHashSize),
     #[error(transparent)]
     InvalidBlock(#[from] InvalidBlock),
+    #[error("failed to publish an ingestion stream message")]
+    IngestionStreamPublish,
 }
 
 impl BlockIngestionError {
