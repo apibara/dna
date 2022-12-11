@@ -10,12 +10,13 @@ use tracing::{error, info, info_span};
 
 use apibara_node::db::libmdbx::{Environment, EnvironmentKind};
 
-use crate::{core::pb, server::stream::StreamService};
+use crate::{core::pb, ingestion::IngestionStreamClient, server::stream::StreamService};
 
 use self::health::HealthReporter;
 
 pub struct Server<E: EnvironmentKind> {
     db: Arc<Environment<E>>,
+    ingestion: Arc<IngestionStreamClient>,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -32,8 +33,9 @@ impl<E> Server<E>
 where
     E: EnvironmentKind,
 {
-    pub fn new(db: Arc<Environment<E>>) -> Self {
-        Server { db }
+    pub fn new(db: Arc<Environment<E>>, ingestion: IngestionStreamClient) -> Self {
+        let ingestion = Arc::new(ingestion);
+        Server { db, ingestion }
     }
 
     pub async fn start(self, addr: SocketAddr, ct: CancellationToken) -> Result<(), ServerError> {
@@ -51,7 +53,7 @@ where
                 )
                 .build()?;
 
-        let stream_service = StreamService::new().into_service();
+        let stream_service = StreamService::new(self.ingestion).into_service();
 
         info!(addr = %addr, "starting server");
 

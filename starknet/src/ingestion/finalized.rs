@@ -13,7 +13,7 @@ use crate::{
 
 use super::{
     config::BlockIngestionConfig, downloader::Downloader, error::BlockIngestionError,
-    storage::IngestionStorage,
+    storage::IngestionStorage, subscription::IngestionStreamPublisher,
 };
 
 pub struct FinalizedBlockIngestion<G: Provider + Send, E: EnvironmentKind> {
@@ -21,6 +21,7 @@ pub struct FinalizedBlockIngestion<G: Provider + Send, E: EnvironmentKind> {
     provider: Arc<G>,
     downloader: Downloader<G>,
     storage: IngestionStorage<E>,
+    publisher: IngestionStreamPublisher,
 }
 
 #[derive(Debug)]
@@ -38,6 +39,7 @@ where
         provider: Arc<G>,
         storage: IngestionStorage<E>,
         config: BlockIngestionConfig,
+        publisher: IngestionStreamPublisher,
     ) -> Self {
         let downloader = Downloader::new(provider.clone(), config.rpc_concurrency);
         FinalizedBlockIngestion {
@@ -45,6 +47,7 @@ where
             provider,
             storage,
             downloader,
+            publisher,
         }
     }
 
@@ -68,6 +71,7 @@ where
             let next_block_number = current_block.number() + 1;
             match self.ingest_block_by_number(next_block_number).await? {
                 IngestResult::Ingested(global_id) => {
+                    self.publisher.publish_accepted(global_id)?;
                     current_block = global_id;
                 }
                 IngestResult::TransitionToAccepted(global_id) => {
@@ -80,7 +84,7 @@ where
             }
         };
 
-        AcceptedBlockIngestion::new(self.provider, self.storage, self.config)
+        AcceptedBlockIngestion::new(self.provider, self.storage, self.config, self.publisher)
             .start(latest_indexed, ct)
             .await
     }

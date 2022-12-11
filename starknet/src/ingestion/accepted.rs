@@ -12,7 +12,7 @@ use crate::{
 
 use super::{
     config::BlockIngestionConfig, downloader::Downloader, error::BlockIngestionError,
-    storage::IngestionStorage,
+    storage::IngestionStorage, subscription::IngestionStreamPublisher,
 };
 
 pub struct AcceptedBlockIngestion<G: Provider + Send, E: EnvironmentKind> {
@@ -20,6 +20,7 @@ pub struct AcceptedBlockIngestion<G: Provider + Send, E: EnvironmentKind> {
     provider: Arc<G>,
     downloader: Downloader<G>,
     storage: IngestionStorage<E>,
+    publisher: IngestionStreamPublisher,
 }
 
 struct AcceptedBlockIngestionImpl<G: Provider + Send, E: EnvironmentKind> {
@@ -30,6 +31,7 @@ struct AcceptedBlockIngestionImpl<G: Provider + Send, E: EnvironmentKind> {
     provider: Arc<G>,
     downloader: Downloader<G>,
     storage: IngestionStorage<E>,
+    publisher: IngestionStreamPublisher,
 }
 
 enum TickResult {
@@ -51,6 +53,7 @@ where
         provider: Arc<G>,
         storage: IngestionStorage<E>,
         config: BlockIngestionConfig,
+        publisher: IngestionStreamPublisher,
     ) -> Self {
         let downloader = Downloader::new(provider.clone(), config.rpc_concurrency);
         AcceptedBlockIngestion {
@@ -58,6 +61,7 @@ where
             provider,
             storage,
             downloader,
+            publisher,
         }
     }
 
@@ -91,6 +95,7 @@ where
             provider: self.provider,
             storage: self.storage,
             downloader: self.downloader,
+            publisher: self.publisher,
         };
         ingestion.start(ct).await
     }
@@ -187,8 +192,11 @@ where
             .ingest_block_by_number(self.previous.number() + 1)
             .await?;
         if ingest_result.parent_id == self.previous {
+            // update canonical chain and notify subscribers
             self.storage
                 .update_canonical_block(&ingest_result.new_block_id)?;
+            self.publisher
+                .publish_accepted(ingest_result.new_block_id)?;
             self.previous = ingest_result.new_block_id;
             return Ok(TickResult::MoreToSync);
         }

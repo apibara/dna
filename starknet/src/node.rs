@@ -70,7 +70,7 @@ where
         self.ensure_tables()?;
 
         // TODO: config from command line
-        let block_ingestion = BlockIngestion::new(
+        let (block_ingestion_client, block_ingestion) = BlockIngestion::new(
             self.sequencer_provider.clone(),
             self.db.clone(),
             BlockIngestionConfig::default(),
@@ -88,7 +88,7 @@ where
 
         // TODO: configure from command line
         let server_addr: SocketAddr = "0.0.0.0:7171".parse()?;
-        let server = Server::new(self.db.clone());
+        let server = Server::new(self.db.clone(), block_ingestion_client);
         let mut server_handle = tokio::spawn({
             let ct = ct.clone();
             async move {

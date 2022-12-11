@@ -13,7 +13,7 @@ use crate::{
 
 use super::{
     accepted::AcceptedBlockIngestion, config::BlockIngestionConfig, downloader::Downloader,
-    error::BlockIngestionError, storage::IngestionStorage,
+    error::BlockIngestionError, storage::IngestionStorage, subscription::IngestionStreamPublisher,
 };
 
 pub struct StartedBlockIngestion<G: Provider + Send, E: EnvironmentKind> {
@@ -21,6 +21,7 @@ pub struct StartedBlockIngestion<G: Provider + Send, E: EnvironmentKind> {
     provider: Arc<G>,
     downloader: Downloader<G>,
     storage: IngestionStorage<E>,
+    publisher: IngestionStreamPublisher,
 }
 
 impl<G, E> StartedBlockIngestion<G, E>
@@ -32,6 +33,7 @@ where
         provider: Arc<G>,
         storage: IngestionStorage<E>,
         config: BlockIngestionConfig,
+        publisher: IngestionStreamPublisher,
     ) -> Self {
         let downloader = Downloader::new(provider.clone(), config.rpc_concurrency);
         StartedBlockIngestion {
@@ -39,6 +41,7 @@ where
             provider,
             storage,
             downloader,
+            publisher,
         }
     }
 
@@ -67,11 +70,11 @@ where
     }
 
     fn into_accepted_block_ingestion(self) -> AcceptedBlockIngestion<G, E> {
-        AcceptedBlockIngestion::new(self.provider, self.storage, self.config)
+        AcceptedBlockIngestion::new(self.provider, self.storage, self.config, self.publisher)
     }
 
     fn into_finalized_block_ingestion(self) -> FinalizedBlockIngestion<G, E> {
-        FinalizedBlockIngestion::new(self.provider, self.storage, self.config)
+        FinalizedBlockIngestion::new(self.provider, self.storage, self.config, self.publisher)
     }
 
     async fn is_block_accepted(
