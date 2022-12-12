@@ -7,7 +7,7 @@ use tracing_futures::Instrument;
 
 use futures::Stream;
 use tonic::{Request, Response, Streaming};
-use tracing::trace_span;
+use tracing::{info, trace_span};
 
 use crate::{
     core::{pb, GlobalBlockId},

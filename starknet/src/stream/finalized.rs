@@ -48,17 +48,17 @@ where
 
     fn poll_next(
         self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
+        _cx: &mut std::task::Context<'_>,
     ) -> Poll<Option<Self::Item>> {
-        let mut blocks = Vec::with_capacity(100);
+        let mut blocks = Vec::with_capacity(50);
         let mut current_block = self.current_block;
         let this = self.project();
-        for _ in 0..100 {
+        for _ in 0..50 {
             let block = this
                 .aggregator
                 .aggregate_for_block(&current_block)
-                .unwrap()
-                .unwrap();
+                .expect("aggregate for block")
+                .expect("missing aggregated block");
             current_block = this.aggregator.next_block(&current_block).unwrap().unwrap();
             blocks.push(block)
         }

@@ -42,7 +42,7 @@ where
 {
     type Error = R::Error;
 
-    #[tracing::instrument(skip(self))]
+    #[tracing::instrument(level = "trace", skip(self))]
     fn aggregate_for_block(
         &self,
         block_id: &GlobalBlockId,
@@ -67,7 +67,7 @@ where
         Ok(Some(block))
     }
 
-    #[tracing::instrument(skip(self))]
+    #[tracing::instrument(level = "trace", skip(self))]
     fn next_block(&self, block_id: &GlobalBlockId) -> Result<Option<GlobalBlockId>, Self::Error> {
         self.storage.canonical_block_id(block_id.number() + 1)
     }
