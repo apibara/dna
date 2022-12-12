@@ -7,19 +7,20 @@ use tracing::{debug, info};
 
 use crate::{
     core::GlobalBlockId,
+    db::{DatabaseStorage, StorageReader, StorageWriter},
     provider::{BlockId, Provider},
 };
 
 use super::{
     config::BlockIngestionConfig, downloader::Downloader, error::BlockIngestionError,
-    storage::IngestionStorage, subscription::IngestionStreamPublisher,
+    subscription::IngestionStreamPublisher,
 };
 
 pub struct AcceptedBlockIngestion<G: Provider + Send, E: EnvironmentKind> {
     config: BlockIngestionConfig,
     provider: Arc<G>,
     downloader: Downloader<G>,
-    storage: IngestionStorage<E>,
+    storage: DatabaseStorage<E>,
     publisher: IngestionStreamPublisher,
 }
 
@@ -30,7 +31,7 @@ struct AcceptedBlockIngestionImpl<G: Provider + Send, E: EnvironmentKind> {
     config: BlockIngestionConfig,
     provider: Arc<G>,
     downloader: Downloader<G>,
-    storage: IngestionStorage<E>,
+    storage: DatabaseStorage<E>,
     publisher: IngestionStreamPublisher,
 }
 
@@ -51,7 +52,7 @@ where
 {
     pub fn new(
         provider: Arc<G>,
-        storage: IngestionStorage<E>,
+        storage: DatabaseStorage<E>,
         config: BlockIngestionConfig,
         publisher: IngestionStreamPublisher,
     ) -> Self {
@@ -84,7 +85,7 @@ where
         // if we're in the accepted block ingestion, there must be at least one finalized block
         let finalized = self
             .storage
-            .latest_finalized_block()?
+            .highest_finalized_block()?
             .ok_or(BlockIngestionError::InconsistentDatabase)?;
 
         let ingestion = AcceptedBlockIngestionImpl {
@@ -193,8 +194,10 @@ where
             .await?;
         if ingest_result.parent_id == self.previous {
             // update canonical chain and notify subscribers
-            self.storage
-                .update_canonical_block(&ingest_result.new_block_id)?;
+            let mut txn = self.storage.begin_txn()?;
+            txn.update_canonical_chain(&ingest_result.new_block_id)?;
+            txn.commit()?;
+
             self.publisher
                 .publish_accepted(ingest_result.new_block_id)?;
             self.previous = ingest_result.new_block_id;
@@ -223,7 +226,10 @@ where
         &self,
         number: u64,
     ) -> Result<Option<GlobalBlockId>, BlockIngestionError> {
-        let global_id = self.storage.canonical_block_id_by_number(number)?;
+        let global_id = self
+            .storage
+            .canonical_block_id(number)?
+            .ok_or(BlockIngestionError::InconsistentDatabase)?;
         let block_id = BlockId::Hash(*global_id.hash());
         let block = self
             .provider

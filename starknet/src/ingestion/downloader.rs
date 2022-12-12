@@ -7,10 +7,11 @@ use futures::{stream, StreamExt};
 
 use crate::{
     core::{pb::starknet::v1alpha2, GlobalBlockId},
+    db::StorageWriter,
     provider::{BlockId, Provider},
 };
 
-use super::{storage::BlockWriter, BlockIngestionError};
+use super::BlockIngestionError;
 
 pub struct Downloader<G: Provider + Send> {
     provider: Arc<G>,
@@ -28,14 +29,14 @@ where
         }
     }
 
-    pub async fn finish_ingesting_block<'env, 'txn, E>(
+    pub async fn finish_ingesting_block<W: StorageWriter>(
         &self,
         global_id: &GlobalBlockId,
         block: v1alpha2::Block,
-        writer: &mut BlockWriter<'env, 'txn, E>,
+        writer: &mut W,
     ) -> Result<(), BlockIngestionError>
     where
-        E: EnvironmentKind,
+        BlockIngestionError: From<W::Error>,
     {
         // block already contains header, status, and body
         let status = block.status();

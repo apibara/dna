@@ -3,4 +3,7 @@ mod accepted;
 mod aggregate;
 mod finalized;
 
-pub use self::finalized::FinalizedBlockStream;
+pub use self::{
+    aggregate::{BlockDataAggregator, DatabaseBlockDataAggregator},
+    finalized::FinalizedBlockStream,
+};

@@ -4,7 +4,6 @@ mod downloader;
 mod error;
 mod finalized;
 mod started;
-mod storage;
 mod subscription;
 
 use std::sync::Arc;
@@ -12,12 +11,9 @@ use std::sync::Arc;
 use apibara_node::db::libmdbx::{Environment, EnvironmentKind};
 use tokio_util::sync::CancellationToken;
 
-use crate::provider::Provider;
+use crate::{db::DatabaseStorage, provider::Provider};
 
-use self::{
-    started::StartedBlockIngestion, storage::IngestionStorage,
-    subscription::IngestionStreamPublisher,
-};
+use self::{started::StartedBlockIngestion, subscription::IngestionStreamPublisher};
 
 pub use self::{
     config::BlockIngestionConfig,
@@ -29,7 +25,7 @@ pub use self::{
 pub struct BlockIngestion<G: Provider + Send, E: EnvironmentKind> {
     config: BlockIngestionConfig,
     provider: Arc<G>,
-    storage: IngestionStorage<E>,
+    storage: DatabaseStorage<E>,
     publisher: IngestionStreamPublisher,
 }
 
@@ -43,7 +39,7 @@ where
         db: Arc<Environment<E>>,
         config: BlockIngestionConfig,
     ) -> (IngestionStreamClient, Self) {
-        let storage = IngestionStorage::new(db);
+        let storage = DatabaseStorage::new(db);
         let (sub_client, publisher) = IngestionStreamPublisher::new();
 
         let ingestion = BlockIngestion {
