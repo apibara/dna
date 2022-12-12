@@ -13,7 +13,7 @@ use super::tables;
 
 /// An object to read chain data from storage.
 pub trait StorageReader {
-    type Error: std::error::Error + Send + 'static;
+    type Error: std::error::Error + Send + Sync + 'static;
 
     /// Returns the highest accepted block that was indexed.
     fn highest_accepted_block(&self) -> Result<Option<GlobalBlockId>, Self::Error>;
@@ -24,11 +24,34 @@ pub trait StorageReader {
     /// Returns the block id for the block at the given height, or `None` if the
     /// canonical chain is shorter.
     fn canonical_block_id(&self, number: u64) -> Result<Option<GlobalBlockId>, Self::Error>;
+
+    /// Returns the block status for the given block.
+    fn read_status(&self, id: &GlobalBlockId)
+        -> Result<Option<v1alpha2::BlockStatus>, Self::Error>;
+
+    /// Returns the block header for the given block.
+    fn read_header(&self, id: &GlobalBlockId)
+        -> Result<Option<v1alpha2::BlockHeader>, Self::Error>;
+
+    /// Returns all transactions in the given block.
+    fn read_body(&self, id: &GlobalBlockId) -> Result<Vec<v1alpha2::Transaction>, Self::Error>;
+
+    /// Returns all receipts in the given block.
+    fn read_receipts(
+        &self,
+        id: &GlobalBlockId,
+    ) -> Result<Vec<v1alpha2::TransactionReceipt>, Self::Error>;
+
+    /// Returns the state update for the given block.
+    fn read_state_update(
+        &self,
+        id: &GlobalBlockId,
+    ) -> Result<Option<v1alpha2::StateUpdate>, Self::Error>;
 }
 
 /// An object to write chain data to storage in a single transaction.
 pub trait StorageWriter {
-    type Error: std::error::Error + Send + 'static;
+    type Error: std::error::Error + Send + Sync + 'static;
 
     /// Commit writes to storage.
     fn commit(self) -> Result<(), Self::Error>;
@@ -175,6 +198,69 @@ impl<E: EnvironmentKind> StorageReader for DatabaseStorage<E> {
                 Ok(Some(block_id))
             }
         }
+    }
+
+    #[tracing::instrument(skip(self))]
+    fn read_status(
+        &self,
+        id: &GlobalBlockId,
+    ) -> Result<Option<v1alpha2::BlockStatus>, Self::Error> {
+        let txn = self.db.begin_ro_txn()?;
+        let mut cursor = txn.open_cursor::<tables::BlockStatusTable>()?;
+        let status = cursor.seek_exact(id.into())?.map(|t| t.1.status());
+        txn.commit()?;
+        Ok(status)
+    }
+
+    #[tracing::instrument(skip(self))]
+    fn read_header(
+        &self,
+        id: &GlobalBlockId,
+    ) -> Result<Option<v1alpha2::BlockHeader>, Self::Error> {
+        let txn = self.db.begin_ro_txn()?;
+        let mut cursor = txn.open_cursor::<tables::BlockHeaderTable>()?;
+        let header = cursor.seek_exact(id.into())?.map(|t| t.1);
+        txn.commit()?;
+        Ok(header)
+    }
+
+    #[tracing::instrument(skip(self))]
+    fn read_body(&self, id: &GlobalBlockId) -> Result<Vec<v1alpha2::Transaction>, Self::Error> {
+        let txn = self.db.begin_ro_txn()?;
+        let mut cursor = txn.open_cursor::<tables::BlockBodyTable>()?;
+        let transactions = cursor
+            .seek_exact(id.into())?
+            .map(|t| t.1.transactions)
+            .unwrap_or_default();
+        txn.commit()?;
+        Ok(transactions)
+    }
+
+    #[tracing::instrument(skip(self))]
+    fn read_receipts(
+        &self,
+        id: &GlobalBlockId,
+    ) -> Result<Vec<v1alpha2::TransactionReceipt>, Self::Error> {
+        let txn = self.db.begin_ro_txn()?;
+        let mut cursor = txn.open_cursor::<tables::BlockReceiptsTable>()?;
+        let receipts = cursor
+            .seek_exact(id.into())?
+            .map(|t| t.1.receipts)
+            .unwrap_or_default();
+        txn.commit()?;
+        Ok(receipts)
+    }
+
+    #[tracing::instrument(skip(self))]
+    fn read_state_update(
+        &self,
+        id: &GlobalBlockId,
+    ) -> Result<Option<v1alpha2::StateUpdate>, Self::Error> {
+        let txn = self.db.begin_ro_txn()?;
+        let mut cursor = txn.open_cursor::<tables::StateUpdateTable>()?;
+        let state_update = cursor.seek_exact(id.into())?.map(|t| t.1);
+        txn.commit()?;
+        Ok(state_update)
     }
 }
 

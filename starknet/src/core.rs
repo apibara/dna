@@ -153,6 +153,13 @@ impl From<&BlockHash> for self::pb::starknet::v1alpha2::BlockHash {
     }
 }
 
+impl From<&GlobalBlockId> for (u64, self::pb::starknet::v1alpha2::BlockHash) {
+    fn from(id: &GlobalBlockId) -> Self {
+        let hash = id.hash().into();
+        (id.number(), hash)
+    }
+}
+
 impl Display for GlobalBlockId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let hash = hex::encode(self.hash().as_bytes());

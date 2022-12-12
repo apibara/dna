@@ -1,52 +1,62 @@
 //! Implements the node stream service.
 
-use apibara_node::db::libmdbx::{Environment, EnvironmentKind};
 use pin_project::pin_project;
 use std::{pin::Pin, sync::Arc, task::Poll};
+use tokio_stream::wrappers::errors::BroadcastStreamRecvError;
+use tracing_futures::Instrument;
 
 use futures::Stream;
 use tonic::{Request, Response, Streaming};
-use tracing::{debug, debug_span};
-use tracing_futures::Instrument;
+use tracing::trace_span;
 
 use crate::{
-    core::pb,
+    core::{pb, GlobalBlockId},
+    db::StorageReader,
     ingestion::{IngestionStream, IngestionStreamClient},
-    stream::{BlockDataAggregator, DatabaseBlockDataAggregator, FinalizedBlockStream},
+    stream::{DatabaseBlockDataAggregator, FinalizedBlockStream},
 };
 
-pub struct StreamService<E: EnvironmentKind> {
+pub struct StreamService<R: StorageReader> {
     ingestion: Arc<IngestionStreamClient>,
-    db: Arc<Environment<E>>,
+    storage: Arc<R>,
 }
 
-type ClientStream = Streaming<pb::stream::v1alpha2::StreamDataRequest>;
+// type ClientStream = Streaming<pb::stream::v1alpha2::StreamDataRequest>;
 
 #[pin_project]
-pub struct StreamDataStream<E: EnvironmentKind> {
+pub struct StreamDataStream<R: StorageReader> {
     #[pin]
-    client_stream: ClientStream,
-    #[pin]
-    ingestion_stream: IngestionStream,
-    state: StreamDataState<E>,
+    inner: FinalizedBlockStream<
+        DatabaseBlockDataAggregator<R>,
+        IngestionStream,
+        BroadcastStreamRecvError,
+    >,
 }
 
-struct StreamDataState<E: EnvironmentKind> {
-    _phantom: std::marker::PhantomData<E>,
-}
-
-impl<E: EnvironmentKind> StreamService<E> {
-    pub fn new(ingestion: Arc<IngestionStreamClient>, db: Arc<Environment<E>>) -> Self {
-        StreamService { ingestion, db }
+impl<R> StreamService<R>
+where
+    R: StorageReader + Send + Sync + 'static,
+{
+    pub fn new(ingestion: Arc<IngestionStreamClient>, storage: R) -> Self {
+        let storage = Arc::new(storage);
+        StreamService { ingestion, storage }
     }
 
     pub fn into_service(self) -> pb::stream::v1alpha2::stream_server::StreamServer<Self> {
         pb::stream::v1alpha2::stream_server::StreamServer::new(self)
     }
+
+    async fn create_stream(&self, starting_block: GlobalBlockId) -> StreamDataStream<R> {
+        let ingestion_stream = self.ingestion.subscribe().await;
+        StreamDataStream::new(ingestion_stream, self.storage.clone(), starting_block)
+    }
 }
 
 #[tonic::async_trait]
-impl<E: EnvironmentKind> pb::stream::v1alpha2::stream_server::Stream for StreamService<E> {
+impl<R> pb::stream::v1alpha2::stream_server::Stream for StreamService<R>
+where
+    R: StorageReader + Send + Sync + 'static,
+{
     type StreamDataStream = Pin<
         Box<
             dyn Stream<Item = Result<pb::stream::v1alpha2::StreamDataResponse, tonic::Status>>
@@ -57,87 +67,59 @@ impl<E: EnvironmentKind> pb::stream::v1alpha2::stream_server::Stream for StreamS
 
     async fn stream_data(
         &self,
-        request: Request<Streaming<pb::stream::v1alpha2::StreamDataRequest>>,
+        _request: Request<Streaming<pb::stream::v1alpha2::StreamDataRequest>>,
     ) -> Result<Response<Self::StreamDataStream>, tonic::Status> {
-        /*
-        let client_stream = request.into_inner();
-        let ingestion_stream = self.ingestion.subscribe().await;
-        let stream = StreamDataStream::new(client_stream, ingestion_stream, self.db.clone())
-            .instrument(debug_span!("stream_data"));
+        let starting_block = self
+            .storage
+            .canonical_block_id(0)
+            .expect("database")
+            .expect("genesis");
+
+        let stream = self
+            .create_stream(starting_block)
+            .await
+            .instrument(trace_span!("stream_data"));
         Ok(Response::new(Box::pin(stream)))
-        */
-        todo!()
     }
 }
 
-impl<E: EnvironmentKind> StreamDataStream<E> {
+impl<R: StorageReader> StreamDataStream<R> {
     pub fn new(
-        client_stream: ClientStream,
         ingestion_stream: IngestionStream,
-        db: Arc<Environment<E>>,
+        storage: Arc<R>,
+        starting_block: GlobalBlockId,
     ) -> Self {
-        /*
-        let state = StreamDataState::NotConfigured { db };
-        StreamDataStream {
-            client_stream,
-            ingestion_stream,
-            state,
-        }
-        */
-        todo!()
+        let aggregator = DatabaseBlockDataAggregator::new(storage);
+        let inner = FinalizedBlockStream::new(starting_block, aggregator, ingestion_stream);
+        StreamDataStream { inner }
     }
 }
 
-impl<E: EnvironmentKind> Stream for StreamDataStream<E> {
+impl<R: StorageReader> Stream for StreamDataStream<R> {
     type Item = Result<pb::stream::v1alpha2::StreamDataResponse, tonic::Status>;
 
     fn poll_next(
-        mut self: Pin<&mut Self>,
+        self: Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> Poll<Option<Self::Item>> {
         let mut this = self.project();
-
-        match Pin::new(&mut this.client_stream).poll_next(cx) {
-            Poll::Pending => {}
-            Poll::Ready(None) => {
-                debug!("client closed stream");
-                // return Poll::Ready(None)
-            }
-            Poll::Ready(Some(Err(status))) => {
-                debug!(status = ?status, "client error");
-                return Poll::Ready(None);
-            }
-            Poll::Ready(Some(Ok(request))) => {
-                debug!(request = ?request, "client request");
-                // this.state.handle_request(request);
-                // TODO: reconfigured stream
-            }
-        }
-
-        match Pin::new(&mut this.ingestion_stream).poll_next(cx) {
-            Poll::Pending => {}
-            Poll::Ready(None) => {}
-            Poll::Ready(message) => {
-                debug!(message = ?message, "got message");
+        match Pin::new(&mut this.inner).poll_next(cx) {
+            Poll::Pending => Poll::Pending,
+            Poll::Ready(None) => Poll::Ready(None),
+            Poll::Ready(Some(blocks)) => {
+                let data = pb::stream::v1alpha2::Data {
+                    end_cursor: vec![],
+                    finality: pb::stream::v1alpha2::DataFinality::DataStatusFinalized as i32,
+                    data: blocks,
+                };
+                let response = pb::stream::v1alpha2::StreamDataResponse {
+                    stream_id: 0,
+                    message: Some(pb::stream::v1alpha2::stream_data_response::Message::Data(
+                        data,
+                    )),
+                };
+                Poll::Ready(Some(Ok(response)))
             }
         }
-
-        todo!()
     }
 }
-
-/*
-impl<E: EnvironmentKind> StreamDataState<E> {
-    fn handle_request(&mut self, request: pb::stream::v1alpha2::StreamDataRequest) {
-        match self {
-            Self::NotConfigured { db } => {
-                let filter = request.filter.unwrap();
-                let aggregator = DatabaseBlockDataAggregator::new(db.clone(), filter);
-            }
-            _ => todo!()
-        }
-        // TODO: create correct stream
-        todo!()
-    }
-}
-*/
