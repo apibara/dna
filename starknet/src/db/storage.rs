@@ -139,7 +139,7 @@ impl<E: EnvironmentKind> DatabaseStorage<E> {
 impl<E: EnvironmentKind> StorageReader for DatabaseStorage<E> {
     type Error = libmdbx::Error;
 
-    #[tracing::instrument(skip(self))]
+    #[tracing::instrument(level = "trace", skip(self))]
     fn highest_accepted_block(&self) -> Result<Option<GlobalBlockId>, Self::Error> {
         let txn = self.db.begin_ro_txn()?;
         let mut cursor = txn.open_cursor::<tables::CanonicalChainTable>()?;
@@ -154,7 +154,7 @@ impl<E: EnvironmentKind> StorageReader for DatabaseStorage<E> {
         Ok(block_id)
     }
 
-    #[tracing::instrument(skip(self))]
+    #[tracing::instrument(level = "trace", skip(self))]
     fn highest_finalized_block(&self) -> Result<Option<GlobalBlockId>, Self::Error> {
         let txn = self.db.begin_ro_txn()?;
         let mut canon_cursor = txn.open_cursor::<tables::CanonicalChainTable>()?;
@@ -180,7 +180,7 @@ impl<E: EnvironmentKind> StorageReader for DatabaseStorage<E> {
         Ok(None)
     }
 
-    #[tracing::instrument(skip(self))]
+    #[tracing::instrument(level = "trace", skip(self))]
     fn canonical_block_id(&self, number: u64) -> Result<Option<GlobalBlockId>, Self::Error> {
         let txn = self.db.begin_ro_txn()?;
         let mut cursor = txn.open_cursor::<tables::CanonicalChainTable>()?;
@@ -200,7 +200,7 @@ impl<E: EnvironmentKind> StorageReader for DatabaseStorage<E> {
         }
     }
 
-    #[tracing::instrument(skip(self))]
+    #[tracing::instrument(level = "trace", skip(self))]
     fn read_status(
         &self,
         id: &GlobalBlockId,
@@ -212,7 +212,7 @@ impl<E: EnvironmentKind> StorageReader for DatabaseStorage<E> {
         Ok(status)
     }
 
-    #[tracing::instrument(skip(self))]
+    #[tracing::instrument(level = "trace", skip(self))]
     fn read_header(
         &self,
         id: &GlobalBlockId,
@@ -224,7 +224,7 @@ impl<E: EnvironmentKind> StorageReader for DatabaseStorage<E> {
         Ok(header)
     }
 
-    #[tracing::instrument(skip(self))]
+    #[tracing::instrument(level = "trace", skip(self))]
     fn read_body(&self, id: &GlobalBlockId) -> Result<Vec<v1alpha2::Transaction>, Self::Error> {
         let txn = self.db.begin_ro_txn()?;
         let mut cursor = txn.open_cursor::<tables::BlockBodyTable>()?;
@@ -236,7 +236,7 @@ impl<E: EnvironmentKind> StorageReader for DatabaseStorage<E> {
         Ok(transactions)
     }
 
-    #[tracing::instrument(skip(self))]
+    #[tracing::instrument(level = "trace", skip(self))]
     fn read_receipts(
         &self,
         id: &GlobalBlockId,
@@ -251,7 +251,7 @@ impl<E: EnvironmentKind> StorageReader for DatabaseStorage<E> {
         Ok(receipts)
     }
 
-    #[tracing::instrument(skip(self))]
+    #[tracing::instrument(level = "trace", skip(self))]
     fn read_state_update(
         &self,
         id: &GlobalBlockId,
@@ -267,13 +267,13 @@ impl<E: EnvironmentKind> StorageReader for DatabaseStorage<E> {
 impl<'env, 'txn, E: EnvironmentKind> StorageWriter for DatabaseStorageWriter<'env, 'txn, E> {
     type Error = libmdbx::Error;
 
-    #[tracing::instrument(skip(self))]
+    #[tracing::instrument(level = "trace", skip(self))]
     fn commit(self) -> Result<(), Self::Error> {
         self.txn.commit()?;
         Ok(())
     }
 
-    #[tracing::instrument(skip(self))]
+    #[tracing::instrument(level = "trace", skip(self))]
     fn update_canonical_chain(&mut self, id: &GlobalBlockId) -> Result<(), Self::Error> {
         let number = id.number();
         let hash = id.hash().into();
@@ -282,7 +282,7 @@ impl<'env, 'txn, E: EnvironmentKind> StorageWriter for DatabaseStorageWriter<'en
         Ok(())
     }
 
-    #[tracing::instrument(skip(self, status))]
+    #[tracing::instrument(level = "trace", skip(self, status))]
     fn write_status(
         &mut self,
         id: &GlobalBlockId,
@@ -296,7 +296,7 @@ impl<'env, 'txn, E: EnvironmentKind> StorageWriter for DatabaseStorageWriter<'en
         Ok(())
     }
 
-    #[tracing::instrument(skip(self, header))]
+    #[tracing::instrument(level = "trace", skip(self, header))]
     fn write_header(
         &mut self,
         id: &GlobalBlockId,
@@ -307,7 +307,7 @@ impl<'env, 'txn, E: EnvironmentKind> StorageWriter for DatabaseStorageWriter<'en
         Ok(())
     }
 
-    #[tracing::instrument(skip(self, transactions))]
+    #[tracing::instrument(level = "trace", skip(self, transactions))]
     fn write_body(
         &mut self,
         id: &GlobalBlockId,
@@ -319,7 +319,7 @@ impl<'env, 'txn, E: EnvironmentKind> StorageWriter for DatabaseStorageWriter<'en
         Ok(())
     }
 
-    #[tracing::instrument(skip(self, receipts))]
+    #[tracing::instrument(level = "trace", skip(self, receipts))]
     fn write_receipts(
         &mut self,
         id: &GlobalBlockId,
@@ -331,7 +331,7 @@ impl<'env, 'txn, E: EnvironmentKind> StorageWriter for DatabaseStorageWriter<'en
         Ok(())
     }
 
-    #[tracing::instrument(skip(self, state_update))]
+    #[tracing::instrument(level = "trace", skip(self, state_update))]
     fn write_state_update(
         &mut self,
         id: &GlobalBlockId,
