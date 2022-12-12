@@ -7,20 +7,21 @@ use tracing::{debug, info};
 
 use crate::{
     core::GlobalBlockId,
+    db::{DatabaseStorage, StorageReader, StorageWriter},
     ingestion::accepted::AcceptedBlockIngestion,
     provider::{BlockId, Provider},
 };
 
 use super::{
     config::BlockIngestionConfig, downloader::Downloader, error::BlockIngestionError,
-    storage::IngestionStorage, subscription::IngestionStreamPublisher,
+    subscription::IngestionStreamPublisher,
 };
 
 pub struct FinalizedBlockIngestion<G: Provider + Send, E: EnvironmentKind> {
     config: BlockIngestionConfig,
     provider: Arc<G>,
     downloader: Downloader<G>,
-    storage: IngestionStorage<E>,
+    storage: DatabaseStorage<E>,
     publisher: IngestionStreamPublisher,
 }
 
@@ -37,7 +38,7 @@ where
 {
     pub fn new(
         provider: Arc<G>,
-        storage: IngestionStorage<E>,
+        storage: DatabaseStorage<E>,
         config: BlockIngestionConfig,
         publisher: IngestionStreamPublisher,
     ) -> Self {
@@ -115,9 +116,8 @@ where
         self.downloader
             .finish_ingesting_block(&global_id, block, &mut txn)
             .await?;
+        txn.update_canonical_chain(&global_id)?;
         txn.commit()?;
-
-        self.storage.update_canonical_block(&global_id)?;
 
         info!(
             block_id = %global_id,

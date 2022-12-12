@@ -57,6 +57,11 @@ pub trait MdbxEnvironmentExt<E: EnvironmentKind> {
 pub trait MdbxTransactionExt<K: TransactionKind, E: EnvironmentKind> {
     /// Open a database accessed through a type-safe [MdbxTable].
     fn open_table<T: Table>(&self) -> MdbxResult<MdbxTable<'_, T, K, E>>;
+
+    /// Shorthand for `open_table()?.cursor()?;`
+    ///
+    /// Cannot use `cursor` as name since it's a method on transaction.
+    fn open_cursor<T: Table>(&self) -> MdbxResult<TableCursor<'_, T, K>>;
 }
 
 /// Extension methods over mdbx RW transactions.
@@ -140,6 +145,10 @@ where
             db: database,
             phantom: Default::default(),
         })
+    }
+
+    fn open_cursor<T: Table>(&self) -> MdbxResult<TableCursor<'_, T, K>> {
+        self.open_table::<T>()?.cursor()
     }
 }
 
@@ -370,4 +379,14 @@ where
         return Ok(Some((k.0, v.0)));
     }
     Ok(None)
+}
+
+pub trait MdbxErrorExt {
+    fn decode_error<E: std::error::Error + Send + Sync + 'static>(err: E) -> MdbxError;
+}
+
+impl MdbxErrorExt for MdbxError {
+    fn decode_error<E: std::error::Error + Send + Sync + 'static>(err: E) -> MdbxError {
+        MdbxError::DecodeError(Box::new(err))
+    }
 }

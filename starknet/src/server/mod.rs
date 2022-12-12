@@ -53,7 +53,7 @@ where
                 )
                 .build()?;
 
-        let stream_service = StreamService::new(self.ingestion).into_service();
+        let stream_service = StreamService::new(self.ingestion, self.db.clone()).into_service();
 
         info!(addr = %addr, "starting server");
 

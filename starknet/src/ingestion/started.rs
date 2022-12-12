@@ -7,20 +7,21 @@ use tracing::info;
 
 use crate::{
     core::GlobalBlockId,
+    db::{DatabaseStorage, StorageReader, StorageWriter},
     ingestion::finalized::FinalizedBlockIngestion,
     provider::{BlockId, Provider},
 };
 
 use super::{
     accepted::AcceptedBlockIngestion, config::BlockIngestionConfig, downloader::Downloader,
-    error::BlockIngestionError, storage::IngestionStorage, subscription::IngestionStreamPublisher,
+    error::BlockIngestionError, subscription::IngestionStreamPublisher,
 };
 
 pub struct StartedBlockIngestion<G: Provider + Send, E: EnvironmentKind> {
     config: BlockIngestionConfig,
     provider: Arc<G>,
     downloader: Downloader<G>,
-    storage: IngestionStorage<E>,
+    storage: DatabaseStorage<E>,
     publisher: IngestionStreamPublisher,
 }
 
@@ -31,7 +32,7 @@ where
 {
     pub fn new(
         provider: Arc<G>,
-        storage: IngestionStorage<E>,
+        storage: DatabaseStorage<E>,
         config: BlockIngestionConfig,
         publisher: IngestionStreamPublisher,
     ) -> Self {
@@ -46,7 +47,7 @@ where
     }
 
     pub async fn start(self, ct: CancellationToken) -> Result<(), BlockIngestionError> {
-        let latest_indexed = match self.storage.latest_indexed_block()? {
+        let latest_indexed = match self.storage.highest_accepted_block()? {
             Some(block) => block,
             None => self.ingest_genesis_block().await?,
         };
@@ -110,8 +111,8 @@ where
         self.downloader
             .finish_ingesting_block(&global_id, block, &mut txn)
             .await?;
+        txn.update_canonical_chain(&global_id)?;
         txn.commit()?;
-        self.storage.update_canonical_block(&global_id)?;
         Ok(global_id)
     }
 }

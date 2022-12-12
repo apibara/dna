@@ -11,7 +11,8 @@ mod table;
 
 pub use self::cli::{node_data_dir, DatabaseClapCommandExt};
 pub use self::mdbx::{
-    MdbxEnvironmentExt, MdbxRWTransactionExt, MdbxTable, MdbxTransactionExt, TableCursor,
+    MdbxEnvironmentExt, MdbxErrorExt, MdbxRWTransactionExt, MdbxTable, MdbxTransactionExt,
+    TableCursor,
 };
 pub use self::table::{ByteVec, DupSortTable, KeyDecodeError, Table, TableKey};
 
