@@ -10,7 +10,9 @@ use tracing::{error, info, info_span};
 
 use apibara_node::db::libmdbx::{Environment, EnvironmentKind};
 
-use crate::{core::pb, ingestion::IngestionStreamClient, server::stream::StreamService};
+use crate::{
+    core::pb, db::DatabaseStorage, ingestion::IngestionStreamClient, server::stream::StreamService,
+};
 
 use self::health::HealthReporter;
 
@@ -53,7 +55,8 @@ where
                 )
                 .build()?;
 
-        let stream_service = StreamService::new(self.ingestion, self.db.clone()).into_service();
+        let storage = DatabaseStorage::new(self.db);
+        let stream_service = StreamService::new(self.ingestion, storage).into_service();
 
         info!(addr = %addr, "starting server");
 
