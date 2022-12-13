@@ -11,7 +11,8 @@ message Filter {
   bool include_header = 1;
   repeated TransactionFilter transactions = 2;
   repeated ReceiptFilter receipts = 3;
-  bool include_state_update = 4;
+  repeated EventFilter events = 4;
+  bool include_state_update = 5;
 }
 
 // Filter transactions.
@@ -117,6 +118,7 @@ message Block {
   repeated Transaction transactions = 3;
   repeated TransactionReceipt receipts = 4;
   StateUpdate state_update = 5;
+  repeated Event events = 6;
 }
 
 // Block header.

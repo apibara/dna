@@ -136,3 +136,11 @@ impl DeployAccountTransactionFilter {
         }
     }
 }
+
+impl EventFilter {
+    pub fn matches(&self, event: &Event) -> bool {
+        self.from_address.matches(&event.from_address)
+            && self.keys.prefix_matches(&event.keys)
+            && self.data.prefix_matches(&event.data)
+    }
+}
