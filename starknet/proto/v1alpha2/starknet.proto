@@ -15,11 +15,35 @@ message Filter {
 }
 
 // Filter transactions.
+//
+// An empty transaction filter matches _any_ transaction.
 message TransactionFilter {
-  oneof message {
-    DeployTransactionFilter deploy = 4;
-    DeclareTransactionFilter declare = 5;
+  oneof filter {
+    InvokeTransactionV0Filter invoke_v0 = 1;
+    InvokeTransactionV1Filter invoke_v1 = 2;
+    DeployTransactionFilter deploy = 3;
+    DeclareTransactionFilter declare = 4;
+    L1HandlerTransactionFilter l1_handler = 5;
+    DeployAccountTransactionFilter deploy_account = 6;
   }
+}
+
+// Receive invoke transactions, v0
+message InvokeTransactionV0Filter {
+  // Filter by contract address.
+  bytes contract_address = 1;
+  // Filter by selector.
+  bytes entry_point_selector = 2;
+  // Filter by calldata prefix.
+  repeated bytes calldata = 3;
+}
+
+// Receive invoke transactions, v1
+message InvokeTransactionV1Filter {
+  // Filter by sender address.
+  bytes sender_address = 1;
+  // Filter by calldata prefix.
+  repeated bytes calldata = 3;
 }
 
 // Receive deploy transactions.
@@ -28,6 +52,8 @@ message DeployTransactionFilter {
   bytes contract_address_salt = 1;
   // Filter by class hash.
   bytes class_hash = 2;
+  // Filter by calldata prefix.
+  repeated bytes constructor_calldata = 4;
 }
 
 // Receive declare transactions.
@@ -36,6 +62,26 @@ message DeclareTransactionFilter {
   bytes class_hash = 1;
   // Filter by sender address.
   bytes sender_address = 2;
+}
+
+// Receive l1 handler transactions.
+message L1HandlerTransactionFilter {
+  // Filter by contract address.
+  bytes contract_address = 1;
+  // Filter by selector.
+  bytes entry_point_selector = 2;
+  // Filter by calldata prefix.
+  repeated bytes calldata = 3;
+}
+
+// Receive deploy account transactions.
+message DeployAccountTransactionFilter {
+  // Filter by contract address salt.
+  bytes contract_address_salt = 1;
+  // Filter by class hash.
+  bytes class_hash = 2;
+  // Filter by calldata prefix.
+  repeated bytes constructor_calldata = 4;
 }
 
 // Filter receipts.
