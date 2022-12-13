@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+package apibara.starknet.v1alpha2;
+
+// StarkNet field element.
+//
+// Encoded as 4 packed uint64
+message FieldElement {
+  fixed64 lo_lo = 1;
+  fixed64 lo_hi = 2;
+  fixed64 hi_lo = 3;
+  fixed64 hi_hi = 4;
+}

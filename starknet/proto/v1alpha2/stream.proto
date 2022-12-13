@@ -4,6 +4,7 @@ syntax = "proto3";
 package apibara.node.v1alpha2;
 
 import "v1alpha2/starknet.proto";
+import "v1alpha2/filter.proto";
 
 service Stream {
   // Stream data from the node.

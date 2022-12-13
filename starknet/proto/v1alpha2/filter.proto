@@ -1,0 +1,140 @@
+syntax = "proto3";
+
+package apibara.starknet.v1alpha2;
+
+import "v1alpha2/types.proto";
+
+// Filter describing what data to return for each block.
+message Filter {
+  // Header information.
+  HeaderFilter header = 1;
+  // Transactions.
+  repeated TransactionFilter transactions = 2;
+  // Messages from L2 to L1.
+  repeated L2ToL1MessageFilter messages = 3;
+  // Emitted events.
+  repeated EventFilter events = 4;
+  // State update.
+  StateUpdateFilter state_update = 5;
+}
+
+// Filter header.
+//
+// This filter matches _all_ headers, so it's only necessary
+// to include it in the filter to receive header data.
+message HeaderFilter {
+}
+
+// Filter transactions.
+//
+// An empty transaction filter matches _any_ transaction.
+message TransactionFilter {
+  oneof filter {
+    InvokeTransactionV0Filter invoke_v0 = 1;
+    InvokeTransactionV1Filter invoke_v1 = 2;
+    DeployTransactionFilter deploy = 3;
+    DeclareTransactionFilter declare = 4;
+    L1HandlerTransactionFilter l1_handler = 5;
+    DeployAccountTransactionFilter deploy_account = 6;
+  }
+}
+
+// Receive invoke transactions, v0
+message InvokeTransactionV0Filter {
+  // Filter by contract address.
+  FieldElement contract_address = 1;
+  // Filter by selector.
+  FieldElement entry_point_selector = 2;
+  // Filter by calldata prefix.
+  repeated FieldElement calldata = 3;
+}
+
+// Receive invoke transactions, v1
+message InvokeTransactionV1Filter {
+  // Filter by sender address.
+  FieldElement sender_address = 1;
+  // Filter by calldata prefix.
+  repeated FieldElement calldata = 3;
+}
+
+// Receive deploy transactions.
+message DeployTransactionFilter {
+  // Filter by contract address salt.
+  FieldElement contract_address_salt = 1;
+  // Filter by class hash.
+  FieldElement class_hash = 2;
+  // Filter by calldata prefix.
+  repeated FieldElement constructor_calldata = 4;
+}
+
+// Receive declare transactions.
+message DeclareTransactionFilter {
+  // Filter by class hash.
+  FieldElement class_hash = 1;
+  // Filter by sender address.
+  FieldElement sender_address = 2;
+}
+
+// Receive l1 handler transactions.
+message L1HandlerTransactionFilter {
+  // Filter by contract address.
+  FieldElement contract_address = 1;
+  // Filter by selector.
+  FieldElement entry_point_selector = 2;
+  // Filter by calldata prefix.
+  repeated FieldElement calldata = 3;
+}
+
+// Receive deploy account transactions.
+message DeployAccountTransactionFilter {
+  // Filter by contract address salt.
+  FieldElement contract_address_salt = 1;
+  // Filter by class hash.
+  FieldElement class_hash = 2;
+  // Filter by calldata prefix.
+  repeated FieldElement constructor_calldata = 4;
+}
+
+// Filter L2 to L1 messages.
+message L2ToL1MessageFilter {
+  // Filter by destination address.
+  FieldElement to_address = 1;
+  // Filter payloads that prefix-match the given data.
+  repeated FieldElement payload = 2;
+}
+
+// Filter events.
+message EventFilter {
+  // Filter by contract emitting the event.
+  FieldElement from_address = 1;
+  // Filter keys that prefix-match the given data.
+  repeated FieldElement keys = 2;
+  // Filter data that prefix-match the given data.
+  repeated FieldElement data = 3;
+}
+
+// Filter state update data.
+message StateUpdateFilter {
+  repeated StorageDiffFilter storage_diffs = 1;
+  repeated DeclaredContractFilter declared_contracts = 2;
+  repeated DeployedContractFilter deployed_contracts = 3;
+  repeated NonceUpdateFilter nonces = 4;
+}
+
+message StorageDiffFilter {
+  FieldElement contract_address = 1;
+}
+
+message DeclaredContractFilter {
+  FieldElement class_hash = 1;
+}
+
+message DeployedContractFilter {
+  FieldElement contract_address = 1;
+  FieldElement class_hash = 2;
+}
+
+message NonceUpdateFilter {
+  FieldElement contract_address = 1;
+  FieldElement nonce = 2;
+}

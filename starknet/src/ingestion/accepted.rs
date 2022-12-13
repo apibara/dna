@@ -275,7 +275,7 @@ where
             .parent_block_hash
             .as_ref()
             .ok_or(BlockIngestionError::MissingBlockHash)?
-            .try_into()?;
+            .into();
         let parent_id = GlobalBlockId::new(header.block_number - 1, parent_hash);
 
         // write block data to storage

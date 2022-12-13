@@ -9,7 +9,7 @@ pub struct CanonicalChainTable {}
 
 impl Table for CanonicalChainTable {
     type Key = u64;
-    type Value = v1alpha2::BlockHash;
+    type Value = v1alpha2::FieldElement;
 
     fn db_name() -> &'static str {
         "CanonicalChain"
