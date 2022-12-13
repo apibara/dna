@@ -218,6 +218,7 @@ where
                 "updated finalized block"
             );
         }
+        self.publisher.publish_finalized(self.finalized)?;
         Ok(())
     }
 

@@ -72,7 +72,7 @@ where
             let next_block_number = current_block.number() + 1;
             match self.ingest_block_by_number(next_block_number).await? {
                 IngestResult::Ingested(global_id) => {
-                    self.publisher.publish_accepted(global_id)?;
+                    self.publisher.publish_finalized(global_id)?;
                     current_block = global_id;
                 }
                 IngestResult::TransitionToAccepted(global_id) => {

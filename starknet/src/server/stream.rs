@@ -5,7 +5,7 @@ use std::{pin::Pin, sync::Arc, task::Poll};
 use tokio_stream::wrappers::errors::BroadcastStreamRecvError;
 use tracing_futures::Instrument;
 
-use futures::Stream;
+use futures::{Stream, TryFutureExt, TryStreamExt};
 use tonic::{Request, Response, Streaming};
 use tracing::{info, trace_span};
 
@@ -46,9 +46,18 @@ where
         pb::stream::v1alpha2::stream_server::StreamServer::new(self)
     }
 
-    async fn create_stream(&self, starting_block: GlobalBlockId) -> StreamDataStream<R> {
+    async fn create_stream(
+        &self,
+        starting_block: GlobalBlockId,
+        filter: pb::starknet::v1alpha2::Filter,
+    ) -> StreamDataStream<R> {
         let ingestion_stream = self.ingestion.subscribe().await;
-        StreamDataStream::new(ingestion_stream, self.storage.clone(), starting_block)
+        StreamDataStream::new(
+            ingestion_stream,
+            self.storage.clone(),
+            starting_block,
+            filter,
+        )
     }
 }
 
@@ -67,16 +76,29 @@ where
 
     async fn stream_data(
         &self,
-        _request: Request<Streaming<pb::stream::v1alpha2::StreamDataRequest>>,
+        request: Request<Streaming<pb::stream::v1alpha2::StreamDataRequest>>,
     ) -> Result<Response<Self::StreamDataStream>, tonic::Status> {
+        let mut client_stream = request.into_inner();
+        let request = client_stream
+            .try_next()
+            .await
+            .map_err(|_| tonic::Status::internal("failed to read client stream"))?
+            .ok_or_else(|| tonic::Status::internal("failed to read client stream"))?;
+
+        // TODO
+        // - starting block should come from `request.starting_cursor`
+        // - assign `stream_id`
+        // - use `finality`
         let starting_block = self
             .storage
             .canonical_block_id(0)
             .expect("database")
             .expect("genesis");
 
+        let filter = request.filter.unwrap_or_default();
+
         let stream = self
-            .create_stream(starting_block)
+            .create_stream(starting_block, filter)
             .await
             .instrument(trace_span!("stream_data"));
         Ok(Response::new(Box::pin(stream)))
@@ -88,9 +110,16 @@ impl<R: StorageReader> StreamDataStream<R> {
         ingestion_stream: IngestionStream,
         storage: Arc<R>,
         starting_block: GlobalBlockId,
+        filter: pb::starknet::v1alpha2::Filter,
     ) -> Self {
-        let aggregator = DatabaseBlockDataAggregator::new(storage);
-        let inner = FinalizedBlockStream::new(starting_block, aggregator, ingestion_stream);
+        let highest_finalized = storage.highest_finalized_block().unwrap().unwrap();
+        let aggregator = DatabaseBlockDataAggregator::new(storage, filter);
+        let inner = FinalizedBlockStream::new(
+            starting_block,
+            highest_finalized,
+            aggregator,
+            ingestion_stream,
+        );
         StreamDataStream { inner }
     }
 }
@@ -106,12 +135,11 @@ impl<R: StorageReader> Stream for StreamDataStream<R> {
         match Pin::new(&mut this.inner).poll_next(cx) {
             Poll::Pending => Poll::Pending,
             Poll::Ready(None) => Poll::Ready(None),
-            Poll::Ready(Some(blocks)) => {
-                let data = pb::stream::v1alpha2::Data {
-                    end_cursor: vec![],
-                    finality: pb::stream::v1alpha2::DataFinality::DataStatusFinalized as i32,
-                    data: blocks,
-                };
+            Poll::Ready(Some(Err(err))) => {
+                let err = Err(tonic::Status::internal("stream fail"));
+                return Poll::Ready(Some(err));
+            }
+            Poll::Ready(Some(Ok(data))) => {
                 let response = pb::stream::v1alpha2::StreamDataResponse {
                     stream_id: 0,
                     message: Some(pb::stream::v1alpha2::stream_data_response::Message::Data(

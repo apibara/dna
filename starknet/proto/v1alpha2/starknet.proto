@@ -8,8 +8,10 @@ import "google/protobuf/timestamp.proto";
 
 // Filter describing what data to return for each block.
 message Filter {
-  repeated TransactionFilter transactions = 1;
-  repeated ReceiptFilter receipts = 2;
+  bool include_header = 1;
+  repeated TransactionFilter transactions = 2;
+  repeated ReceiptFilter receipts = 3;
+  bool include_state_update = 4;
 }
 
 // Filter transactions.
@@ -40,7 +42,7 @@ message DeclareTransactionFilter {
 message ReceiptFilter {
   oneof message {
     L2ToL1MessageFilter l2_to_l1_messages = 2;
-    EventFilter evets = 3;
+    EventFilter events = 3;
   }
 }
 
