@@ -175,6 +175,7 @@ impl From<jsonrpc::models::BlockWithTxs> for v1alpha2::Block {
             transactions,
             receipts: Vec::default(),
             state_update: None,
+            events: Vec::default(),
         }
     }
 }

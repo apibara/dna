@@ -105,6 +105,26 @@ where
         todo!()
     }
 
+    fn events(&self, block_id: &GlobalBlockId) -> Result<Vec<v1alpha2::Event>, R::Error> {
+        if self.filter.events.len() == 0 {
+            return Ok(Vec::default());
+        }
+
+        let receipts = self.storage.read_receipts(block_id)?;
+        let mut events = Vec::default();
+        for receipt in receipts {
+            for event in receipt.events {
+                for filter in &self.filter.events {
+                    if filter.matches(&event) {
+                        events.push(event);
+                        break;
+                    }
+                }
+            }
+        }
+        Ok(events)
+    }
+
     fn state_update(
         &self,
         block_id: &GlobalBlockId,
@@ -142,6 +162,7 @@ where
         let header = self.header(block_id)?;
         let transactions = self.transactions(block_id)?;
         let receipts = self.receipts(block_id)?;
+        let events = self.events(block_id)?;
         let state_update = self.state_update(block_id)?;
 
         let block = v1alpha2::Block {
@@ -150,6 +171,7 @@ where
             state_update,
             transactions,
             receipts,
+            events,
         };
 
         Ok(Some(block))
