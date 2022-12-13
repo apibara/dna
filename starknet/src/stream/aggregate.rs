@@ -2,10 +2,6 @@
 
 use std::sync::Arc;
 
-use apibara_core::node::v1alpha1;
-use apibara_node::db::libmdbx::{self, Environment, EnvironmentKind};
-use starknet::core::types::state_update;
-
 use crate::{
     core::{pb::starknet::v1alpha2, GlobalBlockId},
     db::StorageReader,
@@ -89,7 +85,14 @@ where
         if self.filter.transactions.len() == 0 {
             return Ok(Vec::default());
         }
-        todo!()
+
+        let transactions = self
+            .storage
+            .read_body(block_id)?
+            .into_iter()
+            .filter(|tx| self.filter_transaction(tx))
+            .collect();
+        Ok(transactions)
     }
 
     fn receipts(
@@ -112,6 +115,15 @@ where
         } else {
             Ok(None)
         }
+    }
+
+    fn filter_transaction(&self, tx: &v1alpha2::Transaction) -> bool {
+        for filter in &self.filter.transactions {
+            if filter.matches(tx) {
+                return true;
+            }
+        }
+        false
     }
 }
 
