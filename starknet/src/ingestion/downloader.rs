@@ -2,7 +2,6 @@
 
 use std::sync::Arc;
 
-use apibara_node::db::libmdbx::EnvironmentKind;
 use futures::{stream, StreamExt};
 
 use crate::{
@@ -64,6 +63,7 @@ where
             .map(|(tx_idx, tx_hash)| {
                 let provider = &self.provider;
                 async move {
+                    let tx_hash = tx_hash.ok_or(BlockIngestionError::MalformedTransaction)?;
                     provider
                         .get_transaction_receipt(&tx_hash)
                         .await

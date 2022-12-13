@@ -12,7 +12,7 @@ use apibara_node::db::{
     node_data_dir, MdbxEnvironmentExt,
 };
 use tokio_util::sync::CancellationToken;
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::{
     db::tables,
@@ -102,9 +102,11 @@ where
         // TODO: based on which handles terminates first, it needs to wait
         // for the other handle to terminate too.
         tokio::select! {
-            _ = &mut block_ingestion_handle => {
+            ret = &mut block_ingestion_handle => {
+                warn!(result = ?ret, "block ingestion terminated");
             }
-            _ = &mut server_handle => {
+            ret = &mut server_handle => {
+                warn!(result = ?ret, "server terminated");
             }
         }
 

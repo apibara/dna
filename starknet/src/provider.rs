@@ -31,7 +31,7 @@ pub trait Provider {
     /// Get receipt for a specific transaction.
     async fn get_transaction_receipt(
         &self,
-        hash: &[u8],
+        hash: &v1alpha2::FieldElement,
     ) -> Result<v1alpha2::TransactionReceipt, Self::Error>;
 }
 
@@ -79,8 +79,11 @@ impl Provider for HttpProvider {
             .block_hash_and_number()
             .await
             .map_err(|err| HttpProviderError::Provider(Box::new(err)))?;
-        let hash = (&hash_and_number.block_hash).try_into()?;
-        Ok(GlobalBlockId::new(hash_and_number.block_number, hash))
+        let hash: v1alpha2::FieldElement = hash_and_number.block_hash.into();
+        Ok(GlobalBlockId::new(
+            hash_and_number.block_number,
+            hash.into(),
+        ))
     }
 
     #[tracing::instrument(skip(self))]
@@ -124,11 +127,12 @@ impl Provider for HttpProvider {
     #[tracing::instrument(skip(self, hash))]
     async fn get_transaction_receipt(
         &self,
-        hash: &[u8],
+        hash: &v1alpha2::FieldElement,
     ) -> Result<v1alpha2::TransactionReceipt, Self::Error> {
-        let hash: FieldElement = TransactionHash(hash)
+        let hash: FieldElement = hash
             .try_into()
             .map_err(|err| HttpProviderError::Provider(Box::new(err)))?;
+        println!("hash = {:#01x}", hash);
         let receipt = self
             .provider
             .get_transaction_receipt(hash)
@@ -198,8 +202,8 @@ impl From<jsonrpc::models::BlockHeader> for v1alpha2::BlockHeader {
         let block_hash = header.block_hash.into();
         let parent_block_hash = header.parent_hash.into();
         let block_number = header.block_number;
-        let sequencer_address = header.sequencer_address.to_bytes_be().to_vec();
-        let new_root = header.new_root.to_bytes_be().to_vec();
+        let sequencer_address = header.sequencer_address.into();
+        let new_root = header.new_root.into();
         let timestamp = prost_types::Timestamp {
             nanos: 0,
             seconds: header.timestamp as i64,
@@ -208,17 +212,23 @@ impl From<jsonrpc::models::BlockHeader> for v1alpha2::BlockHeader {
             block_hash: Some(block_hash),
             parent_block_hash: Some(parent_block_hash),
             block_number,
-            sequencer_address,
-            new_root,
+            sequencer_address: Some(sequencer_address),
+            new_root: Some(new_root),
             timestamp: Some(timestamp),
         }
     }
 }
 
-impl From<FieldElement> for v1alpha2::BlockHash {
-    fn from(value: FieldElement) -> Self {
-        let hash = value.to_bytes_be().to_vec();
-        v1alpha2::BlockHash { hash }
+impl From<FieldElement> for v1alpha2::FieldElement {
+    fn from(felt: FieldElement) -> Self {
+        (&felt).into()
+    }
+}
+
+impl From<&FieldElement> for v1alpha2::FieldElement {
+    fn from(felt: &FieldElement) -> Self {
+        let bytes = felt.to_bytes_be();
+        v1alpha2::FieldElement::from_bytes(&bytes)
     }
 }
 
@@ -243,37 +253,31 @@ impl From<&jsonrpc::models::InvokeTransaction> for v1alpha2::Transaction {
         let meta: v1alpha2::TransactionMeta = (&tx.meta).into();
         match &tx.invoke_transaction {
             InvokeTransactionVersion::V0(v0) => {
-                let contract_address = v0.contract_address.to_bytes_be().to_vec();
-                let entry_point_selector = v0.entry_point_selector.to_bytes_be().to_vec();
-                let calldata = v0
-                    .calldata
-                    .iter()
-                    .map(|fe| fe.to_bytes_be().to_vec())
-                    .collect();
+                let contract_address = v0.contract_address.into();
+                let entry_point_selector = v0.entry_point_selector.into();
+                let calldata = v0.calldata.iter().map(|fe| fe.into()).collect();
                 let invoke_v0 = v1alpha2::InvokeTransactionV0 {
-                    contract_address,
-                    entry_point_selector,
+                    contract_address: Some(contract_address),
+                    entry_point_selector: Some(entry_point_selector),
                     calldata,
                 };
                 v1alpha2::Transaction {
                     meta: Some(meta),
                     transaction: Some(Transaction::InvokeV0(invoke_v0)),
+                    receipt: None,
                 }
             }
             InvokeTransactionVersion::V1(v1) => {
-                let sender_address = v1.sender_address.to_bytes_be().to_vec();
-                let calldata = v1
-                    .calldata
-                    .iter()
-                    .map(|fe| fe.to_bytes_be().to_vec())
-                    .collect();
+                let sender_address = v1.sender_address.into();
+                let calldata = v1.calldata.iter().map(|fe| fe.into()).collect();
                 let invoke_v1 = v1alpha2::InvokeTransactionV1 {
-                    sender_address,
+                    sender_address: Some(sender_address),
                     calldata,
                 };
                 v1alpha2::Transaction {
                     meta: Some(meta),
                     transaction: Some(Transaction::InvokeV1(invoke_v1)),
+                    receipt: None,
                 }
             }
         }
@@ -285,28 +289,28 @@ impl From<&jsonrpc::models::DeployTransaction> for v1alpha2::Transaction {
         use v1alpha2::transaction::Transaction;
 
         let meta: v1alpha2::TransactionMeta = tx.into();
-        let class_hash = tx.class_hash.to_bytes_be().to_vec();
+        let class_hash = tx.class_hash.into();
         let contract_address_salt = tx
             .deploy_transaction_properties
             .contract_address_salt
-            .to_bytes_be()
-            .to_vec();
+            .into();
         let constructor_calldata = tx
             .deploy_transaction_properties
             .constructor_calldata
             .iter()
-            .map(|fe| fe.to_bytes_be().to_vec())
+            .map(|fe| fe.into())
             .collect();
 
         let deploy = v1alpha2::DeployTransaction {
-            class_hash,
-            contract_address_salt,
+            class_hash: Some(class_hash),
+            contract_address_salt: Some(contract_address_salt),
             constructor_calldata,
         };
 
         v1alpha2::Transaction {
             meta: Some(meta),
             transaction: Some(Transaction::Deploy(deploy)),
+            receipt: None,
         }
     }
 }
@@ -316,17 +320,18 @@ impl From<&jsonrpc::models::DeclareTransaction> for v1alpha2::Transaction {
         use v1alpha2::transaction::Transaction;
 
         let meta: v1alpha2::TransactionMeta = (&tx.meta).into();
-        let class_hash = tx.class_hash.to_bytes_be().to_vec();
-        let sender_address = tx.sender_address.to_bytes_be().to_vec();
+        let class_hash = tx.class_hash.into();
+        let sender_address = tx.sender_address.into();
 
         let declare = v1alpha2::DeclareTransaction {
-            class_hash,
-            sender_address,
+            class_hash: Some(class_hash),
+            sender_address: Some(sender_address),
         };
 
         v1alpha2::Transaction {
             meta: Some(meta),
             transaction: Some(Transaction::Declare(declare)),
+            receipt: None,
         }
     }
 }
@@ -336,24 +341,25 @@ impl From<&jsonrpc::models::L1HandlerTransaction> for v1alpha2::Transaction {
         use v1alpha2::transaction::Transaction;
 
         let meta: v1alpha2::TransactionMeta = tx.into();
-        let contract_address = tx.function_call.contract_address.to_bytes_be().to_vec();
-        let entry_point_selector = tx.function_call.entry_point_selector.to_bytes_be().to_vec();
+        let contract_address = tx.function_call.contract_address.into();
+        let entry_point_selector = tx.function_call.entry_point_selector.into();
         let calldata = tx
             .function_call
             .calldata
             .iter()
-            .map(|fe| fe.to_bytes_be().to_vec())
+            .map(|fe| fe.into())
             .collect();
 
         let l1_handler = v1alpha2::L1HandlerTransaction {
-            contract_address,
-            entry_point_selector,
+            contract_address: Some(contract_address),
+            entry_point_selector: Some(entry_point_selector),
             calldata,
         };
 
         v1alpha2::Transaction {
             meta: Some(meta),
             transaction: Some(Transaction::L1Handler(l1_handler)),
+            receipt: None,
         }
     }
 }
@@ -363,49 +369,46 @@ impl From<&jsonrpc::models::DeployAccountTransaction> for v1alpha2::Transaction 
         use v1alpha2::transaction::Transaction;
 
         let meta: v1alpha2::TransactionMeta = (&tx.meta).into();
-        let contract_address_salt = tx
-            .deploy_properties
-            .contract_address_salt
-            .to_bytes_be()
-            .to_vec();
-        let class_hash = tx.deploy_properties.class_hash.to_bytes_be().to_vec();
+        let contract_address_salt = tx.deploy_properties.contract_address_salt.into();
+        let class_hash = tx.deploy_properties.class_hash.into();
         let constructor_calldata = tx
             .deploy_properties
             .constructor_calldata
             .iter()
-            .map(|fe| fe.to_bytes_be().to_vec())
+            .map(|fe| fe.into())
             .collect();
 
         let deploy_account = v1alpha2::DeployAccountTransaction {
-            contract_address_salt,
-            class_hash,
+            contract_address_salt: Some(contract_address_salt),
+            class_hash: Some(class_hash),
             constructor_calldata,
         };
 
         v1alpha2::Transaction {
             meta: Some(meta),
             transaction: Some(Transaction::DeployAccount(deploy_account)),
+            receipt: None,
         }
     }
 }
 
 impl From<&jsonrpc::models::TransactionMeta> for v1alpha2::TransactionMeta {
     fn from(meta: &jsonrpc::models::TransactionMeta) -> Self {
-        let hash = meta.transaction_hash.to_bytes_be().to_vec();
-        let max_fee = meta.common_properties.max_fee.to_bytes_be().to_vec();
+        let hash = meta.transaction_hash.into();
+        let max_fee = meta.common_properties.max_fee.into();
         let signature = meta
             .common_properties
             .signature
             .iter()
-            .map(|fe| fe.to_bytes_be().to_vec())
+            .map(|fe| fe.into())
             .collect();
         let version = meta.common_properties.version;
-        let nonce = meta.common_properties.nonce.to_bytes_be().to_vec();
+        let nonce = meta.common_properties.nonce.into();
         v1alpha2::TransactionMeta {
-            hash,
-            max_fee,
+            hash: Some(hash),
+            max_fee: Some(max_fee),
             signature,
-            nonce,
+            nonce: Some(nonce),
             version,
         }
     }
@@ -413,14 +416,15 @@ impl From<&jsonrpc::models::TransactionMeta> for v1alpha2::TransactionMeta {
 
 impl From<&jsonrpc::models::L1HandlerTransaction> for v1alpha2::TransactionMeta {
     fn from(tx: &jsonrpc::models::L1HandlerTransaction) -> Self {
-        let hash = tx.transaction_hash.to_bytes_be().to_vec();
+        let hash = tx.transaction_hash.into();
         let version = tx.version;
-        let nonce = tx.nonce.to_be_bytes().to_vec();
+        let nonce = v1alpha2::FieldElement::from_u64(tx.nonce);
+
         v1alpha2::TransactionMeta {
-            hash,
-            max_fee: Vec::default(),
+            hash: Some(hash),
+            max_fee: None,
             signature: Vec::default(),
-            nonce,
+            nonce: Some(nonce),
             version,
         }
     }
@@ -428,13 +432,14 @@ impl From<&jsonrpc::models::L1HandlerTransaction> for v1alpha2::TransactionMeta 
 
 impl From<&jsonrpc::models::DeployTransaction> for v1alpha2::TransactionMeta {
     fn from(tx: &jsonrpc::models::DeployTransaction) -> Self {
-        let hash = tx.transaction_hash.to_bytes_be().to_vec();
+        let hash = tx.transaction_hash.into();
         let version = tx.deploy_transaction_properties.version;
+
         v1alpha2::TransactionMeta {
-            hash,
-            max_fee: Vec::default(),
+            hash: Some(hash),
+            max_fee: None,
             signature: Vec::default(),
-            nonce: Vec::default(),
+            nonce: None,
             version,
         }
     }
@@ -477,17 +482,18 @@ impl From<&jsonrpc::models::PendingTransactionReceipt> for v1alpha2::Transaction
 
 impl From<&jsonrpc::models::TransactionReceiptMeta> for v1alpha2::TransactionReceipt {
     fn from(meta: &jsonrpc::models::TransactionReceiptMeta) -> Self {
-        let transaction_hash = meta.transaction_hash.to_bytes_be().to_vec();
-        let actual_fee = meta.actual_fee.to_bytes_be().to_vec();
+        let transaction_hash = meta.transaction_hash.into();
+        let actual_fee = meta.actual_fee.into();
         let l2_to_l1_messages = meta.messages_sent.iter().map(|msg| msg.into()).collect();
         let events = meta.events.iter().map(|ev| ev.into()).collect();
 
         v1alpha2::TransactionReceipt {
             transaction_index: 0,
-            transaction_hash,
-            actual_fee,
+            transaction_hash: Some(transaction_hash),
+            actual_fee: Some(actual_fee),
             l2_to_l1_messages,
             events,
+            transaction: None,
         }
     }
 }
@@ -501,17 +507,18 @@ impl From<&jsonrpc::models::DeployTransactionReceipt> for v1alpha2::TransactionR
 
 impl From<&jsonrpc::models::PendingTransactionReceiptMeta> for v1alpha2::TransactionReceipt {
     fn from(meta: &jsonrpc::models::PendingTransactionReceiptMeta) -> Self {
-        let transaction_hash = meta.transaction_hash.to_bytes_be().to_vec();
-        let actual_fee = meta.actual_fee.to_bytes_be().to_vec();
+        let transaction_hash = meta.transaction_hash.into();
+        let actual_fee = meta.actual_fee.into();
         let l2_to_l1_messages = meta.messages_sent.iter().map(|msg| msg.into()).collect();
         let events = meta.events.iter().map(|ev| ev.into()).collect();
 
         v1alpha2::TransactionReceipt {
             transaction_index: 0,
-            transaction_hash,
-            actual_fee,
+            transaction_hash: Some(transaction_hash),
+            actual_fee: Some(actual_fee),
             l2_to_l1_messages,
             events,
+            transaction: None,
         }
     }
 }
@@ -525,40 +532,30 @@ impl From<&jsonrpc::models::PendingDeployTransactionReceipt> for v1alpha2::Trans
 
 impl From<&jsonrpc::models::MsgToL1> for v1alpha2::L2ToL1Message {
     fn from(msg: &jsonrpc::models::MsgToL1) -> Self {
-        let to_address = msg.to_address.to_bytes_be().to_vec();
-        let payload = msg
-            .payload
-            .iter()
-            .map(|p| p.to_bytes_be().to_vec())
-            .collect();
+        let to_address = msg.to_address.into();
+        let payload = msg.payload.iter().map(|p| p.into()).collect();
 
         v1alpha2::L2ToL1Message {
-            to_address,
+            to_address: Some(to_address),
             payload,
+            receipt: None,
+            transaction: None,
         }
     }
 }
 
 impl From<&jsonrpc::models::Event> for v1alpha2::Event {
     fn from(event: &jsonrpc::models::Event) -> Self {
-        let from_address = event.from_address.to_bytes_be().to_vec();
-        let keys = event
-            .content
-            .keys
-            .iter()
-            .map(|k| k.to_bytes_be().to_vec())
-            .collect();
-        let data = event
-            .content
-            .data
-            .iter()
-            .map(|d| d.to_bytes_be().to_vec())
-            .collect();
+        let from_address = event.from_address.into();
+        let keys = event.content.keys.iter().map(|k| k.into()).collect();
+        let data = event.content.data.iter().map(|d| d.into()).collect();
 
         v1alpha2::Event {
-            from_address,
+            from_address: Some(from_address),
             keys,
             data,
+            receipt: None,
+            transaction: None,
         }
     }
 }
@@ -579,12 +576,12 @@ impl<'a> TryFrom<TransactionHash<'a>> for FieldElement {
 
 impl From<jsonrpc::models::StateUpdate> for v1alpha2::StateUpdate {
     fn from(update: jsonrpc::models::StateUpdate) -> Self {
-        let new_root = update.new_root.to_bytes_be().to_vec();
-        let old_root = update.old_root.to_bytes_be().to_vec();
+        let new_root = update.new_root.into();
+        let old_root = update.old_root.into();
         let state_diff = update.state_diff.into();
         v1alpha2::StateUpdate {
-            new_root,
-            old_root,
+            new_root: Some(new_root),
+            old_root: Some(old_root),
             state_diff: Some(state_diff),
         }
     }
@@ -611,10 +608,10 @@ impl From<jsonrpc::models::StateDiff> for v1alpha2::StateDiff {
 
 impl From<&jsonrpc::models::ContractStorageDiffItem> for v1alpha2::StorageDiff {
     fn from(diff: &jsonrpc::models::ContractStorageDiffItem) -> Self {
-        let contract_address = diff.address.to_bytes_be().to_vec();
+        let contract_address = diff.address.into();
         let storage_entries = diff.storage_entries.iter().map(|e| e.into()).collect();
         v1alpha2::StorageDiff {
-            contract_address,
+            contract_address: Some(contract_address),
             storage_entries,
         }
     }
@@ -622,37 +619,42 @@ impl From<&jsonrpc::models::ContractStorageDiffItem> for v1alpha2::StorageDiff {
 
 impl From<&jsonrpc::models::StorageEntry> for v1alpha2::StorageEntry {
     fn from(diff: &jsonrpc::models::StorageEntry) -> Self {
-        let key = diff.key.to_bytes_be().to_vec();
-        let value = diff.value.to_bytes_be().to_vec();
-        v1alpha2::StorageEntry { key, value }
+        let key = diff.key.into();
+        let value = diff.value.into();
+        v1alpha2::StorageEntry {
+            key: Some(key),
+            value: Some(value),
+        }
     }
 }
 
 impl From<&FieldElement> for v1alpha2::DeclaredContract {
     fn from(diff: &FieldElement) -> Self {
-        let class_hash = diff.to_bytes_be().to_vec();
-        v1alpha2::DeclaredContract { class_hash }
+        let class_hash = diff.into();
+        v1alpha2::DeclaredContract {
+            class_hash: Some(class_hash),
+        }
     }
 }
 
 impl From<&jsonrpc::models::DeployedContractItem> for v1alpha2::DeployedContract {
     fn from(diff: &jsonrpc::models::DeployedContractItem) -> Self {
-        let contract_address = diff.address.to_bytes_be().to_vec();
-        let class_hash = diff.class_hash.to_bytes_be().to_vec();
+        let contract_address = diff.address.into();
+        let class_hash = diff.class_hash.into();
         v1alpha2::DeployedContract {
-            contract_address,
-            class_hash,
+            contract_address: Some(contract_address),
+            class_hash: Some(class_hash),
         }
     }
 }
 
 impl From<&jsonrpc::models::NonceUpdate> for v1alpha2::NonceUpdate {
     fn from(diff: &jsonrpc::models::NonceUpdate) -> Self {
-        let contract_address = diff.contract_address.to_bytes_be().to_vec();
-        let nonce = diff.nonce.to_bytes_be().to_vec();
+        let contract_address = diff.contract_address.into();
+        let nonce = diff.nonce.into();
         v1alpha2::NonceUpdate {
-            contract_address,
-            nonce,
+            contract_address: Some(contract_address),
+            nonce: Some(nonce),
         }
     }
 }

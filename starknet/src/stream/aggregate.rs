@@ -71,7 +71,7 @@ where
     }
 
     fn header(&self, block_id: &GlobalBlockId) -> Result<Option<v1alpha2::BlockHeader>, R::Error> {
-        if self.filter.include_header {
+        if self.filter.header.is_some() {
             self.storage.read_header(&block_id)
         } else {
             Ok(None)
@@ -99,10 +99,12 @@ where
         &self,
         block_id: &GlobalBlockId,
     ) -> Result<Vec<v1alpha2::TransactionReceipt>, R::Error> {
+        /*
         if self.filter.receipts.len() == 0 {
             return Ok(Vec::default());
         }
-        todo!()
+        */
+        Ok(Vec::default())
     }
 
     fn events(&self, block_id: &GlobalBlockId) -> Result<Vec<v1alpha2::Event>, R::Error> {
@@ -130,11 +132,14 @@ where
         block_id: &GlobalBlockId,
     ) -> Result<Option<v1alpha2::StateUpdate>, R::Error> {
         // TODO: change state update flag to be a filter
+        /*
         if self.filter.include_state_update {
             self.storage.read_state_update(&block_id)
         } else {
             Ok(None)
         }
+        */
+        Ok(None)
     }
 
     fn filter_transaction(&self, tx: &v1alpha2::Transaction) -> bool {
