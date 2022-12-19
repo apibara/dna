@@ -5,9 +5,9 @@ use std::{pin::Pin, sync::Arc, task::Poll};
 use tokio_stream::wrappers::errors::BroadcastStreamRecvError;
 use tracing_futures::Instrument;
 
-use futures::{Stream, TryFutureExt, TryStreamExt};
+use futures::{Stream, TryStreamExt};
 use tonic::{Request, Response, Streaming};
-use tracing::{info, trace_span};
+use tracing::trace_span;
 
 use crate::{
     core::{pb, GlobalBlockId},
@@ -16,9 +16,12 @@ use crate::{
     stream::{DatabaseBlockDataAggregator, FinalizedBlockStream},
 };
 
+use super::span::RequestSpan;
+
 pub struct StreamService<R: StorageReader> {
     ingestion: Arc<IngestionStreamClient>,
     storage: Arc<R>,
+    request_span: Arc<dyn RequestSpan>,
 }
 
 // type ClientStream = Streaming<pb::stream::v1alpha2::StreamDataRequest>;
@@ -37,9 +40,17 @@ impl<R> StreamService<R>
 where
     R: StorageReader + Send + Sync + 'static,
 {
-    pub fn new(ingestion: Arc<IngestionStreamClient>, storage: R) -> Self {
+    pub fn new(
+        ingestion: Arc<IngestionStreamClient>,
+        storage: R,
+        request_span: Arc<dyn RequestSpan>,
+    ) -> Self {
         let storage = Arc::new(storage);
-        StreamService { ingestion, storage }
+        StreamService {
+            ingestion,
+            storage,
+            request_span,
+        }
     }
 
     pub fn into_service(self) -> pb::stream::v1alpha2::stream_server::StreamServer<Self> {
@@ -78,6 +89,8 @@ where
         &self,
         request: Request<Streaming<pb::stream::v1alpha2::StreamDataRequest>>,
     ) -> Result<Response<Self::StreamDataStream>, tonic::Status> {
+        let stream_span = self.request_span.stream_data_span(request.metadata());
+
         let mut client_stream = request.into_inner();
         let request = client_stream
             .try_next()
@@ -100,7 +113,7 @@ where
         let stream = self
             .create_stream(starting_block, filter)
             .await
-            .instrument(trace_span!("stream_data"));
+            .instrument(stream_span);
         Ok(Response::new(Box::pin(stream)))
     }
 }

@@ -5,7 +5,10 @@ use apibara_node::{
     db::{node_data_dir, DatabaseClapCommandExt},
     o11y::{init_opentelemetry, OpenTelemetryClapCommandExt},
 };
-use apibara_starknet::{HttpProvider, NoWriteMap, StarkNetNode};
+use apibara_starknet::{
+    server::{MetadataKeyRequestSpan, SimpleRequestSpan},
+    HttpProvider, NoWriteMap, StarkNetNode,
+};
 use clap::{arg, command, value_parser, ArgMatches, Command};
 use tokio_util::sync::CancellationToken;
 
@@ -16,7 +19,8 @@ async fn start(start_matches: &ArgMatches) -> Result<()> {
         .get_one::<String>("rpc")
         .ok_or_else(|| anyhow!("expected rpc argument"))?;
 
-    let mut node = StarkNetNode::<HttpProvider, NoWriteMap>::builder(url)?;
+    let mut node = StarkNetNode::<HttpProvider, SimpleRequestSpan, NoWriteMap>::builder(url)?
+        .with_request_span(MetadataKeyRequestSpan::new("x-api-key".to_string()));
 
     // use specified datadir
     if let Some(name) = start_matches.get_one::<String>("name") {
