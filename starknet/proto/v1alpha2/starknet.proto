@@ -35,16 +35,6 @@ enum BlockStatus {
   BLOCK_STATUS_REJECTED = 4;
 }
 
-// Status of a transaction.
-enum TransactionStatus {
-  TRANSACTION_STATUS_UNSPECIFIED = 0;
-  TRANSACTION_STATUS_RECEIVED = 1;
-  TRANSACTION_STATUS_PENDING = 2;
-  TRANSACTION_STATUS_ACCEPTED_ON_L2 = 3;
-  TRANSACTION_STATUS_ACCEPTED_ON_L1 = 4;
-  TRANSACTION_STATUS_REJECTED = 5;
-}
-
 message Transaction {
   TransactionMeta meta = 1;
   TransactionReceipt receipt = 8;
