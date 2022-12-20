@@ -144,6 +144,13 @@ impl GlobalBlockId {
         GlobalBlockId(number, hash)
     }
 
+    pub fn from_cursor(
+        cursor: &pb::stream::v1alpha2::Cursor,
+    ) -> Result<Self, InvalidBlockHashSize> {
+        let hash = BlockHash::from_slice(&cursor.unique_key)?;
+        Ok(Self::new(cursor.order_key, hash))
+    }
+
     pub fn from_block(block: &pb::starknet::v1alpha2::Block) -> Result<Self, InvalidBlock> {
         let header = block.header.as_ref().ok_or(InvalidBlock::MissingHeader)?;
         let hash = header
@@ -160,6 +167,14 @@ impl GlobalBlockId {
 
     pub fn hash(&self) -> &BlockHash {
         &self.1
+    }
+
+    /// Returns a cursor corresponding to the block id.
+    pub fn to_cursor(&self) -> pb::stream::v1alpha2::Cursor {
+        pb::stream::v1alpha2::Cursor {
+            order_key: self.number(),
+            unique_key: self.hash().as_bytes().to_vec(),
+        }
     }
 }
 

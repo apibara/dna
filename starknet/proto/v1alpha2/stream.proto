@@ -17,9 +17,10 @@ message StreamDataRequest {
   // All streams use `stream_id = 0` by default.
   optional uint64 stream_id = 1;
   // Start streaming from the provided cursor.
-  bytes starting_cursor = 2;
+  Cursor starting_cursor = 2;
   // Return data with the specified finality.
   // If not specified, defaults to `DATA_STATUS_ACCEPTED`.
+  // Finality cannot change when the stream is reconfigured.
   optional DataFinality finality = 3;
   // Return data according to the stream-specific filter.
   apibara.starknet.v1alpha2.Filter filter = 4;
@@ -36,6 +37,14 @@ message StreamDataResponse {
   }
 }
 
+// A cursor over the stream content.
+message Cursor {
+  // Key used for ordering messages in the stream.
+  uint64 order_key = 1;
+  // Key used to discriminate branches in the stream.
+  bytes unique_key = 2;
+}
+
 // Data finality.
 enum DataFinality {
   DATA_STATUS_UNKNOWN = 0;
@@ -48,12 +57,15 @@ enum DataFinality {
 }
 
 // Invalidate data after the given cursor.
-message Invalidate { bytes cursor = 1; }
+message Invalidate {
+  // The cursor of the message before the now invalid data.
+  Cursor cursor = 1;
+}
 
 // A batch of data.
 message Data {
   // Cursor of the last item in the batch.
-  bytes end_cursor = 1;
+  Cursor end_cursor = 1;
   // The finality status of the data in the batch.
   DataFinality finality = 2;
   // The stream data.
