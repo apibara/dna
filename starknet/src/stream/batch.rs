@@ -14,6 +14,7 @@ use crate::core::pb::{starknet, stream};
 /// One item to be batched.
 #[derive(Debug)]
 pub struct BatchItem {
+    pub is_live: bool,
     pub cursor: stream::v1alpha2::Cursor,
     pub data: Option<starknet::v1alpha2::Block>,
 }
@@ -58,6 +59,16 @@ struct BatchState {
     latest_cursor: stream::v1alpha2::Cursor,
     data_finality: stream::v1alpha2::DataFinality,
     batch_size: usize,
+}
+
+impl BatchMessage {
+    pub fn is_live(&self) -> bool {
+        match self {
+            BatchMessage::Finalized(item) => item.is_live,
+            BatchMessage::Accepted(item) => item.is_live,
+            BatchMessage::Pending(item) => item.is_live,
+        }
+    }
 }
 
 impl<S, E> BatchDataStream<S, E>
@@ -140,6 +151,7 @@ where
                     // - update end cursor
                     // - insert into items
                     // - maybe drain data
+                    let is_live = message.is_live();
                     match message {
                         BatchMessage::Finalized(item) => {
                             if let Some(data) = item.data {
@@ -152,7 +164,7 @@ where
                         }
                     }
 
-                    if this.state.should_drain() {
+                    if this.state.should_drain() || is_live {
                         let data = this.state.drain_data();
                         return Poll::Ready(Some(Ok(data)));
                     }

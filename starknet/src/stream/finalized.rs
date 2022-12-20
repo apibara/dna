@@ -127,10 +127,12 @@ where
             }
         };
 
+        let is_live = current_cursor.number() == this.finalized_cursor.number();
         let current_cursor = current_cursor.to_cursor();
         *this.current_cursor = aggregate_result.next;
 
         let message = BatchItem {
+            is_live,
             cursor: current_cursor,
             data: aggregate_result.data,
         };
