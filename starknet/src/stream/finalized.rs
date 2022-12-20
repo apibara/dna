@@ -1,28 +1,32 @@
 //! Stream finalized data.
 
-use std::{pin::Pin, task::Poll};
+use std::{sync::Arc, task::Poll};
 
 use futures::Stream;
 use pin_project::pin_project;
-use tracing::info;
+use tracing::debug;
 
-use crate::core::{
-    pb::{self, starknet::v1alpha2},
-    GlobalBlockId, IngestionMessage,
+use crate::{
+    core::{pb::starknet::v1alpha2, GlobalBlockId, IngestionMessage, InvalidBlockHashSize},
+    db::StorageReader,
 };
 
-use super::aggregate::BlockDataAggregator;
+use super::{
+    batch::{BatchDataStream, BatchItem, BatchMessage},
+    BatchDataStreamExt, BlockDataAggregator, DatabaseBlockDataAggregator,
+};
 
 #[pin_project]
-pub struct FinalizedBlockStream<A, L, LE>
+pub struct FinalizedBlockStream<R, L, LE>
 where
-    A: BlockDataAggregator,
+    R: StorageReader,
     L: Stream<Item = Result<IngestionMessage, LE>>,
     LE: std::error::Error,
 {
-    current_block: GlobalBlockId,
-    highest_block: GlobalBlockId,
-    aggregator: A,
+    current_cursor: Option<GlobalBlockId>,
+    finalized_cursor: GlobalBlockId,
+    storage: Arc<R>,
+    aggregator: DatabaseBlockDataAggregator<R>,
     #[pin]
     ingestion: L,
 }
@@ -35,36 +39,41 @@ pub enum FinalizedBlockStreamError {
     IngestionStreamStopped,
     #[error(transparent)]
     Aggregate(Box<dyn std::error::Error + Send + Sync + 'static>),
+    #[error("cursor is not valid")]
+    InvalidCursor(#[from] InvalidBlockHashSize),
 }
 
-impl<A, L, LE> FinalizedBlockStream<A, L, LE>
+impl<R, L, LE> FinalizedBlockStream<R, L, LE>
 where
-    A: BlockDataAggregator,
+    R: StorageReader,
     L: Stream<Item = Result<IngestionMessage, LE>>,
     LE: std::error::Error,
 {
     pub fn new(
-        starting_block: GlobalBlockId,
-        highest_block: GlobalBlockId,
-        aggregator: A,
+        starting_cursor: GlobalBlockId,
+        finalized_cursor: GlobalBlockId,
+        filter: v1alpha2::Filter,
+        storage: Arc<R>,
         ingestion: L,
-    ) -> Self {
-        FinalizedBlockStream {
-            current_block: starting_block,
-            highest_block,
+    ) -> Result<Self, FinalizedBlockStreamError> {
+        let aggregator = DatabaseBlockDataAggregator::new(storage.clone(), filter);
+        Ok(FinalizedBlockStream {
+            current_cursor: Some(starting_cursor),
+            finalized_cursor,
+            storage,
             aggregator,
             ingestion,
-        }
+        })
     }
 }
 
-impl<A, L, LE> Stream for FinalizedBlockStream<A, L, LE>
+impl<R, L, LE> Stream for FinalizedBlockStream<R, L, LE>
 where
-    A: BlockDataAggregator,
+    R: StorageReader,
     L: Stream<Item = Result<IngestionMessage, LE>>,
     LE: std::error::Error + Send + Sync + 'static,
 {
-    type Item = Result<pb::stream::v1alpha2::Data, FinalizedBlockStreamError>;
+    type Item = Result<BatchMessage, FinalizedBlockStreamError>;
 
     fn poll_next(
         self: std::pin::Pin<&mut Self>,
@@ -83,8 +92,8 @@ where
             }
             Poll::Ready(Some(Ok(message))) => match message {
                 IngestionMessage::Finalized(block_id) => {
-                    info!(block_id = %block_id, "got new finalized block");
-                    *this.highest_block = block_id;
+                    debug!(block_id = %block_id, "got new finalized block");
+                    *this.finalized_cursor = block_id;
                     cx.waker().wake_by_ref();
                 }
                 _ => {
@@ -93,16 +102,24 @@ where
             },
         }
 
+        let current_cursor = match this.current_cursor {
+            None => {
+                // stream sent data up to the current finalized cursor.
+                // the cursor for the next block is still unknown, so sleep
+                // until it receives a message from the finalized stream.
+                return Poll::Pending;
+            }
+            Some(cursor) => cursor,
+        };
+
+        let is_after_finalized_block = current_cursor.number() > this.finalized_cursor.number();
+
         // don't return any more data until finalized block changes
-        if this.current_block.number() > this.highest_block.number() {
+        if is_after_finalized_block {
             return Poll::Pending;
         }
 
-        let (data, next_block) = match this.aggregator.aggregate_batch(
-            this.current_block,
-            50,
-            v1alpha2::BlockStatus::AcceptedOnL1,
-        ) {
+        let aggregate_result = match this.aggregator.aggregate_for_block(current_cursor) {
             Ok(result) => result,
             Err(err) => {
                 let err = FinalizedBlockStreamError::Aggregate(Box::new(err));
@@ -110,14 +127,32 @@ where
             }
         };
 
-        *this.current_block = next_block;
+        let current_cursor = current_cursor.to_cursor();
+        *this.current_cursor = aggregate_result.next;
 
-        let data = pb::stream::v1alpha2::Data {
-            end_cursor: vec![],
-            finality: pb::stream::v1alpha2::DataFinality::DataStatusFinalized as i32,
-            data,
+        let message = BatchItem {
+            cursor: current_cursor,
+            data: aggregate_result.data,
         };
+        Poll::Ready(Some(Ok(BatchMessage::Finalized(message))))
+    }
+}
 
-        Poll::Ready(Some(Ok(data)))
+impl<R, L, LE> BatchDataStreamExt for FinalizedBlockStream<R, L, LE>
+where
+    R: StorageReader,
+    L: Stream<Item = Result<IngestionMessage, LE>>,
+    LE: std::error::Error + Send + Sync + 'static,
+{
+    fn batch<E>(
+        self,
+        batch_size: usize,
+        interval: std::time::Duration,
+    ) -> super::batch::BatchDataStream<Self, E>
+    where
+        Self: Stream<Item = Result<BatchMessage, E>> + Sized,
+        E: std::error::Error,
+    {
+        BatchDataStream::new(self, batch_size, interval)
     }
 }

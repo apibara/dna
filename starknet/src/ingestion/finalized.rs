@@ -7,7 +7,7 @@ use tracing::{debug, info};
 
 use crate::{
     core::GlobalBlockId,
-    db::{DatabaseStorage, StorageReader, StorageWriter},
+    db::{DatabaseStorage, StorageWriter},
     ingestion::accepted::AcceptedBlockIngestion,
     provider::{BlockId, Provider},
 };

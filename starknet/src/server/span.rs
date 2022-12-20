@@ -7,6 +7,7 @@ pub trait RequestSpan: Send + Sync + 'static {
 }
 
 /// A [RequestSpan] that creates a simple span.
+#[derive(Debug, Default)]
 pub struct SimpleRequestSpan {}
 
 /// A [RequestSpan] that adds a specific metadata value to the span.
@@ -20,12 +21,6 @@ pub struct MetadataKeyRequestSpan {
 impl MetadataKeyRequestSpan {
     pub fn new(key: String) -> Self {
         MetadataKeyRequestSpan { key }
-    }
-}
-
-impl Default for SimpleRequestSpan {
-    fn default() -> Self {
-        SimpleRequestSpan {}
     }
 }
 

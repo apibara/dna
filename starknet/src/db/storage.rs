@@ -207,7 +207,7 @@ impl<E: EnvironmentKind> StorageReader for DatabaseStorage<E> {
     ) -> Result<Option<v1alpha2::BlockStatus>, Self::Error> {
         let txn = self.db.begin_ro_txn()?;
         let mut cursor = txn.open_cursor::<tables::BlockStatusTable>()?;
-        let status = cursor.seek_exact(id.into())?.map(|t| t.1.status());
+        let status = cursor.seek_exact(id)?.map(|t| t.1.status());
         txn.commit()?;
         Ok(status)
     }
@@ -219,7 +219,7 @@ impl<E: EnvironmentKind> StorageReader for DatabaseStorage<E> {
     ) -> Result<Option<v1alpha2::BlockHeader>, Self::Error> {
         let txn = self.db.begin_ro_txn()?;
         let mut cursor = txn.open_cursor::<tables::BlockHeaderTable>()?;
-        let header = cursor.seek_exact(id.into())?.map(|t| t.1);
+        let header = cursor.seek_exact(id)?.map(|t| t.1);
         txn.commit()?;
         Ok(header)
     }
@@ -229,7 +229,7 @@ impl<E: EnvironmentKind> StorageReader for DatabaseStorage<E> {
         let txn = self.db.begin_ro_txn()?;
         let mut cursor = txn.open_cursor::<tables::BlockBodyTable>()?;
         let transactions = cursor
-            .seek_exact(id.into())?
+            .seek_exact(id)?
             .map(|t| t.1.transactions)
             .unwrap_or_default();
         txn.commit()?;
@@ -244,7 +244,7 @@ impl<E: EnvironmentKind> StorageReader for DatabaseStorage<E> {
         let txn = self.db.begin_ro_txn()?;
         let mut cursor = txn.open_cursor::<tables::BlockReceiptsTable>()?;
         let receipts = cursor
-            .seek_exact(id.into())?
+            .seek_exact(id)?
             .map(|t| t.1.receipts)
             .unwrap_or_default();
         txn.commit()?;
@@ -258,7 +258,7 @@ impl<E: EnvironmentKind> StorageReader for DatabaseStorage<E> {
     ) -> Result<Option<v1alpha2::StateUpdate>, Self::Error> {
         let txn = self.db.begin_ro_txn()?;
         let mut cursor = txn.open_cursor::<tables::StateUpdateTable>()?;
-        let state_update = cursor.seek_exact(id.into())?.map(|t| t.1);
+        let state_update = cursor.seek_exact(id)?.map(|t| t.1);
         txn.commit()?;
         Ok(state_update)
     }
