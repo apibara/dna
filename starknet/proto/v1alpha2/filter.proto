@@ -10,14 +10,12 @@ message Filter {
   HeaderFilter header = 1;
   // Transactions.
   repeated TransactionFilter transactions = 2;
-  // Receipts
-  repeated TransactionFilter receipts = 3;
   // State update.
-  StateUpdateFilter state_update = 4;
+  StateUpdateFilter state_update = 3;
   // Emitted events.
-  repeated EventFilter events = 5;
+  repeated EventFilter events = 4;
   // Messages from L2 to L1.
-  repeated L2ToL1MessageFilter messages = 6;
+  repeated L2ToL1MessageFilter messages = 5;
 }
 
 // Filter header.

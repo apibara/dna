@@ -14,14 +14,12 @@ message Block {
   BlockHeader header = 2;
   // Transactions in the block.
   repeated TransactionWithReceipt transactions = 3;
-  // Transactions receipts in the block.
-  repeated TransactionReceipt receipts = 4;
   // State update caused by the block.
-  StateUpdate state_update = 5;
+  StateUpdate state_update = 4;
   // Events emitted in the block.
-  repeated EventWithTransaction events = 6;
+  repeated EventWithTransaction events = 5;
   // Messages to L1 sent in the block.
-  repeated L2ToL1MessageWithTransaction l2_to_l1_messages = 7;
+  repeated L2ToL1MessageWithTransaction l2_to_l1_messages = 6;
 }
 
 // Block header.
