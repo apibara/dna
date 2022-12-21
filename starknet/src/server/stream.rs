@@ -26,6 +26,10 @@ use crate::{
 
 use super::span::RequestSpan;
 
+const MIN_BATCH_SIZE: usize = 1;
+const MAX_BATCH_SIZE: usize = 50;
+const DEFAULT_BATCH_SIZE: usize = 20;
+
 pub struct StreamService<R: StorageReader> {
     ingestion: Arc<IngestionStreamClient>,
     storage: Arc<R>,
@@ -85,6 +89,10 @@ where
             .ok_or_else(mk_internal_error)?;
 
         let filter = initial_request.filter.unwrap_or_default();
+        let batch_size = initial_request
+            .batch_size
+            .unwrap_or(DEFAULT_BATCH_SIZE as u64) as usize;
+        let batch_size = batch_size.clamp(MIN_BATCH_SIZE, MAX_BATCH_SIZE);
 
         let starting_cursor = initial_request
             .starting_cursor
@@ -116,7 +124,7 @@ where
                 .map_err(internal_error)?;
 
                 let response = inner_stream
-                    .batch(50, Duration::from_millis(250))
+                    .batch(batch_size, Duration::from_millis(250))
                     .stream_data_response()
                     .instrument(stream_span);
 
