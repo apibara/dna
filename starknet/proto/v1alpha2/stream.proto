@@ -16,14 +16,15 @@ message StreamDataRequest {
   // Used by the client to uniquely identify a stream.
   // All streams use `stream_id = 0` by default.
   optional uint64 stream_id = 1;
+  // How many items to send in a single response.
+  optional uint64 batch_size = 2;
   // Start streaming from the provided cursor.
-  Cursor starting_cursor = 2;
+  Cursor starting_cursor = 3;
   // Return data with the specified finality.
   // If not specified, defaults to `DATA_STATUS_ACCEPTED`.
-  // Finality cannot change when the stream is reconfigured.
-  optional DataFinality finality = 3;
+  optional DataFinality finality = 4;
   // Return data according to the stream-specific filter.
-  apibara.starknet.v1alpha2.Filter filter = 4;
+  apibara.starknet.v1alpha2.Filter filter = 5;
 }
 
 // Contains the data requested from the client.
