@@ -1,7 +1,6 @@
 //! Transaction data.
 
 use apibara_node::db::Table;
-use prost::Message;
 
 use crate::core::{pb::starknet::v1alpha2, GlobalBlockId};
 
@@ -9,25 +8,13 @@ use crate::core::{pb::starknet::v1alpha2, GlobalBlockId};
 #[derive(Debug, Clone, Copy, Default)]
 pub struct BlockBodyTable {}
 
-#[derive(Clone, PartialEq, Message)]
-pub struct BlockBody {
-    #[prost(message, repeated, tag = "1")]
-    pub transactions: prost::alloc::vec::Vec<v1alpha2::Transaction>,
-}
-
 /// Store block receipts.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct BlockReceiptsTable {}
 
-#[derive(Clone, PartialEq, Message)]
-pub struct BlockReceipts {
-    #[prost(message, repeated, tag = "1")]
-    pub receipts: prost::alloc::vec::Vec<v1alpha2::TransactionReceipt>,
-}
-
 impl Table for BlockBodyTable {
     type Key = GlobalBlockId;
-    type Value = BlockBody;
+    type Value = v1alpha2::BlockBody;
 
     fn db_name() -> &'static str {
         "BlockBody"
@@ -36,7 +23,7 @@ impl Table for BlockBodyTable {
 
 impl Table for BlockReceiptsTable {
     type Key = GlobalBlockId;
-    type Value = BlockReceipts;
+    type Value = v1alpha2::BlockReceipts;
 
     fn db_name() -> &'static str {
         "BlockReceipts"

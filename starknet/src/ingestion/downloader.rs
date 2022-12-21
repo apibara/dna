@@ -31,21 +31,17 @@ where
     pub async fn finish_ingesting_block<W: StorageWriter>(
         &self,
         global_id: &GlobalBlockId,
-        block: v1alpha2::Block,
+        status: v1alpha2::BlockStatus,
+        header: v1alpha2::BlockHeader,
+        body: v1alpha2::BlockBody,
         writer: &mut W,
     ) -> Result<(), BlockIngestionError>
     where
         BlockIngestionError: From<W::Error>,
     {
-        // block already contains header, status, and body
-        let status = block.status();
-        let header = block
-            .header
-            .ok_or(BlockIngestionError::MissingBlockHeader)?;
-        let transactions = block.transactions;
-
         // download state update, receipts
-        let hashes = transactions
+        let hashes = body
+            .transactions
             .iter()
             .map(|tx| {
                 let tx_hash = tx
@@ -94,7 +90,7 @@ where
         // write block status, header, body, receipts and state update to storage
         writer.write_status(global_id, status)?;
         writer.write_header(global_id, header)?;
-        writer.write_body(global_id, transactions)?;
+        writer.write_body(global_id, body)?;
         writer.write_receipts(global_id, receipts)?;
         writer.write_state_update(global_id, state_update)?;
 

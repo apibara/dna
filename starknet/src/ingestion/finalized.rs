@@ -100,21 +100,21 @@ where
             "ingest block by number"
         );
         let block_id = BlockId::Number(number);
-        let block = self
+        let (status, header, body) = self
             .provider
             .get_block(&block_id)
             .await
             .map_err(BlockIngestionError::provider)?;
 
-        let global_id = GlobalBlockId::from_block(&block)?;
+        let global_id = GlobalBlockId::from_block_header(&header)?;
 
-        if !block.status().is_finalized() {
+        if !status.is_finalized() {
             return Ok(IngestResult::TransitionToAccepted(global_id));
         }
 
         let mut txn = self.storage.begin_txn()?;
         self.downloader
-            .finish_ingesting_block(&global_id, block, &mut txn)
+            .finish_ingesting_block(&global_id, status, header, body, &mut txn)
             .await?;
         txn.update_canonical_chain(&global_id)?;
         txn.commit()?;
