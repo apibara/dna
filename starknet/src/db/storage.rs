@@ -77,7 +77,7 @@ pub trait StorageWriter {
     fn write_body(
         &mut self,
         id: &GlobalBlockId,
-        transactions: Vec<v1alpha2::Transaction>,
+        body: v1alpha2::BlockBody,
     ) -> Result<(), Self::Error>;
 
     /// Writes the receipts in a block.
@@ -307,13 +307,12 @@ impl<'env, 'txn, E: EnvironmentKind> StorageWriter for DatabaseStorageWriter<'en
         Ok(())
     }
 
-    #[tracing::instrument(level = "trace", skip(self, transactions))]
+    #[tracing::instrument(level = "trace", skip(self, body))]
     fn write_body(
         &mut self,
         id: &GlobalBlockId,
-        transactions: Vec<v1alpha2::Transaction>,
+        body: v1alpha2::BlockBody,
     ) -> Result<(), Self::Error> {
-        let body = super::BlockBody { transactions };
         self.body_cursor.seek_exact(id)?;
         self.body_cursor.put(id, &body)?;
         Ok(())
@@ -325,7 +324,7 @@ impl<'env, 'txn, E: EnvironmentKind> StorageWriter for DatabaseStorageWriter<'en
         id: &GlobalBlockId,
         receipts: Vec<v1alpha2::TransactionReceipt>,
     ) -> Result<(), Self::Error> {
-        let body = super::BlockReceipts { receipts };
+        let body = v1alpha2::BlockReceipts { receipts };
         self.receipts_cursor.seek_exact(id)?;
         self.receipts_cursor.put(id, &body)?;
         Ok(())

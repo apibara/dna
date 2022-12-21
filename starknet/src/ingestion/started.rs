@@ -83,7 +83,7 @@ where
         global_id: &GlobalBlockId,
     ) -> Result<bool, BlockIngestionError> {
         let block_id = BlockId::Hash(*global_id.hash());
-        let block = self
+        let (status, _header, _transactions) = self
             .provider
             .get_block(&block_id)
             .await
@@ -91,25 +91,25 @@ where
 
         // blocks can be either finalized (accepted on l1)), accepted (on l2) or aborted.
         // if a block was aborted, then it was not finalized
-        Ok(!block.status().is_finalized())
+        Ok(!status.is_finalized())
     }
 
     #[tracing::instrument(skip(self))]
     async fn ingest_genesis_block(&self) -> Result<GlobalBlockId, BlockIngestionError> {
         info!("ingest genesis block");
         let block_id = BlockId::Number(0);
-        let block = self
+        let (status, header, body) = self
             .provider
             .get_block(&block_id)
             .await
             .map_err(BlockIngestionError::provider)?;
 
-        let global_id = GlobalBlockId::from_block(&block)?;
+        let global_id = GlobalBlockId::from_block_header(&header)?;
         info!(id = %global_id, "genesis block");
 
         let mut txn = self.storage.begin_txn()?;
         self.downloader
-            .finish_ingesting_block(&global_id, block, &mut txn)
+            .finish_ingesting_block(&global_id, status, header, body, &mut txn)
             .await?;
         txn.update_canonical_chain(&global_id)?;
         txn.commit()?;

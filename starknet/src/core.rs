@@ -35,7 +35,20 @@ pub enum InvalidBlock {
 pub mod pb {
     pub mod starknet {
         pub mod v1alpha2 {
+            use prost::Message;
             tonic::include_proto!("apibara.starknet.v1alpha2");
+
+            #[derive(Clone, PartialEq, Message)]
+            pub struct BlockBody {
+                #[prost(message, repeated, tag = "1")]
+                pub transactions: prost::alloc::vec::Vec<Transaction>,
+            }
+
+            #[derive(Clone, PartialEq, Message)]
+            pub struct BlockReceipts {
+                #[prost(message, repeated, tag = "1")]
+                pub receipts: prost::alloc::vec::Vec<TransactionReceipt>,
+            }
 
             pub(crate) const FILE_DESCRIPTOR_SET: &[u8] =
                 tonic::include_file_descriptor_set!("starknet_descriptor_v1alpha2");
@@ -153,6 +166,12 @@ impl GlobalBlockId {
 
     pub fn from_block(block: &pb::starknet::v1alpha2::Block) -> Result<Self, InvalidBlock> {
         let header = block.header.as_ref().ok_or(InvalidBlock::MissingHeader)?;
+        Self::from_block_header(header)
+    }
+
+    pub fn from_block_header(
+        header: &pb::starknet::v1alpha2::BlockHeader,
+    ) -> Result<Self, InvalidBlock> {
         let hash = header
             .block_hash
             .as_ref()

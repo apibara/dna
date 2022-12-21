@@ -232,18 +232,18 @@ where
             .canonical_block_id(number)?
             .ok_or(BlockIngestionError::InconsistentDatabase)?;
         let block_id = BlockId::Hash(*global_id.hash());
-        let block = self
+        let (status, _header, _body) = self
             .provider
             .get_block(&block_id)
             .await
             .map_err(BlockIngestionError::provider)?;
 
-        if !block.status().is_finalized() {
+        if !status.is_finalized() {
             return Ok(None);
         }
 
         let mut txn = self.storage.begin_txn()?;
-        txn.write_status(&global_id, block.status())?;
+        txn.write_status(&global_id, status)?;
         txn.commit()?;
         Ok(Some(global_id))
     }
@@ -258,19 +258,15 @@ where
             "ingest block by number"
         );
         let block_id = BlockId::Number(number);
-        let block = self
+        let (status, header, body) = self
             .provider
             .get_block(&block_id)
             .await
             .map_err(BlockIngestionError::provider)?;
 
-        let new_block_id = GlobalBlockId::from_block(&block)?;
+        let new_block_id = GlobalBlockId::from_block_header(&header)?;
 
         // extract parent id
-        let header = block
-            .header
-            .as_ref()
-            .ok_or(BlockIngestionError::MissingBlockHeader)?;
         let parent_hash = header
             .parent_block_hash
             .as_ref()
@@ -281,7 +277,7 @@ where
         // write block data to storage
         let mut txn = self.storage.begin_txn()?;
         self.downloader
-            .finish_ingesting_block(&new_block_id, block, &mut txn)
+            .finish_ingesting_block(&new_block_id, status, header, body, &mut txn)
             .await?;
         txn.commit()?;
 

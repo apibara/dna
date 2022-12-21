@@ -7,19 +7,16 @@ use crate::{
     db::StorageReader,
 };
 
-pub struct AggregateResult {
-    pub data: Option<v1alpha2::Block>,
-    pub next: Option<GlobalBlockId>,
-}
-
 pub trait BlockDataAggregator {
     type Error: std::error::Error + Send + Sync + 'static;
 
     /// Returns a `Block` with data for the given block.
     ///
     /// If there is no data for the given block, it returns `None`.
-    fn aggregate_for_block(&self, block_id: &GlobalBlockId)
-        -> Result<AggregateResult, Self::Error>;
+    fn aggregate_for_block(
+        &self,
+        block_id: &GlobalBlockId,
+    ) -> Result<Option<v1alpha2::Block>, Self::Error>;
 }
 
 pub struct DatabaseBlockDataAggregator<R: StorageReader> {
@@ -54,18 +51,22 @@ where
     fn transactions(
         &self,
         block_id: &GlobalBlockId,
-    ) -> Result<Vec<v1alpha2::Transaction>, R::Error> {
+    ) -> Result<Vec<v1alpha2::TransactionWithReceipt>, R::Error> {
         if self.filter.transactions.len() == 0 {
             return Ok(Vec::default());
         }
 
+        /*
         let transactions = self
             .storage
             .read_body(block_id)?
             .into_iter()
             .filter(|tx| self.filter_transaction(tx))
             .collect();
+
         Ok(transactions)
+        */
+        todo!()
     }
 
     fn receipts(
@@ -80,11 +81,15 @@ where
         Ok(Vec::default())
     }
 
-    fn events(&self, block_id: &GlobalBlockId) -> Result<Vec<v1alpha2::Event>, R::Error> {
+    fn events(
+        &self,
+        block_id: &GlobalBlockId,
+    ) -> Result<Vec<v1alpha2::EventWithTransaction>, R::Error> {
         if self.filter.events.len() == 0 {
             return Ok(Vec::default());
         }
 
+        /*
         let receipts = self.storage.read_receipts(block_id)?;
         let mut events = Vec::default();
         for receipt in receipts {
@@ -98,6 +103,15 @@ where
             }
         }
         Ok(events)
+        */
+        todo!()
+    }
+
+    fn l2_to_l1_messages(
+        &self,
+        block_id: &GlobalBlockId,
+    ) -> Result<Vec<v1alpha2::L2ToL1MessageWithTransaction>, R::Error> {
+        Ok(Vec::default())
     }
 
     fn state_update(
@@ -123,10 +137,6 @@ where
         }
         false
     }
-
-    fn next_block(&self, block_id: &GlobalBlockId) -> Result<Option<GlobalBlockId>, R::Error> {
-        self.storage.canonical_block_id(block_id.number() + 1)
-    }
 }
 
 impl<R> BlockDataAggregator for DatabaseBlockDataAggregator<R>
@@ -139,13 +149,28 @@ where
     fn aggregate_for_block(
         &self,
         block_id: &GlobalBlockId,
-    ) -> Result<AggregateResult, Self::Error> {
+    ) -> Result<Option<v1alpha2::Block>, Self::Error> {
+        let mut has_data = false;
+
         let status = self.status(block_id)?;
+
         let header = self.header(block_id)?;
+        has_data |= header.is_some();
+
         let transactions = self.transactions(block_id)?;
+        has_data |= !transactions.is_empty();
+
         let receipts = self.receipts(block_id)?;
+        has_data |= !receipts.is_empty();
+
         let events = self.events(block_id)?;
+        has_data |= !events.is_empty();
+
+        let l2_to_l1_messages = self.l2_to_l1_messages(block_id)?;
+        has_data |= !l2_to_l1_messages.is_empty();
+
         let state_update = self.state_update(block_id)?;
+        has_data |= state_update.is_some();
 
         let data = v1alpha2::Block {
             status: status as i32,
@@ -154,13 +179,13 @@ where
             transactions,
             receipts,
             events,
+            l2_to_l1_messages,
         };
 
-        let next = self.next_block(block_id)?;
-
-        Ok(AggregateResult {
-            data: Some(data),
-            next,
-        })
+        if has_data {
+            Ok(Some(data))
+        } else {
+            Ok(None)
+        }
     }
 }

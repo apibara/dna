@@ -23,7 +23,17 @@ pub trait Provider {
     async fn get_head(&self) -> Result<GlobalBlockId, Self::Error>;
 
     /// Get a specific block.
-    async fn get_block(&self, id: &BlockId) -> Result<v1alpha2::Block, Self::Error>;
+    async fn get_block(
+        &self,
+        id: &BlockId,
+    ) -> Result<
+        (
+            v1alpha2::BlockStatus,
+            v1alpha2::BlockHeader,
+            v1alpha2::BlockBody,
+        ),
+        Self::Error,
+    >;
 
     /// Get state update for a specific block.
     async fn get_state_update(&self, id: &BlockId) -> Result<v1alpha2::StateUpdate, Self::Error>;
@@ -87,7 +97,17 @@ impl Provider for HttpProvider {
     }
 
     #[tracing::instrument(skip(self))]
-    async fn get_block(&self, id: &BlockId) -> Result<v1alpha2::Block, Self::Error> {
+    async fn get_block(
+        &self,
+        id: &BlockId,
+    ) -> Result<
+        (
+            v1alpha2::BlockStatus,
+            v1alpha2::BlockHeader,
+            v1alpha2::BlockBody,
+        ),
+        Self::Error,
+    > {
         let block_id = id.try_into()?;
         let block = self
             .provider
@@ -100,8 +120,10 @@ impl Provider for HttpProvider {
                 if id.is_pending() {
                     return Err(HttpProviderError::UnexpectedPendingBlock);
                 }
-                let block = block.into();
-                Ok(block)
+                let status = (&block).into();
+                let header = (&block).into();
+                let body = (&block).into();
+                Ok((status, header, body))
             }
             jsonrpc::models::MaybePendingBlockWithTxs::PendingBlock(_block) => {
                 if !id.is_pending() {
@@ -167,25 +189,26 @@ impl TryFrom<&BlockId> for jsonrpc::models::BlockId {
     }
 }
 
-impl From<jsonrpc::models::BlockWithTxs> for v1alpha2::Block {
-    fn from(block: jsonrpc::models::BlockWithTxs) -> Self {
-        let status: v1alpha2::BlockStatus = block.status.into();
-        let header = block.header.into();
+impl From<&jsonrpc::models::BlockWithTxs> for v1alpha2::BlockStatus {
+    fn from(block: &jsonrpc::models::BlockWithTxs) -> Self {
+        (&block.status).into()
+    }
+}
+impl From<&jsonrpc::models::BlockWithTxs> for v1alpha2::BlockBody {
+    fn from(block: &jsonrpc::models::BlockWithTxs) -> Self {
         let transactions = block.transactions.iter().map(Into::into).collect();
-
-        v1alpha2::Block {
-            status: status as i32,
-            header: Some(header),
-            transactions,
-            receipts: Vec::default(),
-            state_update: None,
-            events: Vec::default(),
-        }
+        v1alpha2::BlockBody { transactions }
     }
 }
 
-impl From<jsonrpc::models::BlockStatus> for v1alpha2::BlockStatus {
-    fn from(status: jsonrpc::models::BlockStatus) -> Self {
+impl From<&jsonrpc::models::BlockWithTxs> for v1alpha2::BlockHeader {
+    fn from(block: &jsonrpc::models::BlockWithTxs) -> Self {
+        (&block.header).into()
+    }
+}
+
+impl From<&jsonrpc::models::BlockStatus> for v1alpha2::BlockStatus {
+    fn from(status: &jsonrpc::models::BlockStatus) -> Self {
         use jsonrpc::models::BlockStatus;
 
         match status {
@@ -197,8 +220,8 @@ impl From<jsonrpc::models::BlockStatus> for v1alpha2::BlockStatus {
     }
 }
 
-impl From<jsonrpc::models::BlockHeader> for v1alpha2::BlockHeader {
-    fn from(header: jsonrpc::models::BlockHeader) -> Self {
+impl From<&jsonrpc::models::BlockHeader> for v1alpha2::BlockHeader {
+    fn from(header: &jsonrpc::models::BlockHeader) -> Self {
         let block_hash = header.block_hash.into();
         let parent_block_hash = header.parent_hash.into();
         let block_number = header.block_number;
@@ -264,7 +287,6 @@ impl From<&jsonrpc::models::InvokeTransaction> for v1alpha2::Transaction {
                 v1alpha2::Transaction {
                     meta: Some(meta),
                     transaction: Some(Transaction::InvokeV0(invoke_v0)),
-                    receipt: None,
                 }
             }
             InvokeTransactionVersion::V1(v1) => {
@@ -277,7 +299,6 @@ impl From<&jsonrpc::models::InvokeTransaction> for v1alpha2::Transaction {
                 v1alpha2::Transaction {
                     meta: Some(meta),
                     transaction: Some(Transaction::InvokeV1(invoke_v1)),
-                    receipt: None,
                 }
             }
         }
@@ -310,7 +331,6 @@ impl From<&jsonrpc::models::DeployTransaction> for v1alpha2::Transaction {
         v1alpha2::Transaction {
             meta: Some(meta),
             transaction: Some(Transaction::Deploy(deploy)),
-            receipt: None,
         }
     }
 }
@@ -331,7 +351,6 @@ impl From<&jsonrpc::models::DeclareTransaction> for v1alpha2::Transaction {
         v1alpha2::Transaction {
             meta: Some(meta),
             transaction: Some(Transaction::Declare(declare)),
-            receipt: None,
         }
     }
 }
@@ -359,7 +378,6 @@ impl From<&jsonrpc::models::L1HandlerTransaction> for v1alpha2::Transaction {
         v1alpha2::Transaction {
             meta: Some(meta),
             transaction: Some(Transaction::L1Handler(l1_handler)),
-            receipt: None,
         }
     }
 }
@@ -387,7 +405,6 @@ impl From<&jsonrpc::models::DeployAccountTransaction> for v1alpha2::Transaction 
         v1alpha2::Transaction {
             meta: Some(meta),
             transaction: Some(Transaction::DeployAccount(deploy_account)),
-            receipt: None,
         }
     }
 }
@@ -493,7 +510,6 @@ impl From<&jsonrpc::models::TransactionReceiptMeta> for v1alpha2::TransactionRec
             actual_fee: Some(actual_fee),
             l2_to_l1_messages,
             events,
-            transaction: None,
         }
     }
 }
@@ -518,7 +534,6 @@ impl From<&jsonrpc::models::PendingTransactionReceiptMeta> for v1alpha2::Transac
             actual_fee: Some(actual_fee),
             l2_to_l1_messages,
             events,
-            transaction: None,
         }
     }
 }
@@ -538,8 +553,6 @@ impl From<&jsonrpc::models::MsgToL1> for v1alpha2::L2ToL1Message {
         v1alpha2::L2ToL1Message {
             to_address: Some(to_address),
             payload,
-            receipt: None,
-            transaction: None,
         }
     }
 }
@@ -554,8 +567,6 @@ impl From<&jsonrpc::models::Event> for v1alpha2::Event {
             from_address: Some(from_address),
             keys,
             data,
-            receipt: None,
-            transaction: None,
         }
     }
 }

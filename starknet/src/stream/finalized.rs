@@ -138,7 +138,7 @@ where
         let message = BatchItem {
             is_live,
             cursor: current_cursor_cursor,
-            data: aggregate_result.data,
+            data: aggregate_result,
         };
         Poll::Ready(Some(Ok(BatchMessage::Finalized(message))))
     }

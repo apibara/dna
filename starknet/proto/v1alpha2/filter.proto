@@ -10,12 +10,14 @@ message Filter {
   HeaderFilter header = 1;
   // Transactions.
   repeated TransactionFilter transactions = 2;
-  // Messages from L2 to L1.
-  repeated L2ToL1MessageFilter messages = 3;
-  // Emitted events.
-  repeated EventFilter events = 4;
+  // Receipts
+  repeated TransactionFilter receipts = 3;
   // State update.
-  StateUpdateFilter state_update = 5;
+  StateUpdateFilter state_update = 4;
+  // Emitted events.
+  repeated EventFilter events = 5;
+  // Messages from L2 to L1.
+  repeated L2ToL1MessageFilter messages = 6;
 }
 
 // Filter header.
@@ -115,26 +117,40 @@ message EventFilter {
 
 // Filter state update data.
 message StateUpdateFilter {
+  // Filter storage changes.
   repeated StorageDiffFilter storage_diffs = 1;
+  // Filter declared contracts.
   repeated DeclaredContractFilter declared_contracts = 2;
+  // Filter deployed contracts.
   repeated DeployedContractFilter deployed_contracts = 3;
+  // Filter nonces updates.
   repeated NonceUpdateFilter nonces = 4;
 }
 
+// Filter storage changes.
 message StorageDiffFilter {
+  // Filter by contract address.
   FieldElement contract_address = 1;
 }
 
+// Filter declared contracts.
 message DeclaredContractFilter {
+  // Filter by class hash.
   FieldElement class_hash = 1;
 }
 
+// Filter deployed contracts.
 message DeployedContractFilter {
+  // Filter by contract address.
   FieldElement contract_address = 1;
+  // Filter by class hash.
   FieldElement class_hash = 2;
 }
 
+// Filter nonce updates.
 message NonceUpdateFilter {
+  // Filter by contract address.
   FieldElement contract_address = 1;
+  // Filter by new nonce value.
   FieldElement nonce = 2;
 }
