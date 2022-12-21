@@ -23,7 +23,7 @@ where
     L: Stream<Item = Result<IngestionMessage, LE>>,
     LE: std::error::Error,
 {
-    current_cursor: Option<GlobalBlockId>,
+    previous_cursor: Option<GlobalBlockId>,
     finalized_cursor: GlobalBlockId,
     storage: Arc<R>,
     aggregator: DatabaseBlockDataAggregator<R>,
@@ -41,6 +41,8 @@ pub enum FinalizedBlockStreamError {
     Aggregate(Box<dyn std::error::Error + Send + Sync + 'static>),
     #[error("cursor is not valid")]
     InvalidCursor(#[from] InvalidBlockHashSize),
+    #[error(transparent)]
+    Storage(Box<dyn std::error::Error + Send + Sync + 'static>),
 }
 
 impl<R, L, LE> FinalizedBlockStream<R, L, LE>
@@ -50,7 +52,7 @@ where
     LE: std::error::Error,
 {
     pub fn new(
-        starting_cursor: GlobalBlockId,
+        starting_cursor: Option<GlobalBlockId>,
         finalized_cursor: GlobalBlockId,
         filter: v1alpha2::Filter,
         storage: Arc<R>,
@@ -58,7 +60,7 @@ where
     ) -> Result<Self, FinalizedBlockStreamError> {
         let aggregator = DatabaseBlockDataAggregator::new(storage.clone(), filter);
         Ok(FinalizedBlockStream {
-            current_cursor: Some(starting_cursor),
+            previous_cursor: starting_cursor,
             finalized_cursor,
             storage,
             aggregator,
@@ -102,14 +104,17 @@ where
             },
         }
 
-        let current_cursor = match this.current_cursor {
-            None => {
-                // stream sent data up to the current finalized cursor.
-                // the cursor for the next block is still unknown, so sleep
-                // until it receives a message from the finalized stream.
+        let current_cursor_block_number = this.previous_cursor.map(|c| c.number() + 1).unwrap_or(0);
+        let current_cursor = match this.storage.canonical_block_id(current_cursor_block_number) {
+            Err(err) => {
+                let err = FinalizedBlockStreamError::Storage(Box::new(err));
+                return Poll::Ready(Some(Err(err)));
+            }
+            Ok(None) => {
+                // still waiting on data for the next cursor
                 return Poll::Pending;
             }
-            Some(cursor) => cursor,
+            Ok(Some(block_id)) => block_id,
         };
 
         let is_after_finalized_block = current_cursor.number() > this.finalized_cursor.number();
@@ -118,8 +123,7 @@ where
         if is_after_finalized_block {
             return Poll::Pending;
         }
-
-        let aggregate_result = match this.aggregator.aggregate_for_block(current_cursor) {
+        let aggregate_result = match this.aggregator.aggregate_for_block(&current_cursor) {
             Ok(result) => result,
             Err(err) => {
                 let err = FinalizedBlockStreamError::Aggregate(Box::new(err));
@@ -128,12 +132,12 @@ where
         };
 
         let is_live = current_cursor.number() == this.finalized_cursor.number();
-        let current_cursor = current_cursor.to_cursor();
-        *this.current_cursor = aggregate_result.next;
+        let current_cursor_cursor = current_cursor.to_cursor();
+        *this.previous_cursor = Some(current_cursor);
 
         let message = BatchItem {
             is_live,
-            cursor: current_cursor,
+            cursor: current_cursor_cursor,
             data: aggregate_result.data,
         };
         Poll::Ready(Some(Ok(BatchMessage::Finalized(message))))

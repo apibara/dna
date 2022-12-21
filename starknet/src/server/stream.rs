@@ -85,17 +85,16 @@ where
             .ok_or_else(mk_internal_error)?;
 
         let filter = initial_request.filter.unwrap_or_default();
-        let starting_cursor = match initial_request.starting_cursor {
-            None => {
-                // start from genesis
-                self.storage
-                    .canonical_block_id(0)
-                    .map_err(internal_error)?
-                    .ok_or_else(mk_internal_error)?
-            }
-            Some(cursor) => GlobalBlockId::from_cursor(&cursor).map_err(internal_error)?,
-        };
+
+        let starting_cursor = initial_request
+            .starting_cursor
+            .as_ref()
+            .map(GlobalBlockId::from_cursor)
+            .transpose()
+            .map_err(internal_error)?;
+
         let requested_finality = initial_request.finality.and_then(DataFinality::from_i32);
+
         match requested_finality {
             Some(DataFinality::DataStatusPending) => {
                 return Err(tonic::Status::internal("pending data not yet implemented"));
