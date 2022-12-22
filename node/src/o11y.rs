@@ -1,5 +1,7 @@
 //! # OpenTelemetry helpers
 
+use std::env;
+
 use clap::Command;
 use opentelemetry::{
     global,
@@ -17,6 +19,8 @@ pub use opentelemetry::metrics::{ObservableCounter, ObservableGauge};
 pub use opentelemetry::{Context, KeyValue};
 use tracing_opentelemetry::MetricsLayer;
 use tracing_subscriber::{prelude::*, EnvFilter};
+
+const OTEL_SDK_DISABLED: &str = "OTEL_SDK_DISABLED";
 
 #[derive(Debug, thiserror::Error)]
 pub enum OpenTelemetryInitError {
@@ -44,6 +48,31 @@ pub fn meter(name: &'static str) -> Meter {
 }
 
 pub fn init_opentelemetry() -> Result<(), OpenTelemetryInitError> {
+    // The otel sdk doesn't follow the disabled env variable flag.
+    // so we manually implement it to disable otel exports.
+    let sdk_disabled = env::var(OTEL_SDK_DISABLED)
+        .map(|v| v == "true")
+        .unwrap_or(false);
+
+    if sdk_disabled {
+        init_opentelemetry_no_sdk()
+    } else {
+        init_opentelemetry_with_sdk()
+    }
+}
+
+fn init_opentelemetry_no_sdk() -> Result<(), OpenTelemetryInitError> {
+    let log_env_filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("INFO"));
+    let logtree_layer = tracing_tree::HierarchicalLayer::new(2).and_then(log_env_filter);
+
+    tracing_subscriber::Registry::default()
+        .with(logtree_layer)
+        .init();
+    Ok(())
+}
+
+fn init_opentelemetry_with_sdk() -> Result<(), OpenTelemetryInitError> {
     // filter traces by crate/level
     let otel_env_filter =
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("INFO"));

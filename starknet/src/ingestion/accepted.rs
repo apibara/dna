@@ -136,8 +136,9 @@ where
     #[tracing::instrument(skip(self))]
     pub async fn tick(&mut self) -> Result<TickResult, BlockIngestionError> {
         debug!(
-            current_head = %self.current_head,
-            finalized = %self.finalized,
+            value.head_height = self.current_head.number(),
+            value.finalized_height = self.finalized.number(),
+            head = %self.current_head,
             previous = %self.previous,
             "accepted ingestion tick"
         );
