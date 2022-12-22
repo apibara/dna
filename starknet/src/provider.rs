@@ -154,7 +154,6 @@ impl Provider for HttpProvider {
         let hash: FieldElement = hash
             .try_into()
             .map_err(|err| HttpProviderError::Provider(Box::new(err)))?;
-        println!("hash = {:#01x}", hash);
         let receipt = self
             .provider
             .get_transaction_receipt(hash)
