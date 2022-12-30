@@ -116,9 +116,11 @@ where
                     debug!(block_id = %block_id, "got new finalized block");
                     *this.finalized_cursor = block_id;
                     cx.waker().wake_by_ref();
+                    return Poll::Pending;
                 }
                 _ => {
                     cx.waker().wake_by_ref();
+                    return Poll::Pending;
                 }
             },
         }
@@ -136,7 +138,32 @@ where
             }
             Poll::Ready(Some(Ok(request))) => {
                 debug!(req = ?request, "client request");
-                todo!()
+                // ignore batch_size and finality
+
+                if let Some(new_stream_id) = request.stream_id {
+                    *this.stream_id = new_stream_id;
+                }
+
+                if let Some(new_filter) = request.filter {
+                    let aggregator =
+                        DatabaseBlockDataAggregator::new(this.storage.clone(), new_filter);
+                    *this.aggregator = aggregator;
+                }
+
+                if let Some(new_starting_cursor) = request.starting_cursor {
+                    let new_previous_cursor = match GlobalBlockId::from_cursor(&new_starting_cursor)
+                    {
+                        Ok(id) => id,
+                        Err(_err) => {
+                            // invalid cursor
+                            todo!()
+                        }
+                    };
+                    *this.previous_cursor = Some(new_previous_cursor);
+                }
+
+                cx.waker().wake_by_ref();
+                return Poll::Pending;
             }
         }
 
