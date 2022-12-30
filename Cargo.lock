@@ -2705,24 +2705,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "starknet-token-transfer-example"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "apibara-sdk",
- "apibara-starknet",
- "hex",
- "lazy_static",
- "prost",
- "prost-types",
- "thiserror",
- "tokio 1.21.1",
- "tonic",
- "tonic-build",
- "tracing",
-]
-
-[[package]]
 name = "static_assertions"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
