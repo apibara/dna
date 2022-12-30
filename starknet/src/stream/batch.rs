@@ -15,7 +15,9 @@ use crate::core::pb::{starknet, stream};
 #[derive(Debug)]
 pub struct BatchItem {
     pub is_live: bool,
+    pub stream_id: u64,
     pub cursor: stream::v1alpha2::Cursor,
+    pub data_finality: stream::v1alpha2::DataFinality,
     pub data: Option<starknet::v1alpha2::Block>,
 }
 
@@ -25,6 +27,7 @@ pub enum BatchMessage {
     Finalized(BatchItem),
     Accepted(BatchItem),
     Pending(BatchItem),
+    Invalidate(BatchItem),
 }
 
 pub trait BatchDataStreamExt: Stream {
@@ -59,6 +62,7 @@ struct BatchState {
     latest_cursor: stream::v1alpha2::Cursor,
     data_finality: stream::v1alpha2::DataFinality,
     batch_size: usize,
+    stream_id: Option<u64>,
 }
 
 impl BatchMessage {
@@ -67,6 +71,25 @@ impl BatchMessage {
             BatchMessage::Finalized(item) => item.is_live,
             BatchMessage::Accepted(item) => item.is_live,
             BatchMessage::Pending(item) => item.is_live,
+            BatchMessage::Invalidate(item) => item.is_live,
+        }
+    }
+
+    pub fn stream_id(&self) -> u64 {
+        match self {
+            BatchMessage::Finalized(item) => item.stream_id,
+            BatchMessage::Accepted(item) => item.stream_id,
+            BatchMessage::Pending(item) => item.stream_id,
+            BatchMessage::Invalidate(item) => item.stream_id,
+        }
+    }
+
+    pub fn data_finality(&self) -> stream::v1alpha2::DataFinality {
+        match self {
+            BatchMessage::Finalized(item) => item.data_finality,
+            BatchMessage::Accepted(item) => item.data_finality,
+            BatchMessage::Pending(item) => item.data_finality,
+            BatchMessage::Invalidate(item) => item.data_finality,
         }
     }
 }
@@ -93,6 +116,7 @@ impl BatchState {
             items: Vec::with_capacity(batch_size),
             data_finality: stream::v1alpha2::DataFinality::DataStatusUnknown,
             batch_size,
+            stream_id: None,
         }
     }
 
@@ -104,12 +128,22 @@ impl BatchState {
         self.items.len() >= self.batch_size
     }
 
-    pub fn push_data(&mut self, cursor: stream::v1alpha2::Cursor, data: starknet::v1alpha2::Block) {
+    pub fn push_data(
+        &mut self,
+        cursor: stream::v1alpha2::Cursor,
+        stream_id: u64,
+        finality: stream::v1alpha2::DataFinality,
+        data: starknet::v1alpha2::Block,
+    ) {
         self.latest_cursor = cursor;
+        self.stream_id = Some(stream_id);
+        self.data_finality = finality;
         self.items.push(data);
     }
 
-    pub fn drain_data(&mut self) -> stream::v1alpha2::Data {
+    pub fn drain_data(&mut self) -> stream::v1alpha2::StreamDataResponse {
+        use stream::v1alpha2::stream_data_response::Message;
+
         let items = std::mem::take(&mut self.items);
         let end_cursor = std::mem::take(&mut self.latest_cursor);
         let data = stream::v1alpha2::Data {
@@ -118,7 +152,11 @@ impl BatchState {
             data: items,
         };
         self.items = Vec::with_capacity(self.batch_size);
-        data
+
+        stream::v1alpha2::StreamDataResponse {
+            stream_id: self.stream_id.unwrap_or_default(),
+            message: Some(Message::Data(data)),
+        }
     }
 }
 
@@ -127,7 +165,7 @@ where
     S: Stream<Item = Result<BatchMessage, E>>,
     E: std::error::Error,
 {
-    type Item = Result<stream::v1alpha2::Data, E>;
+    type Item = Result<stream::v1alpha2::StreamDataResponse, E>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<Option<Self::Item>> {
         let mut this = self.project();
@@ -146,26 +184,66 @@ where
                     return Poll::Ready(Some(Ok(data)));
                 }
                 Poll::Ready(Some(Ok(message))) => {
-                    // TODO:
-                    // - update finality data (if first message)
-                    // - update end cursor
-                    // - insert into items
-                    // - maybe drain data
+                    // drain conditions:
+                    // - new stream id
+                    // - new data finality
+                    // - batch size
+                    // - invalidate message
+                    //
+                    // in all other cases there is no need to drain
+                    let has_different_stream_id = this
+                        .state
+                        .stream_id
+                        .map(|id| id != message.stream_id())
+                        .unwrap_or(true);
+
+                    let has_different_data_finality = {
+                        // don't drain on first message, which will have different finality.
+                        use stream::v1alpha2::DataFinality;
+
+                        this.state.data_finality != DataFinality::DataStatusUnknown
+                            && this.state.data_finality != message.data_finality()
+                    };
+
                     let is_live = message.is_live();
-                    match message {
-                        BatchMessage::Finalized(item) => {
-                            if let Some(data) = item.data {
-                                this.state.push_data(item.cursor, data);
-                            }
-                        }
-                        _ => {
-                            // TODO: update state based on message
+
+                    let should_drain = has_different_data_finality
+                        || has_different_stream_id
+                        || is_live
+                        || this.state.should_drain();
+
+                    let data_to_drain = match message {
+                        BatchMessage::Invalidate(_item) => {
+                            // TODO: drain existing data, then prepare to
+                            // return invalidate message on next poll
                             todo!()
                         }
-                    }
+                        BatchMessage::Finalized(item) => {
+                            let mut data = None;
+                            if should_drain {
+                                data = Some(this.state.drain_data());
+                            }
+                            if let Some(data) = item.data {
+                                this.state.push_data(
+                                    item.cursor,
+                                    item.stream_id,
+                                    item.data_finality,
+                                    data,
+                                );
+                            }
+                            data
+                        }
+                        BatchMessage::Accepted(_item) => {
+                            // TODO: same condition as finalized
+                            todo!()
+                        }
+                        BatchMessage::Pending(_item) => {
+                            // TODO: always drain
+                            todo!()
+                        }
+                    };
 
-                    if this.state.should_drain() || is_live {
-                        let data = this.state.drain_data();
+                    if let Some(data) = data_to_drain {
                         return Poll::Ready(Some(Ok(data)));
                     }
 
