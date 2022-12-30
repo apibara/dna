@@ -101,6 +101,8 @@ where
             .transpose()
             .map_err(internal_error)?;
 
+        let stream_id = initial_request.stream_id.unwrap_or_default();
+
         let requested_finality = initial_request.finality.and_then(DataFinality::from_i32);
 
         match requested_finality {
@@ -118,7 +120,9 @@ where
                     starting_cursor,
                     finalized_cursor,
                     filter,
+                    stream_id,
                     self.storage.clone(),
+                    client_stream,
                     ingestion_stream,
                 )
                 .map_err(internal_error)?;
@@ -143,7 +147,7 @@ trait StreamDataStreamExt: Stream {
 
     fn stream_data_response(self) -> StreamDataStream<Self, Self::Error>
     where
-        Self: Stream<Item = Result<pb::stream::v1alpha2::Data, Self::Error>> + Sized;
+        Self: Stream<Item = Result<pb::stream::v1alpha2::StreamDataResponse, Self::Error>> + Sized;
 }
 
 impl<S, E> StreamDataStreamExt for BatchDataStream<S, E>
@@ -155,7 +159,7 @@ where
 
     fn stream_data_response(self) -> StreamDataStream<Self, Self::Error>
     where
-        Self: Stream<Item = Result<pb::stream::v1alpha2::Data, Self::Error>> + Sized,
+        Self: Stream<Item = Result<pb::stream::v1alpha2::StreamDataResponse, Self::Error>> + Sized,
     {
         StreamDataStream::new(self)
     }
@@ -164,7 +168,7 @@ where
 #[pin_project]
 struct StreamDataStream<S, E>
 where
-    S: Stream<Item = Result<pb::stream::v1alpha2::Data, E>>,
+    S: Stream<Item = Result<pb::stream::v1alpha2::StreamDataResponse, E>>,
     E: std::error::Error,
 {
     #[pin]
@@ -173,7 +177,7 @@ where
 
 impl<S, E> StreamDataStream<S, E>
 where
-    S: Stream<Item = Result<pb::stream::v1alpha2::Data, E>>,
+    S: Stream<Item = Result<pb::stream::v1alpha2::StreamDataResponse, E>>,
     E: std::error::Error,
 {
     pub fn new(inner: S) -> Self {
@@ -184,7 +188,7 @@ where
 
 impl<S, E> Stream for StreamDataStream<S, E>
 where
-    S: Stream<Item = Result<pb::stream::v1alpha2::Data, E>> + Unpin,
+    S: Stream<Item = Result<pb::stream::v1alpha2::StreamDataResponse, E>> + Unpin,
     E: std::error::Error,
 {
     type Item = Result<StreamDataResponse, tonic::Status>;
@@ -200,7 +204,7 @@ where
                         // heartbeat
                         use pb::stream::v1alpha2::{stream_data_response::Message, Heartbeat};
 
-                        // TODO: stream id should come from inner stream
+                        // stream_id is not relevant for heartbeat messages
                         let response = StreamDataResponse {
                             stream_id: 0,
                             message: Some(Message::Heartbeat(Heartbeat {})),
@@ -211,17 +215,7 @@ where
                         // inner error
                         Err(internal_error(err))
                     }
-                    Ok(Ok(data)) => {
-                        // data
-                        use pb::stream::v1alpha2::stream_data_response::Message;
-                        // TODO: invalidate messages should come from inner stream
-
-                        let response = StreamDataResponse {
-                            stream_id: 0,
-                            message: Some(Message::Data(data)),
-                        };
-                        Ok(response)
-                    }
+                    Ok(Ok(response)) => Ok(response),
                 };
                 Poll::Ready(Some(response))
             }

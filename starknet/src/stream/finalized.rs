@@ -4,10 +4,16 @@ use std::{sync::Arc, task::Poll};
 
 use futures::Stream;
 use pin_project::pin_project;
-use tracing::debug;
+use tracing::{debug, warn};
 
 use crate::{
-    core::{pb::starknet::v1alpha2, GlobalBlockId, IngestionMessage, InvalidBlockHashSize},
+    core::{
+        pb::{
+            starknet::v1alpha2,
+            stream::v1alpha2::{DataFinality, StreamDataRequest},
+        },
+        GlobalBlockId, IngestionMessage, InvalidBlockHashSize,
+    },
     db::StorageReader,
 };
 
@@ -17,16 +23,21 @@ use super::{
 };
 
 #[pin_project]
-pub struct FinalizedBlockStream<R, L, LE>
+pub struct FinalizedBlockStream<R, C, L, CE, LE>
 where
     R: StorageReader,
+    C: Stream<Item = Result<StreamDataRequest, CE>>,
     L: Stream<Item = Result<IngestionMessage, LE>>,
+    CE: std::error::Error,
     LE: std::error::Error,
 {
+    stream_id: u64,
     previous_cursor: Option<GlobalBlockId>,
     finalized_cursor: GlobalBlockId,
     storage: Arc<R>,
     aggregator: DatabaseBlockDataAggregator<R>,
+    #[pin]
+    client_stream: C,
     #[pin]
     ingestion: L,
 }
@@ -45,34 +56,42 @@ pub enum FinalizedBlockStreamError {
     Storage(Box<dyn std::error::Error + Send + Sync + 'static>),
 }
 
-impl<R, L, LE> FinalizedBlockStream<R, L, LE>
+impl<R, C, L, CE, LE> FinalizedBlockStream<R, C, L, CE, LE>
 where
     R: StorageReader,
+    C: Stream<Item = Result<StreamDataRequest, CE>>,
     L: Stream<Item = Result<IngestionMessage, LE>>,
+    CE: std::error::Error,
     LE: std::error::Error,
 {
     pub fn new(
         starting_cursor: Option<GlobalBlockId>,
         finalized_cursor: GlobalBlockId,
         filter: v1alpha2::Filter,
+        stream_id: u64,
         storage: Arc<R>,
+        client_stream: C,
         ingestion: L,
     ) -> Result<Self, FinalizedBlockStreamError> {
         let aggregator = DatabaseBlockDataAggregator::new(storage.clone(), filter);
         Ok(FinalizedBlockStream {
+            stream_id,
             previous_cursor: starting_cursor,
             finalized_cursor,
             storage,
             aggregator,
+            client_stream,
             ingestion,
         })
     }
 }
 
-impl<R, L, LE> Stream for FinalizedBlockStream<R, L, LE>
+impl<R, C, L, CE, LE> Stream for FinalizedBlockStream<R, C, L, CE, LE>
 where
     R: StorageReader,
+    C: Stream<Item = Result<StreamDataRequest, CE>>,
     L: Stream<Item = Result<IngestionMessage, LE>>,
+    CE: std::error::Error + Send + Sync + 'static,
     LE: std::error::Error + Send + Sync + 'static,
 {
     type Item = Result<BatchMessage, FinalizedBlockStreamError>;
@@ -102,6 +121,23 @@ where
                     cx.waker().wake_by_ref();
                 }
             },
+        }
+
+        match this.client_stream.poll_next(cx) {
+            Poll::Pending => {}
+            Poll::Ready(None) => {
+                // client closed connection. close stream.
+                return Poll::Ready(None);
+            }
+            Poll::Ready(Some(Err(err))) => {
+                // client stream error. close stream.
+                warn!(err = ?err, "client stream error");
+                return Poll::Ready(None);
+            }
+            Poll::Ready(Some(Ok(request))) => {
+                debug!(req = ?request, "client request");
+                todo!()
+            }
         }
 
         let current_cursor_block_number = this.previous_cursor.map(|c| c.number() + 1).unwrap_or(0);
@@ -137,6 +173,8 @@ where
 
         let message = BatchItem {
             is_live,
+            stream_id: *this.stream_id,
+            data_finality: DataFinality::DataStatusFinalized,
             cursor: current_cursor_cursor,
             data: aggregate_result,
         };
@@ -144,10 +182,12 @@ where
     }
 }
 
-impl<R, L, LE> BatchDataStreamExt for FinalizedBlockStream<R, L, LE>
+impl<R, C, L, CE, LE> BatchDataStreamExt for FinalizedBlockStream<R, C, L, CE, LE>
 where
     R: StorageReader,
+    C: Stream<Item = Result<StreamDataRequest, CE>>,
     L: Stream<Item = Result<IngestionMessage, LE>>,
+    CE: std::error::Error + Send + Sync + 'static,
     LE: std::error::Error + Send + Sync + 'static,
 {
     fn batch<E>(
