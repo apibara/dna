@@ -131,6 +131,10 @@ pub mod pb {
 }
 
 impl BlockHash {
+    pub fn zero() -> Self {
+        BlockHash([0; 32])
+    }
+
     pub fn from_slice(b: &[u8]) -> Result<Self, InvalidBlockHashSize> {
         if b.len() != 32 {
             return Err(InvalidBlockHashSize {
@@ -160,7 +164,11 @@ impl GlobalBlockId {
     pub fn from_cursor(
         cursor: &pb::stream::v1alpha2::Cursor,
     ) -> Result<Self, InvalidBlockHashSize> {
-        let hash = BlockHash::from_slice(&cursor.unique_key)?;
+        let hash = if cursor.unique_key.is_empty() {
+            BlockHash::zero()
+        } else {
+            BlockHash::from_slice(&cursor.unique_key)?
+        };
         Ok(Self::new(cursor.order_key, hash))
     }
 
