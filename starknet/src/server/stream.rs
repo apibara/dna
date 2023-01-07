@@ -21,7 +21,9 @@ use crate::{
     },
     db::StorageReader,
     ingestion::IngestionStreamClient,
-    stream::{BatchDataStream, BatchDataStreamExt, BatchMessage, FinalizedBlockStream},
+    stream::{
+        BatchDataStream, BatchDataStreamExt, BatchMessage, FinalizedBlockStream, StreamError,
+    },
 };
 
 use super::span::RequestSpan;
@@ -99,7 +101,7 @@ where
             .as_ref()
             .map(GlobalBlockId::from_cursor)
             .transpose()
-            .map_err(internal_error)?;
+            .map_err(|_| tonic::Status::invalid_argument("invalid stream cursor"))?;
 
         let stream_id = initial_request.stream_id.unwrap_or_default();
 
@@ -143,42 +145,35 @@ where
 }
 
 trait StreamDataStreamExt: Stream {
-    type Error: std::error::Error;
-
-    fn stream_data_response(self) -> StreamDataStream<Self, Self::Error>
+    fn stream_data_response(self) -> StreamDataStream<Self>
     where
-        Self: Stream<Item = Result<pb::stream::v1alpha2::StreamDataResponse, Self::Error>> + Sized;
+        Self: Stream<Item = Result<pb::stream::v1alpha2::StreamDataResponse, StreamError>> + Sized;
 }
 
-impl<S, E> StreamDataStreamExt for BatchDataStream<S, E>
+impl<S> StreamDataStreamExt for BatchDataStream<S>
 where
-    S: Stream<Item = Result<BatchMessage, E>>,
-    E: std::error::Error,
+    S: Stream<Item = Result<BatchMessage, StreamError>>,
 {
-    type Error = E;
-
-    fn stream_data_response(self) -> StreamDataStream<Self, Self::Error>
+    fn stream_data_response(self) -> StreamDataStream<Self>
     where
-        Self: Stream<Item = Result<pb::stream::v1alpha2::StreamDataResponse, Self::Error>> + Sized,
+        Self: Stream<Item = Result<pb::stream::v1alpha2::StreamDataResponse, StreamError>> + Sized,
     {
         StreamDataStream::new(self)
     }
 }
 
 #[pin_project]
-struct StreamDataStream<S, E>
+struct StreamDataStream<S>
 where
-    S: Stream<Item = Result<pb::stream::v1alpha2::StreamDataResponse, E>>,
-    E: std::error::Error,
+    S: Stream<Item = Result<pb::stream::v1alpha2::StreamDataResponse, StreamError>>,
 {
     #[pin]
     inner: Heartbeat<S>,
 }
 
-impl<S, E> StreamDataStream<S, E>
+impl<S> StreamDataStream<S>
 where
-    S: Stream<Item = Result<pb::stream::v1alpha2::StreamDataResponse, E>>,
-    E: std::error::Error,
+    S: Stream<Item = Result<pb::stream::v1alpha2::StreamDataResponse, StreamError>>,
 {
     pub fn new(inner: S) -> Self {
         let inner = Heartbeat::new(inner, Duration::from_secs(30));
@@ -186,10 +181,9 @@ where
     }
 }
 
-impl<S, E> Stream for StreamDataStream<S, E>
+impl<S> Stream for StreamDataStream<S>
 where
-    S: Stream<Item = Result<pb::stream::v1alpha2::StreamDataResponse, E>> + Unpin,
-    E: std::error::Error,
+    S: Stream<Item = Result<pb::stream::v1alpha2::StreamDataResponse, StreamError>> + Unpin,
 {
     type Item = Result<StreamDataResponse, tonic::Status>;
 
@@ -212,8 +206,16 @@ where
                         Ok(response)
                     }
                     Ok(Err(err)) => {
-                        // inner error
-                        Err(internal_error(err))
+                        let status = match err {
+                            StreamError::Client { message } => {
+                                tonic::Status::invalid_argument(message)
+                            }
+                            StreamError::Internal(err) => {
+                                warn!(err = ?err, "stream service error");
+                                mk_internal_error()
+                            }
+                        };
+                        Err(status)
                     }
                     Ok(Ok(response)) => Ok(response),
                 };
