@@ -68,6 +68,8 @@ message Data {
   DataFinality finality = 2;
   // The stream data.
   repeated bytes data = 3;
+  // Cursor used to produced the batch.
+  Cursor cursor = 4;
 }
 
 // Sent to clients to check if stream is still connected.

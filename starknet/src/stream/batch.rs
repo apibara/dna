@@ -18,7 +18,8 @@ use super::StreamError;
 pub struct BatchItem {
     pub is_live: bool,
     pub stream_id: u64,
-    pub cursor: stream::v1alpha2::Cursor,
+    pub cursor: Option<stream::v1alpha2::Cursor>,
+    pub end_cursor: stream::v1alpha2::Cursor,
     pub data_finality: stream::v1alpha2::DataFinality,
     pub data: Option<starknet::v1alpha2::Block>,
 }
@@ -59,6 +60,7 @@ where
 
 struct BatchState {
     items: Vec<starknet::v1alpha2::Block>,
+    starting_cursor: Option<stream::v1alpha2::Cursor>,
     latest_cursor: stream::v1alpha2::Cursor,
     data_finality: stream::v1alpha2::DataFinality,
     batch_size: usize,
@@ -111,6 +113,7 @@ where
 impl BatchState {
     pub fn new(batch_size: usize) -> Self {
         BatchState {
+            starting_cursor: None,
             latest_cursor: stream::v1alpha2::Cursor::default(),
             items: Vec::with_capacity(batch_size),
             data_finality: stream::v1alpha2::DataFinality::DataStatusUnknown,
@@ -129,6 +132,7 @@ impl BatchState {
 
     pub fn push_data(
         &mut self,
+        starting_cursor: Option<stream::v1alpha2::Cursor>,
         cursor: stream::v1alpha2::Cursor,
         stream_id: u64,
         finality: stream::v1alpha2::DataFinality,
@@ -137,6 +141,9 @@ impl BatchState {
         self.latest_cursor = cursor;
         self.stream_id = Some(stream_id);
         self.data_finality = finality;
+        if self.items.is_empty() {
+            self.starting_cursor = starting_cursor;
+        }
         self.items.push(data);
     }
 
@@ -144,8 +151,10 @@ impl BatchState {
         use stream::v1alpha2::stream_data_response::Message;
 
         let items = std::mem::take(&mut self.items);
+        let cursor = std::mem::take(&mut self.starting_cursor);
         let end_cursor = std::mem::take(&mut self.latest_cursor);
         let data = stream::v1alpha2::Data {
+            cursor,
             end_cursor: Some(end_cursor),
             finality: self.data_finality as i32,
             data: items,
@@ -224,6 +233,7 @@ where
                             if let Some(data) = item.data {
                                 this.state.push_data(
                                     item.cursor,
+                                    item.end_cursor,
                                     item.stream_id,
                                     item.data_finality,
                                     data,

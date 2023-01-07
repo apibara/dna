@@ -200,13 +200,15 @@ where
 
         let is_live = current_cursor.number() == this.finalized_cursor.number();
         let current_cursor_cursor = current_cursor.to_cursor();
+        let previous_cursor = this.previous_cursor.map(|c| c.to_cursor());
         *this.previous_cursor = Some(current_cursor);
 
         let message = BatchItem {
             is_live,
             stream_id: *this.stream_id,
             data_finality: DataFinality::DataStatusFinalized,
-            cursor: current_cursor_cursor,
+            cursor: previous_cursor,
+            end_cursor: current_cursor_cursor,
             data: aggregate_result,
         };
         Poll::Ready(Some(Ok(BatchMessage::Finalized(message))))
