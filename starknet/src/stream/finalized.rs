@@ -19,7 +19,7 @@ use crate::{
 
 use super::{
     batch::{BatchDataStream, BatchItem, BatchMessage},
-    BatchDataStreamExt, BlockDataAggregator, DatabaseBlockDataAggregator,
+    BatchDataStreamExt, BlockDataAggregator, DatabaseBlockDataAggregator, StreamError,
 };
 
 #[pin_project]
@@ -94,7 +94,7 @@ where
     CE: std::error::Error + Send + Sync + 'static,
     LE: std::error::Error + Send + Sync + 'static,
 {
-    type Item = Result<BatchMessage, FinalizedBlockStreamError>;
+    type Item = Result<BatchMessage, StreamError>;
 
     fn poll_next(
         self: std::pin::Pin<&mut Self>,
@@ -105,10 +105,12 @@ where
         match this.ingestion.poll_next(cx) {
             Poll::Pending => {}
             Poll::Ready(None) => {
-                return Poll::Ready(Some(Err(FinalizedBlockStreamError::IngestionStreamStopped)))
+                let err = StreamError::internal(FinalizedBlockStreamError::IngestionStreamStopped);
+                return Poll::Ready(Some(Err(err)));
             }
             Poll::Ready(Some(Err(err))) => {
                 let err = FinalizedBlockStreamError::IngestionStream(Box::new(err));
+                let err = StreamError::internal(err);
                 return Poll::Ready(Some(Err(err)));
             }
             Poll::Ready(Some(Ok(message))) => match message {
@@ -155,8 +157,8 @@ where
                     {
                         Ok(id) => id,
                         Err(_err) => {
-                            // invalid cursor
-                            todo!()
+                            let err = StreamError::client("invalid stream cursor");
+                            return Poll::Ready(Some(Err(err)));
                         }
                     };
                     *this.previous_cursor = Some(new_previous_cursor);
@@ -171,6 +173,7 @@ where
         let current_cursor = match this.storage.canonical_block_id(current_cursor_block_number) {
             Err(err) => {
                 let err = FinalizedBlockStreamError::Storage(Box::new(err));
+                let err = StreamError::internal(err);
                 return Poll::Ready(Some(Err(err)));
             }
             Ok(None) => {
@@ -190,6 +193,7 @@ where
             Ok(result) => result,
             Err(err) => {
                 let err = FinalizedBlockStreamError::Aggregate(Box::new(err));
+                let err = StreamError::internal(err);
                 return Poll::Ready(Some(Err(err)));
             }
         };
@@ -217,14 +221,13 @@ where
     CE: std::error::Error + Send + Sync + 'static,
     LE: std::error::Error + Send + Sync + 'static,
 {
-    fn batch<E>(
+    fn batch(
         self,
         batch_size: usize,
         interval: std::time::Duration,
-    ) -> super::batch::BatchDataStream<Self, E>
+    ) -> super::batch::BatchDataStream<Self>
     where
-        Self: Stream<Item = Result<BatchMessage, E>> + Sized,
-        E: std::error::Error,
+        Self: Stream<Item = Result<BatchMessage, StreamError>> + Sized,
     {
         BatchDataStream::new(self, batch_size, interval)
     }

@@ -11,6 +11,8 @@ use pin_project::pin_project;
 
 use crate::core::pb::{starknet, stream};
 
+use super::StreamError;
+
 /// One item to be batched.
 #[derive(Debug)]
 pub struct BatchItem {
@@ -36,20 +38,18 @@ pub trait BatchDataStreamExt: Stream {
     /// The resulting stream will have batches of size `batch_size`,
     /// unless data is produced too slowly, in which case the stream
     /// produces smaller batches every `interval`.
-    fn batch<E>(self, batch_size: usize, interval: Duration) -> BatchDataStream<Self, E>
+    fn batch(self, batch_size: usize, interval: Duration) -> BatchDataStream<Self>
     where
-        Self: Stream<Item = Result<BatchMessage, E>> + Sized,
-        E: std::error::Error,
+        Self: Stream<Item = Result<BatchMessage, StreamError>> + Sized,
     {
         BatchDataStream::new(self, batch_size, interval)
     }
 }
 
 #[pin_project]
-pub struct BatchDataStream<S, E>
+pub struct BatchDataStream<S>
 where
-    S: Stream<Item = Result<BatchMessage, E>>,
-    E: std::error::Error,
+    S: Stream<Item = Result<BatchMessage, StreamError>>,
 {
     #[pin]
     inner: S,
@@ -94,10 +94,9 @@ impl BatchMessage {
     }
 }
 
-impl<S, E> BatchDataStream<S, E>
+impl<S> BatchDataStream<S>
 where
-    S: Stream<Item = Result<BatchMessage, E>>,
-    E: std::error::Error,
+    S: Stream<Item = Result<BatchMessage, StreamError>>,
 {
     pub fn new(inner: S, batch_size: usize, interval: Duration) -> Self {
         let state = BatchState::new(batch_size);
@@ -160,12 +159,11 @@ impl BatchState {
     }
 }
 
-impl<S, E> Stream for BatchDataStream<S, E>
+impl<S> Stream for BatchDataStream<S>
 where
-    S: Stream<Item = Result<BatchMessage, E>>,
-    E: std::error::Error,
+    S: Stream<Item = Result<BatchMessage, StreamError>>,
 {
-    type Item = Result<stream::v1alpha2::StreamDataResponse, E>;
+    type Item = Result<stream::v1alpha2::StreamDataResponse, StreamError>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<Option<Self::Item>> {
         let mut this = self.project();
