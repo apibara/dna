@@ -8,29 +8,24 @@ use std::{
     task::{self, Poll},
     time::Duration,
 };
-use tracing_futures::Instrument;
 
-use futures::{Stream, TryStreamExt};
+use futures::Stream;
 use tonic::{Request, Response, Streaming};
 use tracing::warn;
+use tracing_futures::Instrument;
 
 use crate::{
     core::{
         pb::{self, stream::v1alpha2::StreamDataResponse},
-        GlobalBlockId,
+        IngestionMessage,
     },
     db::StorageReader,
     ingestion::IngestionStreamClient,
-    stream::{
-        BatchDataStream, BatchDataStreamExt, BatchMessage, FinalizedBlockStream, StreamError,
-    },
+    stream::{DataStream, StreamConfigurationStream, StreamError},
+    // stream::{BatchDataStream, BatchMessage, StreamError},
 };
 
 use super::span::RequestSpan;
-
-const MIN_BATCH_SIZE: usize = 1;
-const MAX_BATCH_SIZE: usize = 50;
-const DEFAULT_BATCH_SIZE: usize = 20;
 
 pub struct StreamService<R: StorageReader> {
     ingestion: Arc<IngestionStreamClient>,
@@ -79,91 +74,68 @@ where
         &self,
         request: Request<Streaming<pb::stream::v1alpha2::StreamDataRequest>>,
     ) -> Result<Response<Self::StreamDataStream>, tonic::Status> {
-        use pb::stream::v1alpha2::DataFinality;
-
         let stream_span = self.request_span.stream_data_span(request.metadata());
 
-        let mut client_stream = request.into_inner();
-        let initial_request = client_stream
-            .try_next()
-            .await
-            .map_err(internal_error)?
-            .ok_or_else(mk_internal_error)?;
+        let configuration_stream = StreamConfigurationStream::new(request.into_inner());
 
-        let filter = initial_request.filter.unwrap_or_default();
-        let batch_size = initial_request
-            .batch_size
-            .unwrap_or(DEFAULT_BATCH_SIZE as u64) as usize;
-        let batch_size = batch_size.clamp(MIN_BATCH_SIZE, MAX_BATCH_SIZE);
+        let ingestion_stream = self.ingestion.subscribe().await;
+        let ingestion_stream = IngestionStream::new(ingestion_stream);
 
-        let starting_cursor = initial_request
-            .starting_cursor
-            .as_ref()
-            .map(GlobalBlockId::from_cursor)
-            .transpose()
-            .map_err(|_| tonic::Status::invalid_argument("invalid stream cursor"))?;
+        let data_stream =
+            DataStream::new(configuration_stream, ingestion_stream, self.storage.clone());
 
-        let stream_id = initial_request.stream_id.unwrap_or_default();
-
-        let requested_finality = initial_request.finality.and_then(DataFinality::from_i32);
-
-        match requested_finality {
-            Some(DataFinality::DataStatusPending) => {
-                return Err(tonic::Status::internal("pending data not yet implemented"));
-            }
-            Some(DataFinality::DataStatusFinalized) => {
-                let ingestion_stream = self.ingestion.subscribe().await;
-                let finalized_cursor = self
-                    .storage
-                    .highest_finalized_block()
-                    .map_err(internal_error)?
-                    .ok_or_else(mk_internal_error)?;
-                let inner_stream = FinalizedBlockStream::new(
-                    starting_cursor,
-                    finalized_cursor,
-                    filter,
-                    stream_id,
-                    self.storage.clone(),
-                    client_stream,
-                    ingestion_stream,
-                )
-                .map_err(internal_error)?;
-
-                let response = inner_stream
-                    .batch(batch_size, Duration::from_millis(250))
-                    .stream_data_response()
-                    .instrument(stream_span);
-
-                Ok(Response::new(Box::pin(response)))
-            }
-            _ => {
-                // default to accepted
-                todo!()
-            }
-        }
+        let response = ResponseStream::new(data_stream).instrument(stream_span);
+        Ok(Response::new(Box::pin(response)))
     }
 }
 
-trait StreamDataStreamExt: Stream {
-    fn stream_data_response(self) -> StreamDataStream<Self>
-    where
-        Self: Stream<Item = Result<pb::stream::v1alpha2::StreamDataResponse, StreamError>> + Sized;
+/// A simple adapter from a generic ingestion stream to the one used by the server/stream module.
+#[pin_project]
+struct IngestionStream<L, E>
+where
+    L: Stream<Item = Result<IngestionMessage, E>>,
+    E: std::error::Error + Send + Sync + 'static,
+{
+    #[pin]
+    inner: L,
+}
+impl<L, E> IngestionStream<L, E>
+where
+    L: Stream<Item = Result<IngestionMessage, E>>,
+    E: std::error::Error + Send + Sync + 'static,
+{
+    pub fn new(inner: L) -> Self {
+        IngestionStream { inner }
+    }
 }
 
-impl<S> StreamDataStreamExt for BatchDataStream<S>
+impl<L, E> Stream for IngestionStream<L, E>
 where
-    S: Stream<Item = Result<BatchMessage, StreamError>>,
+    L: Stream<Item = Result<IngestionMessage, E>>,
+    E: std::error::Error + Send + Sync + 'static,
 {
-    fn stream_data_response(self) -> StreamDataStream<Self>
-    where
-        Self: Stream<Item = Result<pb::stream::v1alpha2::StreamDataResponse, StreamError>> + Sized,
-    {
-        StreamDataStream::new(self)
+    type Item = Result<IngestionMessage, StreamError>;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<Option<Self::Item>> {
+        let this = self.project();
+        match this.inner.poll_next(cx) {
+            Poll::Pending => Poll::Pending,
+            Poll::Ready(None) => Poll::Ready(None),
+            Poll::Ready(Some(Ok(value))) => Poll::Ready(Some(Ok(value))),
+            Poll::Ready(Some(Err(err))) => {
+                let err = StreamError::internal(err);
+                Poll::Ready(Some(Err(err)))
+            }
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.inner.size_hint()
     }
 }
 
 #[pin_project]
-struct StreamDataStream<S>
+struct ResponseStream<S>
 where
     S: Stream<Item = Result<pb::stream::v1alpha2::StreamDataResponse, StreamError>>,
 {
@@ -171,17 +143,17 @@ where
     inner: Heartbeat<S>,
 }
 
-impl<S> StreamDataStream<S>
+impl<S> ResponseStream<S>
 where
     S: Stream<Item = Result<pb::stream::v1alpha2::StreamDataResponse, StreamError>>,
 {
     pub fn new(inner: S) -> Self {
         let inner = Heartbeat::new(inner, Duration::from_secs(30));
-        StreamDataStream { inner }
+        ResponseStream { inner }
     }
 }
 
-impl<S> Stream for StreamDataStream<S>
+impl<S> Stream for ResponseStream<S>
 where
     S: Stream<Item = Result<pb::stream::v1alpha2::StreamDataResponse, StreamError>> + Unpin,
 {
@@ -212,7 +184,7 @@ where
                             }
                             StreamError::Internal(err) => {
                                 warn!(err = ?err, "stream service error");
-                                mk_internal_error()
+                                tonic::Status::internal("internal server error")
                             }
                         };
                         Err(status)
@@ -223,13 +195,4 @@ where
             }
         }
     }
-}
-
-fn mk_internal_error() -> tonic::Status {
-    tonic::Status::internal("internal server error")
-}
-
-fn internal_error<E: std::error::Error>(err: E) -> tonic::Status {
-    warn!(err = ?err, "stream service error");
-    mk_internal_error()
 }
