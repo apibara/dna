@@ -1,4 +1,4 @@
-//! Aggregate data for one block.
+//! Filter data for one block.
 
 use std::sync::Arc;
 
@@ -7,29 +7,29 @@ use crate::{
     db::StorageReader,
 };
 
-pub trait BlockDataAggregator {
+pub trait BlockDataFilter {
     type Error: std::error::Error + Send + Sync + 'static;
 
     /// Returns a `Block` with data for the given block.
     ///
     /// If there is no data for the given block, it returns `None`.
-    fn aggregate_for_block(
+    fn data_for_block(
         &self,
         block_id: &GlobalBlockId,
     ) -> Result<Option<v1alpha2::Block>, Self::Error>;
 }
 
-pub struct DatabaseBlockDataAggregator<R: StorageReader> {
+pub struct DatabaseBlockDataFilter<R: StorageReader> {
     storage: Arc<R>,
     filter: v1alpha2::Filter,
 }
 
-impl<R> DatabaseBlockDataAggregator<R>
+impl<R> DatabaseBlockDataFilter<R>
 where
     R: StorageReader,
 {
     pub fn new(storage: Arc<R>, filter: v1alpha2::Filter) -> Self {
-        DatabaseBlockDataAggregator { storage, filter }
+        DatabaseBlockDataFilter { storage, filter }
     }
 
     fn status(&self, block_id: &GlobalBlockId) -> Result<v1alpha2::BlockStatus, R::Error> {
@@ -266,14 +266,14 @@ where
     }
 }
 
-impl<R> BlockDataAggregator for DatabaseBlockDataAggregator<R>
+impl<R> BlockDataFilter for DatabaseBlockDataFilter<R>
 where
     R: StorageReader,
 {
     type Error = R::Error;
 
     #[tracing::instrument(level = "trace", skip(self))]
-    fn aggregate_for_block(
+    fn data_for_block(
         &self,
         block_id: &GlobalBlockId,
     ) -> Result<Option<v1alpha2::Block>, Self::Error> {

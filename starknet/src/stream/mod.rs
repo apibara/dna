@@ -1,14 +1,10 @@
 //! Stream data from StarkNet.
 mod accepted;
-mod aggregate;
-mod batch;
+mod block;
+mod configuration;
+mod data;
 mod error;
 mod filter;
-mod finalized;
+mod filtered;
 
-pub use self::{
-    aggregate::{BlockDataAggregator, DatabaseBlockDataAggregator},
-    batch::{BatchDataStream, BatchDataStreamExt, BatchMessage},
-    error::StreamError,
-    finalized::FinalizedBlockStream,
-};
+pub use self::{configuration::StreamConfigurationStream, data::DataStream, error::StreamError};
