@@ -39,6 +39,10 @@ where
 pub enum FilteredDataStreamError {
     #[error("no finalized block ingested yet")]
     NoFinalizedBlockIngested,
+    #[error("block header is missing")]
+    MissingBlockHeader(GlobalBlockId),
+    #[error("block status is missing")]
+    MissingBlockStatus(GlobalBlockId),
 }
 
 struct InnerDataStream<R: StorageReader> {
@@ -169,6 +173,26 @@ where
             accepted_cursor = ?self.accepted_cursor,
             "advance next batch"
         );
+
+        // check if the cursor given was invalidated, if that's the case:
+        // - send notification to user of the fact
+        // - reset previous_iter_cursor
+        if let Some(prev_iter_cursor) = self.previous_iter_cursor {
+            // a zero/empty hash is used to start a stream from a specific block number
+            // ignoring the block hash.
+            if !prev_iter_cursor.hash().is_zero() {
+                let block_status = self
+                    .storage
+                    .read_status(&prev_iter_cursor)
+                    .map_err(StreamError::internal)?
+                    .ok_or_else(|| StreamError::client("cursor not found"))?;
+
+                let is_valid_status = block_status.is_accepted() || block_status.is_finalized();
+                if !is_valid_status {
+                    return self.handle_invalidated_cursor(prev_iter_cursor);
+                }
+            }
+        }
 
         let next_block_number = self
             .previous_iter_cursor
@@ -334,6 +358,50 @@ where
         let response = StreamDataResponse {
             stream_id: self.stream_id,
             message: Some(Message::Data(data)),
+        };
+
+        Ok(Some(response))
+    }
+
+    fn handle_invalidated_cursor(
+        &mut self,
+        cursor: GlobalBlockId,
+    ) -> Result<Option<StreamDataResponse>, StreamError> {
+        use stream::v1alpha2::stream_data_response::Message;
+        debug!(cursor = %cursor, "cursor was invalidated");
+
+        let mut new_root = cursor;
+        loop {
+            let status = self
+                .storage
+                .read_status(&new_root)
+                .map_err(StreamError::internal)?
+                .ok_or(FilteredDataStreamError::MissingBlockStatus(new_root))
+                .map_err(StreamError::internal)?;
+
+            // check if `new_root` is the new root.
+            if status.is_accepted() || status.is_finalized() {
+                break;
+            }
+
+            let header = self
+                .storage
+                .read_header(&new_root)
+                .map_err(StreamError::internal)?
+                .ok_or(FilteredDataStreamError::MissingBlockHeader(new_root))
+                .map_err(StreamError::internal)?;
+
+            new_root = GlobalBlockId::from_block_header(&header).map_err(StreamError::internal)?;
+        }
+
+        self.previous_iter_cursor = Some(new_root);
+
+        let invalidate = stream::v1alpha2::Invalidate {
+            cursor: Some(new_root.to_cursor()),
+        };
+        let response = StreamDataResponse {
+            stream_id: self.stream_id,
+            message: Some(Message::Invalidate(invalidate)),
         };
 
         Ok(Some(response))
