@@ -177,13 +177,18 @@ where
 
     #[tracing::instrument(skip(self))]
     async fn update_accepted(&mut self) -> Result<TickResult, BlockIngestionError> {
+        // if either type 1 or type 2 chain reorganization happened, simply
+        // shrink the current chain up to the divergence and then continue
+        // as if still catching up.
+
         if self.previous.number() >= self.current_head.number() {
+            // type 1 reorg
             // there was a chain reorg that caused the chain to shrink.
             // this can and does happen on starknet.
             //
             // this in handled separately because querying for a block number
             // that's outside the current chain range will result in an error.
-            todo!()
+            return self.shrink_diverging_chain().await;
         }
 
         // fetch block following the one fetched in the previous iteration.
@@ -193,6 +198,7 @@ where
         let ingest_result = self
             .ingest_block_by_number(self.previous.number() + 1)
             .await?;
+
         if ingest_result.parent_id == self.previous {
             // update canonical chain and notify subscribers
             let mut txn = self.storage.begin_txn()?;
@@ -202,9 +208,12 @@ where
             self.publisher
                 .publish_accepted(ingest_result.new_block_id)?;
             self.previous = ingest_result.new_block_id;
-            return Ok(TickResult::MoreToSync);
+            Ok(TickResult::MoreToSync)
+        } else {
+            // type 2 reorg
+            // block exists but it belongs to a different (now canonical) chain.
+            self.shrink_diverging_chain().await
         }
-        todo!()
     }
 
     #[tracing::instrument(skip(self))]
@@ -286,5 +295,72 @@ where
             new_block_id,
             parent_id,
         })
+    }
+
+    /// Shrink the old canonical chain until it joins with the new canonical chain.
+    #[tracing::instrument(skip(self))]
+    async fn shrink_diverging_chain(&mut self) -> Result<TickResult, BlockIngestionError> {
+        info!(
+            previous = %self.previous,
+            current = %self.current_head,
+            "shrinking canonical chain"
+        );
+
+        let mut txn = self.storage.begin_txn()?;
+        let mut ingested_tip = self.previous;
+
+        loop {
+            let belongs_to_new_canonical_chain =
+                if ingested_tip.number() <= self.current_head.number() {
+                    // check status of the
+                    let block_id = BlockId::Hash(*ingested_tip.hash());
+                    let (status, _header, _body) = self
+                        .provider
+                        .get_block(&block_id)
+                        .await
+                        .map_err(BlockIngestionError::provider)?;
+                    !status.is_rejected()
+                } else {
+                    // outside of the new chain range, it doesn't belong.
+                    false
+                };
+
+            debug!(
+                tip = %ingested_tip,
+                belongs = %belongs_to_new_canonical_chain,
+                "check if tip belongs to chain"
+            );
+
+            // finished shrinking old canonical chain
+            if belongs_to_new_canonical_chain {
+                break;
+            }
+
+            txn.shrink_canonical_chain(&ingested_tip)?;
+
+            // header must exist in the database
+            let header = self
+                .storage
+                .read_header(&ingested_tip)?
+                .ok_or(BlockIngestionError::InconsistentDatabase)?;
+
+            let parent_hash = header
+                .parent_block_hash
+                .as_ref()
+                .ok_or(BlockIngestionError::MissingBlockHash)?
+                .into();
+
+            ingested_tip = GlobalBlockId::new(header.block_number - 1, parent_hash);
+        }
+
+        txn.commit()?;
+
+        // `ingested_tip` is the new chain root, that is the highest common block
+        // between the old canonical chain and the new canonical chain.
+        // restart ingestion from the new canonical chain head
+        self.previous = ingested_tip;
+        self.publisher.publish_invalidate(ingested_tip)?;
+
+        Ok(TickResult::MoreToSync)
     }
 }

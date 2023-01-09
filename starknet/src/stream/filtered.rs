@@ -50,6 +50,7 @@ struct InnerDataStream<R: StorageReader> {
     accepted_cursor: GlobalBlockId,
     filter: DatabaseBlockDataFilter<R>,
     storage: Arc<R>,
+    invalidated: Option<GlobalBlockId>,
 }
 
 impl<R> FilteredDataStream<R>
@@ -98,6 +99,7 @@ where
             accepted_cursor,
             filter,
             storage: self.storage.clone(),
+            invalidated: None,
         };
 
         self.inner = Some(inner);
@@ -119,6 +121,17 @@ where
                 IngestionMessage::Finalized(block_id) => {
                     inner.finalized_cursor = block_id;
                     self.wake();
+                }
+                IngestionMessage::Invalidate(new_chain_root) => {
+                    inner.accepted_cursor = new_chain_root;
+                    // only reset client cursor if the stream already sent a block
+                    // _belonging to_ the now invalidated chain.
+                    if let Some(previous_iter_cursor) = inner.previous_iter_cursor {
+                        if previous_iter_cursor.number() > new_chain_root.number() {
+                            inner.previous_iter_cursor = Some(new_chain_root);
+                            inner.invalidated = Some(new_chain_root);
+                        }
+                    }
                 }
             }
         }
@@ -295,6 +308,20 @@ where
         } else {
             return Poll::Pending;
         };
+
+        // if the stream received an invalidate message in the previous tick, then
+        // forward it to the client.
+        if let Some(new_root) = inner.invalidated.take() {
+            use stream::v1alpha2::stream_data_response::Message;
+            let invalidate = stream::v1alpha2::Invalidate {
+                cursor: Some(new_root.to_cursor()),
+            };
+            let response = StreamDataResponse {
+                stream_id: inner.stream_id,
+                message: Some(Message::Invalidate(invalidate)),
+            };
+            return Poll::Ready(Some(Ok(response)));
+        }
 
         match inner.advance_to_next_batch() {
             Err(err) => Poll::Ready(Some(Err(err))),
