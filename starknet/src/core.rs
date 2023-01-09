@@ -61,6 +61,14 @@ pub mod pb {
                 pub fn is_finalized(&self) -> bool {
                     *self == BlockStatus::AcceptedOnL1
                 }
+
+                pub fn is_accepted(&self) -> bool {
+                    *self == BlockStatus::AcceptedOnL2
+                }
+
+                pub fn is_rejected(&self) -> bool {
+                    *self == BlockStatus::Rejected
+                }
             }
 
             impl FieldElement {

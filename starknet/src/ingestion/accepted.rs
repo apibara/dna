@@ -196,7 +196,7 @@ where
         if ingest_result.parent_id == self.previous {
             // update canonical chain and notify subscribers
             let mut txn = self.storage.begin_txn()?;
-            txn.update_canonical_chain(&ingest_result.new_block_id)?;
+            txn.extend_canonical_chain(&ingest_result.new_block_id)?;
             txn.commit()?;
 
             self.publisher
