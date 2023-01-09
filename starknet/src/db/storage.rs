@@ -57,7 +57,10 @@ pub trait StorageWriter {
     fn commit(self) -> Result<(), Self::Error>;
 
     /// Adds the given block to the canonical chain.
-    fn update_canonical_chain(&mut self, id: &GlobalBlockId) -> Result<(), Self::Error>;
+    fn extend_canonical_chain(&mut self, id: &GlobalBlockId) -> Result<(), Self::Error>;
+
+    /// Removes the given block from the canonical chain.
+    fn shrink_canonical_chain(&mut self, id: &GlobalBlockId) -> Result<(), Self::Error>;
 
     /// Writes the block status.
     fn write_status(
@@ -274,11 +277,23 @@ impl<'env, 'txn, E: EnvironmentKind> StorageWriter for DatabaseStorageWriter<'en
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
-    fn update_canonical_chain(&mut self, id: &GlobalBlockId) -> Result<(), Self::Error> {
+    fn extend_canonical_chain(&mut self, id: &GlobalBlockId) -> Result<(), Self::Error> {
         let number = id.number();
         let hash = id.hash().into();
         self.canonical_chain_cursor.seek_exact(&number)?;
         self.canonical_chain_cursor.put(&number, &hash)?;
+        Ok(())
+    }
+
+    #[tracing::instrument(level = "trace", skip(self))]
+    fn shrink_canonical_chain(&mut self, id: &GlobalBlockId) -> Result<(), Self::Error> {
+        let number = id.number();
+        let target_hash = id.hash().into();
+        if let Some((_, current_hash)) = self.canonical_chain_cursor.seek_exact(&number)? {
+            if current_hash == target_hash {
+                self.canonical_chain_cursor.del()?;
+            }
+        }
         Ok(())
     }
 

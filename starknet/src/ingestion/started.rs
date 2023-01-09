@@ -3,10 +3,10 @@ use std::sync::Arc;
 
 use apibara_node::db::libmdbx::EnvironmentKind;
 use tokio_util::sync::CancellationToken;
-use tracing::info;
+use tracing::{debug, info};
 
 use crate::{
-    core::GlobalBlockId,
+    core::{pb::starknet::v1alpha2::BlockStatus, GlobalBlockId},
     db::{DatabaseStorage, StorageReader, StorageWriter},
     ingestion::finalized::FinalizedBlockIngestion,
     provider::{BlockId, Provider},
@@ -47,26 +47,41 @@ where
     }
 
     pub async fn start(self, ct: CancellationToken) -> Result<(), BlockIngestionError> {
-        let latest_indexed = match self.storage.highest_accepted_block()? {
-            Some(block) => block,
-            None => self.ingest_genesis_block().await?,
-        };
+        loop {
+            let latest_indexed = match self.storage.highest_accepted_block()? {
+                Some(block) => block,
+                None => self.ingest_genesis_block().await?,
+            };
 
-        info!(
-            id = %latest_indexed,
-            "latest indexed block"
-        );
+            info!(
+                id = %latest_indexed,
+                "latest indexed block"
+            );
 
-        // check if should jump to accepted ingestion directly based
-        // on the status of the latest indexed block.
-        if self.is_block_accepted(&latest_indexed).await? {
-            self.into_accepted_block_ingestion()
-                .start(latest_indexed, ct)
-                .await
-        } else {
-            self.into_finalized_block_ingestion()
-                .start(latest_indexed, ct)
-                .await
+            // check if should jump to accepted ingestion directly based
+            // on the status of the latest indexed block.
+            let status = self.block_status(&latest_indexed).await?;
+            if status.is_rejected() {
+                // remove block from canonical chain (but not storage) and
+                // try again.
+                debug!(
+                    id = %latest_indexed,
+                    "block was rejected while offline"
+                );
+                let mut txn = self.storage.begin_txn()?;
+                txn.shrink_canonical_chain(&latest_indexed)?;
+                txn.commit()?;
+            } else if status.is_accepted() {
+                return self
+                    .into_accepted_block_ingestion()
+                    .start(latest_indexed, ct)
+                    .await;
+            } else {
+                return self
+                    .into_finalized_block_ingestion()
+                    .start(latest_indexed, ct)
+                    .await;
+            }
         }
     }
 
@@ -78,10 +93,10 @@ where
         FinalizedBlockIngestion::new(self.provider, self.storage, self.config, self.publisher)
     }
 
-    async fn is_block_accepted(
+    async fn block_status(
         &self,
         global_id: &GlobalBlockId,
-    ) -> Result<bool, BlockIngestionError> {
+    ) -> Result<BlockStatus, BlockIngestionError> {
         let block_id = BlockId::Hash(*global_id.hash());
         let (status, _header, _transactions) = self
             .provider
@@ -89,9 +104,7 @@ where
             .await
             .map_err(BlockIngestionError::provider)?;
 
-        // blocks can be either finalized (accepted on l1)), accepted (on l2) or aborted.
-        // if a block was aborted, then it was not finalized
-        Ok(!status.is_finalized())
+        Ok(status)
     }
 
     #[tracing::instrument(skip(self))]
@@ -111,7 +124,7 @@ where
         self.downloader
             .finish_ingesting_block(&global_id, status, header, body, &mut txn)
             .await?;
-        txn.update_canonical_chain(&global_id)?;
+        txn.extend_canonical_chain(&global_id)?;
         txn.commit()?;
         Ok(global_id)
     }

@@ -6,7 +6,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, info};
 
 use crate::{
-    core::GlobalBlockId,
+    core::{pb::starknet::v1alpha2, GlobalBlockId},
     db::{DatabaseStorage, StorageWriter},
     ingestion::accepted::AcceptedBlockIngestion,
     provider::{BlockId, Provider},
@@ -62,6 +62,13 @@ where
             "start ingesting finalized blocks"
         );
 
+        // mark the latest indexed block as finalized.
+        // this is fine because if the execution is here it must have
+        // checked that `latest_indexed` is finalized.
+        let mut txn = self.storage.begin_txn()?;
+        txn.write_status(&latest_indexed, v1alpha2::BlockStatus::AcceptedOnL1)?;
+        txn.commit()?;
+
         let mut current_block = latest_indexed;
 
         let latest_indexed = loop {
@@ -116,7 +123,7 @@ where
         self.downloader
             .finish_ingesting_block(&global_id, status, header, body, &mut txn)
             .await?;
-        txn.update_canonical_chain(&global_id)?;
+        txn.extend_canonical_chain(&global_id)?;
         txn.commit()?;
 
         info!(
