@@ -80,19 +80,28 @@ where
             .into_iter()
             .collect::<Result<Vec<_>, BlockIngestionError>>()?;
 
-        let block_id = BlockId::Hash(*global_id.hash());
-        let state_update = self
-            .provider
-            .get_state_update(&block_id)
-            .await
-            .map_err(BlockIngestionError::provider)?;
+        // pathfinder doesn't support state update for pending data.
+        let state_update = if !global_id.hash().is_zero() {
+            let block_id = BlockId::Hash(*global_id.hash());
+            let state_update = self
+                .provider
+                .get_state_update(&block_id)
+                .await
+                .map_err(BlockIngestionError::provider)?;
+            Some(state_update)
+        } else {
+            None
+        };
 
         // write block status, header, body, receipts and state update to storage
         writer.write_status(global_id, status)?;
         writer.write_header(global_id, header)?;
         writer.write_body(global_id, body)?;
         writer.write_receipts(global_id, receipts)?;
-        writer.write_state_update(global_id, state_update)?;
+
+        if let Some(state_update) = state_update {
+            writer.write_state_update(global_id, state_update)?;
+        }
 
         Ok(())
     }

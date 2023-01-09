@@ -40,6 +40,10 @@ impl IngestionStreamPublisher {
         self.publish(IngestionMessage::Accepted(id))
     }
 
+    pub fn publish_pending(&self, id: GlobalBlockId) -> Result<(), BlockIngestionError> {
+        self.publish(IngestionMessage::Pending(id))
+    }
+
     pub fn publish_invalidate(&self, id: GlobalBlockId) -> Result<(), BlockIngestionError> {
         self.publish(IngestionMessage::Invalidate(id))
     }

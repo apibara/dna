@@ -15,6 +15,8 @@ pub enum IngestionMessage {
     Finalized(GlobalBlockId),
     /// Accepted block ingested.
     Accepted(GlobalBlockId),
+    /// Pending block ingested.
+    Pending(GlobalBlockId),
     /// Chain reorganization with root at the given block.
     /// Notice that the given root belongs to the new chain
     /// and is now the tip of it.
@@ -147,6 +149,10 @@ pub mod pb {
 impl BlockHash {
     pub fn zero() -> Self {
         BlockHash([0; 32])
+    }
+
+    pub fn is_zero(&self) -> bool {
+        *self == Self::zero()
     }
 
     pub fn from_slice(b: &[u8]) -> Result<Self, InvalidBlockHashSize> {
