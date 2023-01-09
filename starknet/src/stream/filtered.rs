@@ -48,6 +48,7 @@ struct InnerDataStream<R: StorageReader> {
     previous_iter_cursor: Option<GlobalBlockId>,
     finalized_cursor: GlobalBlockId,
     accepted_cursor: GlobalBlockId,
+    pending_cursor: Option<GlobalBlockId>,
     filter: DatabaseBlockDataFilter<R>,
     storage: Arc<R>,
     invalidated: Option<GlobalBlockId>,
@@ -97,6 +98,7 @@ where
             previous_iter_cursor: configuration.starting_cursor,
             finalized_cursor,
             accepted_cursor,
+            pending_cursor: None,
             filter,
             storage: self.storage.clone(),
             invalidated: None,
@@ -116,14 +118,20 @@ where
             match message {
                 IngestionMessage::Accepted(block_id) => {
                     inner.accepted_cursor = block_id;
+                    inner.pending_cursor = None;
                     self.wake();
                 }
                 IngestionMessage::Finalized(block_id) => {
                     inner.finalized_cursor = block_id;
                     self.wake();
                 }
+                IngestionMessage::Pending(block_id) => {
+                    inner.pending_cursor = Some(block_id);
+                    self.wake()
+                }
                 IngestionMessage::Invalidate(new_chain_root) => {
                     inner.accepted_cursor = new_chain_root;
+                    inner.pending_cursor = None;
                     // only reset client cursor if the stream already sent a block
                     // _belonging to_ the now invalidated chain.
                     if let Some(previous_iter_cursor) = inner.previous_iter_cursor {
@@ -132,6 +140,7 @@ where
                             inner.invalidated = Some(new_chain_root);
                         }
                     }
+                    self.wake()
                 }
             }
         }
@@ -166,6 +175,13 @@ where
             .map(|c| c.number() + 1)
             .unwrap_or(0);
 
+        // check if the next block is what is the pending block now.
+        if let Some(pending_cursor) = self.pending_cursor.take() {
+            if pending_cursor.number() == next_block_number {
+                return self.send_pending_batch(pending_cursor);
+            }
+        }
+
         let next_cursor = if let Some(cursor) = self
             .storage
             .canonical_block_id(next_block_number)
@@ -183,9 +199,10 @@ where
         }
 
         // only send accepted data to the right streams
-        if self.data_finality == DataFinality::DataStatusAccepted
-            || self.data_finality == DataFinality::DataStatusPending
-        {
+        let accepted_finality = self.data_finality == DataFinality::DataStatusAccepted
+            || self.data_finality == DataFinality::DataStatusPending;
+
+        if next_block_number <= self.accepted_cursor.number() && accepted_finality {
             return self.send_accepted_batch(next_cursor);
         }
 
@@ -278,6 +295,39 @@ where
             cursor: batch_start_cursor,
             end_cursor: Some(first_cursor.to_cursor()),
             finality: DataFinality::DataStatusAccepted as i32,
+            data: vec![data],
+        };
+
+        let response = StreamDataResponse {
+            stream_id: self.stream_id,
+            message: Some(Message::Data(data)),
+        };
+
+        Ok(Some(response))
+    }
+
+    /// Send a single pending block.
+    fn send_pending_batch(
+        &mut self,
+        pending_cursor: GlobalBlockId,
+    ) -> Result<Option<StreamDataResponse>, StreamError> {
+        use stream::v1alpha2::stream_data_response::Message;
+
+        // read data at cursor
+        let data = if let Some(data) = self
+            .filter
+            .data_for_block(&pending_cursor)
+            .map_err(StreamError::internal)?
+        {
+            data
+        } else {
+            return Ok(None);
+        };
+
+        let data = stream::v1alpha2::Data {
+            cursor: Some(self.accepted_cursor.to_cursor()),
+            end_cursor: Some(pending_cursor.to_cursor()),
+            finality: DataFinality::DataStatusPending as i32,
             data: vec![data],
         };
 

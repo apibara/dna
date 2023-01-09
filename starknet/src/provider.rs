@@ -125,11 +125,14 @@ impl Provider for HttpProvider {
                 let body = (&block).into();
                 Ok((status, header, body))
             }
-            jsonrpc::models::MaybePendingBlockWithTxs::PendingBlock(_block) => {
+            jsonrpc::models::MaybePendingBlockWithTxs::PendingBlock(block) => {
                 if !id.is_pending() {
                     return Err(HttpProviderError::ExpectedPendingBlock);
                 }
-                todo!()
+                let status = (&block).into();
+                let header = (&block).into();
+                let body = (&block).into();
+                Ok((status, header, body))
             }
         }
     }
@@ -193,6 +196,7 @@ impl From<&jsonrpc::models::BlockWithTxs> for v1alpha2::BlockStatus {
         (&block.status).into()
     }
 }
+
 impl From<&jsonrpc::models::BlockWithTxs> for v1alpha2::BlockBody {
     fn from(block: &jsonrpc::models::BlockWithTxs) -> Self {
         let transactions = block.transactions.iter().map(Into::into).collect();
@@ -203,6 +207,40 @@ impl From<&jsonrpc::models::BlockWithTxs> for v1alpha2::BlockBody {
 impl From<&jsonrpc::models::BlockWithTxs> for v1alpha2::BlockHeader {
     fn from(block: &jsonrpc::models::BlockWithTxs) -> Self {
         (&block.header).into()
+    }
+}
+
+impl From<&jsonrpc::models::PendingBlockWithTxs> for v1alpha2::BlockStatus {
+    fn from(_block: &jsonrpc::models::PendingBlockWithTxs) -> Self {
+        v1alpha2::BlockStatus::Pending
+    }
+}
+
+impl From<&jsonrpc::models::PendingBlockWithTxs> for v1alpha2::BlockBody {
+    fn from(block: &jsonrpc::models::PendingBlockWithTxs) -> Self {
+        let transactions = block.transactions.iter().map(Into::into).collect();
+        v1alpha2::BlockBody { transactions }
+    }
+}
+
+impl From<&jsonrpc::models::PendingBlockWithTxs> for v1alpha2::BlockHeader {
+    fn from(block: &jsonrpc::models::PendingBlockWithTxs) -> Self {
+        let block_hash = FieldElement::ZERO.into();
+        let parent_block_hash = block.parent_hash.into();
+        let sequencer_address = block.sequencer_address.into();
+        let timestamp = prost_types::Timestamp {
+            nanos: 0,
+            seconds: block.timestamp as i64,
+        };
+
+        v1alpha2::BlockHeader {
+            block_hash: Some(block_hash),
+            parent_block_hash: Some(parent_block_hash),
+            block_number: u64::MAX,
+            sequencer_address: Some(sequencer_address),
+            new_root: None,
+            timestamp: Some(timestamp),
+        }
     }
 }
 

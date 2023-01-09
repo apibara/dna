@@ -28,6 +28,7 @@ struct AcceptedBlockIngestionImpl<G: Provider + Send, E: EnvironmentKind> {
     finalized: GlobalBlockId,
     previous: GlobalBlockId,
     current_head: GlobalBlockId,
+    pending_ingested: bool,
     config: BlockIngestionConfig,
     provider: Arc<G>,
     downloader: Downloader<G>,
@@ -92,6 +93,7 @@ where
             current_head,
             finalized,
             previous: latest_indexed,
+            pending_ingested: false,
             config: self.config,
             provider: self.provider,
             storage: self.storage,
@@ -163,7 +165,16 @@ where
             .await
             .map_err(BlockIngestionError::provider)?;
 
-        if new_head == self.current_head {
+        let is_synced = new_head == self.current_head;
+
+        // synced and pending block ingested. nothing to do until next block.
+        if is_synced && self.pending_ingested {
+            return Ok(TickResult::FullySynced);
+        }
+
+        // synced but no pending block yet. try to ingest pending.
+        if is_synced {
+            self.ingest_pending().await?;
             return Ok(TickResult::FullySynced);
         }
 
@@ -171,6 +182,7 @@ where
         // this is to avoid fetching the same block too often.
         self.advance_finalized().await?;
 
+        self.pending_ingested = false;
         self.current_head = new_head;
         Ok(TickResult::MoreToSync)
     }
@@ -230,6 +242,48 @@ where
         }
         self.publisher.publish_finalized(self.finalized)?;
         Ok(())
+    }
+
+    #[tracing::instrument(skip(self))]
+    async fn ingest_pending(&mut self) -> Result<(), BlockIngestionError> {
+        // some node configurations don't support pending data.
+        // in that case, simply ignore any error.
+
+        match self.provider.get_block(&BlockId::Pending).await {
+            Err(_) => {
+                // cannot set pending ingested here because pathfinder returns
+                // an error if the pending block is not prepared yet.
+                Ok(())
+            }
+            Ok((status, mut header, body)) => {
+                // pending block is not what was expected. do nothing.
+                let is_next_pending_block = if let Some(hash) = header.parent_block_hash.as_ref() {
+                    *self.current_head.hash() == hash.into()
+                } else {
+                    false
+                };
+
+                if !is_next_pending_block {
+                    return Ok(());
+                }
+
+                // block number is not set, so do it here.
+                header.block_number = self.current_head.number() + 1;
+
+                // finish ingesting data.
+                let new_block_id = GlobalBlockId::from_block_header(&header)?;
+                let mut txn = self.storage.begin_txn()?;
+                self.downloader
+                    .finish_ingesting_block(&new_block_id, status, header, body, &mut txn)
+                    .await?;
+                txn.commit()?;
+
+                self.pending_ingested = true;
+                self.publisher.publish_pending(new_block_id)?;
+
+                Ok(())
+            }
+        }
     }
 
     #[tracing::instrument(skip(self))]
