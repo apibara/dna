@@ -1,5 +1,4 @@
 //! Stream data from StarkNet.
-mod accepted;
 mod block;
 mod configuration;
 mod data;
