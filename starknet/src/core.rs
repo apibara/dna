@@ -11,8 +11,14 @@ pub struct GlobalBlockId(u64, BlockHash);
 
 #[derive(Debug, Clone)]
 pub enum IngestionMessage {
+    /// Finalized block ingested.
     Finalized(GlobalBlockId),
+    /// Accepted block ingested.
     Accepted(GlobalBlockId),
+    /// Chain reorganization with root at the given block.
+    /// Notice that the given root belongs to the new chain
+    /// and is now the tip of it.
+    Invalidate(GlobalBlockId),
 }
 
 #[derive(Debug, thiserror::Error)]
