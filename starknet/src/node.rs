@@ -8,8 +8,9 @@ use std::{
 };
 
 use apibara_node::db::{
+    default_data_dir,
     libmdbx::{self, Environment, EnvironmentKind},
-    node_data_dir, MdbxEnvironmentExt,
+    MdbxEnvironmentExt,
 };
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
@@ -155,7 +156,9 @@ where
     pub(crate) fn new(
         url: &str,
     ) -> Result<StarkNetNodeBuilder<SimpleRequestSpan, E>, StarkNetNodeBuilderError> {
-        let datadir = node_data_dir("starknet").expect("no datadir");
+        let datadir = default_data_dir()
+            .map(|d| d.join("starknet"))
+            .expect("no datadir");
         let url = url.parse()?;
         let sequencer = HttpProvider::new(url);
         let poll_interval = Duration::from_millis(5_000);
