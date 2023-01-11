@@ -1,37 +1,55 @@
-use std::time::Duration;
+use std::path::PathBuf;
 
-use anyhow::{anyhow, Result};
-use apibara_node::{
-    db::{node_data_dir, DatabaseClapCommandExt},
-    o11y::{init_opentelemetry, OpenTelemetryClapCommandExt},
-};
+use anyhow::Result;
+use apibara_node::{db::default_data_dir, o11y::init_opentelemetry};
 use apibara_starknet::{
     server::{MetadataKeyRequestSpan, SimpleRequestSpan},
     HttpProvider, NoWriteMap, StarkNetNode,
 };
-use clap::{arg, command, value_parser, ArgMatches, Command};
+use clap::{Args, Parser, Subcommand};
 use tokio_util::sync::CancellationToken;
 
-async fn start(start_matches: &ArgMatches) -> Result<()> {
+#[derive(Parser)]
+#[command(author, version, about, long_about = None)]
+struct Cli {
+    #[command(subcommand)]
+    command: CliCommand,
+}
+
+#[derive(Subcommand)]
+enum CliCommand {
+    /// Start the StarkNet source node.
+    Start(StartCommand),
+}
+
+#[derive(Args)]
+struct StartCommand {
+    /// StarkNet RPC address.
+    #[arg(long, env)]
+    rpc: String,
+    /// Data directory. Defaults to `$XDG_DATA_HOME`.
+    #[arg(long, env)]
+    data: Option<PathBuf>,
+    /// Indexer name. Defaults to `starknet`.
+    #[arg(long, env)]
+    name: Option<String>,
+}
+
+async fn start(args: StartCommand) -> Result<()> {
     init_opentelemetry()?;
 
-    let url = start_matches
-        .get_one::<String>("rpc")
-        .ok_or_else(|| anyhow!("expected rpc argument"))?;
-
-    let mut node = StarkNetNode::<HttpProvider, SimpleRequestSpan, NoWriteMap>::builder(url)?
+    let mut node = StarkNetNode::<HttpProvider, SimpleRequestSpan, NoWriteMap>::builder(&args.rpc)?
         .with_request_span(MetadataKeyRequestSpan::new("x-api-key".to_string()));
 
-    // use specified datadir
-    if let Some(name) = start_matches.get_one::<String>("name") {
-        let datadir =
-            node_data_dir(name).ok_or_else(|| anyhow!("failed to create node data dir"))?;
+    // give precedence to --data
+    if let Some(datadir) = args.data {
+        node.with_datadir(datadir);
+    } else if let Some(name) = args.name {
+        let datadir = default_data_dir()
+            .map(|p| p.join(name))
+            .expect("no datadir");
         node.with_datadir(datadir);
     }
-
-    let poll_interval = start_matches.get_one::<u64>("poll-interval").unwrap(); // safe to unwrap as format is checked by clap
-    let poll_interval = Duration::from_millis(*poll_interval);
-    node.with_poll_interval(poll_interval);
 
     // Setup cancellation for graceful shutdown
     let cts = CancellationToken::new();
@@ -49,26 +67,7 @@ async fn start(start_matches: &ArgMatches) -> Result<()> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let matches = command!()
-        .subcommand_required(true)
-        .subcommand(
-            Command::new("start")
-                .about("Start a StarkNet source node")
-                .data_dir_args()
-                .arg(arg!(--rpc <URL> "StarkNet RPC url").required(true))
-                .arg(arg!(--name <NAME> "Indexer name").required(false))
-                .arg(
-                    arg!(--"poll-interval" "Custom poll interval in ms")
-                        .required(false)
-                        .value_parser(value_parser!(u64))
-                        .default_value("5000"),
-                ),
-        )
-        .open_telemetry_args()
-        .get_matches();
-
-    match matches.subcommand() {
-        Some(("start", start_matches)) => start(start_matches).await,
-        _ => unreachable!(),
+    match Cli::parse().command {
+        CliCommand::Start(args) => start(args).await,
     }
 }

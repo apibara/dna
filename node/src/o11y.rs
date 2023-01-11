@@ -2,7 +2,6 @@
 
 use std::env;
 
-use clap::Command;
 use opentelemetry::{
     global,
     metrics::{Meter, MetricsError},
@@ -30,17 +29,6 @@ pub enum OpenTelemetryInitError {
     Trace(#[from] TraceError),
     #[error("error configuring metrics")]
     Metrics(#[from] MetricsError),
-}
-
-/// Trait used to add common open telemetry arguments to clap apps.
-pub trait OpenTelemetryClapCommandExt {
-    fn open_telemetry_args(self) -> Self;
-}
-
-impl<'help> OpenTelemetryClapCommandExt for Command<'help> {
-    fn open_telemetry_args(self) -> Self {
-        self
-    }
 }
 
 pub fn meter(name: &'static str) -> Meter {

@@ -9,7 +9,7 @@ mod node;
 mod sequencer;
 mod table;
 
-pub use self::cli::{node_data_dir, DatabaseClapCommandExt};
+pub use self::cli::default_data_dir;
 pub use self::mdbx::{
     MdbxEnvironmentExt, MdbxErrorExt, MdbxRWTransactionExt, MdbxTable, MdbxTransactionExt,
     TableCursor,
