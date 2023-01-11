@@ -29,7 +29,7 @@ message StreamDataResponse {
   // The stream id.
   uint64 stream_id = 1;
   oneof message {
-    Invalidate Invalidate = 2;
+    Invalidate invalidate = 2;
     Data data = 3;
     Heartbeat heartbeat = 4;
   }
