@@ -26,6 +26,8 @@ use super::{
     StreamError,
 };
 
+const MAX_BATCH_ITER: i32 = 5_000;
+
 pub struct FilteredDataStream<R>
 where
     R: StorageReader,
@@ -241,19 +243,47 @@ where
     ) -> Result<Option<StreamDataResponse>, StreamError> {
         use stream::v1alpha2::stream_data_response::Message;
 
+        debug!(
+            previous_iter_cursor = ?self.previous_iter_cursor,
+            finalized_cursor = ?self.finalized_cursor,
+            accepted_cursor = ?self.accepted_cursor,
+            first_cursor = ?first_cursor,
+            "send finalized batch"
+        );
+
         let batch_start_cursor = self.previous_iter_cursor.map(|c| c.to_cursor());
 
         let mut batch = Vec::with_capacity(self.batch_size);
         let mut batch_end_cursor = None;
         let mut current_cursor = first_cursor;
 
-        while batch.len() < self.batch_size {
+        let mut iter = 0;
+        while batch.len() < self.batch_size && iter < MAX_BATCH_ITER {
+            iter += 1;
+
+            // check the next block is still finalized.
+            // if not, stop iterating.
+            let block_status = self
+                .storage
+                .read_status(&current_cursor)
+                .map_err(StreamError::internal)?
+                .ok_or_else(|| {
+                    StreamError::internal(FilteredDataStreamError::MissingBlockStatus(
+                        current_cursor,
+                    ))
+                })?;
+
+            if !block_status.is_finalized() {
+                break;
+            }
+
+            batch_end_cursor = Some(current_cursor);
+
             if let Some(data) = self
                 .filter
                 .data_for_block(&current_cursor)
                 .map_err(StreamError::internal)?
             {
-                batch_end_cursor = Some(current_cursor);
                 batch.push(data);
             }
 
@@ -276,22 +306,26 @@ where
             }
         }
 
-        // update iter cursor to the latest ingested block.
-        self.previous_iter_cursor = batch_end_cursor;
+        if batch_end_cursor.is_some() {
+            // update iter cursor to the latest ingested block.
+            self.previous_iter_cursor = batch_end_cursor;
 
-        let data = stream::v1alpha2::Data {
-            cursor: batch_start_cursor,
-            end_cursor: batch_end_cursor.map(|c| c.to_cursor()),
-            finality: DataFinality::DataStatusFinalized as i32,
-            data: batch,
-        };
+            let data = stream::v1alpha2::Data {
+                cursor: batch_start_cursor,
+                end_cursor: batch_end_cursor.map(|c| c.to_cursor()),
+                finality: DataFinality::DataStatusFinalized as i32,
+                data: batch,
+            };
 
-        let response = StreamDataResponse {
-            stream_id: self.stream_id,
-            message: Some(Message::Data(data)),
-        };
+            let response = StreamDataResponse {
+                stream_id: self.stream_id,
+                message: Some(Message::Data(data)),
+            };
 
-        Ok(Some(response))
+            Ok(Some(response))
+        } else {
+            Ok(None)
+        }
     }
 
     /// Send a batch of accepted data, starting from the given cursor (inclusive).
