@@ -2,6 +2,8 @@
 
 use std::sync::Arc;
 
+use tracing::{event, Level};
+
 use crate::{
     core::{pb::starknet::v1alpha2, GlobalBlockId},
     db::StorageReader,
@@ -22,6 +24,35 @@ pub trait BlockDataFilter {
 pub struct DatabaseBlockDataFilter<R: StorageReader> {
     storage: Arc<R>,
     filter: v1alpha2::Filter,
+}
+
+#[derive(Debug, Default)]
+struct DataMeter {
+    pub header: usize,
+    pub transaction: usize,
+    pub event: usize,
+    pub message: usize,
+    pub storage_diff: usize,
+    pub declared_contract: usize,
+    pub deployed_contract: usize,
+    pub nonce_update: usize,
+}
+
+impl DataMeter {
+    pub fn emit_event(&self) {
+        event!(
+            Level::INFO,
+            data.is_metrics = true,
+            data.header = self.header,
+            data.transaction = self.transaction,
+            data.event = self.event,
+            data.message = self.message,
+            data.storage_diff = self.storage_diff,
+            data.declared_contract = self.declared_contract,
+            data.deployed_contract = self.deployed_contract,
+            data.nonce_update = self.nonce_update,
+        );
+    }
 }
 
 impl<R> DatabaseBlockDataFilter<R>
@@ -45,8 +76,13 @@ where
         self.filter.header.as_ref().map(|h| h.weak).unwrap_or(true)
     }
 
-    fn header(&self, block_id: &GlobalBlockId) -> Result<Option<v1alpha2::BlockHeader>, R::Error> {
+    fn header(
+        &self,
+        block_id: &GlobalBlockId,
+        meter: &mut DataMeter,
+    ) -> Result<Option<v1alpha2::BlockHeader>, R::Error> {
         if self.filter.header.is_some() {
+            meter.header = 1;
             self.storage.read_header(block_id)
         } else {
             Ok(None)
@@ -56,6 +92,7 @@ where
     fn transactions(
         &self,
         block_id: &GlobalBlockId,
+        meter: &mut DataMeter,
     ) -> Result<Vec<v1alpha2::TransactionWithReceipt>, R::Error> {
         if self.filter.transactions.is_empty() {
             return Ok(Vec::default());
@@ -67,7 +104,7 @@ where
         assert!(transactions.len() == receipts.len());
         receipts.sort_by(|a, b| a.transaction_index.cmp(&b.transaction_index));
 
-        let transactions_with_receipts = transactions
+        let transactions_with_receipts: Vec<_> = transactions
             .into_iter()
             .zip(receipts.into_iter())
             .flat_map(|(tx, rx)| {
@@ -82,12 +119,15 @@ where
             })
             .collect();
 
+        meter.transaction = transactions_with_receipts.len();
+
         Ok(transactions_with_receipts)
     }
 
     fn events(
         &self,
         block_id: &GlobalBlockId,
+        meter: &mut DataMeter,
     ) -> Result<Vec<v1alpha2::EventWithTransaction>, R::Error> {
         if self.filter.events.is_empty() {
             return Ok(Vec::default());
@@ -114,12 +154,15 @@ where
             }
         }
 
+        meter.event = events.len();
+
         Ok(events)
     }
 
     fn l2_to_l1_messages(
         &self,
         block_id: &GlobalBlockId,
+        meter: &mut DataMeter,
     ) -> Result<Vec<v1alpha2::L2ToL1MessageWithTransaction>, R::Error> {
         if self.filter.messages.is_empty() {
             return Ok(Vec::default());
@@ -146,12 +189,15 @@ where
             }
         }
 
+        meter.message = messages.len();
+
         Ok(messages)
     }
 
     fn state_update(
         &self,
         block_id: &GlobalBlockId,
+        meter: &mut DataMeter,
     ) -> Result<Option<v1alpha2::StateUpdate>, R::Error> {
         let filter = if let Some(filter) = self.filter.state_update.as_ref() {
             filter
@@ -180,6 +226,7 @@ where
             .filter(|diff| self.filter_storage_diff(diff, filter))
             .collect();
         has_value |= !storage_diffs.is_empty();
+        meter.storage_diff = storage_diffs.len();
 
         let declared_contracts: Vec<_> = state_diff
             .declared_contracts
@@ -187,6 +234,7 @@ where
             .filter(|d| self.filter_declared_contracts(d, filter))
             .collect();
         has_value |= !declared_contracts.is_empty();
+        meter.declared_contract = declared_contracts.len();
 
         let deployed_contracts: Vec<_> = state_diff
             .deployed_contracts
@@ -194,6 +242,7 @@ where
             .filter(|d| self.filter_deployed_contracts(d, filter))
             .collect();
         has_value |= !deployed_contracts.is_empty();
+        meter.deployed_contract = deployed_contracts.len();
 
         let nonces: Vec<_> = state_diff
             .nonces
@@ -201,6 +250,7 @@ where
             .filter(|n| self.filter_nonces(n, filter))
             .collect();
         has_value |= !nonces.is_empty();
+        meter.nonce_update = nonces.len();
 
         if has_value {
             let diff = v1alpha2::StateDiff {
@@ -284,23 +334,24 @@ where
     ) -> Result<Option<v1alpha2::Block>, Self::Error> {
         let mut has_data = false;
 
+        let mut meter = DataMeter::default();
         let status = self.status(block_id)?;
 
-        let header = self.header(block_id)?;
+        let header = self.header(block_id, &mut meter)?;
         if !self.has_weak_header() {
             has_data |= header.is_some();
         }
 
-        let transactions = self.transactions(block_id)?;
+        let transactions = self.transactions(block_id, &mut meter)?;
         has_data |= !transactions.is_empty();
 
-        let events = self.events(block_id)?;
+        let events = self.events(block_id, &mut meter)?;
         has_data |= !events.is_empty();
 
-        let l2_to_l1_messages = self.l2_to_l1_messages(block_id)?;
+        let l2_to_l1_messages = self.l2_to_l1_messages(block_id, &mut meter)?;
         has_data |= !l2_to_l1_messages.is_empty();
 
-        let state_update = self.state_update(block_id)?;
+        let state_update = self.state_update(block_id, &mut meter)?;
         has_data |= state_update.is_some();
 
         let data = v1alpha2::Block {
@@ -313,6 +364,9 @@ where
         };
 
         if has_data {
+            // emit here so that weak headers are not counted
+            meter.emit_event();
+
             Ok(Some(data))
         } else {
             Ok(None)

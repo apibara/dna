@@ -4,7 +4,7 @@ use std::env;
 
 use opentelemetry::{
     global,
-    metrics::{Meter, MetricsError},
+    metrics::MetricsError,
     sdk::{
         self, export::metrics::aggregation::cumulative_temporality_selector, metrics::selectors,
         Resource,
@@ -17,7 +17,9 @@ use tracing::dispatcher::SetGlobalDefaultError;
 pub use opentelemetry::metrics::{ObservableCounter, ObservableGauge};
 pub use opentelemetry::{Context, KeyValue};
 use tracing_opentelemetry::MetricsLayer;
-use tracing_subscriber::{prelude::*, EnvFilter};
+use tracing_subscriber::{filter, prelude::*, EnvFilter};
+
+pub use opentelemetry::metrics::{Counter, Meter};
 
 const OTEL_SDK_DISABLED: &str = "OTEL_SDK_DISABLED";
 
@@ -92,8 +94,11 @@ fn init_opentelemetry_with_sdk() -> Result<(), OpenTelemetryInitError> {
         .and_then(otel_env_filter);
 
     // display traces on stdout
-
-    let logtree_layer = tracing_tree::HierarchicalLayer::new(2).and_then(log_env_filter);
+    let logtree_layer = tracing_tree::HierarchicalLayer::new(2)
+        .and_then(log_env_filter)
+        .with_filter(filter::filter_fn(|metadata| {
+            metadata.fields().field("data.is_metrics").is_none()
+        }));
 
     tracing_subscriber::Registry::default()
         .with(otel_layer)
