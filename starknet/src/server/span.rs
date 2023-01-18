@@ -36,7 +36,7 @@ impl RequestSpan for MetadataKeyRequestSpan {
             .get(&self.key)
             .and_then(|value| value.to_str().ok());
         if let Some(api_key) = api_key {
-            info_span!("stream_data", api_key = api_key)
+            info_span!("stream_data", user.key = api_key)
         } else {
             info_span!("stream_data")
         }
