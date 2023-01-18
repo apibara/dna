@@ -19,10 +19,9 @@ message Filter {
 }
 
 // Filter header.
-//
-// This filter matches _all_ headers, so it's only necessary
-// to include it in the filter to receive header data.
 message HeaderFilter {
+  // If true, only include headers if any other filter matches.
+  bool weak = 1;
 }
 
 // Filter transactions.

@@ -40,6 +40,11 @@ where
         Ok(status)
     }
 
+    fn has_weak_header(&self) -> bool {
+        // No header is the same as a weak header.
+        self.filter.header.as_ref().map(|h| h.weak).unwrap_or(true)
+    }
+
     fn header(&self, block_id: &GlobalBlockId) -> Result<Option<v1alpha2::BlockHeader>, R::Error> {
         if self.filter.header.is_some() {
             self.storage.read_header(block_id)
@@ -282,7 +287,9 @@ where
         let status = self.status(block_id)?;
 
         let header = self.header(block_id)?;
-        has_data |= header.is_some();
+        if !self.has_weak_header() {
+            has_data |= header.is_some();
+        }
 
         let transactions = self.transactions(block_id)?;
         has_data |= !transactions.is_empty();
