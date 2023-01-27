@@ -1,5 +1,5 @@
 //! Ingest finalized block data.
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use apibara_node::db::libmdbx::EnvironmentKind;
 use tokio_util::sync::CancellationToken;
@@ -9,7 +9,7 @@ use crate::{
     core::{pb::starknet::v1alpha2, GlobalBlockId},
     db::{DatabaseStorage, StorageWriter},
     ingestion::accepted::AcceptedBlockIngestion,
-    provider::{BlockId, Provider},
+    provider::{BlockId, Provider, ProviderError},
 };
 
 use super::{
@@ -29,6 +29,7 @@ pub struct FinalizedBlockIngestion<G: Provider + Send, E: EnvironmentKind> {
 enum IngestResult {
     Ingested(GlobalBlockId),
     TransitionToAccepted(GlobalBlockId),
+    RetryWithDelay(Duration),
 }
 
 impl<G, E> FinalizedBlockIngestion<G, E>
@@ -82,6 +83,9 @@ where
                     self.publisher.publish_finalized(global_id)?;
                     current_block = global_id;
                 }
+                IngestResult::RetryWithDelay(delay) => {
+                    tokio::time::sleep(delay).await;
+                }
                 IngestResult::TransitionToAccepted(global_id) => {
                     info!(
                         block_id = %global_id,
@@ -107,11 +111,13 @@ where
             "ingest block by number"
         );
         let block_id = BlockId::Number(number);
-        let (status, header, body) = self
-            .provider
-            .get_block(&block_id)
-            .await
-            .map_err(BlockIngestionError::provider)?;
+        let (status, header, body) = match self.provider.get_block(&block_id).await {
+            Ok(result) => result,
+            Err(err) if err.is_block_not_found() => {
+                return Ok(IngestResult::RetryWithDelay(Duration::from_secs(60)))
+            }
+            Err(err) => return Err(BlockIngestionError::provider(err)),
+        };
 
         let global_id = GlobalBlockId::from_block_header(&header)?;
 
