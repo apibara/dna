@@ -3,13 +3,13 @@ use std::sync::Arc;
 
 use apibara_node::db::libmdbx::EnvironmentKind;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use crate::{
-    core::{pb::starknet::v1alpha2::BlockStatus, GlobalBlockId},
+    core::{pb::starknet::v1alpha2::BlockStatus, BlockHash, GlobalBlockId},
     db::{DatabaseStorage, StorageReader, StorageWriter},
     ingestion::finalized::FinalizedBlockIngestion,
-    provider::{BlockId, Provider},
+    provider::{BlockId, Provider, ProviderError},
 };
 
 use super::{
@@ -98,13 +98,34 @@ where
         global_id: &GlobalBlockId,
     ) -> Result<BlockStatus, BlockIngestionError> {
         let block_id = BlockId::Hash(*global_id.hash());
-        let (status, _header, _transactions) = self
-            .provider
-            .get_block(&block_id)
-            .await
-            .map_err(BlockIngestionError::provider)?;
+        match self.provider.get_block(&block_id).await {
+            Ok((status, _header, _body)) => Ok(status),
+            Err(err) if err.is_block_not_found() => {
+                warn!(error = ?err, "error fetching block status by hash");
+                // try fetch by block number and compare hashes
+                // this is needed because sometimes nodes prune reorged nodes
+                let block_id = BlockId::Number(global_id.number());
+                let (status, header, _body) = self
+                    .provider
+                    .get_block(&block_id)
+                    .await
+                    .map_err(BlockIngestionError::provider)?;
 
-        Ok(status)
+                let block_hash: BlockHash = header.block_hash.unwrap_or_default().into();
+                info!(
+                    block_hash = ?block_hash,
+                    block_number = %global_id.number(),
+                    "block hash for block by number"
+                );
+
+                if block_hash != *global_id.hash() {
+                    Ok(BlockStatus::Rejected)
+                } else {
+                    Ok(status)
+                }
+            }
+            Err(err) => Err(BlockIngestionError::provider(err)),
+        }
     }
 
     #[tracing::instrument(skip(self))]

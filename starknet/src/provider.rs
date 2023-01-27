@@ -1,7 +1,7 @@
 //! Connect to the sequencer gateway.
 use starknet::{
     core::types::{FieldElement, FromByteArrayError},
-    providers::jsonrpc,
+    providers::jsonrpc::{self, JsonRpcClientError},
 };
 use url::Url;
 
@@ -15,9 +15,13 @@ pub enum BlockId {
     Number(u64),
 }
 
+pub trait ProviderError: std::error::Error + Send + Sync + 'static {
+    fn is_block_not_found(&self) -> bool;
+}
+
 #[apibara_node::async_trait]
 pub trait Provider {
-    type Error: std::error::Error + Send + Sync + 'static;
+    type Error: ProviderError;
 
     /// Get the most recent accepted block number and hash.
     async fn get_head(&self) -> Result<GlobalBlockId, Self::Error>;
@@ -52,6 +56,8 @@ pub struct HttpProvider {
 
 #[derive(Debug, thiserror::Error)]
 pub enum HttpProviderError {
+    #[error("the given block was not found")]
+    BlockNotFound,
     #[error("failed to parse gateway configuration")]
     Configuration,
     #[error("failed to parse gateway url")]
@@ -76,6 +82,30 @@ impl HttpProvider {
     }
 }
 
+impl ProviderError for HttpProviderError {
+    fn is_block_not_found(&self) -> bool {
+        matches!(self, HttpProviderError::BlockNotFound)
+    }
+}
+
+impl HttpProviderError {
+    pub fn from_provider_error<T>(error: JsonRpcClientError<T>) -> HttpProviderError
+    where
+        T: std::error::Error + Send + Sync + 'static,
+    {
+        match error {
+            JsonRpcClientError::RpcError(ref err) => {
+                if err.code == 24 {
+                    HttpProviderError::BlockNotFound
+                } else {
+                    HttpProviderError::Provider(Box::new(error))
+                }
+            }
+            _ => HttpProviderError::Provider(Box::new(error)),
+        }
+    }
+}
+
 struct TransactionHash<'a>(&'a [u8]);
 
 #[apibara_node::async_trait]
@@ -88,7 +118,7 @@ impl Provider for HttpProvider {
             .provider
             .block_hash_and_number()
             .await
-            .map_err(|err| HttpProviderError::Provider(Box::new(err)))?;
+            .map_err(HttpProviderError::from_provider_error)?;
         let hash: v1alpha2::FieldElement = hash_and_number.block_hash.into();
         Ok(GlobalBlockId::new(
             hash_and_number.block_number,
@@ -113,7 +143,7 @@ impl Provider for HttpProvider {
             .provider
             .get_block_with_txs(&block_id)
             .await
-            .map_err(|err| HttpProviderError::Provider(Box::new(err)))?;
+            .map_err(HttpProviderError::from_provider_error)?;
 
         match block {
             jsonrpc::models::MaybePendingBlockWithTxs::Block(block) => {
@@ -144,7 +174,7 @@ impl Provider for HttpProvider {
             .provider
             .get_state_update(&block_id)
             .await
-            .map_err(|err| HttpProviderError::Provider(Box::new(err)))?
+            .map_err(HttpProviderError::from_provider_error)?
             .into();
         Ok(state_update)
     }
@@ -161,7 +191,7 @@ impl Provider for HttpProvider {
             .provider
             .get_transaction_receipt(hash)
             .await
-            .map_err(|err| HttpProviderError::Provider(Box::new(err)))?
+            .map_err(HttpProviderError::from_provider_error)?
             .into();
         Ok(receipt)
     }

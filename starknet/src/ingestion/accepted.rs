@@ -1,14 +1,14 @@
 //! Ingest accepted block data.
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use apibara_node::db::libmdbx::EnvironmentKind;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use crate::{
     core::{pb::starknet::v1alpha2::BlockStatus, GlobalBlockId},
     db::{DatabaseStorage, StorageReader, StorageWriter},
-    provider::{BlockId, Provider},
+    provider::{BlockId, Provider, ProviderError},
 };
 
 use super::{
@@ -322,11 +322,20 @@ where
             "ingest block by number"
         );
         let block_id = BlockId::Number(number);
-        let (status, header, body) = self
-            .provider
-            .get_block(&block_id)
-            .await
-            .map_err(BlockIngestionError::provider)?;
+        let (status, header, body) = {
+            loop {
+                // if the node is not fully synced it will fail to fetch the block
+                // in that case, simply wait a bit and retry.
+                match self.provider.get_block(&block_id).await {
+                    Ok(result) => break result,
+                    Err(err) if err.is_block_not_found() => {
+                        warn!("node is not fully synced");
+                        tokio::time::sleep(Duration::from_secs(30)).await;
+                    }
+                    Err(err) => return Err(BlockIngestionError::provider(err)),
+                }
+            }
+        };
 
         let new_block_id = GlobalBlockId::from_block_header(&header)?;
 
