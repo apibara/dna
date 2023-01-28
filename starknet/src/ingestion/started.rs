@@ -69,7 +69,7 @@ where
                     "block was rejected while offline"
                 );
                 let mut txn = self.storage.begin_txn()?;
-                txn.shrink_canonical_chain(&latest_indexed)?;
+                txn.reject_block_from_canonical_chain(&latest_indexed)?;
                 txn.commit()?;
             } else if status.is_accepted() {
                 return self
