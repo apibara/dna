@@ -6,7 +6,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
 use crate::{
-    core::{pb::starknet::v1alpha2::BlockStatus, GlobalBlockId},
+    core::GlobalBlockId,
     db::{DatabaseStorage, StorageReader, StorageWriter},
     provider::{BlockId, Provider, ProviderError},
 };
@@ -399,8 +399,7 @@ where
                 break;
             }
 
-            txn.shrink_canonical_chain(&ingested_tip)?;
-            txn.write_status(&ingested_tip, BlockStatus::Rejected)?;
+            txn.reject_block_from_canonical_chain(&ingested_tip)?;
 
             // header must exist in the database
             let header = self
