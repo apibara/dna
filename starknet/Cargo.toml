@@ -12,7 +12,7 @@ name = "apibara-starknet"
 path = "src/bin.rs"
 
 [dependencies]
-anyhow = "=1.0.59"
+anyhow = "1.0.66"
 apibara-core = { path = "../core" }
 apibara-node = { path = "../node" }
 backoff = { version = "0.4.0", features = ["tokio"] }

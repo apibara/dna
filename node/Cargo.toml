@@ -8,7 +8,7 @@ name = "apibara_node"
 path = "src/lib.rs"
 
 [dependencies]
-anyhow = "=1.0.59"
+anyhow = "1.0.66"
 apibara-core = { path = "../core" }
 arrayvec = "0.7.2"
 async-trait = "0.1.57"
