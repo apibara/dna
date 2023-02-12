@@ -14,7 +14,7 @@ use crate::db::tables;
 
 pub struct HealthReporter<E: EnvironmentKind> {
     db: Arc<Environment<E>>,
-    reporter: tonic_health::server::HealthReporter,
+    _reporter: tonic_health::server::HealthReporter,
 }
 
 impl<E> HealthReporter<E>
@@ -23,7 +23,13 @@ where
 {
     pub fn new(db: Arc<Environment<E>>) -> (Self, HealthServer<impl Health>) {
         let (reporter, service) = tonic_health::server::health_reporter();
-        (HealthReporter { db, reporter }, service)
+        (
+            HealthReporter {
+                db,
+                _reporter: reporter,
+            },
+            service,
+        )
     }
 
     pub async fn start(&mut self, ct: CancellationToken) {
