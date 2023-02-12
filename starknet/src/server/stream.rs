@@ -20,20 +20,20 @@ use crate::{
         IngestionMessage,
     },
     db::StorageReader,
+    healer::HealerClient,
+    // stream::{BatchDataStream, BatchMessage, StreamError},
     ingestion::IngestionStreamClient,
     stream::{DataStream, StreamConfigurationStream, StreamError},
-    // stream::{BatchDataStream, BatchMessage, StreamError},
 };
 
 use super::span::RequestSpan;
 
 pub struct StreamService<R: StorageReader> {
     ingestion: Arc<IngestionStreamClient>,
+    healer: Arc<HealerClient>,
     storage: Arc<R>,
     request_span: Arc<dyn RequestSpan>,
 }
-
-// type ClientStream = Streaming<pb::stream::v1alpha2::StreamDataRequest>;
 
 impl<R> StreamService<R>
 where
@@ -41,12 +41,14 @@ where
 {
     pub fn new(
         ingestion: Arc<IngestionStreamClient>,
+        healer: Arc<HealerClient>,
         storage: R,
         request_span: Arc<dyn RequestSpan>,
     ) -> Self {
         let storage = Arc::new(storage);
         StreamService {
             ingestion,
+            healer,
             storage,
             request_span,
         }
@@ -81,8 +83,12 @@ where
         let ingestion_stream = self.ingestion.subscribe().await;
         let ingestion_stream = IngestionStream::new(ingestion_stream);
 
-        let data_stream =
-            DataStream::new(configuration_stream, ingestion_stream, self.storage.clone());
+        let data_stream = DataStream::new(
+            configuration_stream,
+            ingestion_stream,
+            self.storage.clone(),
+            self.healer.clone(),
+        );
 
         let response = ResponseStream::new(data_stream).instrument(stream_span);
         Ok(Response::new(Box::pin(response)))
