@@ -12,7 +12,8 @@ use tracing::{error, info, info_span};
 use apibara_node::db::libmdbx::{Environment, EnvironmentKind};
 
 use crate::{
-    core::pb, db::DatabaseStorage, ingestion::IngestionStreamClient, server::stream::StreamService,
+    core::pb, db::DatabaseStorage, healer::HealerClient, ingestion::IngestionStreamClient,
+    server::stream::StreamService,
 };
 
 use self::health::HealthReporter;
@@ -22,6 +23,7 @@ pub use self::span::{MetadataKeyRequestSpan, RequestSpan, SimpleRequestSpan};
 pub struct Server<E: EnvironmentKind> {
     db: Arc<Environment<E>>,
     ingestion: Arc<IngestionStreamClient>,
+    healer: Arc<HealerClient>,
     request_span: Arc<dyn RequestSpan>,
 }
 
@@ -39,12 +41,18 @@ impl<E> Server<E>
 where
     E: EnvironmentKind,
 {
-    pub fn new(db: Arc<Environment<E>>, ingestion: IngestionStreamClient) -> Self {
+    pub fn new(
+        db: Arc<Environment<E>>,
+        ingestion: IngestionStreamClient,
+        healer: HealerClient,
+    ) -> Self {
         let ingestion = Arc::new(ingestion);
+        let healer = Arc::new(healer);
         let request_span = SimpleRequestSpan::default();
         Server {
             db,
             ingestion,
+            healer,
             request_span: Arc::new(request_span),
         }
     }
@@ -72,7 +80,8 @@ where
 
         let storage = DatabaseStorage::new(self.db);
         let stream_service =
-            StreamService::new(self.ingestion, storage, self.request_span).into_service();
+            StreamService::new(self.ingestion, self.healer, storage, self.request_span)
+                .into_service();
 
         info!(addr = %addr, "starting server");
 

@@ -1,5 +1,6 @@
 pub mod core;
 pub mod db;
+pub mod healer;
 pub mod ingestion;
 pub mod node;
 pub mod provider;

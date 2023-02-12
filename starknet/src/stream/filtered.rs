@@ -18,6 +18,7 @@ use crate::{
         GlobalBlockId, IngestionMessage,
     },
     db::StorageReader,
+    healer::HealerClient,
 };
 
 use super::{
@@ -33,6 +34,7 @@ where
     R: StorageReader,
 {
     storage: Arc<R>,
+    healer: Arc<HealerClient>,
     waker: Option<Waker>,
     inner: Option<InnerDataStream<R>>,
 }
@@ -57,6 +59,7 @@ struct InnerDataStream<R: StorageReader> {
     pending_cursor: Option<GlobalBlockId>,
     filter: DatabaseBlockDataFilter<R>,
     storage: Arc<R>,
+    healer: Arc<HealerClient>,
     invalidated: Option<GlobalBlockId>,
 }
 
@@ -64,9 +67,10 @@ impl<R> FilteredDataStream<R>
 where
     R: StorageReader,
 {
-    pub fn new(storage: Arc<R>) -> Self {
+    pub fn new(storage: Arc<R>, healer: Arc<HealerClient>) -> Self {
         FilteredDataStream {
             storage,
+            healer,
             inner: None,
             waker: None,
         }
@@ -107,6 +111,7 @@ where
             pending_cursor: None,
             filter,
             storage: self.storage.clone(),
+            healer: self.healer.clone(),
             invalidated: None,
         };
 
@@ -274,6 +279,10 @@ where
                 })?;
 
             if !block_status.is_finalized() {
+                if current_cursor.number() < self.finalized_cursor.number() {
+                    self.healer.status_finalized_expected(current_cursor);
+                    continue;
+                }
                 break;
             }
 

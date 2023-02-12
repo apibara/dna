@@ -12,6 +12,7 @@ use pin_project::pin_project;
 use crate::{
     core::{pb::stream, IngestionMessage},
     db::StorageReader,
+    healer::HealerClient,
 };
 
 use super::{configuration::StreamConfiguration, filtered::FilteredDataStream, StreamError};
@@ -46,11 +47,16 @@ where
     R: StorageReader,
 {
     /// Creates a new data stream.
-    pub fn new(configuration_stream: C, ingestion_stream: L, storage: Arc<R>) -> Self {
+    pub fn new(
+        configuration_stream: C,
+        ingestion_stream: L,
+        storage: Arc<R>,
+        healer: Arc<HealerClient>,
+    ) -> Self {
         DataStream {
             configuration_stream,
             ingestion_stream,
-            inner: FilteredDataStream::new(storage),
+            inner: FilteredDataStream::new(storage, healer),
         }
     }
 }
