@@ -134,7 +134,10 @@ where
         }
 
         let transactions = self.storage.read_body(block_id)?;
-        let receipts = self.storage.read_receipts(block_id)?;
+        let mut receipts = self.storage.read_receipts(block_id)?;
+
+        assert!(transactions.len() == receipts.len());
+        receipts.sort_by(|a, b| a.transaction_index.cmp(&b.transaction_index));
 
         let mut events = Vec::default();
         for receipt in &receipts {
@@ -169,7 +172,10 @@ where
         }
 
         let transactions = self.storage.read_body(block_id)?;
-        let receipts = self.storage.read_receipts(block_id)?;
+        let mut receipts = self.storage.read_receipts(block_id)?;
+
+        assert!(transactions.len() == receipts.len());
+        receipts.sort_by(|a, b| a.transaction_index.cmp(&b.transaction_index));
 
         let mut messages = Vec::default();
         for receipt in &receipts {
