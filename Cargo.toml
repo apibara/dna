@@ -1,8 +1,6 @@
 [workspace]
 members = [
-    "cli",
     "core",
     "node",
-    "starknet",
-    "sdk",
+    "starknet"
 ]
