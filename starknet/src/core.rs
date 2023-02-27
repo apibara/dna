@@ -43,6 +43,8 @@ pub enum InvalidBlock {
 pub mod pb {
     pub mod starknet {
         pub mod v1alpha2 {
+            use std::fmt::Display;
+
             use prost::Message;
             tonic::include_proto!("apibara.starknet.v1alpha2");
 
@@ -127,6 +129,12 @@ pub mod pb {
                         hi_lo[5], hi_lo[6], hi_lo[7], hi_hi[0], hi_hi[1], hi_hi[2], hi_hi[3],
                         hi_hi[4], hi_hi[5], hi_hi[6], hi_hi[7],
                     ]
+                }
+            }
+
+            impl Display for FieldElement {
+                fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                    write!(f, "0x{}", hex::encode(self.to_bytes()))
                 }
             }
         }
