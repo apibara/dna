@@ -1,7 +1,7 @@
 //! Connect to the sequencer gateway.
 use starknet::{
     core::types::{FieldElement, FromByteArrayError},
-    providers::jsonrpc::{self, JsonRpcClientError},
+    providers::jsonrpc::{self, models::ErrorCode, JsonRpcClientError, RpcError},
 };
 use url::Url;
 
@@ -94,12 +94,8 @@ impl HttpProviderError {
         T: std::error::Error + Send + Sync + 'static,
     {
         match error {
-            JsonRpcClientError::RpcError(ref err) => {
-                if err.code == 24 {
-                    HttpProviderError::BlockNotFound
-                } else {
-                    HttpProviderError::Provider(Box::new(error))
-                }
+            JsonRpcClientError::RpcError(RpcError::Code(ErrorCode::BlockNotFound)) => {
+                HttpProviderError::BlockNotFound
             }
             _ => HttpProviderError::Provider(Box::new(error)),
         }
@@ -146,22 +142,22 @@ impl Provider for HttpProvider {
             .map_err(HttpProviderError::from_provider_error)?;
 
         match block {
-            jsonrpc::models::MaybePendingBlockWithTxs::Block(block) => {
+            jsonrpc::models::MaybePendingBlockWithTxs::Block(ref block) => {
                 if id.is_pending() {
                     return Err(HttpProviderError::UnexpectedPendingBlock);
                 }
-                let status = (&block).into();
-                let header = (&block).into();
-                let body = (&block).into();
+                let status = block.into();
+                let header = block.into();
+                let body = block.into();
                 Ok((status, header, body))
             }
-            jsonrpc::models::MaybePendingBlockWithTxs::PendingBlock(block) => {
+            jsonrpc::models::MaybePendingBlockWithTxs::PendingBlock(ref block) => {
                 if !id.is_pending() {
                     return Err(HttpProviderError::ExpectedPendingBlock);
                 }
-                let status = (&block).into();
-                let header = (&block).into();
-                let body = (&block).into();
+                let status = block.into();
+                let header = block.into();
+                let body = block.into();
                 Ok((status, header, body))
             }
         }
@@ -179,7 +175,7 @@ impl Provider for HttpProvider {
         Ok(state_update)
     }
 
-    #[tracing::instrument(skip(self, hash))]
+    #[tracing::instrument(skip(self), fields(hash = %hash))]
     async fn get_transaction_receipt(
         &self,
         hash: &v1alpha2::FieldElement,
@@ -227,29 +223,32 @@ impl From<&jsonrpc::models::BlockWithTxs> for v1alpha2::BlockStatus {
     }
 }
 
-impl From<&jsonrpc::models::BlockWithTxs> for v1alpha2::BlockBody {
-    fn from(block: &jsonrpc::models::BlockWithTxs) -> Self {
-        let transactions = block.transactions.iter().map(Into::into).collect();
-        v1alpha2::BlockBody { transactions }
-    }
-}
-
-impl From<&jsonrpc::models::BlockWithTxs> for v1alpha2::BlockHeader {
-    fn from(block: &jsonrpc::models::BlockWithTxs) -> Self {
-        (&block.header).into()
-    }
-}
-
 impl From<&jsonrpc::models::PendingBlockWithTxs> for v1alpha2::BlockStatus {
     fn from(_block: &jsonrpc::models::PendingBlockWithTxs) -> Self {
         v1alpha2::BlockStatus::Pending
     }
 }
 
-impl From<&jsonrpc::models::PendingBlockWithTxs> for v1alpha2::BlockBody {
-    fn from(block: &jsonrpc::models::PendingBlockWithTxs) -> Self {
-        let transactions = block.transactions.iter().map(Into::into).collect();
-        v1alpha2::BlockBody { transactions }
+impl From<&jsonrpc::models::BlockWithTxs> for v1alpha2::BlockHeader {
+    fn from(block: &jsonrpc::models::BlockWithTxs) -> Self {
+        let block_hash = block.block_hash.into();
+        let parent_block_hash = block.parent_hash.into();
+        let block_number = block.block_number;
+        let sequencer_address = block.sequencer_address.into();
+        let new_root = block.new_root.into();
+        let timestamp = prost_types::Timestamp {
+            nanos: 0,
+            seconds: block.timestamp as i64,
+        };
+
+        v1alpha2::BlockHeader {
+            block_hash: Some(block_hash),
+            parent_block_hash: Some(parent_block_hash),
+            block_number,
+            sequencer_address: Some(sequencer_address),
+            new_root: Some(new_root),
+            timestamp: Some(timestamp),
+        }
     }
 }
 
@@ -274,6 +273,20 @@ impl From<&jsonrpc::models::PendingBlockWithTxs> for v1alpha2::BlockHeader {
     }
 }
 
+impl From<&jsonrpc::models::BlockWithTxs> for v1alpha2::BlockBody {
+    fn from(block: &jsonrpc::models::BlockWithTxs) -> Self {
+        let transactions = block.transactions.iter().map(Into::into).collect();
+        v1alpha2::BlockBody { transactions }
+    }
+}
+
+impl From<&jsonrpc::models::PendingBlockWithTxs> for v1alpha2::BlockBody {
+    fn from(block: &jsonrpc::models::PendingBlockWithTxs) -> Self {
+        let transactions = block.transactions.iter().map(Into::into).collect();
+        v1alpha2::BlockBody { transactions }
+    }
+}
+
 impl From<&jsonrpc::models::BlockStatus> for v1alpha2::BlockStatus {
     fn from(status: &jsonrpc::models::BlockStatus) -> Self {
         use jsonrpc::models::BlockStatus;
@@ -283,28 +296,6 @@ impl From<&jsonrpc::models::BlockStatus> for v1alpha2::BlockStatus {
             BlockStatus::AcceptedOnL2 => v1alpha2::BlockStatus::AcceptedOnL2,
             BlockStatus::AcceptedOnL1 => v1alpha2::BlockStatus::AcceptedOnL1,
             BlockStatus::Rejected => v1alpha2::BlockStatus::Rejected,
-        }
-    }
-}
-
-impl From<&jsonrpc::models::BlockHeader> for v1alpha2::BlockHeader {
-    fn from(header: &jsonrpc::models::BlockHeader) -> Self {
-        let block_hash = header.block_hash.into();
-        let parent_block_hash = header.parent_hash.into();
-        let block_number = header.block_number;
-        let sequencer_address = header.sequencer_address.into();
-        let new_root = header.new_root.into();
-        let timestamp = prost_types::Timestamp {
-            nanos: 0,
-            seconds: header.timestamp as i64,
-        };
-        v1alpha2::BlockHeader {
-            block_hash: Some(block_hash),
-            parent_block_hash: Some(parent_block_hash),
-            block_number,
-            sequencer_address: Some(sequencer_address),
-            new_root: Some(new_root),
-            timestamp: Some(timestamp),
         }
     }
 }
@@ -337,37 +328,74 @@ impl From<&jsonrpc::models::Transaction> for v1alpha2::Transaction {
 
 impl From<&jsonrpc::models::InvokeTransaction> for v1alpha2::Transaction {
     fn from(tx: &jsonrpc::models::InvokeTransaction) -> Self {
-        use jsonrpc::models::InvokeTransactionVersion;
+        use jsonrpc::models::InvokeTransaction;
+
+        match &tx {
+            InvokeTransaction::V0(v0) => v0.into(),
+            InvokeTransaction::V1(v1) => v1.into(),
+        }
+    }
+}
+
+impl From<&jsonrpc::models::InvokeTransactionV0> for v1alpha2::Transaction {
+    fn from(tx: &jsonrpc::models::InvokeTransactionV0) -> Self {
         use v1alpha2::transaction::Transaction;
 
-        let meta: v1alpha2::TransactionMeta = (&tx.meta).into();
-        match &tx.invoke_transaction {
-            InvokeTransactionVersion::V0(v0) => {
-                let contract_address = v0.contract_address.into();
-                let entry_point_selector = v0.entry_point_selector.into();
-                let calldata = v0.calldata.iter().map(|fe| fe.into()).collect();
-                let invoke_v0 = v1alpha2::InvokeTransactionV0 {
-                    contract_address: Some(contract_address),
-                    entry_point_selector: Some(entry_point_selector),
-                    calldata,
-                };
-                v1alpha2::Transaction {
-                    meta: Some(meta),
-                    transaction: Some(Transaction::InvokeV0(invoke_v0)),
-                }
-            }
-            InvokeTransactionVersion::V1(v1) => {
-                let sender_address = v1.sender_address.into();
-                let calldata = v1.calldata.iter().map(|fe| fe.into()).collect();
-                let invoke_v1 = v1alpha2::InvokeTransactionV1 {
-                    sender_address: Some(sender_address),
-                    calldata,
-                };
-                v1alpha2::Transaction {
-                    meta: Some(meta),
-                    transaction: Some(Transaction::InvokeV1(invoke_v1)),
-                }
-            }
+        let hash = tx.transaction_hash.into();
+        let max_fee = tx.max_fee.into();
+        let signature = tx.signature.iter().map(|fe| fe.into()).collect();
+        let nonce = tx.nonce.into();
+
+        let meta = v1alpha2::TransactionMeta {
+            hash: Some(hash),
+            max_fee: Some(max_fee),
+            signature,
+            nonce: Some(nonce),
+            version: 0,
+        };
+
+        let contract_address = tx.contract_address.into();
+        let entry_point_selector = tx.entry_point_selector.into();
+        let calldata = tx.calldata.iter().map(|fe| fe.into()).collect();
+
+        let invoke_v0 = v1alpha2::InvokeTransactionV0 {
+            contract_address: Some(contract_address),
+            entry_point_selector: Some(entry_point_selector),
+            calldata,
+        };
+        v1alpha2::Transaction {
+            meta: Some(meta),
+            transaction: Some(Transaction::InvokeV0(invoke_v0)),
+        }
+    }
+}
+
+impl From<&jsonrpc::models::InvokeTransactionV1> for v1alpha2::Transaction {
+    fn from(tx: &jsonrpc::models::InvokeTransactionV1) -> Self {
+        use v1alpha2::transaction::Transaction;
+
+        let hash = tx.transaction_hash.into();
+        let max_fee = tx.max_fee.into();
+        let signature = tx.signature.iter().map(|fe| fe.into()).collect();
+        let nonce = tx.nonce.into();
+
+        let meta = v1alpha2::TransactionMeta {
+            hash: Some(hash),
+            max_fee: Some(max_fee),
+            signature,
+            nonce: Some(nonce),
+            version: 0,
+        };
+
+        let sender_address = tx.sender_address.into();
+        let calldata = tx.calldata.iter().map(|fe| fe.into()).collect();
+        let invoke_v1 = v1alpha2::InvokeTransactionV1 {
+            sender_address: Some(sender_address),
+            calldata,
+        };
+        v1alpha2::Transaction {
+            meta: Some(meta),
+            transaction: Some(Transaction::InvokeV1(invoke_v1)),
         }
     }
 }
@@ -376,18 +404,17 @@ impl From<&jsonrpc::models::DeployTransaction> for v1alpha2::Transaction {
     fn from(tx: &jsonrpc::models::DeployTransaction) -> Self {
         use v1alpha2::transaction::Transaction;
 
-        let meta: v1alpha2::TransactionMeta = tx.into();
+        let hash = tx.transaction_hash.into();
+
+        let meta = v1alpha2::TransactionMeta {
+            hash: Some(hash),
+            version: tx.version,
+            ..v1alpha2::TransactionMeta::default()
+        };
+
         let class_hash = tx.class_hash.into();
-        let contract_address_salt = tx
-            .deploy_transaction_properties
-            .contract_address_salt
-            .into();
-        let constructor_calldata = tx
-            .deploy_transaction_properties
-            .constructor_calldata
-            .iter()
-            .map(|fe| fe.into())
-            .collect();
+        let contract_address_salt = tx.contract_address_salt.into();
+        let constructor_calldata = tx.constructor_calldata.iter().map(|fe| fe.into()).collect();
 
         let deploy = v1alpha2::DeployTransaction {
             class_hash: Some(class_hash),
@@ -406,7 +433,20 @@ impl From<&jsonrpc::models::DeclareTransaction> for v1alpha2::Transaction {
     fn from(tx: &jsonrpc::models::DeclareTransaction) -> Self {
         use v1alpha2::transaction::Transaction;
 
-        let meta: v1alpha2::TransactionMeta = (&tx.meta).into();
+        let hash = tx.transaction_hash.into();
+        let max_fee = tx.max_fee.into();
+        let signature = tx.signature.iter().map(|fe| fe.into()).collect();
+        let nonce = tx.nonce.into();
+        let version = tx.version;
+
+        let meta = v1alpha2::TransactionMeta {
+            hash: Some(hash),
+            max_fee: Some(max_fee),
+            signature,
+            nonce: Some(nonce),
+            version,
+        };
+
         let class_hash = tx.class_hash.into();
         let sender_address = tx.sender_address.into();
 
@@ -426,15 +466,18 @@ impl From<&jsonrpc::models::L1HandlerTransaction> for v1alpha2::Transaction {
     fn from(tx: &jsonrpc::models::L1HandlerTransaction) -> Self {
         use v1alpha2::transaction::Transaction;
 
-        let meta: v1alpha2::TransactionMeta = tx.into();
-        let contract_address = tx.function_call.contract_address.into();
-        let entry_point_selector = tx.function_call.entry_point_selector.into();
-        let calldata = tx
-            .function_call
-            .calldata
-            .iter()
-            .map(|fe| fe.into())
-            .collect();
+        let hash = tx.transaction_hash.into();
+        let version = tx.version;
+
+        let meta = v1alpha2::TransactionMeta {
+            hash: Some(hash),
+            version,
+            ..v1alpha2::TransactionMeta::default()
+        };
+
+        let contract_address = tx.contract_address.into();
+        let entry_point_selector = tx.entry_point_selector.into();
+        let calldata = tx.calldata.iter().map(|fe| fe.into()).collect();
 
         let l1_handler = v1alpha2::L1HandlerTransaction {
             contract_address: Some(contract_address),
@@ -453,15 +496,23 @@ impl From<&jsonrpc::models::DeployAccountTransaction> for v1alpha2::Transaction 
     fn from(tx: &jsonrpc::models::DeployAccountTransaction) -> Self {
         use v1alpha2::transaction::Transaction;
 
-        let meta: v1alpha2::TransactionMeta = (&tx.meta).into();
-        let contract_address_salt = tx.deploy_properties.contract_address_salt.into();
-        let class_hash = tx.deploy_properties.class_hash.into();
-        let constructor_calldata = tx
-            .deploy_properties
-            .constructor_calldata
-            .iter()
-            .map(|fe| fe.into())
-            .collect();
+        let hash = tx.transaction_hash.into();
+        let max_fee = tx.max_fee.into();
+        let signature = tx.signature.iter().map(|fe| fe.into()).collect();
+        let nonce = tx.nonce.into();
+        let version = tx.version;
+
+        let meta = v1alpha2::TransactionMeta {
+            hash: Some(hash),
+            max_fee: Some(max_fee),
+            signature,
+            nonce: Some(nonce),
+            version,
+        };
+
+        let contract_address_salt = tx.contract_address_salt.into();
+        let class_hash = tx.class_hash.into();
+        let constructor_calldata = tx.constructor_calldata.iter().map(|fe| fe.into()).collect();
 
         let deploy_account = v1alpha2::DeployAccountTransaction {
             contract_address_salt: Some(contract_address_salt),
@@ -476,55 +527,120 @@ impl From<&jsonrpc::models::DeployAccountTransaction> for v1alpha2::Transaction 
     }
 }
 
-impl From<&jsonrpc::models::TransactionMeta> for v1alpha2::TransactionMeta {
-    fn from(meta: &jsonrpc::models::TransactionMeta) -> Self {
-        let hash = meta.transaction_hash.into();
-        let max_fee = meta.common_properties.max_fee.into();
-        let signature = meta
-            .common_properties
-            .signature
-            .iter()
-            .map(|fe| fe.into())
-            .collect();
-        let version = meta.common_properties.version;
-        let nonce = meta.common_properties.nonce.into();
-        v1alpha2::TransactionMeta {
-            hash: Some(hash),
-            max_fee: Some(max_fee),
-            signature,
-            nonce: Some(nonce),
-            version,
+impl From<jsonrpc::models::MaybePendingTransactionReceipt> for v1alpha2::TransactionReceipt {
+    fn from(receipt: jsonrpc::models::MaybePendingTransactionReceipt) -> Self {
+        use jsonrpc::models::MaybePendingTransactionReceipt;
+
+        match receipt {
+            MaybePendingTransactionReceipt::PendingReceipt(receipt) => receipt.into(),
+            MaybePendingTransactionReceipt::Receipt(receipt) => receipt.into(),
         }
     }
 }
 
-impl From<&jsonrpc::models::L1HandlerTransaction> for v1alpha2::TransactionMeta {
-    fn from(tx: &jsonrpc::models::L1HandlerTransaction) -> Self {
-        let hash = tx.transaction_hash.into();
-        let version = tx.version;
-        let nonce = v1alpha2::FieldElement::from_u64(tx.nonce);
+impl From<jsonrpc::models::PendingTransactionReceipt> for v1alpha2::TransactionReceipt {
+    fn from(receipt: jsonrpc::models::PendingTransactionReceipt) -> Self {
+        use jsonrpc::models::PendingTransactionReceipt;
 
-        v1alpha2::TransactionMeta {
-            hash: Some(hash),
-            max_fee: None,
-            signature: Vec::default(),
-            nonce: Some(nonce),
-            version,
+        match receipt {
+            PendingTransactionReceipt::Invoke(invoke) => invoke.into(),
+            PendingTransactionReceipt::L1Handler(l1_handler) => l1_handler.into(),
+            PendingTransactionReceipt::Declare(declare) => declare.into(),
+            PendingTransactionReceipt::Deploy(deploy) => deploy.into(),
+            PendingTransactionReceipt::DeployAccount(deploy) => deploy.into(),
         }
     }
 }
 
-impl From<&jsonrpc::models::DeployTransaction> for v1alpha2::TransactionMeta {
-    fn from(tx: &jsonrpc::models::DeployTransaction) -> Self {
-        let hash = tx.transaction_hash.into();
-        let version = tx.deploy_transaction_properties.version;
+impl From<jsonrpc::models::PendingInvokeTransactionReceipt> for v1alpha2::TransactionReceipt {
+    fn from(receipt: jsonrpc::models::PendingInvokeTransactionReceipt) -> Self {
+        let transaction_hash = receipt.transaction_hash.into();
+        let actual_fee = receipt.actual_fee.into();
+        let l2_to_l1_messages = receipt.messages_sent.iter().map(|msg| msg.into()).collect();
+        let events = receipt.events.iter().map(|ev| ev.into()).collect();
 
-        v1alpha2::TransactionMeta {
-            hash: Some(hash),
-            max_fee: None,
-            signature: Vec::default(),
-            nonce: None,
-            version,
+        v1alpha2::TransactionReceipt {
+            transaction_index: 0,
+            transaction_hash: Some(transaction_hash),
+            actual_fee: Some(actual_fee),
+            l2_to_l1_messages,
+            events,
+            contract_address: None,
+        }
+    }
+}
+
+impl From<jsonrpc::models::PendingL1HandlerTransactionReceipt> for v1alpha2::TransactionReceipt {
+    fn from(receipt: jsonrpc::models::PendingL1HandlerTransactionReceipt) -> Self {
+        let transaction_hash = receipt.transaction_hash.into();
+        let actual_fee = receipt.actual_fee.into();
+        let l2_to_l1_messages = receipt.messages_sent.iter().map(|msg| msg.into()).collect();
+        let events = receipt.events.iter().map(|ev| ev.into()).collect();
+
+        v1alpha2::TransactionReceipt {
+            transaction_index: 0,
+            transaction_hash: Some(transaction_hash),
+            actual_fee: Some(actual_fee),
+            l2_to_l1_messages,
+            events,
+            contract_address: None,
+        }
+    }
+}
+
+impl From<jsonrpc::models::PendingDeclareTransactionReceipt> for v1alpha2::TransactionReceipt {
+    fn from(receipt: jsonrpc::models::PendingDeclareTransactionReceipt) -> Self {
+        let transaction_hash = receipt.transaction_hash.into();
+        let actual_fee = receipt.actual_fee.into();
+        let l2_to_l1_messages = receipt.messages_sent.iter().map(|msg| msg.into()).collect();
+        let events = receipt.events.iter().map(|ev| ev.into()).collect();
+
+        v1alpha2::TransactionReceipt {
+            transaction_index: 0,
+            transaction_hash: Some(transaction_hash),
+            actual_fee: Some(actual_fee),
+            l2_to_l1_messages,
+            events,
+            contract_address: None,
+        }
+    }
+}
+
+impl From<jsonrpc::models::PendingDeployTransactionReceipt> for v1alpha2::TransactionReceipt {
+    fn from(receipt: jsonrpc::models::PendingDeployTransactionReceipt) -> Self {
+        let transaction_hash = receipt.transaction_hash.into();
+        let actual_fee = receipt.actual_fee.into();
+        let l2_to_l1_messages = receipt.messages_sent.iter().map(|msg| msg.into()).collect();
+        let events = receipt.events.iter().map(|ev| ev.into()).collect();
+        let contract_address = receipt.contract_address.into();
+
+        v1alpha2::TransactionReceipt {
+            transaction_index: 0,
+            transaction_hash: Some(transaction_hash),
+            actual_fee: Some(actual_fee),
+            l2_to_l1_messages,
+            events,
+            contract_address: Some(contract_address),
+        }
+    }
+}
+
+impl From<jsonrpc::models::PendingDeployAccountTransactionReceipt>
+    for v1alpha2::TransactionReceipt
+{
+    fn from(receipt: jsonrpc::models::PendingDeployAccountTransactionReceipt) -> Self {
+        let transaction_hash = receipt.transaction_hash.into();
+        let actual_fee = receipt.actual_fee.into();
+        let l2_to_l1_messages = receipt.messages_sent.iter().map(|msg| msg.into()).collect();
+        let events = receipt.events.iter().map(|ev| ev.into()).collect();
+
+        v1alpha2::TransactionReceipt {
+            transaction_index: 0,
+            transaction_hash: Some(transaction_hash),
+            actual_fee: Some(actual_fee),
+            l2_to_l1_messages,
+            events,
+            contract_address: None,
         }
     }
 }
@@ -532,44 +648,23 @@ impl From<&jsonrpc::models::DeployTransaction> for v1alpha2::TransactionMeta {
 impl From<jsonrpc::models::TransactionReceipt> for v1alpha2::TransactionReceipt {
     fn from(receipt: jsonrpc::models::TransactionReceipt) -> Self {
         use jsonrpc::models::TransactionReceipt;
-        match &receipt {
-            TransactionReceipt::Tagged(tagged) => tagged.into(),
-            TransactionReceipt::Untagged(untagged) => untagged.into(),
-        }
-    }
-}
-
-impl From<&jsonrpc::models::TaggedTransactionReceipt> for v1alpha2::TransactionReceipt {
-    fn from(receipt: &jsonrpc::models::TaggedTransactionReceipt) -> Self {
-        use jsonrpc::models::TaggedTransactionReceipt;
 
         match receipt {
-            TaggedTransactionReceipt::Invoke(invoke) => (&invoke.meta).into(),
-            TaggedTransactionReceipt::L1Handler(l1_handler) => (&l1_handler.meta).into(),
-            TaggedTransactionReceipt::Declare(declare) => (&declare.meta).into(),
-            TaggedTransactionReceipt::Deploy(deploy) => (&deploy.meta).into(),
-            TaggedTransactionReceipt::DeployAccount(deploy) => (&deploy.meta).into(),
+            TransactionReceipt::Invoke(invoke) => invoke.into(),
+            TransactionReceipt::L1Handler(l1_handler) => l1_handler.into(),
+            TransactionReceipt::Declare(declare) => declare.into(),
+            TransactionReceipt::Deploy(deploy) => deploy.into(),
+            TransactionReceipt::DeployAccount(deploy) => deploy.into(),
         }
     }
 }
 
-impl From<&jsonrpc::models::PendingTransactionReceipt> for v1alpha2::TransactionReceipt {
-    fn from(receipt: &jsonrpc::models::PendingTransactionReceipt) -> Self {
-        use jsonrpc::models::PendingTransactionReceipt;
-
-        match receipt {
-            PendingTransactionReceipt::TransactionMeta(meta) => meta.into(),
-            PendingTransactionReceipt::Deploy(deploy) => deploy.into(),
-        }
-    }
-}
-
-impl From<&jsonrpc::models::TransactionReceiptMeta> for v1alpha2::TransactionReceipt {
-    fn from(meta: &jsonrpc::models::TransactionReceiptMeta) -> Self {
-        let transaction_hash = meta.transaction_hash.into();
-        let actual_fee = meta.actual_fee.into();
-        let l2_to_l1_messages = meta.messages_sent.iter().map(|msg| msg.into()).collect();
-        let events = meta.events.iter().map(|ev| ev.into()).collect();
+impl From<jsonrpc::models::InvokeTransactionReceipt> for v1alpha2::TransactionReceipt {
+    fn from(receipt: jsonrpc::models::InvokeTransactionReceipt) -> Self {
+        let transaction_hash = receipt.transaction_hash.into();
+        let actual_fee = receipt.actual_fee.into();
+        let l2_to_l1_messages = receipt.messages_sent.iter().map(|msg| msg.into()).collect();
+        let events = receipt.events.iter().map(|ev| ev.into()).collect();
 
         v1alpha2::TransactionReceipt {
             transaction_index: 0,
@@ -577,23 +672,17 @@ impl From<&jsonrpc::models::TransactionReceiptMeta> for v1alpha2::TransactionRec
             actual_fee: Some(actual_fee),
             l2_to_l1_messages,
             events,
+            contract_address: None,
         }
     }
 }
 
-impl From<&jsonrpc::models::DeployTransactionReceipt> for v1alpha2::TransactionReceipt {
-    fn from(receipt: &jsonrpc::models::DeployTransactionReceipt) -> Self {
-        // TODO: include deployed contract address
-        (&receipt.meta).into()
-    }
-}
-
-impl From<&jsonrpc::models::PendingTransactionReceiptMeta> for v1alpha2::TransactionReceipt {
-    fn from(meta: &jsonrpc::models::PendingTransactionReceiptMeta) -> Self {
-        let transaction_hash = meta.transaction_hash.into();
-        let actual_fee = meta.actual_fee.into();
-        let l2_to_l1_messages = meta.messages_sent.iter().map(|msg| msg.into()).collect();
-        let events = meta.events.iter().map(|ev| ev.into()).collect();
+impl From<jsonrpc::models::L1HandlerTransactionReceipt> for v1alpha2::TransactionReceipt {
+    fn from(receipt: jsonrpc::models::L1HandlerTransactionReceipt) -> Self {
+        let transaction_hash = receipt.transaction_hash.into();
+        let actual_fee = receipt.actual_fee.into();
+        let l2_to_l1_messages = receipt.messages_sent.iter().map(|msg| msg.into()).collect();
+        let events = receipt.events.iter().map(|ev| ev.into()).collect();
 
         v1alpha2::TransactionReceipt {
             transaction_index: 0,
@@ -601,14 +690,64 @@ impl From<&jsonrpc::models::PendingTransactionReceiptMeta> for v1alpha2::Transac
             actual_fee: Some(actual_fee),
             l2_to_l1_messages,
             events,
+            contract_address: None,
         }
     }
 }
 
-impl From<&jsonrpc::models::PendingDeployTransactionReceipt> for v1alpha2::TransactionReceipt {
-    fn from(receipt: &jsonrpc::models::PendingDeployTransactionReceipt) -> Self {
-        // TODO: include deployed contract address
-        (&receipt.meta).into()
+impl From<jsonrpc::models::DeclareTransactionReceipt> for v1alpha2::TransactionReceipt {
+    fn from(receipt: jsonrpc::models::DeclareTransactionReceipt) -> Self {
+        let transaction_hash = receipt.transaction_hash.into();
+        let actual_fee = receipt.actual_fee.into();
+        let l2_to_l1_messages = receipt.messages_sent.iter().map(|msg| msg.into()).collect();
+        let events = receipt.events.iter().map(|ev| ev.into()).collect();
+
+        v1alpha2::TransactionReceipt {
+            transaction_index: 0,
+            transaction_hash: Some(transaction_hash),
+            actual_fee: Some(actual_fee),
+            l2_to_l1_messages,
+            events,
+            contract_address: None,
+        }
+    }
+}
+
+impl From<jsonrpc::models::DeployTransactionReceipt> for v1alpha2::TransactionReceipt {
+    fn from(receipt: jsonrpc::models::DeployTransactionReceipt) -> Self {
+        let transaction_hash = receipt.transaction_hash.into();
+        let actual_fee = receipt.actual_fee.into();
+        let l2_to_l1_messages = receipt.messages_sent.iter().map(|msg| msg.into()).collect();
+        let events = receipt.events.iter().map(|ev| ev.into()).collect();
+        let contract_address = receipt.contract_address.into();
+
+        v1alpha2::TransactionReceipt {
+            transaction_index: 0,
+            transaction_hash: Some(transaction_hash),
+            actual_fee: Some(actual_fee),
+            l2_to_l1_messages,
+            events,
+            contract_address: Some(contract_address),
+        }
+    }
+}
+
+impl From<jsonrpc::models::DeployAccountTransactionReceipt> for v1alpha2::TransactionReceipt {
+    fn from(receipt: jsonrpc::models::DeployAccountTransactionReceipt) -> Self {
+        let transaction_hash = receipt.transaction_hash.into();
+        let actual_fee = receipt.actual_fee.into();
+        let l2_to_l1_messages = receipt.messages_sent.iter().map(|msg| msg.into()).collect();
+        let events = receipt.events.iter().map(|ev| ev.into()).collect();
+        let contract_address = receipt.contract_address.into();
+
+        v1alpha2::TransactionReceipt {
+            transaction_index: 0,
+            transaction_hash: Some(transaction_hash),
+            actual_fee: Some(actual_fee),
+            l2_to_l1_messages,
+            events,
+            contract_address: Some(contract_address),
+        }
     }
 }
 
@@ -627,8 +766,8 @@ impl From<&jsonrpc::models::MsgToL1> for v1alpha2::L2ToL1Message {
 impl From<&jsonrpc::models::Event> for v1alpha2::Event {
     fn from(event: &jsonrpc::models::Event) -> Self {
         let from_address = event.from_address.into();
-        let keys = event.content.keys.iter().map(|k| k.into()).collect();
-        let data = event.content.data.iter().map(|d| d.into()).collect();
+        let keys = event.keys.iter().map(|k| k.into()).collect();
+        let data = event.data.iter().map(|d| d.into()).collect();
 
         v1alpha2::Event {
             from_address: Some(from_address),
