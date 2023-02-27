@@ -25,7 +25,7 @@ pub struct AcceptedBlockIngestion<G: Provider + Send, E: EnvironmentKind> {
 }
 
 struct AcceptedBlockIngestionImpl<G: Provider + Send, E: EnvironmentKind> {
-    finalized: GlobalBlockId,
+    finalized: Option<GlobalBlockId>,
     previous: GlobalBlockId,
     current_head: GlobalBlockId,
     pending_ingested: bool,
@@ -83,11 +83,7 @@ where
             .await
             .map_err(BlockIngestionError::provider)?;
 
-        // if we're in the accepted block ingestion, there must be at least one finalized block
-        let finalized = self
-            .storage
-            .highest_finalized_block()?
-            .ok_or(BlockIngestionError::InconsistentDatabase)?;
+        let finalized = self.storage.highest_finalized_block()?;
 
         let ingestion = AcceptedBlockIngestionImpl {
             current_head,
@@ -139,7 +135,7 @@ where
     pub async fn tick(&mut self) -> Result<TickResult, BlockIngestionError> {
         debug!(
             value.head_height = self.current_head.number(),
-            value.finalized_height = self.finalized.number(),
+            value.finalized_height = self.finalized.map(|b| b.number()),
             head = %self.current_head,
             previous = %self.previous,
             "accepted ingestion tick"
@@ -231,16 +227,20 @@ where
     #[tracing::instrument(skip(self))]
     async fn advance_finalized(&mut self) -> Result<(), BlockIngestionError> {
         while let Some(new_finalized) = self
-            .refresh_finalized_block_status(self.finalized.number() + 1)
+            .refresh_finalized_block_status(self.finalized.map(|b| b.number() + 1).unwrap_or(0))
             .await?
         {
-            self.finalized = new_finalized;
+            self.finalized = Some(new_finalized);
             info!(
-                finalized = %self.finalized,
+                finalized = %new_finalized,
                 "updated finalized block"
             );
         }
-        self.publisher.publish_finalized(self.finalized)?;
+
+        if let Some(finalized) = self.finalized {
+            self.publisher.publish_finalized(finalized)?;
+        }
+
         Ok(())
     }
 
