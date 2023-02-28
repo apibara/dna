@@ -25,6 +25,7 @@
               openssl
               pkg-config
               protobuf
+              rust-analyzer
               (rust-bin.stable.latest.default.override {
                 extensions = [ "rust-src" ];
               })

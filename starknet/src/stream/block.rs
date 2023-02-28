@@ -42,15 +42,14 @@ impl DataMeter {
     pub fn emit_event(&self) {
         event!(
             Level::INFO,
-            data.is_metrics = true,
-            data.header = self.header,
-            data.transaction = self.transaction,
-            data.event = self.event,
-            data.message = self.message,
-            data.storage_diff = self.storage_diff,
-            data.declared_contract = self.declared_contract,
-            data.deployed_contract = self.deployed_contract,
-            data.nonce_update = self.nonce_update,
+            monotonic_counter.header = self.header,
+            monotonic_counter.transaction = self.transaction,
+            monotonic_counter.event = self.event,
+            monotonic_counter.message = self.message,
+            monotonic_counter.storage_diff = self.storage_diff,
+            monotonic_counter.declared_contract = self.declared_contract,
+            monotonic_counter.deployed_contract = self.deployed_contract,
+            monotonic_counter.nonce_update = self.nonce_update,
         );
     }
 }
