@@ -1,0 +1,28 @@
+[package]
+name = "apibara-sdk"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1.0.66"
+apibara-core = { path = "../core" }
+async-stream = "0.3.4"
+async-trait = "0.1.64"
+futures = "0.3.26"
+futures-util = "0.3.26"
+hex = "0.4.3"
+hyper = "0.14.24"
+pin-project = "1.0.12"
+prost = "0.11.0"
+prost-types = "0.11.1"
+thiserror = "1.0.32"
+tokio = { version = "1.20.1", features = ["full"] }
+tokio-stream = "0.1.12"
+tokio-util = "0.7.7"
+tonic = "0.8.0"
+tracing = "0.1.36"
+
+[build-dependencies]
+tonic-build = "0.8.0"
