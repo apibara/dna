@@ -86,6 +86,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "apibara-sdk"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "apibara-core",
+ "async-stream",
+ "async-trait",
+ "futures 0.3.26",
+ "futures-util",
+ "hex",
+ "hyper",
+ "pin-project",
+ "prost",
+ "prost-types",
+ "thiserror",
+ "tokio 1.25.0",
+ "tokio-stream",
+ "tokio-util",
+ "tonic",
+ "tonic-build",
+ "tracing",
+]
+
+[[package]]
 name = "apibara-starknet"
 version = "0.1.0"
 dependencies = [
