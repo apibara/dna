@@ -9,14 +9,22 @@ processors:
 exporters:
   logging:
     loglevel: debug
+  prometheus:
+    endpoint: "0.0.0.0:9091"
+    send_timestamps: true
+    metric_expiration: 180m
+    resource_to_telemetry_conversion:
+      enabled: true
+  otlphttp:
+    endpoint: http://tempo:4318
 
 service:
   pipelines:
     metrics:
       receivers: [otlp]
       processors: [batch]
-      exporters: [logging]
+      exporters: [logging, prometheus]
     traces:
       receivers: [otlp]
       processors: [batch]
-      exporters: [logging]
+      exporters: [otlphttp]
