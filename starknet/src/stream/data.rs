@@ -8,11 +8,13 @@ use std::{
 
 use futures::Stream;
 use pin_project::pin_project;
+use tracing::info_span;
 
 use crate::{
     core::{pb::stream, IngestionMessage},
     db::StorageReader,
     healer::HealerClient,
+    server::RequestMeter,
 };
 
 use super::{configuration::StreamConfiguration, filtered::FilteredDataStream, StreamError};
@@ -26,25 +28,27 @@ pub enum DataStreamError {
 }
 
 #[pin_project]
-pub struct DataStream<C, L, R>
+pub struct DataStream<C, L, R, M>
 where
     C: Stream<Item = Result<StreamConfiguration, StreamError>>,
     L: Stream<Item = Result<IngestionMessage, StreamError>>,
     R: StorageReader,
+    M: RequestMeter,
 {
     #[pin]
     configuration_stream: C,
     #[pin]
     ingestion_stream: L,
     #[pin]
-    inner: FilteredDataStream<R>,
+    inner: FilteredDataStream<R, M>,
 }
 
-impl<C, L, R> DataStream<C, L, R>
+impl<C, L, R, M> DataStream<C, L, R, M>
 where
     C: Stream<Item = Result<StreamConfiguration, StreamError>>,
     L: Stream<Item = Result<IngestionMessage, StreamError>>,
     R: StorageReader,
+    M: RequestMeter,
 {
     /// Creates a new data stream.
     pub fn new(
@@ -52,25 +56,29 @@ where
         ingestion_stream: L,
         storage: Arc<R>,
         healer: Arc<HealerClient>,
+        meter: Arc<M>,
     ) -> Self {
         DataStream {
             configuration_stream,
             ingestion_stream,
-            inner: FilteredDataStream::new(storage, healer),
+            inner: FilteredDataStream::new(storage, healer, meter),
         }
     }
 }
 
-impl<C, L, R> Stream for DataStream<C, L, R>
+impl<C, L, R, M> Stream for DataStream<C, L, R, M>
 where
     C: Stream<Item = Result<StreamConfiguration, StreamError>>,
     L: Stream<Item = Result<IngestionMessage, StreamError>>,
     R: StorageReader,
+    M: RequestMeter,
 {
     type Item = Result<stream::v1alpha2::StreamDataResponse, StreamError>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<Option<Self::Item>> {
         let mut this = self.project();
+
+        let _span = info_span!("poll_data_stream");
 
         // listen for configuration changes
         match this.configuration_stream.poll_next(cx) {

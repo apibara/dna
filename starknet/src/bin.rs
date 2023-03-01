@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use anyhow::Result;
 use apibara_node::{db::default_data_dir, o11y::init_opentelemetry};
 use apibara_starknet::{
-    server::{MetadataKeyRequestSpan, SimpleRequestSpan},
+    server::{MetadataKeyRequestObserver, SimpleRequestObserver},
     HttpProvider, NoWriteMap, StarkNetNode,
 };
 use clap::{Args, Parser, Subcommand};
@@ -38,8 +38,9 @@ struct StartCommand {
 async fn start(args: StartCommand) -> Result<()> {
     init_opentelemetry()?;
 
-    let mut node = StarkNetNode::<HttpProvider, SimpleRequestSpan, NoWriteMap>::builder(&args.rpc)?
-        .with_request_span(MetadataKeyRequestSpan::new("x-api-key".to_string()));
+    let mut node =
+        StarkNetNode::<HttpProvider, SimpleRequestObserver, NoWriteMap>::builder(&args.rpc)?
+            .with_request_observer(MetadataKeyRequestObserver::new("x-api-key".to_string()));
 
     // give precedence to --data
     if let Some(datadir) = args.data {

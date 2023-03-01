@@ -26,31 +26,32 @@ use crate::{
     stream::{DataStream, StreamConfigurationStream, StreamError},
 };
 
-use super::span::RequestSpan;
+use super::metadata::RequestObserver;
 
-pub struct StreamService<R: StorageReader> {
+pub struct StreamService<R: StorageReader, O: RequestObserver> {
     ingestion: Arc<IngestionStreamClient>,
     healer: Arc<HealerClient>,
     storage: Arc<R>,
-    request_span: Arc<dyn RequestSpan>,
+    request_observer: O,
 }
 
-impl<R> StreamService<R>
+impl<R, O> StreamService<R, O>
 where
     R: StorageReader + Send + Sync + 'static,
+    O: RequestObserver,
 {
     pub fn new(
         ingestion: Arc<IngestionStreamClient>,
         healer: Arc<HealerClient>,
         storage: R,
-        request_span: Arc<dyn RequestSpan>,
+        request_observer: O,
     ) -> Self {
         let storage = Arc::new(storage);
         StreamService {
             ingestion,
             healer,
             storage,
-            request_span,
+            request_observer,
         }
     }
 
@@ -60,9 +61,10 @@ where
 }
 
 #[tonic::async_trait]
-impl<R> pb::stream::v1alpha2::stream_server::Stream for StreamService<R>
+impl<R, O> pb::stream::v1alpha2::stream_server::Stream for StreamService<R, O>
 where
     R: StorageReader + Send + Sync + 'static,
+    O: RequestObserver,
 {
     type StreamDataStream = Pin<
         Box<
@@ -76,7 +78,8 @@ where
         &self,
         request: Request<Streaming<pb::stream::v1alpha2::StreamDataRequest>>,
     ) -> Result<Response<Self::StreamDataStream>, tonic::Status> {
-        let stream_span = self.request_span.stream_data_span(request.metadata());
+        let stream_span = self.request_observer.stream_data_span(request.metadata());
+        let stream_meter = self.request_observer.stream_data_meter(request.metadata());
 
         let configuration_stream = StreamConfigurationStream::new(request.into_inner());
 
@@ -88,6 +91,7 @@ where
             ingestion_stream,
             self.storage.clone(),
             self.healer.clone(),
+            Arc::new(stream_meter),
         );
 
         let response = ResponseStream::new(data_stream).instrument(stream_span);

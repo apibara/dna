@@ -1,5 +1,5 @@
 mod health;
-mod span;
+mod metadata;
 mod stream;
 
 use std::{net::SocketAddr, sync::Arc};
@@ -18,13 +18,15 @@ use crate::{
 
 use self::health::HealthReporter;
 
-pub use self::span::{MetadataKeyRequestSpan, RequestSpan, SimpleRequestSpan};
+pub use self::metadata::{
+    MetadataKeyRequestObserver, RequestMeter, RequestObserver, SimpleRequestObserver,
+};
 
-pub struct Server<E: EnvironmentKind> {
+pub struct Server<E: EnvironmentKind, O: RequestObserver> {
     db: Arc<Environment<E>>,
     ingestion: Arc<IngestionStreamClient>,
     healer: Arc<HealerClient>,
-    request_span: Arc<dyn RequestSpan>,
+    request_observer: O,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -37,30 +39,35 @@ pub enum ServerError {
     ReflectionServer(#[from] tonic_reflection::server::Error),
 }
 
-impl<E> Server<E>
+impl<E, O> Server<E, O>
 where
     E: EnvironmentKind,
+    O: RequestObserver,
 {
     pub fn new(
         db: Arc<Environment<E>>,
         ingestion: IngestionStreamClient,
         healer: HealerClient,
-    ) -> Self {
+    ) -> Server<E, SimpleRequestObserver> {
         let ingestion = Arc::new(ingestion);
         let healer = Arc::new(healer);
-        let request_span = SimpleRequestSpan::default();
+        let request_observer = SimpleRequestObserver::default();
         Server {
             db,
             ingestion,
             healer,
-            request_span: Arc::new(request_span),
+            request_observer,
         }
     }
 
-    pub fn with_request_span<S: RequestSpan>(mut self, request_span: S) -> Self {
-        let request_span = Arc::new(request_span);
-        self.request_span = request_span;
-        self
+    /// Creates a new Server with the given request observer.
+    pub fn with_request_observer<S: RequestObserver>(self, request_observer: S) -> Server<E, S> {
+        Server {
+            db: self.db,
+            ingestion: self.ingestion,
+            healer: self.healer,
+            request_observer,
+        }
     }
 
     pub async fn start(self, addr: SocketAddr, ct: CancellationToken) -> Result<(), ServerError> {
@@ -80,7 +87,7 @@ where
 
         let storage = DatabaseStorage::new(self.db);
         let stream_service =
-            StreamService::new(self.ingestion, self.healer, storage, self.request_span)
+            StreamService::new(self.ingestion, self.healer, storage, self.request_observer)
                 .into_service();
 
         info!(addr = %addr, "starting server");

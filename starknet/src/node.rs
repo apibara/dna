@@ -20,19 +20,19 @@ use crate::{
     healer::{Healer, HealerError},
     ingestion::{BlockIngestion, BlockIngestionConfig, BlockIngestionError},
     provider::{HttpProviderError, Provider},
-    server::{RequestSpan, Server, ServerError, SimpleRequestSpan},
+    server::{RequestObserver, Server, ServerError, SimpleRequestObserver},
     HttpProvider,
 };
 
-pub struct StarkNetNode<G, S, E>
+pub struct StarkNetNode<G, O, E>
 where
     G: Provider + Send + Sync + 'static,
-    S: RequestSpan,
+    O: RequestObserver,
     E: EnvironmentKind,
 {
     db: Arc<Environment<E>>,
     sequencer_provider: Arc<G>,
-    request_span: S,
+    request_span: O,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -49,20 +49,20 @@ pub enum StarkNetNodeError {
     AddressParseError(#[from] AddrParseError),
 }
 
-impl<G, S, E> StarkNetNode<G, S, E>
+impl<G, O, E> StarkNetNode<G, O, E>
 where
     G: Provider + Send + Sync + 'static,
-    S: RequestSpan,
+    O: RequestObserver,
     E: EnvironmentKind,
 {
     /// Creates a new builder, used to configure the node.
     pub fn builder(
         url: &str,
-    ) -> Result<StarkNetNodeBuilder<SimpleRequestSpan, E>, StarkNetNodeBuilderError> {
-        StarkNetNodeBuilder::<SimpleRequestSpan, E>::new(url)
+    ) -> Result<StarkNetNodeBuilder<SimpleRequestObserver, E>, StarkNetNodeBuilderError> {
+        StarkNetNodeBuilder::<SimpleRequestObserver, E>::new(url)
     }
 
-    pub(crate) fn new(db: Environment<E>, sequencer_provider: G, request_span: S) -> Self {
+    pub(crate) fn new(db: Environment<E>, sequencer_provider: G, request_span: O) -> Self {
         let db = Arc::new(db);
         let sequencer_provider = Arc::new(sequencer_provider);
         StarkNetNode {
@@ -103,8 +103,8 @@ where
 
         // TODO: configure from command line
         let server_addr: SocketAddr = "0.0.0.0:7171".parse()?;
-        let server = Server::new(self.db.clone(), block_ingestion_client, healer_client)
-            .with_request_span(self.request_span);
+        let server = Server::<E, O>::new(self.db.clone(), block_ingestion_client, healer_client)
+            .with_request_observer(self.request_span);
         let mut server_handle = tokio::spawn({
             let ct = ct.clone();
             async move {
@@ -141,11 +141,11 @@ where
     }
 }
 
-pub struct StarkNetNodeBuilder<S: RequestSpan, E: EnvironmentKind> {
+pub struct StarkNetNodeBuilder<O: RequestObserver, E: EnvironmentKind> {
     datadir: PathBuf,
     provider: HttpProvider,
     poll_interval: Duration,
-    request_span: S,
+    request_observer: O,
     _phantom: PhantomData<E>,
 }
 
@@ -161,26 +161,26 @@ pub enum StarkNetNodeBuilderError {
     Provider(#[from] HttpProviderError),
 }
 
-impl<S, E> StarkNetNodeBuilder<S, E>
+impl<O, E> StarkNetNodeBuilder<O, E>
 where
-    S: RequestSpan,
+    O: RequestObserver,
     E: EnvironmentKind,
 {
     pub(crate) fn new(
         url: &str,
-    ) -> Result<StarkNetNodeBuilder<SimpleRequestSpan, E>, StarkNetNodeBuilderError> {
+    ) -> Result<StarkNetNodeBuilder<SimpleRequestObserver, E>, StarkNetNodeBuilderError> {
         let datadir = default_data_dir()
             .map(|d| d.join("starknet"))
             .expect("no datadir");
         let url = url.parse()?;
         let sequencer = HttpProvider::new(url);
         let poll_interval = Duration::from_millis(5_000);
-        let request_span = SimpleRequestSpan::default();
+        let request_observer = SimpleRequestObserver::default();
         let builder = StarkNetNodeBuilder {
             datadir,
             provider: sequencer,
             poll_interval,
-            request_span,
+            request_observer,
             _phantom: Default::default(),
         };
         Ok(builder)
@@ -194,20 +194,20 @@ where
         self.poll_interval = poll_interval;
     }
 
-    pub fn with_request_span<SP: RequestSpan>(
+    pub fn with_request_observer<N: RequestObserver>(
         self,
-        request_span: SP,
-    ) -> StarkNetNodeBuilder<SP, E> {
+        request_observer: N,
+    ) -> StarkNetNodeBuilder<N, E> {
         StarkNetNodeBuilder {
             datadir: self.datadir,
             provider: self.provider,
             poll_interval: self.poll_interval,
-            request_span,
+            request_observer,
             _phantom: self._phantom,
         }
     }
 
-    pub fn build(self) -> Result<StarkNetNode<HttpProvider, S, E>, StarkNetNodeBuilderError> {
+    pub fn build(self) -> Result<StarkNetNode<HttpProvider, O, E>, StarkNetNodeBuilderError> {
         fs::create_dir_all(&self.datadir).map_err(StarkNetNodeBuilderError::CreateDatadir)?;
 
         let db = Environment::<E>::builder()
@@ -216,6 +216,6 @@ where
             .open(&self.datadir)
             .map_err(StarkNetNodeBuilderError::DatabaseOpen)?;
 
-        Ok(StarkNetNode::new(db, self.provider, self.request_span))
+        Ok(StarkNetNode::new(db, self.provider, self.request_observer))
     }
 }
