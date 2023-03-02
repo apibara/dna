@@ -2,11 +2,10 @@
 
 use std::sync::Arc;
 
-use tracing::{event, Level};
-
 use crate::{
     core::{pb::starknet::v1alpha2, GlobalBlockId},
     db::StorageReader,
+    server::RequestMeter,
 };
 
 pub trait BlockDataFilter {
@@ -15,9 +14,10 @@ pub trait BlockDataFilter {
     /// Returns a `Block` with data for the given block.
     ///
     /// If there is no data for the given block, it returns `None`.
-    fn data_for_block(
+    fn data_for_block<M: RequestMeter>(
         &self,
         block_id: &GlobalBlockId,
+        meter: &Arc<M>,
     ) -> Result<Option<v1alpha2::Block>, Self::Error>;
 }
 
@@ -27,7 +27,7 @@ pub struct DatabaseBlockDataFilter<R: StorageReader> {
 }
 
 #[derive(Debug, Default)]
-struct DataMeter {
+struct DataCounter {
     pub header: usize,
     pub transaction: usize,
     pub event: usize,
@@ -38,19 +38,16 @@ struct DataMeter {
     pub nonce_update: usize,
 }
 
-impl DataMeter {
-    pub fn emit_event(&self) {
-        event!(
-            Level::INFO,
-            monotonic_counter.header = self.header,
-            monotonic_counter.transaction = self.transaction,
-            monotonic_counter.event = self.event,
-            monotonic_counter.message = self.message,
-            monotonic_counter.storage_diff = self.storage_diff,
-            monotonic_counter.declared_contract = self.declared_contract,
-            monotonic_counter.deployed_contract = self.deployed_contract,
-            monotonic_counter.nonce_update = self.nonce_update,
-        );
+impl DataCounter {
+    pub fn update_meter<M: RequestMeter>(&self, meter: &Arc<M>) {
+        meter.increment_counter("header", self.header as u64);
+        meter.increment_counter("transaction", self.transaction as u64);
+        meter.increment_counter("event", self.event as u64);
+        meter.increment_counter("message", self.message as u64);
+        meter.increment_counter("storage_diff", self.storage_diff as u64);
+        meter.increment_counter("declared_contract", self.declared_contract as u64);
+        meter.increment_counter("deployed_contract", self.deployed_contract as u64);
+        meter.increment_counter("nonce_update", self.nonce_update as u64);
     }
 }
 
@@ -78,7 +75,7 @@ where
     fn header(
         &self,
         block_id: &GlobalBlockId,
-        meter: &mut DataMeter,
+        meter: &mut DataCounter,
     ) -> Result<Option<v1alpha2::BlockHeader>, R::Error> {
         if self.filter.header.is_some() {
             meter.header = 1;
@@ -91,7 +88,7 @@ where
     fn transactions(
         &self,
         block_id: &GlobalBlockId,
-        meter: &mut DataMeter,
+        meter: &mut DataCounter,
     ) -> Result<Vec<v1alpha2::TransactionWithReceipt>, R::Error> {
         if self.filter.transactions.is_empty() {
             return Ok(Vec::default());
@@ -126,7 +123,7 @@ where
     fn events(
         &self,
         block_id: &GlobalBlockId,
-        meter: &mut DataMeter,
+        meter: &mut DataCounter,
     ) -> Result<Vec<v1alpha2::EventWithTransaction>, R::Error> {
         if self.filter.events.is_empty() {
             return Ok(Vec::default());
@@ -164,7 +161,7 @@ where
     fn l2_to_l1_messages(
         &self,
         block_id: &GlobalBlockId,
-        meter: &mut DataMeter,
+        meter: &mut DataCounter,
     ) -> Result<Vec<v1alpha2::L2ToL1MessageWithTransaction>, R::Error> {
         if self.filter.messages.is_empty() {
             return Ok(Vec::default());
@@ -202,7 +199,7 @@ where
     fn state_update(
         &self,
         block_id: &GlobalBlockId,
-        meter: &mut DataMeter,
+        meter: &mut DataCounter,
     ) -> Result<Option<v1alpha2::StateUpdate>, R::Error> {
         let filter = if let Some(filter) = self.filter.state_update.as_ref() {
             filter
@@ -332,31 +329,32 @@ where
 {
     type Error = R::Error;
 
-    #[tracing::instrument(level = "trace", skip(self))]
-    fn data_for_block(
+    #[tracing::instrument(level = "trace", skip(self, meter))]
+    fn data_for_block<M: RequestMeter>(
         &self,
         block_id: &GlobalBlockId,
+        meter: &Arc<M>,
     ) -> Result<Option<v1alpha2::Block>, Self::Error> {
         let mut has_data = false;
 
-        let mut meter = DataMeter::default();
+        let mut data_counter = DataCounter::default();
         let status = self.status(block_id)?;
 
-        let header = self.header(block_id, &mut meter)?;
+        let header = self.header(block_id, &mut data_counter)?;
         if !self.has_weak_header() {
             has_data |= header.is_some();
         }
 
-        let transactions = self.transactions(block_id, &mut meter)?;
+        let transactions = self.transactions(block_id, &mut data_counter)?;
         has_data |= !transactions.is_empty();
 
-        let events = self.events(block_id, &mut meter)?;
+        let events = self.events(block_id, &mut data_counter)?;
         has_data |= !events.is_empty();
 
-        let l2_to_l1_messages = self.l2_to_l1_messages(block_id, &mut meter)?;
+        let l2_to_l1_messages = self.l2_to_l1_messages(block_id, &mut data_counter)?;
         has_data |= !l2_to_l1_messages.is_empty();
 
-        let state_update = self.state_update(block_id, &mut meter)?;
+        let state_update = self.state_update(block_id, &mut data_counter)?;
         has_data |= state_update.is_some();
 
         let data = v1alpha2::Block {
@@ -370,7 +368,7 @@ where
 
         if has_data {
             // emit here so that weak headers are not counted
-            meter.emit_event();
+            data_counter.update_meter(meter);
 
             Ok(Some(data))
         } else {
