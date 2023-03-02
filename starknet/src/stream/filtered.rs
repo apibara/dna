@@ -19,6 +19,7 @@ use crate::{
     },
     db::StorageReader,
     healer::HealerClient,
+    server::RequestMeter,
 };
 
 use super::{
@@ -29,14 +30,16 @@ use super::{
 
 const MAX_BATCH_ITER: i32 = 5_000;
 
-pub struct FilteredDataStream<R>
+pub struct FilteredDataStream<R, M>
 where
     R: StorageReader,
+    M: RequestMeter,
 {
     storage: Arc<R>,
+    meter: Arc<M>,
     healer: Arc<HealerClient>,
     waker: Option<Waker>,
-    inner: Option<InnerDataStream<R>>,
+    inner: Option<InnerDataStream<R, M>>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -49,7 +52,7 @@ pub enum FilteredDataStreamError {
     MissingBlockStatus(GlobalBlockId),
 }
 
-struct InnerDataStream<R: StorageReader> {
+struct InnerDataStream<R: StorageReader, M: RequestMeter> {
     stream_id: u64,
     batch_size: usize,
     data_finality: DataFinality,
@@ -61,16 +64,19 @@ struct InnerDataStream<R: StorageReader> {
     storage: Arc<R>,
     healer: Arc<HealerClient>,
     invalidated: Option<GlobalBlockId>,
+    meter: Arc<M>,
 }
 
-impl<R> FilteredDataStream<R>
+impl<R, M> FilteredDataStream<R, M>
 where
     R: StorageReader,
+    M: RequestMeter,
 {
-    pub fn new(storage: Arc<R>, healer: Arc<HealerClient>) -> Self {
+    pub fn new(storage: Arc<R>, healer: Arc<HealerClient>, meter: Arc<M>) -> Self {
         FilteredDataStream {
             storage,
             healer,
+            meter,
             inner: None,
             waker: None,
         }
@@ -112,6 +118,7 @@ where
             filter,
             storage: self.storage.clone(),
             healer: self.healer.clone(),
+            meter: self.meter.clone(),
             invalidated: None,
         };
 
@@ -166,9 +173,10 @@ where
     }
 }
 
-impl<R> InnerDataStream<R>
+impl<R, M> InnerDataStream<R, M>
 where
     R: StorageReader,
+    M: RequestMeter,
 {
     pub fn advance_to_next_batch(&mut self) -> Result<Option<StreamDataResponse>, StreamError> {
         // if next block is still in the finalized range, send a batch
@@ -290,7 +298,7 @@ where
 
             if let Some(data) = self
                 .filter
-                .data_for_block(&current_cursor)
+                .data_for_block(&current_cursor, &self.meter)
                 .map_err(StreamError::internal)?
             {
                 batch.push(data);
@@ -350,7 +358,7 @@ where
         // read data at cursor
         let data = if let Some(data) = self
             .filter
-            .data_for_block(&first_cursor)
+            .data_for_block(&first_cursor, &self.meter)
             .map_err(StreamError::internal)?
         {
             data
@@ -383,7 +391,7 @@ where
         // read data at cursor
         let data = if let Some(data) = self
             .filter
-            .data_for_block(&pending_cursor)
+            .data_for_block(&pending_cursor, &self.meter)
             .map_err(StreamError::internal)?
         {
             data
@@ -451,9 +459,10 @@ where
     }
 }
 
-impl<R> Stream for FilteredDataStream<R>
+impl<R, M> Stream for FilteredDataStream<R, M>
 where
     R: StorageReader,
+    M: RequestMeter,
 {
     type Item = Result<StreamDataResponse, StreamError>;
 
