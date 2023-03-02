@@ -1,0 +1,29 @@
+[package]
+name = "erigon-dna"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "erigon_dna"
+path = "src/lib.rs"
+
+[[bin]]
+name = "erigon-dna"
+path = "src/bin.rs"
+
+[dependencies]
+anyhow = "1.0.66"
+apibara-node = { path = "../node" }
+ctrlc = { version = "3.2.3", features = ["termination"] }
+futures = "0.3.24"
+hex = "0.4.3"
+prost = "0.11.0"
+prost-types = "0.11.1"
+tokio = { version = "1.20.1", features = ["full"] }
+tokio-stream = { version = "0.1.10", features = ["sync"] }
+tokio-util = "0.7.3"
+tonic = "0.8.0"
+tracing = { version = "0.1.36", features = ["max_level_trace", "release_max_level_debug"] }
+
+[build-dependencies]
+tonic-build = "0.8.0"

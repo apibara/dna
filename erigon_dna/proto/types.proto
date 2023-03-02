@@ -1,0 +1,128 @@
+syntax = "proto3";
+
+import "google/protobuf/descriptor.proto";
+
+package types;
+
+/* Service-level versioning shall use a 3-part version number (M.m.p) following semver rules */
+/* 1. MAJOR version (M): increment when you make incompatible changes                        */
+/* 2. MINOR version (m): increment when you add functionality in backward compatible manner  */
+/* 3. PATCH version (p): increment when you make backward compatible bug fixes               */
+
+// Extensions of file-level options for service versioning: should *not* be modified
+extend google.protobuf.FileOptions {
+  uint32 service_major_version = 50001;
+  uint32 service_minor_version = 50002;
+  uint32 service_patch_version = 50003;
+}
+
+message H128 {
+  uint64 hi = 1;
+  uint64 lo = 2;
+}
+
+message H160 {
+  H128 hi = 1;
+  uint32 lo = 2;
+}
+
+message H256 {
+  H128 hi = 1;
+  H128 lo = 2;
+}
+
+message H512 {
+  H256 hi = 1;
+  H256 lo = 2;
+}
+
+message H1024 {
+  H512 hi = 1;
+  H512 lo = 2;
+}
+
+message H2048 {
+  H1024 hi = 1;
+  H1024 lo = 2;
+}
+
+// Reply message containing the current service version on the service side
+message VersionReply {
+  uint32 major = 1;
+  uint32 minor = 2;
+  uint32 patch = 3;
+}
+
+// ------------------------------------------------------------------------
+// Engine API types
+// See https://github.com/ethereum/execution-apis/blob/main/src/engine/specification.md
+message ExecutionPayload {
+  uint32 version = 1; // v1 - no withdrawals, v2 - with withdrawals, v3 - with excess data gas
+  H256 parentHash = 2;
+  H160 coinbase = 3;
+  H256 stateRoot = 4;
+  H256 receiptRoot = 5;
+  H2048 logsBloom = 6;
+  H256 prevRandao = 7;
+  uint64 blockNumber = 8;
+  uint64 gasLimit = 9;
+  uint64 gasUsed = 10;
+  uint64 timestamp = 11;
+  bytes extraData = 12;
+  H256 baseFeePerGas = 13;
+  H256 blockHash = 14;
+  repeated bytes transactions = 15;
+  repeated Withdrawal withdrawals = 16;
+  H256 excessDataGas = 17;
+}
+
+message Withdrawal {
+  uint64 index = 1;
+  uint64 validatorIndex = 2;
+  H160 address = 3;
+  uint64 amount = 4;
+}
+
+message BlobsBundleV1 {
+  H256 blockHash = 1;
+  // TODO(eip-4844): define a protobuf message for type KZGCommitment
+  repeated bytes kzgs = 2;
+  // TODO(eip-4844): define a protobuf message for type Blob
+  repeated bytes blobs = 3;
+}
+
+// End of Engine API types
+// ------------------------------------------------------------------------
+
+message NodeInfoPorts {
+  uint32 discovery = 1;
+  uint32 listener = 2;
+}
+
+message NodeInfoReply {
+  string id = 1;
+  string name = 2;
+  string enode = 3;
+  string enr = 4;
+  NodeInfoPorts ports = 5;
+  string listenerAddr = 6;
+  bytes protocols = 7;
+}
+
+message PeerInfo {
+  string id = 1;
+  string name = 2;
+  string enode = 3;
+  string enr = 4;
+  repeated string caps = 5;
+  string connLocalAddr = 6;
+  string connRemoteAddr = 7;
+  bool connIsInbound = 8;
+  bool connIsTrusted = 9;
+  bool connIsStatic = 10;
+}
+
+message ExecutionPayloadBodyV1 {
+  repeated bytes transactions = 1;
+  repeated Withdrawal withdrawals = 2;
+}

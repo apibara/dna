@@ -1163,6 +1163,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "erigon-dna"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "apibara-node",
+ "ctrlc",
+ "futures 0.3.26",
+ "hex",
+ "prost",
+ "prost-types",
+ "tokio 1.26.0",
+ "tokio-stream",
+ "tokio-util",
+ "tonic",
+ "tonic-build",
+ "tracing",
+]
+
+[[package]]
 name = "errno"
 version = "0.2.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"

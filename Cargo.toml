@@ -4,6 +4,7 @@ members = [
     "observability",
     "node",
     "sdk",
+    "erigon_dna",
     "starknet",
     "sink-common",
     "sink-webhook",
