@@ -101,10 +101,16 @@ where
                 .map_err(StreamError::internal)?;
             // stream needs at least a finalized or accepted block.
             match (finalized_cursor, accepted_cursor) {
-                (Some(finalized_cursor), Some(accepted_cursor)) => (Some(finalized_cursor), accepted_cursor),
+                (Some(finalized_cursor), Some(accepted_cursor)) => {
+                    (Some(finalized_cursor), accepted_cursor)
+                }
                 (None, Some(accepted_cursor)) => (None, accepted_cursor),
                 (Some(finalized_cursor), None) => (Some(finalized_cursor), finalized_cursor),
-                (None, None) => return Err(StreamError::internal(FilteredDataStreamError::NoFinalizedBlockIngested)),
+                (None, None) => {
+                    return Err(StreamError::internal(
+                        FilteredDataStreamError::NoFinalizedBlockIngested,
+                    ))
+                }
             }
         };
 
