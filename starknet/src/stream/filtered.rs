@@ -57,7 +57,7 @@ struct InnerDataStream<R: StorageReader, M: RequestMeter> {
     batch_size: usize,
     data_finality: DataFinality,
     previous_iter_cursor: Option<GlobalBlockId>,
-    finalized_cursor: GlobalBlockId,
+    finalized_cursor: Option<GlobalBlockId>,
     accepted_cursor: GlobalBlockId,
     pending_cursor: Option<GlobalBlockId>,
     filter: DatabaseBlockDataFilter<R>,
@@ -93,16 +93,19 @@ where
             let finalized_cursor = self
                 .storage
                 .highest_finalized_block()
-                .map_err(StreamError::internal)?
-                .ok_or(FilteredDataStreamError::NoFinalizedBlockIngested)
                 .map_err(StreamError::internal)?;
             // use finalized block if the node hasn't ingested an accepted block yet
             let accepted_cursor = self
                 .storage
                 .highest_accepted_block()
-                .map_err(StreamError::internal)?
-                .unwrap_or(finalized_cursor);
-            (finalized_cursor, accepted_cursor)
+                .map_err(StreamError::internal)?;
+            // stream needs at least a finalized or accepted block.
+            match (finalized_cursor, accepted_cursor) {
+                (Some(finalized_cursor), Some(accepted_cursor)) => (Some(finalized_cursor), accepted_cursor),
+                (None, Some(accepted_cursor)) => (None, accepted_cursor),
+                (Some(finalized_cursor), None) => (Some(finalized_cursor), finalized_cursor),
+                (None, None) => return Err(StreamError::internal(FilteredDataStreamError::NoFinalizedBlockIngested)),
+            }
         };
 
         let filter = DatabaseBlockDataFilter::new(self.storage.clone(), configuration.filter);
@@ -140,7 +143,7 @@ where
                     self.wake();
                 }
                 IngestionMessage::Finalized(block_id) => {
-                    inner.finalized_cursor = block_id;
+                    inner.finalized_cursor = Some(block_id);
                     self.wake();
                 }
                 IngestionMessage::Pending(block_id) => {
@@ -233,8 +236,10 @@ where
         };
 
         // send finalized data always
-        if next_block_number <= self.finalized_cursor.number() {
-            return self.send_finalized_batch(next_cursor);
+        if let Some(finalized_cursor) = self.finalized_cursor {
+            if next_block_number <= finalized_cursor.number() {
+                return self.send_finalized_batch(next_cursor, &finalized_cursor);
+            }
         }
 
         // only send accepted data to the right streams
@@ -253,12 +258,13 @@ where
     fn send_finalized_batch(
         &mut self,
         first_cursor: GlobalBlockId,
+        finalized_cursor: &GlobalBlockId,
     ) -> Result<Option<StreamDataResponse>, StreamError> {
         use stream::v1alpha2::stream_data_response::Message;
 
         debug!(
             previous_iter_cursor = ?self.previous_iter_cursor,
-            finalized_cursor = ?self.finalized_cursor,
+            finalized_cursor = ?finalized_cursor,
             accepted_cursor = ?self.accepted_cursor,
             first_cursor = ?first_cursor,
             "send finalized batch"
@@ -287,7 +293,7 @@ where
                 })?;
 
             if !block_status.is_finalized() {
-                if current_cursor.number() < self.finalized_cursor.number() {
+                if current_cursor.number() < finalized_cursor.number() {
                     self.healer.status_finalized_expected(current_cursor);
                     continue;
                 }
@@ -315,7 +321,7 @@ where
                 }
                 Some(cursor) => {
                     // don't mix accepted and finalized data
-                    if cursor.number() > self.finalized_cursor.number() {
+                    if cursor.number() > finalized_cursor.number() {
                         break;
                     }
                     current_cursor = cursor;
