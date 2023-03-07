@@ -5,7 +5,6 @@ mod chain_tracker;
 mod cli;
 mod mdbx;
 mod message_storage;
-mod node;
 mod sequencer;
 mod table;
 
@@ -21,7 +20,6 @@ pub mod tables {
         Block, BlockHash, BlockTable, CanonicalBlock, CanonicalBlockTable,
     };
     pub use super::message_storage::MessageTable;
-    pub use super::node::{Configuration, ConfigurationTable};
     pub use super::sequencer::{
         SequencerState, SequencerStateTable, StreamState, StreamStateTable,
     };
