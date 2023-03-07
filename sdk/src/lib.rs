@@ -6,19 +6,16 @@ use std::{
 use futures::Stream;
 use pb::stream::v1alpha2::{stream_client::StreamClient, StreamDataResponse};
 use pin_project::pin_project;
-use tokio::sync::mpsc::{Receiver, Sender};
-use tokio_stream::{wrappers::ReceiverStream, StreamExt};
-use tokio_util::sync::CancellationToken;
+use tokio::sync::mpsc::{error::SendError, Receiver, Sender};
+use tokio_stream::wrappers::ReceiverStream;
 use tonic::{transport::Channel, Streaming};
 
 use crate::pb::{
     starknet::v1alpha2::Filter,
-    stream::v1alpha2::{Cursor, DataFinality, StreamDataRequest},
+    stream::v1alpha2::{Cursor, StreamDataRequest},
 };
 
-pub struct Raw;
-pub struct Configured;
-
+pub mod config;
 pub mod pb {
     pub mod starknet {
         pub mod v1alpha2 {
@@ -172,6 +169,10 @@ pub enum ApibaraIndexerError {
     FailedToBuildIndexer,
     #[error(transparent)]
     TonicError(#[from] tonic::transport::Error),
+    #[error(transparent)]
+    FailedToConfigureStream(#[from] SendError<Configuration>),
+    #[error(transparent)]
+    StreamError(#[from] tonic::Status),
 }
 
 pub struct ApibaraIndexer<StreamClient> {
@@ -179,7 +180,6 @@ pub struct ApibaraIndexer<StreamClient> {
     configuration: Option<Configuration>,
     configuration_channel: Option<(Sender<Configuration>, Receiver<Configuration>)>,
     inner_channel: Option<(Sender<StreamDataRequest>, Receiver<StreamDataRequest>)>,
-    ct: Option<CancellationToken>,
 }
 
 impl<StreamClient> Default for ApibaraIndexer<StreamClient> {
@@ -189,7 +189,6 @@ impl<StreamClient> Default for ApibaraIndexer<StreamClient> {
             configuration: None,
             configuration_channel: None,
             inner_channel: None,
-            ct: None,
         }
     }
 }
@@ -197,7 +196,6 @@ impl<StreamClient> Default for ApibaraIndexer<StreamClient> {
 pub struct StreamHandler {
     stream_id: u64,
     configuration_rx: Receiver<Configuration>,
-    ct: CancellationToken,
     inner: StreamingClientWrapper,
     inner_tx: Sender<StreamDataRequest>,
 }
@@ -235,11 +233,6 @@ impl ApibaraIndexer<StreamClient<Channel>> {
         self
     }
 
-    pub fn with_cancellation_token(mut self, ct: CancellationToken) -> Self {
-        self.ct = Some(ct);
-        self
-    }
-
     /// Apibara indexer SDK
     ///
     /// let base_configuration = Configuration::default();
@@ -260,22 +253,16 @@ impl ApibaraIndexer<StreamClient<Channel>> {
             .configuration_channel
             .unwrap_or(tokio::sync::mpsc::channel(1));
         let (inner_tx, inner_rx) = self.inner_channel.unwrap_or(tokio::sync::mpsc::channel(1));
-        let ct = self.ct.unwrap_or(CancellationToken::new());
 
-        configuration_tx
-            .send(configuration.clone())
-            .await
-            .expect("failed to configure initial stream");
+        configuration_tx.send(configuration.clone()).await?;
         Ok((
             StreamHandler {
                 stream_id: 0,
                 configuration_rx,
-                ct,
                 inner: StreamingClientWrapper {
                     inner: client
                         .stream_data(ReceiverStream::new(inner_rx))
-                        .await
-                        .expect("failed to start streaming apibara")
+                        .await?
                         .into_inner(),
                 },
                 inner_tx,
@@ -289,11 +276,6 @@ impl Stream for StreamHandler {
     type Item = Result<StreamDataResponse, Box<dyn std::error::Error>>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        // directly stop stream if cancel is catched
-        if self.ct.is_cancelled() {
-            return Poll::Ready(None);
-        }
-
         match self.configuration_rx.poll_recv(cx) {
             Poll::Ready(None) => Poll::Ready(None),
             Poll::Ready(Some(configuration)) => {
@@ -306,9 +288,7 @@ impl Stream for StreamHandler {
                     filter: configuration.filter,
                 };
 
-                self.inner_tx
-                    .try_send(request)
-                    .expect("failed to send request");
+                self.inner_tx.try_send(request)?;
                 cx.waker().wake_by_ref();
                 return Poll::Pending;
             }
@@ -331,14 +311,8 @@ impl Stream for StreamHandler {
 
 #[cfg(test)]
 mod tests {
-    use crate::{ApibaraIndexer, Configuration};
+    use crate::ApibaraIndexer;
     use futures_util::StreamExt;
-
-    #[tokio::test]
-    async fn test_it_can_build() -> Result<(), Box<dyn std::error::Error>> {
-        println!("THIS IS THE TESTING OF THE NIGHT");
-        Ok(())
-    }
 
     #[tokio::test]
     async fn test_apibara_high_level_api() -> Result<(), Box<dyn std::error::Error>> {
