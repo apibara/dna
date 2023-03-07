@@ -5,13 +5,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     tonic_build::configure()
         .build_client(true)
         .build_server(true)
-        .file_descriptor_set_path(out_dir.join("node_descriptor.bin"))
-        .compile(&["proto/v1alpha1/node.proto"], &["proto"])?;
-
-    tonic_build::configure()
-        .build_client(true)
-        .build_server(true)
-        .file_descriptor_set_path(out_dir.join("application_descriptor.bin"))
-        .compile(&["proto/application.proto"], &["proto"])?;
+        .file_descriptor_set_path(out_dir.join("node_v1alpha2_descriptor.bin"))
+        .compile(&["proto/node/v1alpha2/stream.proto"], &["proto"])?;
     Ok(())
 }
