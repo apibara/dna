@@ -3,6 +3,7 @@ use std::{
     task::{Context, Poll},
 };
 
+use config::Configuration;
 use futures::Stream;
 use pb::stream::v1alpha2::{stream_client::StreamClient, StreamDataResponse};
 use pin_project::pin_project;
@@ -130,41 +131,8 @@ pub mod pb {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct Configuration {
-    batch_size: u64,
-    starting_cursor: Option<Cursor>,
-    finality: Option<i32>,
-    filter: Option<Filter>,
-}
-impl Configuration {
-    pub fn new(
-        batch_size: u64,
-        starting_cursor: Option<Cursor>,
-        finality: Option<i32>,
-        filter: Option<Filter>,
-    ) -> Self {
-        Self {
-            batch_size,
-            starting_cursor,
-            finality,
-            filter,
-        }
-    }
-}
-impl Default for Configuration {
-    fn default() -> Self {
-        Self {
-            batch_size: 1,
-            starting_cursor: None,
-            finality: None,
-            filter: Some(Filter::default()),
-        }
-    }
-}
-
 #[derive(Debug, thiserror::Error)]
-pub enum ApibaraIndexerError {
+pub enum ClientBuilderError {
     #[error("Failed to build indexer")]
     FailedToBuildIndexer,
     #[error(transparent)]
@@ -175,14 +143,14 @@ pub enum ApibaraIndexerError {
     StreamError(#[from] tonic::Status),
 }
 
-pub struct ApibaraIndexer<StreamClient> {
+pub struct ClientBuilder<StreamClient> {
     client: Option<StreamClient>,
     configuration: Option<Configuration>,
     configuration_channel: Option<(Sender<Configuration>, Receiver<Configuration>)>,
     inner_channel: Option<(Sender<StreamDataRequest>, Receiver<StreamDataRequest>)>,
 }
 
-impl<StreamClient> Default for ApibaraIndexer<StreamClient> {
+impl<StreamClient> Default for ClientBuilder<StreamClient> {
     fn default() -> Self {
         Self {
             client: None,
@@ -193,21 +161,17 @@ impl<StreamClient> Default for ApibaraIndexer<StreamClient> {
     }
 }
 
-pub struct StreamHandler {
+#[derive(Debug)]
+#[pin_project]
+pub struct DataStream {
     stream_id: u64,
     configuration_rx: Receiver<Configuration>,
-    inner: StreamingClientWrapper,
+    #[pin]
+    inner: Streaming<StreamDataResponse>,
     inner_tx: Sender<StreamDataRequest>,
 }
 
-#[derive(Debug)]
-#[pin_project]
-struct StreamingClientWrapper {
-    #[pin]
-    inner: Streaming<StreamDataResponse>,
-}
-
-impl ApibaraIndexer<StreamClient<Channel>> {
+impl ClientBuilder<StreamClient<Channel>> {
     pub fn with_client(mut self, client: StreamClient<Channel>) -> Self {
         self.client = Some(client);
         self
@@ -215,21 +179,6 @@ impl ApibaraIndexer<StreamClient<Channel>> {
 
     pub fn with_configuration(mut self, configuration: Configuration) -> Self {
         self.configuration = Some(configuration);
-        self
-    }
-    pub fn with_configuration_channel(
-        mut self,
-        configuration_channel: (Sender<Configuration>, Receiver<Configuration>),
-    ) -> Self {
-        self.configuration_channel = Some(configuration_channel);
-        self
-    }
-
-    pub fn with_inner_channel(
-        mut self,
-        inner_channel: (Sender<StreamDataRequest>, Receiver<StreamDataRequest>),
-    ) -> Self {
-        self.inner_channel = Some(inner_channel);
         self
     }
 
@@ -244,27 +193,27 @@ impl ApibaraIndexer<StreamClient<Channel>> {
     pub async fn build(
         self,
         indexer_url: Option<String>,
-    ) -> Result<(StreamHandler, Sender<Configuration>), ApibaraIndexerError> {
+    ) -> Result<(DataStream, Sender<Configuration>), ClientBuilderError> {
         let mut client = self.client.unwrap_or(
             StreamClient::connect(indexer_url.unwrap_or("http://0.0.0.0:7171".into())).await?,
         );
-        let configuration = self.configuration.unwrap_or(Configuration::default());
-        let (configuration_tx, configuration_rx) = self
-            .configuration_channel
-            .unwrap_or(tokio::sync::mpsc::channel(1));
-        let (inner_tx, inner_rx) = self.inner_channel.unwrap_or(tokio::sync::mpsc::channel(1));
+        let (configuration_tx, configuration_rx) = tokio::sync::mpsc::channel(128);
+        let (inner_tx, inner_rx) = tokio::sync::mpsc::channel(128);
 
-        configuration_tx.send(configuration.clone()).await?;
+        if let Some(configuration) = self.configuration {
+            configuration_tx.send(configuration).await?;
+        }
+
+        let inner_stream = client
+            .stream_data(ReceiverStream::new(inner_rx))
+            .await?
+            .into_inner();
+
         Ok((
-            StreamHandler {
+            DataStream {
                 stream_id: 0,
                 configuration_rx,
-                inner: StreamingClientWrapper {
-                    inner: client
-                        .stream_data(ReceiverStream::new(inner_rx))
-                        .await?
-                        .into_inner(),
-                },
+                inner: inner_stream,
                 inner_tx,
             },
             configuration_tx,
@@ -272,7 +221,7 @@ impl ApibaraIndexer<StreamClient<Channel>> {
     }
 }
 
-impl Stream for StreamHandler {
+impl Stream for DataStream {
     type Item = Result<StreamDataResponse, Box<dyn std::error::Error>>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
@@ -284,7 +233,7 @@ impl Stream for StreamHandler {
                     stream_id: Some(self.stream_id),
                     batch_size: Some(configuration.batch_size),
                     starting_cursor: configuration.starting_cursor,
-                    finality: configuration.finality,
+                    finality: configuration.finality.into(),
                     filter: configuration.filter,
                 };
 
@@ -292,7 +241,7 @@ impl Stream for StreamHandler {
                 cx.waker().wake_by_ref();
                 return Poll::Pending;
             }
-            Poll::Pending => match Pin::new(&mut self.inner.inner).poll_next(cx) {
+            Poll::Pending => match Pin::new(&mut self.inner).poll_next(cx) {
                 Poll::Ready(Some(Ok(response))) => {
                     if response.stream_id != self.stream_id {
                         cx.waker().wake_by_ref();
@@ -311,14 +260,25 @@ impl Stream for StreamHandler {
 
 #[cfg(test)]
 mod tests {
-    use crate::ApibaraIndexer;
+    use crate::{config::Configuration, pb::starknet::v1alpha2::HeaderFilter, ClientBuilder};
     use futures_util::StreamExt;
 
     #[tokio::test]
     async fn test_apibara_high_level_api() -> Result<(), Box<dyn std::error::Error>> {
-        let (mut stream, _configuration_handle) = ApibaraIndexer::default()
+        let (mut stream, configuration_handle) = ClientBuilder::default()
             .build(Some("http://0.0.0.0:7171".into()))
             .await?;
+
+        let mut config = Configuration::default();
+        configuration_handle
+            .send(
+                config
+                    .starting_at_block(1)
+                    .with_filter(|mut filter| filter.with_header(HeaderFilter { weak: false }))
+                    .clone(),
+            )
+            .await?;
+
         while let Some(response) = stream.next().await {
             println!("Response: {:?}", response);
         }
