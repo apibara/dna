@@ -4,15 +4,15 @@ mod stream;
 
 use std::{net::SocketAddr, sync::Arc};
 
+use apibara_core::node as node_pb;
+use apibara_node::db::libmdbx::{Environment, EnvironmentKind};
 use tokio::task::JoinError;
 use tokio_util::sync::CancellationToken;
 use tonic::transport::Server as TonicServer;
 use tracing::{error, info, info_span};
 
-use apibara_node::db::libmdbx::{Environment, EnvironmentKind};
-
 use crate::{
-    core::pb, db::DatabaseStorage, healer::HealerClient, ingestion::IngestionStreamClient,
+    db::DatabaseStorage, healer::HealerClient, ingestion::IngestionStreamClient,
     server::stream::StreamService,
 };
 
@@ -78,12 +78,9 @@ where
             async move { health_reporter.start(ct).await }
         });
 
-        let reflection_service =
-            tonic_reflection::server::Builder::configure()
-                .register_encoded_file_descriptor_set(
-                    pb::stream::v1alpha2::stream_file_descriptor_set(),
-                )
-                .build()?;
+        let reflection_service = tonic_reflection::server::Builder::configure()
+            .register_encoded_file_descriptor_set(node_pb::v1alpha2::node_file_descriptor_set())
+            .build()?;
 
         let storage = DatabaseStorage::new(self.db);
         let stream_service =

@@ -6,15 +6,13 @@ use std::{
     task::{self, Poll},
 };
 
+use apibara_core::node::v1alpha2::StreamDataResponse;
 use futures::Stream;
 use pin_project::pin_project;
 use tracing::info_span;
 
 use crate::{
-    core::{pb::stream, IngestionMessage},
-    db::StorageReader,
-    healer::HealerClient,
-    server::RequestMeter,
+    core::IngestionMessage, db::StorageReader, healer::HealerClient, server::RequestMeter,
 };
 
 use super::{configuration::StreamConfiguration, filtered::FilteredDataStream, StreamError};
@@ -73,7 +71,7 @@ where
     R: StorageReader,
     M: RequestMeter,
 {
-    type Item = Result<stream::v1alpha2::StreamDataResponse, StreamError>;
+    type Item = Result<StreamDataResponse, StreamError>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<Option<Self::Item>> {
         let mut this = self.project();

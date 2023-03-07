@@ -2,11 +2,9 @@
 
 use std::sync::Arc;
 
-use crate::{
-    core::{pb::starknet::v1alpha2, GlobalBlockId},
-    db::StorageReader,
-    server::RequestMeter,
-};
+use apibara_core::starknet::v1alpha2;
+
+use crate::{core::GlobalBlockId, db::StorageReader, server::RequestMeter};
 
 pub trait BlockDataFilter {
     type Error: std::error::Error + Send + Sync + 'static;

@@ -1,12 +1,13 @@
 //! First step of block ingestion.
 use std::sync::Arc;
 
+use apibara_core::starknet::v1alpha2::BlockStatus;
 use apibara_node::db::libmdbx::EnvironmentKind;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
 use crate::{
-    core::{pb::starknet::v1alpha2::BlockStatus, BlockHash, GlobalBlockId},
+    core::{BlockHash, GlobalBlockId},
     db::{DatabaseStorage, StorageReader, StorageWriter},
     ingestion::finalized::FinalizedBlockIngestion,
     provider::{BlockId, Provider, ProviderError},

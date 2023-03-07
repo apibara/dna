@@ -2,14 +2,18 @@
 
 use std::sync::Arc;
 
+use apibara_core::starknet::v1alpha2;
 use apibara_node::db::{
     libmdbx::{self, Environment, EnvironmentKind, Transaction, RW},
     MdbxErrorExt, MdbxTransactionExt, TableCursor,
 };
 
-use crate::core::{pb::starknet::v1alpha2, GlobalBlockId};
+use crate::core::GlobalBlockId;
 
-use super::tables;
+use super::{
+    block::{BlockBody, BlockReceipts},
+    tables,
+};
 
 /// An object to read chain data from storage.
 pub trait StorageReader {
@@ -77,11 +81,7 @@ pub trait StorageWriter {
     ) -> Result<(), Self::Error>;
 
     /// Writes the transactions in a block.
-    fn write_body(
-        &mut self,
-        id: &GlobalBlockId,
-        body: v1alpha2::BlockBody,
-    ) -> Result<(), Self::Error>;
+    fn write_body(&mut self, id: &GlobalBlockId, body: BlockBody) -> Result<(), Self::Error>;
 
     /// Writes the receipts in a block.
     fn write_receipts(
@@ -324,11 +324,7 @@ impl<'env, 'txn, E: EnvironmentKind> StorageWriter for DatabaseStorageWriter<'en
     }
 
     #[tracing::instrument(level = "trace", skip(self, body))]
-    fn write_body(
-        &mut self,
-        id: &GlobalBlockId,
-        body: v1alpha2::BlockBody,
-    ) -> Result<(), Self::Error> {
+    fn write_body(&mut self, id: &GlobalBlockId, body: BlockBody) -> Result<(), Self::Error> {
         self.body_cursor.seek_exact(id)?;
         self.body_cursor.put(id, &body)?;
         Ok(())
@@ -340,7 +336,7 @@ impl<'env, 'txn, E: EnvironmentKind> StorageWriter for DatabaseStorageWriter<'en
         id: &GlobalBlockId,
         receipts: Vec<v1alpha2::TransactionReceipt>,
     ) -> Result<(), Self::Error> {
-        let body = v1alpha2::BlockReceipts { receipts };
+        let body = BlockReceipts { receipts };
         self.receipts_cursor.seek_exact(id)?;
         self.receipts_cursor.put(id, &body)?;
         Ok(())

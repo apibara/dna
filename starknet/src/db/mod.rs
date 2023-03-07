@@ -4,7 +4,7 @@ mod state;
 mod storage;
 mod transaction;
 
-pub use self::block::BlockStatus;
+pub use self::block::{BlockBody, BlockReceipts, BlockStatus};
 pub use self::storage::{DatabaseStorage, DatabaseStorageWriter, StorageReader, StorageWriter};
 
 pub mod tables {

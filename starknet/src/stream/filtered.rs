@@ -6,17 +6,15 @@ use std::{
     task::{self, Poll, Waker},
 };
 
+use apibara_core::node::v1alpha2::{
+    stream_data_response, Data, DataFinality, Invalidate, StreamDataResponse,
+};
 use futures::Stream;
+use prost::Message;
 use tracing::debug;
 
 use crate::{
-    core::{
-        pb::stream::{
-            self,
-            v1alpha2::{DataFinality, StreamDataResponse},
-        },
-        GlobalBlockId, IngestionMessage,
-    },
+    core::{GlobalBlockId, IngestionMessage},
     db::StorageReader,
     healer::HealerClient,
     server::RequestMeter,
@@ -266,7 +264,7 @@ where
         first_cursor: GlobalBlockId,
         finalized_cursor: &GlobalBlockId,
     ) -> Result<Option<StreamDataResponse>, StreamError> {
-        use stream::v1alpha2::stream_data_response::Message;
+        use stream_data_response::Message;
 
         debug!(
             previous_iter_cursor = ?self.previous_iter_cursor,
@@ -313,7 +311,7 @@ where
                 .data_for_block(&current_cursor, &self.meter)
                 .map_err(StreamError::internal)?
             {
-                batch.push(data);
+                batch.push(data.encode_to_vec());
             }
 
             match self
@@ -339,7 +337,7 @@ where
             // update iter cursor to the latest ingested block.
             self.previous_iter_cursor = batch_end_cursor;
 
-            let data = stream::v1alpha2::Data {
+            let data = Data {
                 cursor: batch_start_cursor,
                 end_cursor: batch_end_cursor.map(|c| c.to_cursor()),
                 finality: DataFinality::DataStatusFinalized as i32,
@@ -362,7 +360,7 @@ where
         &mut self,
         first_cursor: GlobalBlockId,
     ) -> Result<Option<StreamDataResponse>, StreamError> {
-        use stream::v1alpha2::stream_data_response::Message;
+        use stream_data_response::Message;
 
         let batch_start_cursor = self.previous_iter_cursor.map(|c| c.to_cursor());
         self.previous_iter_cursor = Some(first_cursor);
@@ -378,11 +376,11 @@ where
             return Ok(None);
         };
 
-        let data = stream::v1alpha2::Data {
+        let data = Data {
             cursor: batch_start_cursor,
             end_cursor: Some(first_cursor.to_cursor()),
             finality: DataFinality::DataStatusAccepted as i32,
-            data: vec![data],
+            data: vec![data.encode_to_vec()],
         };
 
         let response = StreamDataResponse {
@@ -398,7 +396,7 @@ where
         &mut self,
         pending_cursor: GlobalBlockId,
     ) -> Result<Option<StreamDataResponse>, StreamError> {
-        use stream::v1alpha2::stream_data_response::Message;
+        use stream_data_response::Message;
 
         // read data at cursor
         let data = if let Some(data) = self
@@ -411,11 +409,11 @@ where
             return Ok(None);
         };
 
-        let data = stream::v1alpha2::Data {
+        let data = Data {
             cursor: Some(self.accepted_cursor.to_cursor()),
             end_cursor: Some(pending_cursor.to_cursor()),
             finality: DataFinality::DataStatusPending as i32,
-            data: vec![data],
+            data: vec![data.encode_to_vec()],
         };
 
         let response = StreamDataResponse {
@@ -430,7 +428,7 @@ where
         &mut self,
         cursor: GlobalBlockId,
     ) -> Result<Option<StreamDataResponse>, StreamError> {
-        use stream::v1alpha2::stream_data_response::Message;
+        use stream_data_response::Message;
         debug!(cursor = %cursor, "cursor was invalidated");
 
         let mut new_root = cursor;
@@ -459,7 +457,7 @@ where
 
         self.previous_iter_cursor = Some(new_root);
 
-        let invalidate = stream::v1alpha2::Invalidate {
+        let invalidate = Invalidate {
             cursor: Some(new_root.to_cursor()),
         };
         let response = StreamDataResponse {
@@ -494,8 +492,8 @@ where
         // if the stream received an invalidate message in the previous tick, then
         // forward it to the client.
         if let Some(new_root) = inner.invalidated.take() {
-            use stream::v1alpha2::stream_data_response::Message;
-            let invalidate = stream::v1alpha2::Invalidate {
+            use stream_data_response::Message;
+            let invalidate = Invalidate {
                 cursor: Some(new_root.to_cursor()),
             };
             let response = StreamDataResponse {

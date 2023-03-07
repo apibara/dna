@@ -1,7 +1,5 @@
 //! Implements the node stream service.
 
-use apibara_node::heartbeat::Heartbeat;
-use pin_project::pin_project;
 use std::{
     pin::Pin,
     sync::Arc,
@@ -9,16 +7,16 @@ use std::{
     time::Duration,
 };
 
+use apibara_core::node::v1alpha2::{stream_server, StreamDataRequest, StreamDataResponse};
+use apibara_node::heartbeat::Heartbeat;
 use futures::Stream;
+use pin_project::pin_project;
 use tonic::{Request, Response, Streaming};
 use tracing::warn;
 use tracing_futures::Instrument;
 
 use crate::{
-    core::{
-        pb::{self, stream::v1alpha2::StreamDataResponse},
-        IngestionMessage,
-    },
+    core::IngestionMessage,
     db::StorageReader,
     healer::HealerClient,
     // stream::{BatchDataStream, BatchMessage, StreamError},
@@ -55,28 +53,23 @@ where
         }
     }
 
-    pub fn into_service(self) -> pb::stream::v1alpha2::stream_server::StreamServer<Self> {
-        pb::stream::v1alpha2::stream_server::StreamServer::new(self)
+    pub fn into_service(self) -> stream_server::StreamServer<Self> {
+        stream_server::StreamServer::new(self)
     }
 }
 
 #[tonic::async_trait]
-impl<R, O> pb::stream::v1alpha2::stream_server::Stream for StreamService<R, O>
+impl<R, O> stream_server::Stream for StreamService<R, O>
 where
     R: StorageReader + Send + Sync + 'static,
     O: RequestObserver,
 {
-    type StreamDataStream = Pin<
-        Box<
-            dyn Stream<Item = Result<pb::stream::v1alpha2::StreamDataResponse, tonic::Status>>
-                + Send
-                + 'static,
-        >,
-    >;
+    type StreamDataStream =
+        Pin<Box<dyn Stream<Item = Result<StreamDataResponse, tonic::Status>> + Send + 'static>>;
 
     async fn stream_data(
         &self,
-        request: Request<Streaming<pb::stream::v1alpha2::StreamDataRequest>>,
+        request: Request<Streaming<StreamDataRequest>>,
     ) -> Result<Response<Self::StreamDataStream>, tonic::Status> {
         let stream_span = self.request_observer.stream_data_span(request.metadata());
         let stream_meter = self.request_observer.stream_data_meter(request.metadata());
@@ -147,7 +140,7 @@ where
 #[pin_project]
 struct ResponseStream<S>
 where
-    S: Stream<Item = Result<pb::stream::v1alpha2::StreamDataResponse, StreamError>>,
+    S: Stream<Item = Result<StreamDataResponse, StreamError>>,
 {
     #[pin]
     inner: Heartbeat<S>,
@@ -155,7 +148,7 @@ where
 
 impl<S> ResponseStream<S>
 where
-    S: Stream<Item = Result<pb::stream::v1alpha2::StreamDataResponse, StreamError>>,
+    S: Stream<Item = Result<StreamDataResponse, StreamError>>,
 {
     pub fn new(inner: S) -> Self {
         let inner = Heartbeat::new(inner, Duration::from_secs(30));
@@ -165,7 +158,7 @@ where
 
 impl<S> Stream for ResponseStream<S>
 where
-    S: Stream<Item = Result<pb::stream::v1alpha2::StreamDataResponse, StreamError>> + Unpin,
+    S: Stream<Item = Result<StreamDataResponse, StreamError>> + Unpin,
 {
     type Item = Result<StreamDataResponse, tonic::Status>;
 
@@ -178,7 +171,9 @@ where
                 let response = match value {
                     Err(_) => {
                         // heartbeat
-                        use pb::stream::v1alpha2::{stream_data_response::Message, Heartbeat};
+                        use apibara_core::node::v1alpha2::{
+                            stream_data_response::Message, Heartbeat,
+                        };
 
                         // stream_id is not relevant for heartbeat messages
                         let response = StreamDataResponse {
