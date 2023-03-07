@@ -1,6 +1,40 @@
-//! Filter block data.
+use super::proto::v1alpha2::*;
 
-use crate::core::pb::starknet::v1alpha2::*;
+impl Filter {
+    /// Configure filter header
+    pub fn with_header(mut self, header: HeaderFilter) -> Self {
+        self.header = Some(header);
+        self
+    }
+
+    /// Add event to subscribe to
+    pub fn add_event<F>(mut self, closure: F) -> Self
+    where
+        F: Fn(EventFilter) -> EventFilter,
+    {
+        self.events.push(closure(EventFilter::default()));
+        self
+    }
+}
+
+impl EventFilter {
+    pub fn with_contract_address(mut self, address: FieldElement) -> Self {
+        self.from_address = Some(address);
+        self
+    }
+}
+
+impl StateUpdateFilter {
+    pub fn add_storage_diff<F>(mut self, closure: F) -> Self
+    where
+        F: Fn(Vec<StorageDiffFilter>) -> Vec<StorageDiffFilter>,
+    {
+        self.storage_diffs = closure(self.storage_diffs);
+        self
+    }
+}
+
+impl StorageDiffFilter {}
 
 trait VecMatch {
     fn prefix_matches(&self, other: &Self) -> bool;

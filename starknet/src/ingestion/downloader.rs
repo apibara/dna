@@ -2,11 +2,12 @@
 
 use std::sync::Arc;
 
+use apibara_core::starknet::v1alpha2;
 use futures::{stream, StreamExt};
 
 use crate::{
-    core::{pb::starknet::v1alpha2, GlobalBlockId},
-    db::StorageWriter,
+    core::GlobalBlockId,
+    db::{BlockBody, StorageWriter},
     provider::{BlockId, Provider},
 };
 
@@ -33,7 +34,7 @@ where
         global_id: &GlobalBlockId,
         status: v1alpha2::BlockStatus,
         header: v1alpha2::BlockHeader,
-        body: v1alpha2::BlockBody,
+        body: BlockBody,
         writer: &mut W,
     ) -> Result<(), BlockIngestionError>
     where

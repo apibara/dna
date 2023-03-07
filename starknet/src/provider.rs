@@ -1,11 +1,15 @@
 //! Connect to the sequencer gateway.
+use apibara_core::starknet::v1alpha2;
 use starknet::{
     core::types::{FieldElement, FromByteArrayError},
     providers::jsonrpc::{self, models::ErrorCode, JsonRpcClientError, RpcError},
 };
 use url::Url;
 
-use crate::core::{pb::starknet::v1alpha2, BlockHash, GlobalBlockId, InvalidBlockHashSize};
+use crate::{
+    core::{BlockHash, GlobalBlockId, InvalidBlockHashSize},
+    db::BlockBody,
+};
 
 #[derive(Debug, Clone)]
 pub enum BlockId {
@@ -30,14 +34,7 @@ pub trait Provider {
     async fn get_block(
         &self,
         id: &BlockId,
-    ) -> Result<
-        (
-            v1alpha2::BlockStatus,
-            v1alpha2::BlockHeader,
-            v1alpha2::BlockBody,
-        ),
-        Self::Error,
-    >;
+    ) -> Result<(v1alpha2::BlockStatus, v1alpha2::BlockHeader, BlockBody), Self::Error>;
 
     /// Get state update for a specific block.
     async fn get_state_update(&self, id: &BlockId) -> Result<v1alpha2::StateUpdate, Self::Error>;
@@ -104,6 +101,16 @@ impl HttpProviderError {
 
 struct TransactionHash<'a>(&'a [u8]);
 
+trait ToProto<T> {
+    fn to_proto(&self) -> T;
+}
+
+trait TryToProto<T> {
+    type Error;
+
+    fn try_to_proto(&self) -> Result<T, Self::Error>;
+}
+
 #[apibara_node::async_trait]
 impl Provider for HttpProvider {
     type Error = HttpProviderError;
@@ -126,14 +133,7 @@ impl Provider for HttpProvider {
     async fn get_block(
         &self,
         id: &BlockId,
-    ) -> Result<
-        (
-            v1alpha2::BlockStatus,
-            v1alpha2::BlockHeader,
-            v1alpha2::BlockBody,
-        ),
-        Self::Error,
-    > {
+    ) -> Result<(v1alpha2::BlockStatus, v1alpha2::BlockHeader, BlockBody), Self::Error> {
         let block_id = id.try_into()?;
         let block = self
             .provider
@@ -146,18 +146,18 @@ impl Provider for HttpProvider {
                 if id.is_pending() {
                     return Err(HttpProviderError::UnexpectedPendingBlock);
                 }
-                let status = block.into();
-                let header = block.into();
-                let body = block.into();
+                let status = block.to_proto();
+                let header = block.to_proto();
+                let body = block.to_proto();
                 Ok((status, header, body))
             }
             jsonrpc::models::MaybePendingBlockWithTxs::PendingBlock(ref block) => {
                 if !id.is_pending() {
                     return Err(HttpProviderError::ExpectedPendingBlock);
                 }
-                let status = block.into();
-                let header = block.into();
-                let body = block.into();
+                let status = block.to_proto();
+                let header = block.to_proto();
+                let body = block.to_proto();
                 Ok((status, header, body))
             }
         }
@@ -171,7 +171,7 @@ impl Provider for HttpProvider {
             .get_state_update(&block_id)
             .await
             .map_err(HttpProviderError::from_provider_error)?
-            .into();
+            .to_proto();
         Ok(state_update)
     }
 
@@ -188,7 +188,7 @@ impl Provider for HttpProvider {
             .get_transaction_receipt(hash)
             .await
             .map_err(HttpProviderError::from_provider_error)?
-            .into();
+            .to_proto();
         Ok(receipt)
     }
 }
@@ -217,28 +217,28 @@ impl TryFrom<&BlockId> for jsonrpc::models::BlockId {
     }
 }
 
-impl From<&jsonrpc::models::BlockWithTxs> for v1alpha2::BlockStatus {
-    fn from(block: &jsonrpc::models::BlockWithTxs) -> Self {
-        (&block.status).into()
+impl ToProto<v1alpha2::BlockStatus> for jsonrpc::models::BlockWithTxs {
+    fn to_proto(&self) -> v1alpha2::BlockStatus {
+        self.status.to_proto()
     }
 }
 
-impl From<&jsonrpc::models::PendingBlockWithTxs> for v1alpha2::BlockStatus {
-    fn from(_block: &jsonrpc::models::PendingBlockWithTxs) -> Self {
+impl ToProto<v1alpha2::BlockStatus> for jsonrpc::models::PendingBlockWithTxs {
+    fn to_proto(&self) -> v1alpha2::BlockStatus {
         v1alpha2::BlockStatus::Pending
     }
 }
 
-impl From<&jsonrpc::models::BlockWithTxs> for v1alpha2::BlockHeader {
-    fn from(block: &jsonrpc::models::BlockWithTxs) -> Self {
-        let block_hash = block.block_hash.into();
-        let parent_block_hash = block.parent_hash.into();
-        let block_number = block.block_number;
-        let sequencer_address = block.sequencer_address.into();
-        let new_root = block.new_root.into();
+impl ToProto<v1alpha2::BlockHeader> for jsonrpc::models::BlockWithTxs {
+    fn to_proto(&self) -> v1alpha2::BlockHeader {
+        let block_hash = self.block_hash.into();
+        let parent_block_hash = self.parent_hash.into();
+        let block_number = self.block_number;
+        let sequencer_address = self.sequencer_address.into();
+        let new_root = self.new_root.into();
         let timestamp = prost_types::Timestamp {
             nanos: 0,
-            seconds: block.timestamp as i64,
+            seconds: self.timestamp as i64,
         };
 
         v1alpha2::BlockHeader {
@@ -252,14 +252,14 @@ impl From<&jsonrpc::models::BlockWithTxs> for v1alpha2::BlockHeader {
     }
 }
 
-impl From<&jsonrpc::models::PendingBlockWithTxs> for v1alpha2::BlockHeader {
-    fn from(block: &jsonrpc::models::PendingBlockWithTxs) -> Self {
+impl ToProto<v1alpha2::BlockHeader> for jsonrpc::models::PendingBlockWithTxs {
+    fn to_proto(&self) -> v1alpha2::BlockHeader {
         let block_hash = FieldElement::ZERO.into();
-        let parent_block_hash = block.parent_hash.into();
-        let sequencer_address = block.sequencer_address.into();
+        let parent_block_hash = self.parent_hash.into();
+        let sequencer_address = self.sequencer_address.into();
         let timestamp = prost_types::Timestamp {
             nanos: 0,
-            seconds: block.timestamp as i64,
+            seconds: self.timestamp as i64,
         };
 
         v1alpha2::BlockHeader {
@@ -273,25 +273,25 @@ impl From<&jsonrpc::models::PendingBlockWithTxs> for v1alpha2::BlockHeader {
     }
 }
 
-impl From<&jsonrpc::models::BlockWithTxs> for v1alpha2::BlockBody {
-    fn from(block: &jsonrpc::models::BlockWithTxs) -> Self {
-        let transactions = block.transactions.iter().map(Into::into).collect();
-        v1alpha2::BlockBody { transactions }
+impl ToProto<BlockBody> for jsonrpc::models::BlockWithTxs {
+    fn to_proto(&self) -> BlockBody {
+        let transactions = self.transactions.iter().map(|tx| tx.to_proto()).collect();
+        BlockBody { transactions }
     }
 }
 
-impl From<&jsonrpc::models::PendingBlockWithTxs> for v1alpha2::BlockBody {
-    fn from(block: &jsonrpc::models::PendingBlockWithTxs) -> Self {
-        let transactions = block.transactions.iter().map(Into::into).collect();
-        v1alpha2::BlockBody { transactions }
+impl ToProto<BlockBody> for jsonrpc::models::PendingBlockWithTxs {
+    fn to_proto(&self) -> BlockBody {
+        let transactions = self.transactions.iter().map(|tx| tx.to_proto()).collect();
+        BlockBody { transactions }
     }
 }
 
-impl From<&jsonrpc::models::BlockStatus> for v1alpha2::BlockStatus {
-    fn from(status: &jsonrpc::models::BlockStatus) -> Self {
+impl ToProto<v1alpha2::BlockStatus> for jsonrpc::models::BlockStatus {
+    fn to_proto(&self) -> v1alpha2::BlockStatus {
         use jsonrpc::models::BlockStatus;
 
-        match status {
+        match self {
             BlockStatus::Pending => v1alpha2::BlockStatus::Pending,
             BlockStatus::AcceptedOnL2 => v1alpha2::BlockStatus::AcceptedOnL2,
             BlockStatus::AcceptedOnL1 => v1alpha2::BlockStatus::AcceptedOnL1,
@@ -300,51 +300,39 @@ impl From<&jsonrpc::models::BlockStatus> for v1alpha2::BlockStatus {
     }
 }
 
-impl From<FieldElement> for v1alpha2::FieldElement {
-    fn from(felt: FieldElement) -> Self {
-        (&felt).into()
-    }
-}
-
-impl From<&FieldElement> for v1alpha2::FieldElement {
-    fn from(felt: &FieldElement) -> Self {
-        let bytes = felt.to_bytes_be();
-        v1alpha2::FieldElement::from_bytes(&bytes)
-    }
-}
-
-impl From<&jsonrpc::models::Transaction> for v1alpha2::Transaction {
-    fn from(tx: &jsonrpc::models::Transaction) -> Self {
+impl ToProto<v1alpha2::Transaction> for jsonrpc::models::Transaction {
+    fn to_proto(&self) -> v1alpha2::Transaction {
         use jsonrpc::models::Transaction;
-        match tx {
-            Transaction::Invoke(invoke) => invoke.into(),
-            Transaction::Deploy(deploy) => deploy.into(),
-            Transaction::Declare(declare) => declare.into(),
-            Transaction::L1Handler(l1_handler) => l1_handler.into(),
-            Transaction::DeployAccount(deploy_account) => deploy_account.into(),
+
+        match self {
+            Transaction::Invoke(invoke) => invoke.to_proto(),
+            Transaction::Deploy(deploy) => deploy.to_proto(),
+            Transaction::Declare(declare) => declare.to_proto(),
+            Transaction::L1Handler(l1_handler) => l1_handler.to_proto(),
+            Transaction::DeployAccount(deploy_account) => deploy_account.to_proto(),
         }
     }
 }
 
-impl From<&jsonrpc::models::InvokeTransaction> for v1alpha2::Transaction {
-    fn from(tx: &jsonrpc::models::InvokeTransaction) -> Self {
+impl ToProto<v1alpha2::Transaction> for jsonrpc::models::InvokeTransaction {
+    fn to_proto(&self) -> v1alpha2::Transaction {
         use jsonrpc::models::InvokeTransaction;
 
-        match &tx {
-            InvokeTransaction::V0(v0) => v0.into(),
-            InvokeTransaction::V1(v1) => v1.into(),
+        match self {
+            InvokeTransaction::V0(v0) => v0.to_proto(),
+            InvokeTransaction::V1(v1) => v1.to_proto(),
         }
     }
 }
 
-impl From<&jsonrpc::models::InvokeTransactionV0> for v1alpha2::Transaction {
-    fn from(tx: &jsonrpc::models::InvokeTransactionV0) -> Self {
+impl ToProto<v1alpha2::Transaction> for jsonrpc::models::InvokeTransactionV0 {
+    fn to_proto(&self) -> v1alpha2::Transaction {
         use v1alpha2::transaction::Transaction;
 
-        let hash = tx.transaction_hash.into();
-        let max_fee = tx.max_fee.into();
-        let signature = tx.signature.iter().map(|fe| fe.into()).collect();
-        let nonce = tx.nonce.into();
+        let hash = self.transaction_hash.into();
+        let max_fee = self.max_fee.into();
+        let signature = self.signature.iter().map(|fe| fe.into()).collect();
+        let nonce = self.nonce.into();
 
         let meta = v1alpha2::TransactionMeta {
             hash: Some(hash),
@@ -354,15 +342,16 @@ impl From<&jsonrpc::models::InvokeTransactionV0> for v1alpha2::Transaction {
             version: 0,
         };
 
-        let contract_address = tx.contract_address.into();
-        let entry_point_selector = tx.entry_point_selector.into();
-        let calldata = tx.calldata.iter().map(|fe| fe.into()).collect();
+        let contract_address = self.contract_address.into();
+        let entry_point_selector = self.entry_point_selector.into();
+        let calldata = self.calldata.iter().map(|fe| fe.into()).collect();
 
         let invoke_v0 = v1alpha2::InvokeTransactionV0 {
             contract_address: Some(contract_address),
             entry_point_selector: Some(entry_point_selector),
             calldata,
         };
+
         v1alpha2::Transaction {
             meta: Some(meta),
             transaction: Some(Transaction::InvokeV0(invoke_v0)),
@@ -370,14 +359,14 @@ impl From<&jsonrpc::models::InvokeTransactionV0> for v1alpha2::Transaction {
     }
 }
 
-impl From<&jsonrpc::models::InvokeTransactionV1> for v1alpha2::Transaction {
-    fn from(tx: &jsonrpc::models::InvokeTransactionV1) -> Self {
+impl ToProto<v1alpha2::Transaction> for jsonrpc::models::InvokeTransactionV1 {
+    fn to_proto(&self) -> v1alpha2::Transaction {
         use v1alpha2::transaction::Transaction;
 
-        let hash = tx.transaction_hash.into();
-        let max_fee = tx.max_fee.into();
-        let signature = tx.signature.iter().map(|fe| fe.into()).collect();
-        let nonce = tx.nonce.into();
+        let hash = self.transaction_hash.into();
+        let max_fee = self.max_fee.into();
+        let signature = self.signature.iter().map(|fe| fe.into()).collect();
+        let nonce = self.nonce.into();
 
         let meta = v1alpha2::TransactionMeta {
             hash: Some(hash),
@@ -387,12 +376,13 @@ impl From<&jsonrpc::models::InvokeTransactionV1> for v1alpha2::Transaction {
             version: 0,
         };
 
-        let sender_address = tx.sender_address.into();
-        let calldata = tx.calldata.iter().map(|fe| fe.into()).collect();
+        let sender_address = self.sender_address.into();
+        let calldata = self.calldata.iter().map(|fe| fe.into()).collect();
         let invoke_v1 = v1alpha2::InvokeTransactionV1 {
             sender_address: Some(sender_address),
             calldata,
         };
+
         v1alpha2::Transaction {
             meta: Some(meta),
             transaction: Some(Transaction::InvokeV1(invoke_v1)),
@@ -400,21 +390,25 @@ impl From<&jsonrpc::models::InvokeTransactionV1> for v1alpha2::Transaction {
     }
 }
 
-impl From<&jsonrpc::models::DeployTransaction> for v1alpha2::Transaction {
-    fn from(tx: &jsonrpc::models::DeployTransaction) -> Self {
+impl ToProto<v1alpha2::Transaction> for jsonrpc::models::DeployTransaction {
+    fn to_proto(&self) -> v1alpha2::Transaction {
         use v1alpha2::transaction::Transaction;
 
-        let hash = tx.transaction_hash.into();
+        let hash = self.transaction_hash.into();
 
         let meta = v1alpha2::TransactionMeta {
             hash: Some(hash),
-            version: tx.version,
+            version: self.version,
             ..v1alpha2::TransactionMeta::default()
         };
 
-        let class_hash = tx.class_hash.into();
-        let contract_address_salt = tx.contract_address_salt.into();
-        let constructor_calldata = tx.constructor_calldata.iter().map(|fe| fe.into()).collect();
+        let class_hash = self.class_hash.into();
+        let contract_address_salt = self.contract_address_salt.into();
+        let constructor_calldata = self
+            .constructor_calldata
+            .iter()
+            .map(|fe| fe.into())
+            .collect();
 
         let deploy = v1alpha2::DeployTransaction {
             class_hash: Some(class_hash),
@@ -429,15 +423,15 @@ impl From<&jsonrpc::models::DeployTransaction> for v1alpha2::Transaction {
     }
 }
 
-impl From<&jsonrpc::models::DeclareTransaction> for v1alpha2::Transaction {
-    fn from(tx: &jsonrpc::models::DeclareTransaction) -> Self {
+impl ToProto<v1alpha2::Transaction> for jsonrpc::models::DeclareTransaction {
+    fn to_proto(&self) -> v1alpha2::Transaction {
         use v1alpha2::transaction::Transaction;
 
-        let hash = tx.transaction_hash.into();
-        let max_fee = tx.max_fee.into();
-        let signature = tx.signature.iter().map(|fe| fe.into()).collect();
-        let nonce = tx.nonce.into();
-        let version = tx.version;
+        let hash = self.transaction_hash.into();
+        let max_fee = self.max_fee.into();
+        let signature = self.signature.iter().map(|fe| fe.into()).collect();
+        let nonce = self.nonce.into();
+        let version = self.version;
 
         let meta = v1alpha2::TransactionMeta {
             hash: Some(hash),
@@ -447,8 +441,8 @@ impl From<&jsonrpc::models::DeclareTransaction> for v1alpha2::Transaction {
             version,
         };
 
-        let class_hash = tx.class_hash.into();
-        let sender_address = tx.sender_address.into();
+        let class_hash = self.class_hash.into();
+        let sender_address = self.sender_address.into();
 
         let declare = v1alpha2::DeclareTransaction {
             class_hash: Some(class_hash),
@@ -462,12 +456,12 @@ impl From<&jsonrpc::models::DeclareTransaction> for v1alpha2::Transaction {
     }
 }
 
-impl From<&jsonrpc::models::L1HandlerTransaction> for v1alpha2::Transaction {
-    fn from(tx: &jsonrpc::models::L1HandlerTransaction) -> Self {
+impl ToProto<v1alpha2::Transaction> for jsonrpc::models::L1HandlerTransaction {
+    fn to_proto(&self) -> v1alpha2::Transaction {
         use v1alpha2::transaction::Transaction;
 
-        let hash = tx.transaction_hash.into();
-        let version = tx.version;
+        let hash = self.transaction_hash.into();
+        let version = self.version;
 
         let meta = v1alpha2::TransactionMeta {
             hash: Some(hash),
@@ -475,9 +469,9 @@ impl From<&jsonrpc::models::L1HandlerTransaction> for v1alpha2::Transaction {
             ..v1alpha2::TransactionMeta::default()
         };
 
-        let contract_address = tx.contract_address.into();
-        let entry_point_selector = tx.entry_point_selector.into();
-        let calldata = tx.calldata.iter().map(|fe| fe.into()).collect();
+        let contract_address = self.contract_address.into();
+        let entry_point_selector = self.entry_point_selector.into();
+        let calldata = self.calldata.iter().map(|fe| fe.into()).collect();
 
         let l1_handler = v1alpha2::L1HandlerTransaction {
             contract_address: Some(contract_address),
@@ -492,15 +486,15 @@ impl From<&jsonrpc::models::L1HandlerTransaction> for v1alpha2::Transaction {
     }
 }
 
-impl From<&jsonrpc::models::DeployAccountTransaction> for v1alpha2::Transaction {
-    fn from(tx: &jsonrpc::models::DeployAccountTransaction) -> Self {
+impl ToProto<v1alpha2::Transaction> for jsonrpc::models::DeployAccountTransaction {
+    fn to_proto(&self) -> v1alpha2::Transaction {
         use v1alpha2::transaction::Transaction;
 
-        let hash = tx.transaction_hash.into();
-        let max_fee = tx.max_fee.into();
-        let signature = tx.signature.iter().map(|fe| fe.into()).collect();
-        let nonce = tx.nonce.into();
-        let version = tx.version;
+        let hash = self.transaction_hash.into();
+        let max_fee = self.max_fee.into();
+        let signature = self.signature.iter().map(|fe| fe.into()).collect();
+        let nonce = self.nonce.into();
+        let version = self.version;
 
         let meta = v1alpha2::TransactionMeta {
             hash: Some(hash),
@@ -510,9 +504,13 @@ impl From<&jsonrpc::models::DeployAccountTransaction> for v1alpha2::Transaction 
             version,
         };
 
-        let contract_address_salt = tx.contract_address_salt.into();
-        let class_hash = tx.class_hash.into();
-        let constructor_calldata = tx.constructor_calldata.iter().map(|fe| fe.into()).collect();
+        let contract_address_salt = self.contract_address_salt.into();
+        let class_hash = self.class_hash.into();
+        let constructor_calldata = self
+            .constructor_calldata
+            .iter()
+            .map(|fe| fe.into())
+            .collect();
 
         let deploy_account = v1alpha2::DeployAccountTransaction {
             contract_address_salt: Some(contract_address_salt),
@@ -527,37 +525,41 @@ impl From<&jsonrpc::models::DeployAccountTransaction> for v1alpha2::Transaction 
     }
 }
 
-impl From<jsonrpc::models::MaybePendingTransactionReceipt> for v1alpha2::TransactionReceipt {
-    fn from(receipt: jsonrpc::models::MaybePendingTransactionReceipt) -> Self {
+impl ToProto<v1alpha2::TransactionReceipt> for jsonrpc::models::MaybePendingTransactionReceipt {
+    fn to_proto(&self) -> v1alpha2::TransactionReceipt {
         use jsonrpc::models::MaybePendingTransactionReceipt;
 
-        match receipt {
-            MaybePendingTransactionReceipt::PendingReceipt(receipt) => receipt.into(),
-            MaybePendingTransactionReceipt::Receipt(receipt) => receipt.into(),
+        match self {
+            MaybePendingTransactionReceipt::PendingReceipt(receipt) => receipt.to_proto(),
+            MaybePendingTransactionReceipt::Receipt(receipt) => receipt.to_proto(),
         }
     }
 }
 
-impl From<jsonrpc::models::PendingTransactionReceipt> for v1alpha2::TransactionReceipt {
-    fn from(receipt: jsonrpc::models::PendingTransactionReceipt) -> Self {
+impl ToProto<v1alpha2::TransactionReceipt> for jsonrpc::models::PendingTransactionReceipt {
+    fn to_proto(&self) -> v1alpha2::TransactionReceipt {
         use jsonrpc::models::PendingTransactionReceipt;
 
-        match receipt {
-            PendingTransactionReceipt::Invoke(invoke) => invoke.into(),
-            PendingTransactionReceipt::L1Handler(l1_handler) => l1_handler.into(),
-            PendingTransactionReceipt::Declare(declare) => declare.into(),
-            PendingTransactionReceipt::Deploy(deploy) => deploy.into(),
-            PendingTransactionReceipt::DeployAccount(deploy) => deploy.into(),
+        match self {
+            PendingTransactionReceipt::Invoke(invoke) => invoke.to_proto(),
+            PendingTransactionReceipt::L1Handler(l1_handler) => l1_handler.to_proto(),
+            PendingTransactionReceipt::Declare(declare) => declare.to_proto(),
+            PendingTransactionReceipt::Deploy(deploy) => deploy.to_proto(),
+            PendingTransactionReceipt::DeployAccount(deploy) => deploy.to_proto(),
         }
     }
 }
 
-impl From<jsonrpc::models::PendingInvokeTransactionReceipt> for v1alpha2::TransactionReceipt {
-    fn from(receipt: jsonrpc::models::PendingInvokeTransactionReceipt) -> Self {
-        let transaction_hash = receipt.transaction_hash.into();
-        let actual_fee = receipt.actual_fee.into();
-        let l2_to_l1_messages = receipt.messages_sent.iter().map(|msg| msg.into()).collect();
-        let events = receipt.events.iter().map(|ev| ev.into()).collect();
+impl ToProto<v1alpha2::TransactionReceipt> for jsonrpc::models::PendingInvokeTransactionReceipt {
+    fn to_proto(&self) -> v1alpha2::TransactionReceipt {
+        let transaction_hash = self.transaction_hash.into();
+        let actual_fee = self.actual_fee.into();
+        let l2_to_l1_messages = self
+            .messages_sent
+            .iter()
+            .map(|msg| msg.to_proto())
+            .collect();
+        let events = self.events.iter().map(|ev| ev.to_proto()).collect();
 
         v1alpha2::TransactionReceipt {
             transaction_index: 0,
@@ -570,12 +572,16 @@ impl From<jsonrpc::models::PendingInvokeTransactionReceipt> for v1alpha2::Transa
     }
 }
 
-impl From<jsonrpc::models::PendingL1HandlerTransactionReceipt> for v1alpha2::TransactionReceipt {
-    fn from(receipt: jsonrpc::models::PendingL1HandlerTransactionReceipt) -> Self {
-        let transaction_hash = receipt.transaction_hash.into();
-        let actual_fee = receipt.actual_fee.into();
-        let l2_to_l1_messages = receipt.messages_sent.iter().map(|msg| msg.into()).collect();
-        let events = receipt.events.iter().map(|ev| ev.into()).collect();
+impl ToProto<v1alpha2::TransactionReceipt> for jsonrpc::models::PendingL1HandlerTransactionReceipt {
+    fn to_proto(&self) -> v1alpha2::TransactionReceipt {
+        let transaction_hash = self.transaction_hash.into();
+        let actual_fee = self.actual_fee.into();
+        let l2_to_l1_messages = self
+            .messages_sent
+            .iter()
+            .map(|msg| msg.to_proto())
+            .collect();
+        let events = self.events.iter().map(|ev| ev.to_proto()).collect();
 
         v1alpha2::TransactionReceipt {
             transaction_index: 0,
@@ -588,12 +594,16 @@ impl From<jsonrpc::models::PendingL1HandlerTransactionReceipt> for v1alpha2::Tra
     }
 }
 
-impl From<jsonrpc::models::PendingDeclareTransactionReceipt> for v1alpha2::TransactionReceipt {
-    fn from(receipt: jsonrpc::models::PendingDeclareTransactionReceipt) -> Self {
-        let transaction_hash = receipt.transaction_hash.into();
-        let actual_fee = receipt.actual_fee.into();
-        let l2_to_l1_messages = receipt.messages_sent.iter().map(|msg| msg.into()).collect();
-        let events = receipt.events.iter().map(|ev| ev.into()).collect();
+impl ToProto<v1alpha2::TransactionReceipt> for jsonrpc::models::PendingDeclareTransactionReceipt {
+    fn to_proto(&self) -> v1alpha2::TransactionReceipt {
+        let transaction_hash = self.transaction_hash.into();
+        let actual_fee = self.actual_fee.into();
+        let l2_to_l1_messages = self
+            .messages_sent
+            .iter()
+            .map(|msg| msg.to_proto())
+            .collect();
+        let events = self.events.iter().map(|ev| ev.to_proto()).collect();
 
         v1alpha2::TransactionReceipt {
             transaction_index: 0,
@@ -606,13 +616,17 @@ impl From<jsonrpc::models::PendingDeclareTransactionReceipt> for v1alpha2::Trans
     }
 }
 
-impl From<jsonrpc::models::PendingDeployTransactionReceipt> for v1alpha2::TransactionReceipt {
-    fn from(receipt: jsonrpc::models::PendingDeployTransactionReceipt) -> Self {
-        let transaction_hash = receipt.transaction_hash.into();
-        let actual_fee = receipt.actual_fee.into();
-        let l2_to_l1_messages = receipt.messages_sent.iter().map(|msg| msg.into()).collect();
-        let events = receipt.events.iter().map(|ev| ev.into()).collect();
-        let contract_address = receipt.contract_address.into();
+impl ToProto<v1alpha2::TransactionReceipt> for jsonrpc::models::PendingDeployTransactionReceipt {
+    fn to_proto(&self) -> v1alpha2::TransactionReceipt {
+        let transaction_hash = self.transaction_hash.into();
+        let actual_fee = self.actual_fee.into();
+        let l2_to_l1_messages = self
+            .messages_sent
+            .iter()
+            .map(|msg| msg.to_proto())
+            .collect();
+        let events = self.events.iter().map(|ev| ev.to_proto()).collect();
+        let contract_address = self.contract_address.into();
 
         v1alpha2::TransactionReceipt {
             transaction_index: 0,
@@ -625,14 +639,18 @@ impl From<jsonrpc::models::PendingDeployTransactionReceipt> for v1alpha2::Transa
     }
 }
 
-impl From<jsonrpc::models::PendingDeployAccountTransactionReceipt>
-    for v1alpha2::TransactionReceipt
+impl ToProto<v1alpha2::TransactionReceipt>
+    for jsonrpc::models::PendingDeployAccountTransactionReceipt
 {
-    fn from(receipt: jsonrpc::models::PendingDeployAccountTransactionReceipt) -> Self {
-        let transaction_hash = receipt.transaction_hash.into();
-        let actual_fee = receipt.actual_fee.into();
-        let l2_to_l1_messages = receipt.messages_sent.iter().map(|msg| msg.into()).collect();
-        let events = receipt.events.iter().map(|ev| ev.into()).collect();
+    fn to_proto(&self) -> v1alpha2::TransactionReceipt {
+        let transaction_hash = self.transaction_hash.into();
+        let actual_fee = self.actual_fee.into();
+        let l2_to_l1_messages = self
+            .messages_sent
+            .iter()
+            .map(|msg| msg.to_proto())
+            .collect();
+        let events = self.events.iter().map(|ev| ev.to_proto()).collect();
 
         v1alpha2::TransactionReceipt {
             transaction_index: 0,
@@ -645,26 +663,30 @@ impl From<jsonrpc::models::PendingDeployAccountTransactionReceipt>
     }
 }
 
-impl From<jsonrpc::models::TransactionReceipt> for v1alpha2::TransactionReceipt {
-    fn from(receipt: jsonrpc::models::TransactionReceipt) -> Self {
+impl ToProto<v1alpha2::TransactionReceipt> for jsonrpc::models::TransactionReceipt {
+    fn to_proto(&self) -> v1alpha2::TransactionReceipt {
         use jsonrpc::models::TransactionReceipt;
 
-        match receipt {
-            TransactionReceipt::Invoke(invoke) => invoke.into(),
-            TransactionReceipt::L1Handler(l1_handler) => l1_handler.into(),
-            TransactionReceipt::Declare(declare) => declare.into(),
-            TransactionReceipt::Deploy(deploy) => deploy.into(),
-            TransactionReceipt::DeployAccount(deploy) => deploy.into(),
+        match self {
+            TransactionReceipt::Invoke(invoke) => invoke.to_proto(),
+            TransactionReceipt::L1Handler(l1_handler) => l1_handler.to_proto(),
+            TransactionReceipt::Declare(declare) => declare.to_proto(),
+            TransactionReceipt::Deploy(deploy) => deploy.to_proto(),
+            TransactionReceipt::DeployAccount(deploy) => deploy.to_proto(),
         }
     }
 }
 
-impl From<jsonrpc::models::InvokeTransactionReceipt> for v1alpha2::TransactionReceipt {
-    fn from(receipt: jsonrpc::models::InvokeTransactionReceipt) -> Self {
-        let transaction_hash = receipt.transaction_hash.into();
-        let actual_fee = receipt.actual_fee.into();
-        let l2_to_l1_messages = receipt.messages_sent.iter().map(|msg| msg.into()).collect();
-        let events = receipt.events.iter().map(|ev| ev.into()).collect();
+impl ToProto<v1alpha2::TransactionReceipt> for jsonrpc::models::InvokeTransactionReceipt {
+    fn to_proto(&self) -> v1alpha2::TransactionReceipt {
+        let transaction_hash = self.transaction_hash.into();
+        let actual_fee = self.actual_fee.into();
+        let l2_to_l1_messages = self
+            .messages_sent
+            .iter()
+            .map(|msg| msg.to_proto())
+            .collect();
+        let events = self.events.iter().map(|ev| ev.to_proto()).collect();
 
         v1alpha2::TransactionReceipt {
             transaction_index: 0,
@@ -677,12 +699,16 @@ impl From<jsonrpc::models::InvokeTransactionReceipt> for v1alpha2::TransactionRe
     }
 }
 
-impl From<jsonrpc::models::L1HandlerTransactionReceipt> for v1alpha2::TransactionReceipt {
-    fn from(receipt: jsonrpc::models::L1HandlerTransactionReceipt) -> Self {
-        let transaction_hash = receipt.transaction_hash.into();
-        let actual_fee = receipt.actual_fee.into();
-        let l2_to_l1_messages = receipt.messages_sent.iter().map(|msg| msg.into()).collect();
-        let events = receipt.events.iter().map(|ev| ev.into()).collect();
+impl ToProto<v1alpha2::TransactionReceipt> for jsonrpc::models::L1HandlerTransactionReceipt {
+    fn to_proto(&self) -> v1alpha2::TransactionReceipt {
+        let transaction_hash = self.transaction_hash.into();
+        let actual_fee = self.actual_fee.into();
+        let l2_to_l1_messages = self
+            .messages_sent
+            .iter()
+            .map(|msg| msg.to_proto())
+            .collect();
+        let events = self.events.iter().map(|ev| ev.to_proto()).collect();
 
         v1alpha2::TransactionReceipt {
             transaction_index: 0,
@@ -695,12 +721,16 @@ impl From<jsonrpc::models::L1HandlerTransactionReceipt> for v1alpha2::Transactio
     }
 }
 
-impl From<jsonrpc::models::DeclareTransactionReceipt> for v1alpha2::TransactionReceipt {
-    fn from(receipt: jsonrpc::models::DeclareTransactionReceipt) -> Self {
-        let transaction_hash = receipt.transaction_hash.into();
-        let actual_fee = receipt.actual_fee.into();
-        let l2_to_l1_messages = receipt.messages_sent.iter().map(|msg| msg.into()).collect();
-        let events = receipt.events.iter().map(|ev| ev.into()).collect();
+impl ToProto<v1alpha2::TransactionReceipt> for jsonrpc::models::DeclareTransactionReceipt {
+    fn to_proto(&self) -> v1alpha2::TransactionReceipt {
+        let transaction_hash = self.transaction_hash.into();
+        let actual_fee = self.actual_fee.into();
+        let l2_to_l1_messages = self
+            .messages_sent
+            .iter()
+            .map(|msg| msg.to_proto())
+            .collect();
+        let events = self.events.iter().map(|ev| ev.to_proto()).collect();
 
         v1alpha2::TransactionReceipt {
             transaction_index: 0,
@@ -713,13 +743,17 @@ impl From<jsonrpc::models::DeclareTransactionReceipt> for v1alpha2::TransactionR
     }
 }
 
-impl From<jsonrpc::models::DeployTransactionReceipt> for v1alpha2::TransactionReceipt {
-    fn from(receipt: jsonrpc::models::DeployTransactionReceipt) -> Self {
-        let transaction_hash = receipt.transaction_hash.into();
-        let actual_fee = receipt.actual_fee.into();
-        let l2_to_l1_messages = receipt.messages_sent.iter().map(|msg| msg.into()).collect();
-        let events = receipt.events.iter().map(|ev| ev.into()).collect();
-        let contract_address = receipt.contract_address.into();
+impl ToProto<v1alpha2::TransactionReceipt> for jsonrpc::models::DeployTransactionReceipt {
+    fn to_proto(&self) -> v1alpha2::TransactionReceipt {
+        let transaction_hash = self.transaction_hash.into();
+        let actual_fee = self.actual_fee.into();
+        let l2_to_l1_messages = self
+            .messages_sent
+            .iter()
+            .map(|msg| msg.to_proto())
+            .collect();
+        let events = self.events.iter().map(|ev| ev.to_proto()).collect();
+        let contract_address = self.contract_address.into();
 
         v1alpha2::TransactionReceipt {
             transaction_index: 0,
@@ -732,13 +766,17 @@ impl From<jsonrpc::models::DeployTransactionReceipt> for v1alpha2::TransactionRe
     }
 }
 
-impl From<jsonrpc::models::DeployAccountTransactionReceipt> for v1alpha2::TransactionReceipt {
-    fn from(receipt: jsonrpc::models::DeployAccountTransactionReceipt) -> Self {
-        let transaction_hash = receipt.transaction_hash.into();
-        let actual_fee = receipt.actual_fee.into();
-        let l2_to_l1_messages = receipt.messages_sent.iter().map(|msg| msg.into()).collect();
-        let events = receipt.events.iter().map(|ev| ev.into()).collect();
-        let contract_address = receipt.contract_address.into();
+impl ToProto<v1alpha2::TransactionReceipt> for jsonrpc::models::DeployAccountTransactionReceipt {
+    fn to_proto(&self) -> v1alpha2::TransactionReceipt {
+        let transaction_hash = self.transaction_hash.into();
+        let actual_fee = self.actual_fee.into();
+        let l2_to_l1_messages = self
+            .messages_sent
+            .iter()
+            .map(|msg| msg.to_proto())
+            .collect();
+        let events = self.events.iter().map(|ev| ev.to_proto()).collect();
+        let contract_address = self.contract_address.into();
 
         v1alpha2::TransactionReceipt {
             transaction_index: 0,
@@ -751,10 +789,10 @@ impl From<jsonrpc::models::DeployAccountTransactionReceipt> for v1alpha2::Transa
     }
 }
 
-impl From<&jsonrpc::models::MsgToL1> for v1alpha2::L2ToL1Message {
-    fn from(msg: &jsonrpc::models::MsgToL1) -> Self {
-        let to_address = msg.to_address.into();
-        let payload = msg.payload.iter().map(|p| p.into()).collect();
+impl ToProto<v1alpha2::L2ToL1Message> for jsonrpc::models::MsgToL1 {
+    fn to_proto(&self) -> v1alpha2::L2ToL1Message {
+        let to_address = self.to_address.into();
+        let payload = self.payload.iter().map(|p| p.into()).collect();
 
         v1alpha2::L2ToL1Message {
             to_address: Some(to_address),
@@ -763,11 +801,11 @@ impl From<&jsonrpc::models::MsgToL1> for v1alpha2::L2ToL1Message {
     }
 }
 
-impl From<&jsonrpc::models::Event> for v1alpha2::Event {
-    fn from(event: &jsonrpc::models::Event) -> Self {
-        let from_address = event.from_address.into();
-        let keys = event.keys.iter().map(|k| k.into()).collect();
-        let data = event.data.iter().map(|d| d.into()).collect();
+impl ToProto<v1alpha2::Event> for jsonrpc::models::Event {
+    fn to_proto(&self) -> v1alpha2::Event {
+        let from_address = self.from_address.into();
+        let keys = self.keys.iter().map(|k| k.into()).collect();
+        let data = self.data.iter().map(|d| d.into()).collect();
 
         v1alpha2::Event {
             from_address: Some(from_address),
@@ -791,11 +829,11 @@ impl<'a> TryFrom<TransactionHash<'a>> for FieldElement {
     }
 }
 
-impl From<jsonrpc::models::StateUpdate> for v1alpha2::StateUpdate {
-    fn from(update: jsonrpc::models::StateUpdate) -> Self {
-        let new_root = update.new_root.into();
-        let old_root = update.old_root.into();
-        let state_diff = update.state_diff.into();
+impl ToProto<v1alpha2::StateUpdate> for jsonrpc::models::StateUpdate {
+    fn to_proto(&self) -> v1alpha2::StateUpdate {
+        let new_root = self.new_root.into();
+        let old_root = self.old_root.into();
+        let state_diff = self.state_diff.to_proto();
         v1alpha2::StateUpdate {
             new_root: Some(new_root),
             old_root: Some(old_root),
@@ -804,16 +842,20 @@ impl From<jsonrpc::models::StateUpdate> for v1alpha2::StateUpdate {
     }
 }
 
-impl From<jsonrpc::models::StateDiff> for v1alpha2::StateDiff {
-    fn from(diff: jsonrpc::models::StateDiff) -> Self {
-        let storage_diffs = diff.storage_diffs.iter().map(|d| d.into()).collect();
-        let declared_contracts = diff
+impl ToProto<v1alpha2::StateDiff> for jsonrpc::models::StateDiff {
+    fn to_proto(&self) -> v1alpha2::StateDiff {
+        let storage_diffs = self.storage_diffs.iter().map(|d| d.to_proto()).collect();
+        let declared_contracts = self
             .declared_contract_hashes
             .iter()
-            .map(|d| d.into())
+            .map(|d| d.to_proto())
             .collect();
-        let deployed_contracts = diff.deployed_contracts.iter().map(|d| d.into()).collect();
-        let nonces = diff.nonces.iter().map(|d| d.into()).collect();
+        let deployed_contracts = self
+            .deployed_contracts
+            .iter()
+            .map(|d| d.to_proto())
+            .collect();
+        let nonces = self.nonces.iter().map(|d| d.to_proto()).collect();
         v1alpha2::StateDiff {
             storage_diffs,
             declared_contracts,
@@ -823,10 +865,10 @@ impl From<jsonrpc::models::StateDiff> for v1alpha2::StateDiff {
     }
 }
 
-impl From<&jsonrpc::models::ContractStorageDiffItem> for v1alpha2::StorageDiff {
-    fn from(diff: &jsonrpc::models::ContractStorageDiffItem) -> Self {
-        let contract_address = diff.address.into();
-        let storage_entries = diff.storage_entries.iter().map(|e| e.into()).collect();
+impl ToProto<v1alpha2::StorageDiff> for jsonrpc::models::ContractStorageDiffItem {
+    fn to_proto(&self) -> v1alpha2::StorageDiff {
+        let contract_address = self.address.into();
+        let storage_entries = self.storage_entries.iter().map(|e| e.to_proto()).collect();
         v1alpha2::StorageDiff {
             contract_address: Some(contract_address),
             storage_entries,
@@ -834,10 +876,10 @@ impl From<&jsonrpc::models::ContractStorageDiffItem> for v1alpha2::StorageDiff {
     }
 }
 
-impl From<&jsonrpc::models::StorageEntry> for v1alpha2::StorageEntry {
-    fn from(diff: &jsonrpc::models::StorageEntry) -> Self {
-        let key = diff.key.into();
-        let value = diff.value.into();
+impl ToProto<v1alpha2::StorageEntry> for jsonrpc::models::StorageEntry {
+    fn to_proto(&self) -> v1alpha2::StorageEntry {
+        let key = self.key.into();
+        let value = self.value.into();
         v1alpha2::StorageEntry {
             key: Some(key),
             value: Some(value),
@@ -845,19 +887,19 @@ impl From<&jsonrpc::models::StorageEntry> for v1alpha2::StorageEntry {
     }
 }
 
-impl From<&FieldElement> for v1alpha2::DeclaredContract {
-    fn from(diff: &FieldElement) -> Self {
-        let class_hash = diff.into();
+impl ToProto<v1alpha2::DeclaredContract> for FieldElement {
+    fn to_proto(&self) -> v1alpha2::DeclaredContract {
+        let class_hash = self.into();
         v1alpha2::DeclaredContract {
             class_hash: Some(class_hash),
         }
     }
 }
 
-impl From<&jsonrpc::models::DeployedContractItem> for v1alpha2::DeployedContract {
-    fn from(diff: &jsonrpc::models::DeployedContractItem) -> Self {
-        let contract_address = diff.address.into();
-        let class_hash = diff.class_hash.into();
+impl ToProto<v1alpha2::DeployedContract> for jsonrpc::models::DeployedContractItem {
+    fn to_proto(&self) -> v1alpha2::DeployedContract {
+        let contract_address = self.address.into();
+        let class_hash = self.class_hash.into();
         v1alpha2::DeployedContract {
             contract_address: Some(contract_address),
             class_hash: Some(class_hash),
@@ -865,10 +907,10 @@ impl From<&jsonrpc::models::DeployedContractItem> for v1alpha2::DeployedContract
     }
 }
 
-impl From<&jsonrpc::models::NonceUpdate> for v1alpha2::NonceUpdate {
-    fn from(diff: &jsonrpc::models::NonceUpdate) -> Self {
-        let contract_address = diff.contract_address.into();
-        let nonce = diff.nonce.into();
+impl ToProto<v1alpha2::NonceUpdate> for jsonrpc::models::NonceUpdate {
+    fn to_proto(&self) -> v1alpha2::NonceUpdate {
+        let contract_address = self.contract_address.into();
+        let nonce = self.nonce.into();
         v1alpha2::NonceUpdate {
             contract_address: Some(contract_address),
             nonce: Some(nonce),

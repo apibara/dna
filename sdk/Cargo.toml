@@ -3,8 +3,6 @@ name = "apibara-sdk"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 anyhow = "1.0.66"
 apibara-core = { path = "../core" }
@@ -24,5 +22,3 @@ tokio-util = "0.7.7"
 tonic = "0.8.0"
 tracing = "0.1.36"
 
-[build-dependencies]
-tonic-build = "0.8.0"

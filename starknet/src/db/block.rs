@@ -2,11 +2,24 @@
 
 use std::io::Cursor;
 
+use apibara_core::starknet::v1alpha2;
 use apibara_node::db::{KeyDecodeError, Table, TableKey};
 use byteorder::{BigEndian, ReadBytesExt};
 use prost::Message;
 
-use crate::core::{pb::starknet::v1alpha2, BlockHash, GlobalBlockId};
+use crate::core::{BlockHash, GlobalBlockId};
+
+#[derive(Clone, PartialEq, Message)]
+pub struct BlockBody {
+    #[prost(message, repeated, tag = "1")]
+    pub transactions: prost::alloc::vec::Vec<v1alpha2::Transaction>,
+}
+
+#[derive(Clone, PartialEq, Message)]
+pub struct BlockReceipts {
+    #[prost(message, repeated, tag = "1")]
+    pub receipts: prost::alloc::vec::Vec<v1alpha2::TransactionReceipt>,
+}
 
 /// Store block status.
 #[derive(Debug, Clone, Copy, Default)]

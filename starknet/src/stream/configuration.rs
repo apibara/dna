@@ -5,17 +5,16 @@ use std::{
     task::{self, Poll},
 };
 
+use apibara_core::{
+    node::v1alpha2::{DataFinality, StreamDataRequest},
+    starknet::v1alpha2::Filter,
+};
 use futures::Stream;
 use pin_project::pin_project;
+use prost::Message;
 use tracing::warn;
 
-use crate::core::{
-    pb::{
-        starknet::v1alpha2::Filter,
-        stream::v1alpha2::{DataFinality, StreamDataRequest},
-    },
-    GlobalBlockId,
-};
+use crate::core::GlobalBlockId;
 
 use super::StreamError;
 
@@ -76,9 +75,8 @@ impl StreamConfigurationStreamState {
 
         let stream_id = request.stream_id.unwrap_or_default();
 
-        let filter = request
-            .filter
-            .ok_or_else(|| StreamError::client("filter is required"))?;
+        let filter = Filter::decode(request.filter.as_ref())
+            .map_err(|_| StreamError::client("invalid filter"))?;
 
         let starting_cursor = request
             .starting_cursor

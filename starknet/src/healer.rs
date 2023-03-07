@@ -1,12 +1,13 @@
 use std::sync::Arc;
 
+use apibara_core::starknet::v1alpha2;
 use apibara_node::db::libmdbx::{Environment, EnvironmentKind, Error as MdxError};
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
 use crate::{
-    core::{pb::starknet::v1alpha2, GlobalBlockId},
+    core::GlobalBlockId,
     db::{DatabaseStorage, StorageWriter},
     provider::Provider,
 };

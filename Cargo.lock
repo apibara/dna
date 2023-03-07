@@ -37,8 +37,12 @@ name = "apibara-core"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "hex",
  "prost",
  "prost-types",
+ "quickcheck",
+ "quickcheck_macros",
+ "starknet",
  "thiserror",
  "tokio 1.25.0",
  "tonic",
@@ -105,7 +109,6 @@ dependencies = [
  "tokio-stream",
  "tokio-util",
  "tonic",
- "tonic-build",
  "tracing",
 ]
 
