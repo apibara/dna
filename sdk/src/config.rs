@@ -7,16 +7,16 @@ use crate::pb::{
 
 #[derive(Debug, Clone)]
 pub struct Configuration {
-    batch_size: u64,
-    starting_cursor: Option<Cursor>,
-    finality: Option<DataFinality>,
-    filter: Option<Filter>,
+    pub batch_size: u64,
+    pub starting_cursor: Option<Cursor>,
+    pub finality: Option<i32>,
+    pub filter: Option<Filter>,
 }
 impl Configuration {
     pub fn new(
         batch_size: u64,
         starting_cursor: Option<Cursor>,
-        finality: Option<DataFinality>,
+        finality: Option<i32>,
         filter: Option<Filter>,
     ) -> Self {
         Self {
@@ -48,7 +48,7 @@ impl Configuration {
     /// DataFinality::DataStatusAccepted
     /// DataFinality::DataStatusFinalized
     pub fn with_finality(&mut self, finality: DataFinality) -> &mut Self {
-        self.finality = Some(finality);
+        self.finality = Some(finality.into());
         self
     }
 
@@ -152,8 +152,8 @@ mod tests {
         assert_eq!(10, config.batch_size);
         assert_eq!(111, config.starting_cursor.unwrap().order_key);
         assert_eq!(
-            DataFinality::DataStatusAccepted,
-            config.finality.unwrap().into()
+            <DataFinality as Into<i32>>::into(DataFinality::DataStatusAccepted),
+            config.finality.unwrap()
         );
         assert_eq!(true, config.filter.unwrap().header.unwrap().weak);
     }
