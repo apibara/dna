@@ -1,10 +1,13 @@
-use erigon_dna::proto::remote::{kv_client::KvClient, Cursor, Op};
-use futures::TryStreamExt;
+use apibara_node::o11y;
+use erigon_dna::proto::remote::{kv_client::KvClient, Cursor, Op, Pair};
+use futures::{Stream, TryStreamExt};
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    o11y::init_opentelemetry()?;
+
     println!("Hello, Erigon");
     let mut client = KvClient::connect("http://localhost:9090").await?;
     println!("Connected");
@@ -12,13 +15,19 @@ async fn main() -> anyhow::Result<()> {
     println!("Connected to KV version = {:?}", version);
 
     println!("Starting tx stream");
-    let (tx_tx, cursor_rx) = mpsc::channel(128);
-    let cursor_stream = ReceiverStream::new(cursor_rx);
-    let mut stream = client.tx(cursor_stream).await?.into_inner();
+    let txn = client.begin_txn().await.unwrap();
 
-    // Receive first message with txid.
-    let tx = stream.try_next().await?.expect("Expected tx");
-    println!("Got tx = {:?}", tx);
+    let canon_cur = txn.open_table("CanonicalHeader").await.unwrap();
+    let canon = canon_cur.first().await.unwrap();
+
+    let header_cur = txn.open_table("Header").await.unwrap();
+    let header = header_cur.first().await.unwrap();
+
+    loop {
+        canon_cur.next().await.unwrap();
+    }
+    Ok(())
+    /*
 
     // Open cursor.
     tx_tx
@@ -79,4 +88,5 @@ async fn main() -> anyhow::Result<()> {
             })
             .await?;
     }
+    */
 }
