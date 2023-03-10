@@ -1,2 +1,4 @@
 /target
 /_docker
+/result
+/result-bin
