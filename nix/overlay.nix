@@ -21,7 +21,9 @@ let
   hellOverrides = { };
 in
 {
-  rustVersion = prev.rust-bin.stable.latest.default;
+  rustVersion = prev.rust-bin.stable.latest.default.override {
+    extensions = [ "rust-src" ];
+  };
 
   rustPlatform = prev.makeRustPlatform {
     cargo = final.rustVersion;
