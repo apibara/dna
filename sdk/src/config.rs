@@ -56,7 +56,7 @@ where
 
     /// Set the requested data finality.
     pub fn with_finality(mut self, finality: DataFinality) -> Self {
-        self.finality = Some(finality.into());
+        self.finality = Some(finality);
         self
     }
 
