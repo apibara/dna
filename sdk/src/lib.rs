@@ -173,7 +173,7 @@ where
                     stream_id: Some(self.stream_id),
                     batch_size: Some(configuration.batch_size),
                     starting_cursor: configuration.starting_cursor,
-                    finality: configuration.finality,
+                    finality: configuration.finality.map(|f| f as i32),
                     filter: configuration.filter.encode_to_vec(),
                 };
 
@@ -245,13 +245,11 @@ mod tests {
             .connect(Uri::from_static("https://mainnet.starknet.a5a.ch"))
             .await?;
 
-        let mut config = Configuration::<Filter>::default();
         configuration_handle
             .send(
-                config
-                    .starting_at_block(21600)
-                    .with_filter(|filter| filter.with_header(HeaderFilter { weak: false }))
-                    .clone(),
+                Configuration::<Filter>::default()
+                    .with_starting_block(21600)
+                    .with_filter(|filter| filter.with_header(HeaderFilter { weak: false })),
             )
             .await?;
 

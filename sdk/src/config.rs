@@ -1,11 +1,16 @@
 use apibara_core::node::v1alpha2::{Cursor, DataFinality};
 use prost::Message;
 
+/// Data stream configuration.
 #[derive(Debug, Clone)]
 pub struct Configuration<F: Message + Default> {
+    /// Number of blocks per batch.
     pub batch_size: u64,
+    /// Starting cursor.
     pub starting_cursor: Option<Cursor>,
-    pub finality: Option<i32>,
+    /// Data finality.
+    pub finality: Option<DataFinality>,
+    /// The data filter.
     pub filter: F,
 }
 
@@ -13,10 +18,11 @@ impl<F> Configuration<F>
 where
     F: Message + Default,
 {
+    /// Creates a new configuration with the given fields.
     pub fn new(
         batch_size: u64,
         starting_cursor: Option<Cursor>,
-        finality: Option<i32>,
+        finality: Option<DataFinality>,
         filter: F,
     ) -> Self {
         Self {
@@ -27,14 +33,20 @@ where
         }
     }
 
-    /// Configures batch size
-    pub fn with_batch_size(&mut self, batch_size: u64) -> &mut Self {
+    /// Set the batch size.
+    pub fn with_batch_size(mut self, batch_size: u64) -> Self {
         self.batch_size = batch_size;
         self
     }
 
-    /// Configure starting_block
-    pub fn starting_at_block(&mut self, block_number: u64) -> &mut Self {
+    /// Set the starting cursor to start at the given block.
+    pub fn with_starting_cursor(mut self, cursor: Cursor) -> Self {
+        self.starting_cursor = Some(cursor);
+        self
+    }
+
+    /// Set the starting cursor to start at the given block.
+    pub fn with_starting_block(mut self, block_number: u64) -> Self {
         self.starting_cursor = Some(Cursor {
             order_key: block_number,
             unique_key: vec![],
@@ -42,18 +54,14 @@ where
         self
     }
 
-    /// Configure DataFinality
-    /// DataFinality::DataStatusUnknown
-    /// DataFinality::DataStatusPending
-    /// DataFinality::DataStatusAccepted
-    /// DataFinality::DataStatusFinalized
-    pub fn with_finality(&mut self, finality: DataFinality) -> &mut Self {
+    /// Set the requested data finality.
+    pub fn with_finality(mut self, finality: DataFinality) -> Self {
         self.finality = Some(finality.into());
         self
     }
 
-    /// Configure whole filter directly
-    pub fn with_filter<G>(&mut self, filter_closure: G) -> &mut Self
+    /// Configure the data filter.
+    pub fn with_filter<G>(mut self, filter_closure: G) -> Self
     where
         G: Fn(F) -> F,
     {
@@ -100,10 +108,9 @@ mod tests {
 
     #[test]
     fn test_config_can_be_configured() {
-        let mut config = Configuration::<Filter>::default();
-        config
+        let config = Configuration::<Filter>::default()
             .with_batch_size(10)
-            .starting_at_block(111)
+            .with_starting_block(111)
             .with_finality(DataFinality::DataStatusAccepted)
             .with_filter(|filter| {
                 filter
@@ -118,10 +125,7 @@ mod tests {
 
         assert_eq!(10, config.batch_size);
         assert_eq!(111, config.starting_cursor.unwrap().order_key);
-        assert_eq!(
-            <DataFinality as Into<i32>>::into(DataFinality::DataStatusAccepted),
-            config.finality.unwrap()
-        );
+        assert_eq!(DataFinality::DataStatusAccepted, config.finality.unwrap());
         assert_eq!(true, config.filter.header.unwrap().weak);
     }
 }
