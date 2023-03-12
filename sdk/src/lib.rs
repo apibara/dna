@@ -13,7 +13,7 @@ use apibara_core::node::v1alpha2::{
 use futures::Stream;
 use pin_project::pin_project;
 use prost::Message;
-use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{
     metadata::{errors::InvalidMetadataValue, MetadataValue},
@@ -21,6 +21,9 @@ use tonic::{
     Streaming,
 };
 use tracing::debug;
+
+// Re-export tonic Uri
+pub use tonic::transport::Uri;
 
 pub use crate::config::Configuration;
 
@@ -61,18 +64,21 @@ pub enum DataMessage<D: Message + Default> {
     },
 }
 
+/// Data stream builder.
+///
+/// This struct is used to configure and connect to an Apibara data stream.
 #[derive(Default)]
 pub struct ClientBuilder<F, D>
 where
     F: Message + Default,
     D: Message + Default,
 {
-    client: Option<StreamClient<Channel>>,
     token: Option<String>,
     configuration: Option<Configuration<F>>,
     _data: PhantomData<D>,
 }
 
+/// A stream of on-chain data.
 #[derive(Debug)]
 #[pin_project]
 pub struct DataStream<F, D>
@@ -88,42 +94,35 @@ where
     _data: PhantomData<D>,
 }
 
+/// A client used to control a data stream.
+pub type DataStreamClient<F> = Sender<Configuration<F>>;
+
 impl<F, D> ClientBuilder<F, D>
 where
     F: Message + Default,
     D: Message + Default,
 {
-    pub fn with_client(mut self, client: StreamClient<Channel>) -> Self {
-        self.client = Some(client);
-        self
-    }
-
+    /// Use the given `token` to authenticate with the server.
     pub fn with_bearer_token(mut self, token: String) -> Self {
         self.token = Some(token);
         self
     }
 
+    /// Send the given configuration upon connect.
     pub fn with_configuration(mut self, configuration: Configuration<F>) -> Self {
         self.configuration = Some(configuration);
         self
     }
 
-    /// Apibara indexer SDK
+    /// Create and connect to the stream at the given url.
     ///
-    /// let base_configuration = Configuration::default();
-    /// let (mut stream, _configuration_handle) =
-    ///     ApibaraIndexer::default().build().await?;
-    /// while let Some(response) = stream.next().await {
-    ///     // Handle your own business logic in there.
-    /// }
-    pub async fn build(
+    /// If a configuration was provided, the client will immediately send it to the server upon
+    /// connecting.
+    pub async fn connect(
         self,
-        indexer_url: Option<&'static str>,
-    ) -> Result<(DataStream<F, D>, Sender<Configuration<F>>), ClientBuilderError> {
-        let channel =
-            Channel::from_static(indexer_url.unwrap_or("https://mainnet.starknet.a5a.ch"))
-                .connect()
-                .await?;
+        url: Uri,
+    ) -> Result<(DataStream<F, D>, DataStreamClient<F>), ClientBuilderError> {
+        let channel = Channel::builder(url).connect().await?;
 
         let mut default_client =
             StreamClient::with_interceptor(channel, move |mut req: tonic::Request<()>| {
@@ -134,8 +133,8 @@ where
                 Ok(req)
             });
 
-        let (configuration_tx, configuration_rx) = tokio::sync::mpsc::channel(128);
-        let (inner_tx, inner_rx) = tokio::sync::mpsc::channel(128);
+        let (configuration_tx, configuration_rx) = mpsc::channel(128);
+        let (inner_tx, inner_rx) = mpsc::channel(128);
 
         if let Some(configuration) = self.configuration {
             configuration_tx.send(configuration).await.unwrap();
@@ -146,16 +145,15 @@ where
             .await?
             .into_inner();
 
-        Ok((
-            DataStream {
-                stream_id: 0,
-                configuration_rx,
-                inner: inner_stream,
-                inner_tx,
-                _data: PhantomData::default(),
-            },
-            configuration_tx,
-        ))
+        let stream = DataStream {
+            stream_id: 0,
+            configuration_rx,
+            inner: inner_stream,
+            inner_tx,
+            _data: PhantomData::default(),
+        };
+
+        Ok((stream, configuration_tx))
     }
 }
 
@@ -235,7 +233,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::{ClientBuilder, Configuration};
+    use crate::{ClientBuilder, Configuration, Uri};
     use apibara_core::starknet::v1alpha2::{Block, Filter, HeaderFilter};
     use futures_util::{StreamExt, TryStreamExt};
 
@@ -244,7 +242,7 @@ mod tests {
         let (stream, configuration_handle) = ClientBuilder::<Filter, Block>::default()
             .with_bearer_token("my_auth_token".into())
             // Using default server aka. mainnet
-            .build(None)
+            .connect(Uri::from_static("https://mainnet.starknet.a5a.ch"))
             .await?;
 
         let mut config = Configuration::<Filter>::default();
