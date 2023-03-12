@@ -1,5 +1,10 @@
-use starknet::core::types::{FieldElement as Felt, FromByteArrayError};
 use std::fmt::Display;
+
+use serde::{
+    de::{Deserialize, Deserializer},
+    ser::{Serialize, Serializer},
+};
+use starknet::core::types::{FieldElement as Felt, FromByteArrayError};
 
 use super::proto::v1alpha2::*;
 
@@ -66,6 +71,29 @@ impl FieldElement {
 impl Display for FieldElement {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "0x{}", hex::encode(self.to_bytes()))
+    }
+}
+
+impl Serialize for FieldElement {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&format!("0x{}", hex::encode(self.to_bytes().as_slice())))
+    }
+}
+
+impl<'de> Deserialize<'de> for FieldElement {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        // skip 0x prefix
+        let bytes = hex::decode(&s[2..]).map_err(serde::de::Error::custom)?;
+        let mut bytes_array = [0u8; 32];
+        bytes_array.copy_from_slice(&bytes);
+        Ok(FieldElement::from_bytes(&bytes_array))
     }
 }
 

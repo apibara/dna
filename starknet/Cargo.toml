@@ -25,9 +25,9 @@ futures = "0.3.24"
 hex = "0.4.3"
 hyper = "0.14.20"
 lazy_static = "1.4.0"
+pbjson-types = "0.5.1"
 pin-project = "1.0.12"
 prost = "0.11.0"
-prost-types = "0.11.1"
 starknet = { git = "https://github.com/xJonathanLEI/starknet-rs", rev = "ca077d3104e11a59d873f79e6090f0ec8cb3fc58" }
 thiserror = "1.0.32"
 tokio = { version = "1.20.1", features = ["full"] }

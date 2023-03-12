@@ -236,7 +236,7 @@ impl ToProto<v1alpha2::BlockHeader> for jsonrpc::models::BlockWithTxs {
         let block_number = self.block_number;
         let sequencer_address = self.sequencer_address.into();
         let new_root = self.new_root.into();
-        let timestamp = prost_types::Timestamp {
+        let timestamp = pbjson_types::Timestamp {
             nanos: 0,
             seconds: self.timestamp as i64,
         };
@@ -257,7 +257,7 @@ impl ToProto<v1alpha2::BlockHeader> for jsonrpc::models::PendingBlockWithTxs {
         let block_hash = FieldElement::ZERO.into();
         let parent_block_hash = self.parent_hash.into();
         let sequencer_address = self.sequencer_address.into();
-        let timestamp = prost_types::Timestamp {
+        let timestamp = pbjson_types::Timestamp {
             nanos: 0,
             seconds: self.timestamp as i64,
         };
