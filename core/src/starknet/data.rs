@@ -22,7 +22,18 @@ impl BlockStatus {
     }
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum FieldElementDecodeError {
+    #[error("missing 0x prefix")]
+    MissingPrefix,
+    #[error("field element size is invalid")]
+    InvalidSize,
+    #[error("hex decode error: {0}")]
+    DecodeError(#[from] hex::FromHexError),
+}
+
 impl FieldElement {
+    /// Returns a new field element representing the given u64 value.
     pub fn from_u64(value: u64) -> FieldElement {
         FieldElement {
             lo_lo: 0,
@@ -32,6 +43,7 @@ impl FieldElement {
         }
     }
 
+    /// Returns a new field element from the raw byte representation.
     pub fn from_bytes(bytes: &[u8; 32]) -> Self {
         let lo_lo = u64::from_be_bytes([
             bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
@@ -54,6 +66,31 @@ impl FieldElement {
         }
     }
 
+    pub fn from_hex(s: &str) -> Result<Self, FieldElementDecodeError> {
+        // must be at least 0x
+        if !s.starts_with("0x") {
+            return Err(FieldElementDecodeError::MissingPrefix);
+        }
+
+        // hex requires the string to be even-sized. If it's not, we copy it and add a leading 0.
+        let bytes = if s.len() % 2 == 1 {
+            let even_sized = format!("0{}", &s[2..]);
+            hex::decode(even_sized)?
+        } else {
+            // skip 0x prefix
+            hex::decode(&s[2..])?
+        };
+
+        // number is too big
+        let size = bytes.len();
+        if size > 32 {
+            return Err(FieldElementDecodeError::InvalidSize);
+        }
+        let mut bytes_array = [0u8; 32];
+        bytes_array[32 - size..].copy_from_slice(&bytes);
+        Ok(FieldElement::from_bytes(&bytes_array))
+    }
+
     pub fn to_bytes(&self) -> [u8; 32] {
         let lo_lo = self.lo_lo.to_be_bytes();
         let lo_hi = self.lo_hi.to_be_bytes();
@@ -66,11 +103,16 @@ impl FieldElement {
             hi_hi[0], hi_hi[1], hi_hi[2], hi_hi[3], hi_hi[4], hi_hi[5], hi_hi[6], hi_hi[7],
         ]
     }
+
+    /// Returns the field element as an hex string with 0x prefix.
+    pub fn to_hex(&self) -> String {
+        format!("0x{}", hex::encode(self.to_bytes()))
+    }
 }
 
 impl Display for FieldElement {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "0x{}", hex::encode(self.to_bytes()))
+        write!(f, "{}", self.to_hex())
     }
 }
 
@@ -79,7 +121,7 @@ impl Serialize for FieldElement {
     where
         S: Serializer,
     {
-        serializer.serialize_str(&format!("0x{}", hex::encode(self.to_bytes().as_slice())))
+        serializer.serialize_str(&self.to_hex())
     }
 }
 
@@ -89,11 +131,8 @@ impl<'de> Deserialize<'de> for FieldElement {
         D: Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        // skip 0x prefix
-        let bytes = hex::decode(&s[2..]).map_err(serde::de::Error::custom)?;
-        let mut bytes_array = [0u8; 32];
-        bytes_array.copy_from_slice(&bytes);
-        Ok(FieldElement::from_bytes(&bytes_array))
+        let fe = FieldElement::from_hex(&s).map_err(serde::de::Error::custom)?;
+        Ok(fe)
     }
 }
 
@@ -135,6 +174,10 @@ mod tests {
 
         let back = FieldElement::from_bytes(&bytes);
         assert_eq!(back, felt);
+
+        let as_hex = felt.to_hex();
+        let back_hex = FieldElement::from_hex(&as_hex).unwrap();
+        assert_eq!(felt, back_hex);
     }
 
     #[test]
@@ -145,5 +188,18 @@ mod tests {
         assert_eq!(felt.lo_hi, 0);
         assert_eq!(felt.hi_lo, 0);
         assert_eq!(felt.hi_hi, 0);
+
+        let as_hex = felt.to_hex();
+        let back = FieldElement::from_hex(&as_hex).unwrap();
+        assert_eq!(felt, back);
+    }
+
+    #[test]
+    fn test_from_hex() {
+        let felt = FieldElement::from_hex("0x1").unwrap();
+        assert_eq!(felt.lo_lo, 0);
+        assert_eq!(felt.lo_hi, 0);
+        assert_eq!(felt.hi_lo, 0);
+        assert_eq!(felt.hi_hi, 1);
     }
 }
