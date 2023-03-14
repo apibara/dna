@@ -1,31 +1,31 @@
 use super::proto::v1alpha2::*;
 
 impl HeaderFilter {
-    /// Create HeaderFilter { weak: false }
+    /// Create an header filter that always matches an header.
     pub fn new() -> Self {
         HeaderFilter { weak: false }
     }
 
-    /// Create HeaderFilter { weak: true }
+    /// Create an header filter that returns an header only if other filters match.
     pub fn weak() -> Self {
         HeaderFilter { weak: true }
     }
 }
 
 impl Filter {
-    /// Configure filter header
+    /// Configure filter header.
     pub fn with_header(mut self, header: HeaderFilter) -> Self {
         self.header = Some(header);
         self
     }
 
-    /// With specific state update
+    /// With specific state update.
     pub fn with_state_update(mut self, state_udpate: StateUpdateFilter) -> Self {
         self.state_update = Some(state_udpate);
         self
     }
 
-    /// Add event to subscribe to
+    /// Add event to subscribe to.
     pub fn add_event<F>(mut self, closure: F) -> Self
     where
         F: Fn(EventFilter) -> EventFilter,
@@ -34,7 +34,7 @@ impl Filter {
         self
     }
 
-    /// Add transaction to filter
+    /// Add transaction to filter.
     pub fn add_transaction<F>(mut self, closure: F) -> Self
     where
         F: Fn(TransactionFilter) -> TransactionFilter,
@@ -44,7 +44,7 @@ impl Filter {
         self
     }
 
-    /// Add message to filter
+    /// Add message to filter.
     pub fn add_message<F>(mut self, closure: F) -> Self
     where
         F: Fn(L2ToL1MessageFilter) -> L2ToL1MessageFilter,
@@ -54,28 +54,20 @@ impl Filter {
     }
 }
 
-impl EventFilter {
-    /// Filter specific contract address
-    pub fn with_contract_address(mut self, address: FieldElement) -> Self {
-        self.from_address = Some(address);
-        self
-    }
-}
-
 impl InvokeTransactionV0Filter {
-    /// Filter transaction with contract address
+    /// Filter transaction with contract address.
     pub fn with_contract_address(mut self, address: FieldElement) -> Self {
         self.contract_address = Some(address);
         self
     }
 
-    /// Filter with transaction selector
+    /// Filter with transaction selector.
     pub fn with_entry_point_selector(mut self, selector: FieldElement) -> Self {
         self.entry_point_selector = Some(selector);
         self
     }
 
-    /// Filter with call data
+    /// Filter with call data.
     pub fn with_calldata(mut self, calldata: Vec<FieldElement>) -> Self {
         self.calldata = calldata;
         self
@@ -83,12 +75,13 @@ impl InvokeTransactionV0Filter {
 }
 
 impl InvokeTransactionV1Filter {
-    /// Filter transaction with sender address
+    /// Filter transaction with sender address.
     pub fn with_sender_address(mut self, address: FieldElement) -> Self {
         self.sender_address = Some(address);
         self
     }
-    /// Filter with call data
+
+    /// Filter with call data.
     pub fn with_calldata(mut self, calldata: Vec<FieldElement>) -> Self {
         self.calldata = calldata;
         self
@@ -96,18 +89,18 @@ impl InvokeTransactionV1Filter {
 }
 
 impl DeployTransactionFilter {
-    /// Filter transaction with contract address salt
+    /// Filter transaction with contract address salt.
     pub fn with_contract_address_salt(mut self, address: FieldElement) -> Self {
         self.contract_address_salt = Some(address);
         self
     }
-    /// Filter transaction with class hash
+    /// Filter transaction with class hash.
     pub fn with_class_hash(mut self, class_hash: FieldElement) -> Self {
         self.class_hash = Some(class_hash);
         self
     }
 
-    /// Filter transaction with constructor calldata
+    /// Filter transaction with constructor calldata.
     pub fn with_constructor_calldata(mut self, constructor_calldata: Vec<FieldElement>) -> Self {
         self.constructor_calldata = constructor_calldata;
         self
@@ -115,12 +108,13 @@ impl DeployTransactionFilter {
 }
 
 impl DeclareTransactionFilter {
-    /// Filter transaction with sender address
+    /// Filter transaction with sender address.
     pub fn with_sender_address(mut self, address: FieldElement) -> Self {
         self.sender_address = Some(address);
         self
     }
-    /// Filter with class hash
+
+    /// Filter with class hash.
     pub fn with_class_hash(mut self, class_hash: FieldElement) -> Self {
         self.class_hash = Some(class_hash);
         self
@@ -128,17 +122,19 @@ impl DeclareTransactionFilter {
 }
 
 impl L1HandlerTransactionFilter {
-    /// Filter transaction with contract address
+    /// Filter transaction with contract address.
     pub fn with_contract_address(mut self, address: FieldElement) -> Self {
         self.contract_address = Some(address);
         self
     }
-    /// Filter transaction with entry point selector
+
+    /// Filter transaction with entry point selector.
     pub fn with_entry_point_selector(mut self, selector: FieldElement) -> Self {
         self.entry_point_selector = Some(selector);
         self
     }
-    /// Filter transaction with call data
+
+    /// Filter transaction with call data.
     pub fn with_calldata(mut self, calldata: Vec<FieldElement>) -> Self {
         self.calldata = calldata;
         self
@@ -146,17 +142,19 @@ impl L1HandlerTransactionFilter {
 }
 
 impl DeployAccountTransactionFilter {
-    /// Filter transaction with contract address salt
+    /// Filter transaction with contract address salt.
     pub fn with_contract_address_salt(mut self, address: FieldElement) -> Self {
         self.contract_address_salt = Some(address);
         self
     }
-    /// Filter transaction with class hash
+
+    /// Filter transaction with class hash.
     pub fn with_class_hash(mut self, class_hash: FieldElement) -> Self {
         self.class_hash = Some(class_hash);
         self
     }
-    /// Filter transaction with calldata
+
+    /// Filter transaction with calldata.
     pub fn with_constructor_calldata(mut self, constructor_calldata: Vec<FieldElement>) -> Self {
         self.constructor_calldata = constructor_calldata;
         self
@@ -164,17 +162,19 @@ impl DeployAccountTransactionFilter {
 }
 
 impl EventFilter {
-    /// Filter event from address
-    pub fn from_address(mut self, address: FieldElement) -> Self {
+    /// Filter event from address.
+    pub fn with_from_address(mut self, address: FieldElement) -> Self {
         self.from_address = Some(address);
         self
     }
-    /// Filter event with key
+
+    /// Filter event with key.
     pub fn with_keys(mut self, keys: Vec<FieldElement>) -> Self {
         self.keys = keys;
         self
     }
-    /// Filter event with data
+
+    /// Filter event with data.
     pub fn with_data(mut self, data: Vec<FieldElement>) -> Self {
         self.data = data;
         self
@@ -182,12 +182,13 @@ impl EventFilter {
 }
 
 impl L2ToL1MessageFilter {
-    /// Filter message to address
-    pub fn to_address(mut self, to: FieldElement) -> Self {
+    /// Filter message to address.
+    pub fn with_to_address(mut self, to: FieldElement) -> Self {
         self.to_address = Some(to);
         self
     }
-    /// Filter message with payload
+
+    /// Filter message with payload.
     pub fn with_payload(mut self, payload: Vec<FieldElement>) -> Self {
         self.payload = payload;
         self
@@ -195,7 +196,7 @@ impl L2ToL1MessageFilter {
 }
 
 impl StateUpdateFilter {
-    /// Add storage diff filter to state update filter
+    /// Add storage diff filter to state update filter.
     pub fn add_storage_diff<F>(mut self, closure: F) -> Self
     where
         F: Fn(StorageDiffFilter) -> StorageDiffFilter,
@@ -205,7 +206,7 @@ impl StateUpdateFilter {
         self
     }
 
-    /// Add declared contract filter to state update
+    /// Add declared contract filter to state update.
     pub fn add_declared_contract<F>(mut self, closure: F) -> Self
     where
         F: Fn(DeclaredContractFilter) -> DeclaredContractFilter,
@@ -215,7 +216,7 @@ impl StateUpdateFilter {
         self
     }
 
-    /// Add deployed contract filter to state update
+    /// Add deployed contract filter to state update.
     pub fn add_deployed_contract<F>(mut self, closure: F) -> Self
     where
         F: Fn(DeployedContractFilter) -> DeployedContractFilter,
@@ -225,7 +226,7 @@ impl StateUpdateFilter {
         self
     }
 
-    /// Add nonce update filter to state update
+    /// Add nonce update filter to state update.
     pub fn add_nonce_update<F>(mut self, closure: F) -> Self
     where
         F: Fn(NonceUpdateFilter) -> NonceUpdateFilter,
@@ -236,7 +237,7 @@ impl StateUpdateFilter {
 }
 
 impl StorageDiffFilter {
-    /// Filter with contract address
+    /// Filter with contract address.
     pub fn with_contract_address(mut self, address: FieldElement) -> Self {
         self.contract_address = Some(address);
         self
@@ -244,7 +245,7 @@ impl StorageDiffFilter {
 }
 
 impl DeclaredContractFilter {
-    /// Filter with class hash
+    /// Filter with class hash.
     pub fn with_class_hash(mut self, address: FieldElement) -> Self {
         self.class_hash = Some(address);
         self
@@ -252,13 +253,13 @@ impl DeclaredContractFilter {
 }
 
 impl DeployedContractFilter {
-    /// Filter with contract address
+    /// Filter with contract address.
     pub fn with_contract_address(mut self, address: FieldElement) -> Self {
         self.contract_address = Some(address);
         self
     }
 
-    /// Filter with class hash
+    /// Filter with class hash.
     pub fn with_class_hash(mut self, address: FieldElement) -> Self {
         self.class_hash = Some(address);
         self
@@ -266,13 +267,13 @@ impl DeployedContractFilter {
 }
 
 impl NonceUpdateFilter {
-    /// Filter with contract address
+    /// Filter with contract address.
     pub fn with_contract_address(mut self, address: FieldElement) -> Self {
         self.contract_address = Some(address);
         self
     }
 
-    /// Filter with nonce
+    /// Filter with nonce.
     pub fn with_nonce(mut self, nonce: FieldElement) -> Self {
         self.nonce = Some(nonce);
         self
