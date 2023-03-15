@@ -1,1 +1,1 @@
-pub mod proto;
+pub mod erigon;

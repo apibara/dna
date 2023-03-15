@@ -10,3 +10,7 @@ members = [
     "sink-webhook",
     "examples/starknet-simple",
 ]
+
+[patch.crates-io]
+revm = { git = "https://github.com/bluealloy/revm", rev = "afc3066" }
+revm-primitives = { git = "https://github.com/bluealloy/revm", rev = "afc3066" }

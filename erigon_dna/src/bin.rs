@@ -1,13 +1,30 @@
 use apibara_node::o11y;
-use erigon_dna::proto::remote::{kv_client::KvClient, Cursor, Op, Pair};
-use futures::{Stream, TryStreamExt};
-use tokio::sync::mpsc;
-use tokio_stream::wrappers::ReceiverStream;
+use erigon_dna::erigon::remote::{ethbackend_client::EthbackendClient, Event, SubscribeRequest};
+use futures::TryStreamExt;
+use reth_primitives::Header;
+use reth_rlp::Decodable;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     o11y::init_opentelemetry()?;
 
+    let mut client = EthbackendClient::connect("http://localhost:9090").await?;
+
+    let mut header_stream = client
+        .subscribe(SubscribeRequest::default())
+        .await?
+        .into_inner();
+
+    while let Some(message) = header_stream.try_next().await? {
+        if message.r#type == Event::Header as i32 {
+            let header = Header::decode(&mut message.data.as_ref())?;
+            println!("HEADER = {:?}", header.hash_slow());
+            println!("  {:?}", header);
+            println!("");
+        }
+    }
+
+    /*
     println!("Hello, Erigon");
     let mut client = KvClient::connect("http://localhost:9090").await?;
     println!("Connected");
@@ -24,9 +41,10 @@ async fn main() -> anyhow::Result<()> {
     let header = header_cur.first().await.unwrap();
 
     loop {
-        canon_cur.next().await.unwrap();
+        let canon = canon_cur.next().await.unwrap();
+        println!("data = {:?}", canon);
     }
-    Ok(())
+    */
     /*
 
     // Open cursor.
@@ -89,4 +107,5 @@ async fn main() -> anyhow::Result<()> {
             .await?;
     }
     */
+    Ok(())
 }

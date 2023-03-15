@@ -19,6 +19,8 @@ futures = "0.3.24"
 hex = "0.4.3"
 prost = "0.11.0"
 prost-types = "0.11.1"
+reth-primitives = { git = "https://github.com/paradigmxyz/reth", rev = "139c0c45" }
+reth-rlp = { git = "https://github.com/paradigmxyz/reth", rev = "139c0c45", features = [ "std", "derive", "ethereum-types" ] }
 tokio = { version = "1.20.1", features = ["full"] }
 tokio-stream = { version = "0.1.10", features = ["sync"] }
 tokio-util = "0.7.3"
