@@ -32,17 +32,20 @@
         dockerizeCrateBin = { crate, volumes ? null, ports ? null }:
           pkgs.dockerTools.buildImage {
             name = crate.name;
+            # we're publishing images, so make it less confusing
+            tag = "latest";
+            created = "now";
             copyToRoot = with pkgs.dockerTools; [
               usrBinEnv
               binSh
               caCertificates
             ];
             config = {
-              Cmd = [
+              Entrypoint = [
                 "${crate.bin}/bin/${crate.name}"
               ];
               Volumes = volumes;
-              Ports = ports;
+              ExposedPorts = ports;
             };
           };
       in
@@ -58,7 +61,7 @@
               clang
               pkg-config
               llvmPackages.libclang
-              protobuf
+               protobuf
             ];
           };
         };
@@ -69,8 +72,11 @@
           node-lib = rustPkgs.workspace.apibara-node { };
           sdk-lib = rustPkgs.workspace.apibara-sdk { };
 
+          # binaries
+          apibara-starknet = rustPkgs.workspace.apibara-starknet { };
+
           # docker images
-          starknet-image = dockerizeCrateBin {
+          apibara-starknet-image = dockerizeCrateBin {
             crate = (rustPkgs.workspace.apibara-starknet { });
             ports = {
               "7171/tcp" = { };
