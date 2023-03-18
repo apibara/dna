@@ -11,9 +11,12 @@ use apibara_node::db::{
 use crate::core::GlobalBlockId;
 
 use super::{
-    block::{BlockBody, BlockReceipts},
+    block::{BlockBody, BlockReceipts, HasherKeys, RawBloom},
     tables,
 };
+
+/// Bloom filter over field elements.
+pub type Bloom = bloomfilter::Bloom<v1alpha2::FieldElement>;
 
 /// An object to read chain data from storage.
 pub trait StorageReader {
@@ -40,11 +43,11 @@ pub trait StorageReader {
     /// Returns all transactions in the given block.
     fn read_body(&self, id: &GlobalBlockId) -> Result<Vec<v1alpha2::Transaction>, Self::Error>;
 
-    /// Returns all receipts in the given block.
+    /// Returns all receipts in the given block together with its bloom filter.
     fn read_receipts(
         &self,
         id: &GlobalBlockId,
-    ) -> Result<Vec<v1alpha2::TransactionReceipt>, Self::Error>;
+    ) -> Result<(Vec<v1alpha2::TransactionReceipt>, Option<Bloom>), Self::Error>;
 
     /// Returns the state update for the given block.
     fn read_state_update(
@@ -243,15 +246,14 @@ impl<E: EnvironmentKind> StorageReader for DatabaseStorage<E> {
     fn read_receipts(
         &self,
         id: &GlobalBlockId,
-    ) -> Result<Vec<v1alpha2::TransactionReceipt>, Self::Error> {
+    ) -> Result<(Vec<v1alpha2::TransactionReceipt>, Option<Bloom>), Self::Error> {
         let txn = self.db.begin_ro_txn()?;
         let mut cursor = txn.open_cursor::<tables::BlockReceiptsTable>()?;
-        let receipts = cursor
-            .seek_exact(id)?
-            .map(|t| t.1.receipts)
-            .unwrap_or_default();
+        let block_receipts_data = cursor.seek_exact(id)?.map(|t| t.1).unwrap_or_default();
+        let receipts = block_receipts_data.receipts;
+        let bloom = block_receipts_data.bloom.and_then(|b| b.into());
         txn.commit()?;
-        Ok(receipts)
+        Ok((receipts, bloom))
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
@@ -336,7 +338,25 @@ impl<'env, 'txn, E: EnvironmentKind> StorageWriter for DatabaseStorageWriter<'en
         id: &GlobalBlockId,
         receipts: Vec<v1alpha2::TransactionReceipt>,
     ) -> Result<(), Self::Error> {
-        let body = BlockReceipts { receipts };
+        // compute bloom filter for receipts
+        let estimate_items = receipts.len() * 2;
+        let mut bloom = Bloom::new(256, estimate_items);
+
+        for receipt in receipts.iter() {
+            for event in &receipt.events {
+                if let Some(addr) = &event.from_address {
+                    bloom.set(addr);
+                }
+                for key in event.keys.iter() {
+                    bloom.set(key);
+                }
+            }
+        }
+
+        let body = BlockReceipts {
+            receipts,
+            bloom: Some(bloom.into()),
+        };
         self.receipts_cursor.seek_exact(id)?;
         self.receipts_cursor.put(id, &body)?;
         Ok(())
@@ -351,5 +371,48 @@ impl<'env, 'txn, E: EnvironmentKind> StorageWriter for DatabaseStorageWriter<'en
         self.state_update_cursor.seek_exact(id)?;
         self.state_update_cursor.put(id, &state_update)?;
         Ok(())
+    }
+}
+
+impl From<RawBloom> for Option<Bloom> {
+    fn from(raw: RawBloom) -> Self {
+        if raw.bytes.is_empty() {
+            return None;
+        }
+        let hasher_keys = raw.hasher_keys?;
+        let sip_keys = [
+            (hasher_keys.hash0_0, hasher_keys.hash0_1),
+            (hasher_keys.hash1_0, hasher_keys.hash1_1),
+        ];
+        let bloom = Bloom::from_existing(
+            &raw.bytes,
+            raw.bitmap_bits,
+            raw.number_of_hash_functions,
+            sip_keys,
+        );
+        Some(bloom)
+    }
+}
+
+impl From<Bloom> for RawBloom {
+    fn from(bloom: Bloom) -> Self {
+        let bytes = bloom.bitmap();
+        let bitmap_bits = bloom.number_of_bits();
+        let number_of_hash_functions = bloom.number_of_hash_functions();
+        let sip_keys = bloom.sip_keys();
+
+        let hasher_keys = HasherKeys {
+            hash0_0: sip_keys[0].0,
+            hash0_1: sip_keys[0].1,
+            hash1_0: sip_keys[1].0,
+            hash1_1: sip_keys[1].1,
+        };
+
+        RawBloom {
+            bytes,
+            bitmap_bits,
+            number_of_hash_functions,
+            hasher_keys: Some(hasher_keys),
+        }
     }
 }

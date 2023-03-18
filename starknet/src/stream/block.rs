@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use apibara_core::starknet::v1alpha2;
+use tracing::trace;
 
 use crate::{core::GlobalBlockId, db::StorageReader, server::RequestMeter};
 
@@ -93,7 +94,7 @@ where
         }
 
         let transactions = self.storage.read_body(block_id)?;
-        let mut receipts = self.storage.read_receipts(block_id)?;
+        let (mut receipts, _) = self.storage.read_receipts(block_id)?;
 
         assert!(transactions.len() == receipts.len());
         receipts.sort_by(|a, b| a.transaction_index.cmp(&b.transaction_index));
@@ -128,7 +129,39 @@ where
         }
 
         let transactions = self.storage.read_body(block_id)?;
-        let mut receipts = self.storage.read_receipts(block_id)?;
+        let (mut receipts, bloom) = self.storage.read_receipts(block_id)?;
+
+        // quickly check if any event would match using bloom filter
+        if let Some(bloom) = bloom {
+            let mut has_match = false;
+            for filter in &self.filter.events {
+                match &filter.from_address {
+                    None => {
+                        // an empty filter matches any address
+                        has_match = true;
+                        break;
+                    }
+                    Some(address) => {
+                        if bloom.check(address) {
+                            has_match = true;
+                            break;
+                        }
+                    }
+                }
+                for key in &filter.keys {
+                    if bloom.check(key) {
+                        has_match = true;
+                        break;
+                    }
+                }
+            }
+
+            // bail out early
+            if !has_match {
+                trace!("bloom did not match any event.");
+                return Ok(Vec::default());
+            }
+        }
 
         assert!(transactions.len() == receipts.len());
         receipts.sort_by(|a, b| a.transaction_index.cmp(&b.transaction_index));
@@ -166,7 +199,7 @@ where
         }
 
         let transactions = self.storage.read_body(block_id)?;
-        let mut receipts = self.storage.read_receipts(block_id)?;
+        let (mut receipts, _) = self.storage.read_receipts(block_id)?;
 
         assert!(transactions.len() == receipts.len());
         receipts.sort_by(|a, b| a.transaction_index.cmp(&b.transaction_index));
