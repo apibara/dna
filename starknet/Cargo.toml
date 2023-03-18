@@ -16,6 +16,7 @@ anyhow = "1.0.66"
 apibara-core = { path = "../core" }
 apibara-node = { path = "../node" }
 backoff = { version = "0.4.0", features = ["tokio"] }
+bloomfilter = "1.0.9"
 byte-unit = "4.0.14"
 byteorder = "1.4.3"
 chrono = "0.4.22"

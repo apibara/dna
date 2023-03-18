@@ -16,9 +16,35 @@ pub struct BlockBody {
 }
 
 #[derive(Clone, PartialEq, Message)]
+pub struct HasherKeys {
+    #[prost(fixed64, tag = "1")]
+    pub hash0_0: u64,
+    #[prost(fixed64, tag = "2")]
+    pub hash0_1: u64,
+    #[prost(fixed64, tag = "3")]
+    pub hash1_0: u64,
+    #[prost(fixed64, tag = "4")]
+    pub hash1_1: u64,
+}
+
+#[derive(Clone, PartialEq, Message)]
+pub struct RawBloom {
+    #[prost(bytes, tag = "1")]
+    pub bytes: prost::alloc::vec::Vec<u8>,
+    #[prost(fixed64, tag = "2")]
+    pub bitmap_bits: u64,
+    #[prost(fixed32, tag = "3")]
+    pub number_of_hash_functions: u32,
+    #[prost(message, tag = "4")]
+    pub hasher_keys: Option<HasherKeys>,
+}
+
+#[derive(Clone, PartialEq, Message)]
 pub struct BlockReceipts {
     #[prost(message, repeated, tag = "1")]
     pub receipts: prost::alloc::vec::Vec<v1alpha2::TransactionReceipt>,
+    #[prost(message, tag = "2")]
+    pub bloom: Option<RawBloom>,
 }
 
 /// Store block status.
