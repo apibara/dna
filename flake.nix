@@ -61,7 +61,7 @@
               clang
               pkg-config
               llvmPackages.libclang
-               protobuf
+              protobuf
             ];
           };
         };
