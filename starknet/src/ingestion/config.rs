@@ -2,7 +2,7 @@
 use std::time::Duration;
 
 /// Block ingestion configuration.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BlockIngestionConfig {
     /// Concurrency for RPC requests.
     pub rpc_concurrency: usize,
