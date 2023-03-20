@@ -10,9 +10,10 @@ use super::error::BlockIngestionError;
 
 pub type IngestionStream = BroadcastStream<IngestionMessage>;
 
+#[derive(Clone)]
 pub struct IngestionStreamPublisher {
     tx: Arc<broadcast::Sender<IngestionMessage>>,
-    _rx: broadcast::Receiver<IngestionMessage>,
+    _rx: Arc<broadcast::Receiver<IngestionMessage>>,
 }
 
 pub struct IngestionStreamClient {
@@ -23,6 +24,7 @@ impl IngestionStreamPublisher {
     pub fn new() -> (IngestionStreamClient, IngestionStreamPublisher) {
         let (tx, rx) = broadcast::channel(128);
         let tx = Arc::new(tx);
+        let rx = Arc::new(rx);
 
         let manager = IngestionStreamPublisher {
             tx: tx.clone(),

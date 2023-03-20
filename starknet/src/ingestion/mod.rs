@@ -9,7 +9,9 @@ mod subscription;
 use std::sync::Arc;
 
 use apibara_node::db::libmdbx::{Environment, EnvironmentKind};
+use tokio::time::Duration;
 use tokio_util::sync::CancellationToken;
+use tracing::error;
 
 use crate::{db::DatabaseStorage, provider::Provider};
 
@@ -25,7 +27,7 @@ pub use self::{
 pub struct BlockIngestion<G: Provider + Send, E: EnvironmentKind> {
     config: BlockIngestionConfig,
     provider: Arc<G>,
-    storage: DatabaseStorage<E>,
+    db: Arc<Environment<E>>,
     publisher: IngestionStreamPublisher,
 }
 
@@ -39,12 +41,11 @@ where
         db: Arc<Environment<E>>,
         config: BlockIngestionConfig,
     ) -> (IngestionStreamClient, Self) {
-        let storage = DatabaseStorage::new(db);
         let (sub_client, publisher) = IngestionStreamPublisher::new();
 
         let ingestion = BlockIngestion {
             provider,
-            storage,
+            db,
             config,
             publisher,
         };
@@ -53,8 +54,31 @@ where
 
     /// Start ingesting blocks.
     pub async fn start(self, ct: CancellationToken) -> Result<(), BlockIngestionError> {
-        StartedBlockIngestion::new(self.provider, self.storage, self.config, self.publisher)
-            .start(ct)
-            .await
+        loop {
+            let storage = DatabaseStorage::new(self.db.clone());
+            let result = StartedBlockIngestion::new(
+                self.provider.clone(),
+                storage,
+                self.config.clone(),
+                self.publisher.clone(),
+            )
+            .start(ct.clone())
+            .await;
+
+            match result {
+                Ok(_) => {
+                    if !ct.is_cancelled() {
+                        error!("block ingestion stopped without error");
+                    }
+                    return Ok(());
+                }
+                Err(err) => {
+                    error!(error = ?err, "block ingestion terminated with error");
+                }
+            }
+
+            // TODO: would be better if we exponentially backed off.
+            tokio::time::sleep(Duration::from_secs(10)).await;
+        }
     }
 }
