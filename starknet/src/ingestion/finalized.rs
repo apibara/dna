@@ -102,7 +102,7 @@ where
             .await
     }
 
-    #[tracing::instrument(skip(self))]
+    #[tracing::instrument(skip(self), err(Debug))]
     async fn ingest_block_by_number(
         &self,
         number: u64,

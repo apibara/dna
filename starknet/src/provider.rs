@@ -115,7 +115,7 @@ trait TryToProto<T> {
 impl Provider for HttpProvider {
     type Error = HttpProviderError;
 
-    #[tracing::instrument(skip(self))]
+    #[tracing::instrument(skip(self), err(Debug))]
     async fn get_head(&self) -> Result<GlobalBlockId, Self::Error> {
         let hash_and_number = self
             .provider
@@ -129,7 +129,7 @@ impl Provider for HttpProvider {
         ))
     }
 
-    #[tracing::instrument(skip(self))]
+    #[tracing::instrument(skip(self), err(Debug))]
     async fn get_block(
         &self,
         id: &BlockId,
@@ -163,7 +163,7 @@ impl Provider for HttpProvider {
         }
     }
 
-    #[tracing::instrument(skip(self))]
+    #[tracing::instrument(skip(self), err(Debug))]
     async fn get_state_update(&self, id: &BlockId) -> Result<v1alpha2::StateUpdate, Self::Error> {
         let block_id = id.try_into()?;
         let state_update = self
@@ -175,7 +175,7 @@ impl Provider for HttpProvider {
         Ok(state_update)
     }
 
-    #[tracing::instrument(skip(self), fields(hash = %hash))]
+    #[tracing::instrument(skip(self), fields(hash = %hash), err(Debug))]
     async fn get_transaction_receipt(
         &self,
         hash: &v1alpha2::FieldElement,
