@@ -339,7 +339,9 @@ impl<'env, 'txn, E: EnvironmentKind> StorageWriter for DatabaseStorageWriter<'en
         receipts: Vec<v1alpha2::TransactionReceipt>,
     ) -> Result<(), Self::Error> {
         // compute bloom filter for receipts
-        let estimate_items = receipts.len() * 2;
+        // the bloomfilter crate expects a positive bitmapsize and items count.
+        // add 1 to the receipts count to avoid a panic.
+        let estimate_items = receipts.len() * 2 + 1;
         let mut bloom = Bloom::new(256, estimate_items);
 
         for receipt in receipts.iter() {

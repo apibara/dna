@@ -223,7 +223,9 @@ where
 
         // check if the next block is what is the pending block now.
         if let Some(pending_cursor) = self.pending_cursor.take() {
-            if pending_cursor.number() == next_block_number && self.data_finality == DataFinality::DataStatusPending {
+            if pending_cursor.number() == next_block_number
+                && self.data_finality == DataFinality::DataStatusPending
+            {
                 return self.send_pending_batch(pending_cursor);
             }
         }
