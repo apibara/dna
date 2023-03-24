@@ -5,7 +5,6 @@ use std::io::Cursor;
 use apibara_core::stream::{Sequence, StreamId};
 use arrayvec::ArrayVec;
 use byteorder::{BigEndian, ReadBytesExt};
-use prost::Message;
 
 /// Error related to decoding keys.
 #[derive(Debug, thiserror::Error)]
@@ -31,7 +30,7 @@ pub trait TableKey: Send + Sync + Sized {
 
 pub trait Table: Send + Sync {
     type Key: TableKey;
-    type Value: Message + Default + Clone;
+    type Value: Default + Clone;
 
     fn db_name() -> &'static str;
 }

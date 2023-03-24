@@ -56,12 +56,18 @@ pub trait MdbxEnvironmentExt<E: EnvironmentKind> {
 /// Extension methods over mdbx RO and RW transactions.
 pub trait MdbxTransactionExt<K: TransactionKind, E: EnvironmentKind> {
     /// Open a database accessed through a type-safe [MdbxTable].
-    fn open_table<T: Table>(&self) -> MdbxResult<MdbxTable<'_, T, K, E>>;
+    fn open_table<T>(&self) -> MdbxResult<MdbxTable<'_, T, K, E>>
+    where
+        T: Table,
+        T::Value: Message;
 
     /// Shorthand for `open_table()?.cursor()?;`
     ///
     /// Cannot use `cursor` as name since it's a method on transaction.
-    fn open_cursor<T: Table>(&self) -> MdbxResult<TableCursor<'_, T, K>>;
+    fn open_cursor<T>(&self) -> MdbxResult<TableCursor<'_, T, K>>
+    where
+        T: Table,
+        T::Value: Message;
 }
 
 /// Extension methods over mdbx RW transactions.
@@ -147,7 +153,11 @@ where
         })
     }
 
-    fn open_cursor<T: Table>(&self) -> MdbxResult<TableCursor<'_, T, K>> {
+    fn open_cursor<T>(&self) -> MdbxResult<TableCursor<'_, T, K>>
+    where
+        T: Table,
+        T::Value: Message,
+    {
         self.open_table::<T>()?.cursor()
     }
 }
@@ -213,6 +223,7 @@ where
 impl<'txn, T, K, E> MdbxTable<'txn, T, K, E>
 where
     T: Table,
+    T::Value: Message,
     K: TransactionKind,
     E: EnvironmentKind,
 {
@@ -237,6 +248,7 @@ where
 impl<'txn, T, K> TableCursor<'txn, T, K>
 where
     T: Table,
+    T::Value: Message,
     K: TransactionKind,
 {
     /// Get key/data at current cursor position.
@@ -274,7 +286,11 @@ where
     pub fn seek_exact_raw(
         &mut self,
         key: &T::Key,
-    ) -> MdbxResult<Option<(T::Key, RawMessageData<T::Value>)>> {
+    ) -> MdbxResult<Option<(T::Key, RawMessageData<T::Value>)>>
+    where
+        T: Table,
+        T::Value: Message,
+    {
         raw_map_kv_result::<T>(self.cursor.set_key(key.encode().as_ref()))
     }
 
@@ -288,6 +304,7 @@ impl<'txn, T, K> TableCursor<'txn, T, K>
 where
     T: DupSortTable,
     K: TransactionKind,
+    T::Value: Message,
 {
     /// Position at the first item of the current key.
     pub fn first_dup(&mut self) -> MdbxResult<Option<T::Value>> {
@@ -329,6 +346,7 @@ where
 impl<'txn, T> TableCursor<'txn, T, RW>
 where
     T: Table,
+    T::Value: Message,
 {
     pub fn put(&mut self, key: &T::Key, value: &T::Value) -> MdbxResult<()> {
         let data = T::Value::encode_to_vec(value);
@@ -346,6 +364,7 @@ where
 impl<'txn, T> TableCursor<'txn, T, RW>
 where
     T: DupSortTable,
+    T::Value: Message,
 {
     pub fn append_dup(&mut self, key: &T::Key, value: &T::Value) -> MdbxResult<()> {
         let data = T::Value::encode_to_vec(value);
@@ -374,6 +393,7 @@ fn raw_map_kv_result<T>(
 ) -> MdbxResult<Option<(T::Key, RawMessageData<T::Value>)>>
 where
     T: Table,
+    T::Value: Message,
 {
     if let Some((k, v)) = t? {
         return Ok(Some((k.0, v.0)));

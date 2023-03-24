@@ -1315,7 +1315,9 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "apibara-node",
+ "byteorder",
  "ctrlc",
+ "ethers-core 2.0.1",
  "futures 0.3.27",
  "hex",
  "prost",
@@ -1445,6 +1447,34 @@ dependencies = [
  "rand 0.8.5",
  "rlp",
  "rlp-derive",
+ "serde",
+ "serde_json",
+ "strum",
+ "tempfile",
+ "thiserror",
+ "tiny-keccak",
+ "unicode-xid",
+]
+
+[[package]]
+name = "ethers-core"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5a73bf2bbd4e19fd5c5dca74ea68d8799acc87f0e30ccda6609e79d7559f7317"
+dependencies = [
+ "arrayvec",
+ "bytes 1.4.0",
+ "chrono",
+ "elliptic-curve",
+ "ethabi",
+ "generic-array",
+ "getrandom",
+ "hex",
+ "k256",
+ "num_enum",
+ "open-fastrlp",
+ "rand",
+ "rlp",
  "serde",
  "serde_json",
  "strum",
@@ -3415,7 +3445,7 @@ dependencies = [
  "crc",
  "crunchy",
  "derive_more",
- "ethers-core",
+ "ethers-core 2.0.0",
  "fixed-hash 0.8.0",
  "hash-db",
  "hex",
@@ -3527,6 +3557,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bb919243f34364b6bd2fc10ef797edbfa75f33c252e7998527479c6d6b47e1ec"
 dependencies = [
  "bytes 1.4.0",
+ "rlp-derive",
  "rustc-hex",
 ]
 

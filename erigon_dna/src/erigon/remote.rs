@@ -1,14 +1,16 @@
-use std::fmt::Display;
+use std::{fmt::Display, marker::PhantomData};
 
+use apibara_node::db::{Table, TableKey};
 use futures::TryStreamExt;
 use tokio::sync::{mpsc, Mutex};
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{transport::Channel, Streaming};
-use tracing::debug;
+use tracing::{debug, trace};
 
-use self::kv_client::KvClient;
-
-tonic::include_proto!("remote");
+use crate::erigon::{
+    proto::remote::{kv_client::KvClient, Cursor, Op, Pair},
+    tables::TableValue,
+};
 
 pub struct RemoteTx {
     inner: Mutex<Streaming<Pair>>,
@@ -16,9 +18,14 @@ pub struct RemoteTx {
     tx_id: u64,
 }
 
-pub struct RemoteCursor<'a> {
+pub struct RemoteCursor<'a, T>
+where
+    T: Table,
+    T::Value: TableValue,
+{
     txn: &'a RemoteTx,
     cursor_id: u32,
+    _phantom: PhantomData<T>,
 }
 
 impl RemoteTx {
@@ -27,21 +34,24 @@ impl RemoteTx {
         RemoteTx { tx, inner, tx_id }
     }
 
-    pub async fn open_table(
-        &self,
-        table_name: &'static str,
-    ) -> Result<RemoteCursor<'_>, tonic::Status> {
+    pub async fn open_cursor<T>(&self) -> Result<RemoteCursor<'_, T>, tonic::Status>
+    where
+        T: Table,
+        T::Value: TableValue,
+    {
+        let bucket_name = T::db_name().to_string();
         let pair = self
             .send_cursor(Cursor {
                 op: Op::Open as i32,
-                bucket_name: table_name.to_string(),
+                bucket_name,
                 ..Cursor::default()
             })
             .await
             .expect("failed to send open cursor");
         let cursor = RemoteCursor {
-            txn: &self,
+            txn: self,
             cursor_id: pair.cursor_id,
+            _phantom: PhantomData::default(),
         };
         Ok(cursor)
     }
@@ -56,31 +66,52 @@ impl RemoteTx {
     }
 }
 
-impl<'a> RemoteCursor<'a> {
-    pub async fn first(&self) -> Result<Vec<u8>, tonic::Status> {
-        let val = self
-            .txn
-            .send_cursor(Cursor {
-                op: Op::First as i32,
-                cursor: self.cursor_id,
-                ..Cursor::default()
-            })
-            .await?;
-        debug!(val = ?val, "cursor.first");
-        Ok(val.v)
+impl<'a, T> RemoteCursor<'a, T>
+where
+    T: Table,
+    T::Value: TableValue,
+    <T::Key as TableKey>::Encoded: Into<Vec<u8>>,
+{
+    pub async fn first(&self) -> Result<(T::Key, T::Value), tonic::Status> {
+        self.send_op(Op::First, None).await
     }
 
-    pub async fn next(&self) -> Result<Vec<u8>, tonic::Status> {
-        let val = self
+    pub async fn last(&self) -> Result<(T::Key, T::Value), tonic::Status> {
+        self.send_op(Op::Last, None).await
+    }
+
+    pub async fn next(&self) -> Result<(T::Key, T::Value), tonic::Status> {
+        self.send_op(Op::Next, None).await
+    }
+
+    pub async fn prev(&self) -> Result<(T::Key, T::Value), tonic::Status> {
+        self.send_op(Op::Prev, None).await
+    }
+
+    pub async fn seek_exact(&self, key: &T::Key) -> Result<(T::Key, T::Value), tonic::Status> {
+        self.send_op(Op::SeekExact, Some(key)).await
+    }
+
+    async fn send_op(
+        &self,
+        op: Op,
+        key: Option<&T::Key>,
+    ) -> Result<(T::Key, T::Value), tonic::Status> {
+        let key = key.map(|k| k.encode().into()).unwrap_or_default();
+        trace!(cid = self.cursor_id, op = ?op, key = ?key, "send_op");
+        let pair = self
             .txn
             .send_cursor(Cursor {
-                op: Op::Next as i32,
+                op: op as i32,
                 cursor: self.cursor_id,
+                k: key,
                 ..Cursor::default()
             })
             .await?;
-        debug!(val = ?val, "cursor.next");
-        Ok(val.v)
+        trace!(cid = self.cursor_id, op = ?op, pair = ?pair, "pair <- send_op");
+        let key = T::Key::decode(&pair.k).expect("failed to decode key");
+        let value = T::Value::decode(&pair.v).expect("failed to decode value");
+        Ok((key, value))
     }
 }
 
