@@ -5,7 +5,7 @@ use byteorder::{BigEndian, ReadBytesExt};
 use ethers_core::types::H256;
 use reth_rlp::Decodable;
 
-use crate::erigon::types::{BlockHash, Forkchoice, GlobalBlockId, Header};
+use crate::erigon::types::{BlockHash, Forkchoice, GlobalBlockId, Header, LogId};
 
 /// Map block numbers to block hashes.
 #[derive(Clone, Debug, Copy, Default)]
@@ -22,6 +22,18 @@ pub struct LastForkchoiceTable;
 /// Map header hash to number.
 #[derive(Clone, Debug, Copy, Default)]
 pub struct HeaderNumberTable;
+
+/// Canonical chain's transaction receipts.
+#[derive(Clone, Debug, Copy, Default)]
+pub struct ReceiptTable;
+
+/// Transaction logs.
+#[derive(Clone, Debug, Copy, Default)]
+pub struct LogTable;
+
+/// Block body.
+#[derive(Clone, Debug, Copy, Default)]
+pub struct BlockBodyTable;
 
 pub trait TableValue: Sized {
     fn decode(b: &[u8]) -> Result<Self, KeyDecodeError>;
@@ -56,6 +68,40 @@ impl TableKey for GlobalBlockId {
             .map_err(KeyDecodeError::ReadError)?;
         let block_hash = H256::from_slice(&b[8..]);
         Ok(GlobalBlockId(block_number, block_hash))
+    }
+}
+
+impl TableKey for LogId {
+    type Encoded = [u8; 12];
+
+    fn encode(&self) -> Self::Encoded {
+        // encode block_num_u64 + hash
+        let mut out = [0; 12];
+
+        let block_number = self.0.to_be_bytes();
+        out[..8].copy_from_slice(&block_number);
+
+        let log_index = self.1.to_be_bytes();
+        out[8..].copy_from_slice(&log_index);
+
+        out
+    }
+
+    fn decode(b: &[u8]) -> Result<Self, KeyDecodeError> {
+        if b.len() != 12 {
+            return Err(KeyDecodeError::InvalidByteSize {
+                expected: 12,
+                actual: b.len(),
+            });
+        }
+        let mut cursor = Cursor::new(b);
+        let block_number = cursor
+            .read_u64::<BigEndian>()
+            .map_err(KeyDecodeError::ReadError)?;
+        let log_index = cursor
+            .read_u32::<BigEndian>()
+            .map_err(KeyDecodeError::ReadError)?;
+        Ok(LogId(block_number, log_index))
     }
 }
 
@@ -150,6 +196,33 @@ impl TableKey for BlockHash {
     }
 }
 
+impl Table for ReceiptTable {
+    type Key = u64;
+    type Value = Vec<u8>;
+
+    fn db_name() -> &'static str {
+        "Receipt"
+    }
+}
+
+impl Table for LogTable {
+    type Key = LogId;
+    type Value = Vec<u8>;
+
+    fn db_name() -> &'static str {
+        "TransactionLog"
+    }
+}
+
+impl Table for BlockBodyTable {
+    type Key = GlobalBlockId;
+    type Value = Vec<u8>;
+
+    fn db_name() -> &'static str {
+        "BlockBody"
+    }
+}
+
 impl From<BlockHash> for H256 {
     fn from(b: BlockHash) -> Self {
         b.0
@@ -169,5 +242,11 @@ impl TableValue for u64 {
             .read_u64::<BigEndian>()
             .map_err(KeyDecodeError::ReadError)?;
         Ok(block_number)
+    }
+}
+
+impl TableValue for Vec<u8> {
+    fn decode(b: &[u8]) -> Result<Self, KeyDecodeError> {
+        Ok(b.to_vec())
     }
 }

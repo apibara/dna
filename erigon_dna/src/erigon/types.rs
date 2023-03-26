@@ -6,6 +6,10 @@ pub use reth_primitives::Header;
 #[derive(Clone, Debug, Copy, Default)]
 pub struct GlobalBlockId(pub(crate) u64, pub(crate) H256);
 
+/// Unique log id.
+#[derive(Clone, Debug, Copy, Default)]
+pub struct LogId(pub(crate) u64, pub(crate) u32);
+
 /// Block hash.
 #[derive(Clone, Debug, Copy, Default)]
 pub struct BlockHash(pub(crate) H256);

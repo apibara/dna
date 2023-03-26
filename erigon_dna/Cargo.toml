@@ -15,19 +15,28 @@ path = "src/bin.rs"
 anyhow = "1.0.66"
 apibara-node = { path = "../node" }
 byteorder = "1.4.3"
+bytesize = "1.2.0"
+clap = { version = "4.1.13", features = ["derive"] }
 ctrlc = { version = "3.2.3", features = ["termination"] }
 ethers-core = "2.0.1"
 futures = "0.3.24"
 hex = "0.4.3"
+memmap = "0.7.0"
 prost = "0.11.0"
 prost-types = "0.11.1"
 reth-primitives = { git = "https://github.com/paradigmxyz/reth", rev = "139c0c45" }
 reth-rlp = { git = "https://github.com/paradigmxyz/reth", rev = "139c0c45", features = [ "std", "derive", "ethereum-types" ] }
+thiserror = "1.0.40"
 tokio = { version = "1.20.1", features = ["full"] }
 tokio-stream = { version = "0.1.10", features = ["sync"] }
 tokio-util = "0.7.3"
 tonic = "0.8.0"
 tracing = { version = "0.1.36", features = ["max_level_trace", "release_max_level_debug"] }
+unsigned-varint = { version = "0.7.1", features = ["std"] }
 
 [build-dependencies]
 tonic-build = "0.8.0"
+
+[dev-dependencies]
+tracing-subscriber = { version = "0.3.16", features = ["env-filter"] }
+tracing-test = "0.2.4"
