@@ -622,6 +622,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "broadword"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e575a75897f2b1c3c31d31d44a0efc52b67bf5596fbf1a74d3088b1e2ae41f90"
+
+[[package]]
 name = "bumpalo"
 version = "3.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1321,6 +1327,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "apibara-node",
+ "broadword",
  "byteorder",
  "bytesize",
  "clap 4.2.4",
