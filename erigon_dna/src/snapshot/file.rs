@@ -2,15 +2,28 @@
 
 use std::path::{Path, PathBuf};
 
-use super::error::SnapshotError;
-
 /// Information about a snapshot file.
 #[derive(Debug, Clone)]
 pub struct SnapshotInfo {
+    /// File version.
     pub version: u8,
+    /// Starting block.
     pub from_block: u64,
+    /// Ending block.
     pub to_block: u64,
-    pub path: PathBuf,
+    /// Directory containing the snapshot files.
+    pub dir_path: PathBuf,
+}
+
+/// Error related to [SnapshotInfo].
+#[derive(Debug, thiserror::Error)]
+pub enum SnapshotInfoError {
+    #[error("filename is invalid or missing")]
+    InvalidFilename,
+    #[error("filename is expected to be in the format v1-001500-002000-bodies.seg")]
+    MalformedFilename,
+    #[error("file version is not supported. Supported versions: v1")]
+    UnsupportedVersion,
 }
 
 /// Snapshot file.
@@ -22,52 +35,102 @@ pub enum SnapshotFileInfo {
 }
 
 impl SnapshotFileInfo {
-    pub fn from_filename(file_path: &Path) -> Result<Self, SnapshotError> {
+    /// Create snapshot information from its filename.
+    pub fn from_filename(file_path: &Path) -> Result<Self, SnapshotInfoError> {
+        let dir_path = file_path
+            .parent()
+            .ok_or(SnapshotInfoError::InvalidFilename)?;
+
         let file_name = file_path
             .file_name()
-            .expect("missing file name")
+            .ok_or(SnapshotInfoError::InvalidFilename)?
             .to_str()
-            .expect("failde to convert str")
+            .ok_or(SnapshotInfoError::InvalidFilename)?
             .split('.')
             .collect::<Vec<_>>();
 
         if file_name.len() != 2 {
-            panic!("invalid format. no extension")
+            return Err(SnapshotInfoError::MalformedFilename);
         }
 
         let parts = file_name[0].split('-').collect::<Vec<_>>();
         if parts.len() < 4 {
-            panic!("invalid format. expected v1-001500-002000-bodies.seg")
+            return Err(SnapshotInfoError::MalformedFilename);
         }
 
         if parts[0] != "v1" {
-            panic!("invalid version")
+            return Err(SnapshotInfoError::UnsupportedVersion);
         }
 
-        let from_block = parts[1].parse::<u64>().expect("invalid from block");
-        let to_block = parts[2].parse::<u64>().expect("invalid to block");
+        let from_block = parts[1]
+            .parse::<u64>()
+            .map_err(|_| SnapshotInfoError::MalformedFilename)?;
+        let to_block = parts[2]
+            .parse::<u64>()
+            .map_err(|_| SnapshotInfoError::MalformedFilename)?;
 
         let info = SnapshotInfo {
             version: 1,
             from_block: from_block * 1_000,
             to_block: to_block * 1_000,
-            path: file_path.to_path_buf(),
+            dir_path: dir_path.to_path_buf(),
         };
 
         match parts[3] {
             "headers" => Ok(SnapshotFileInfo::Headers(info)),
             "bodies" => Ok(SnapshotFileInfo::Bodies(info)),
             "transactions" => Ok(SnapshotFileInfo::Transactions(info)),
-            _ => panic!("invalid file type"),
+            _ => return Err(SnapshotInfoError::MalformedFilename),
         }
     }
 
+    /// Returns the inner file information about a file.
     pub fn info(&self) -> &SnapshotInfo {
         match self {
             SnapshotFileInfo::Headers(info) => info,
             SnapshotFileInfo::Bodies(info) => info,
             SnapshotFileInfo::Transactions(info) => info,
         }
+    }
+
+    /// Returns the path to the segment file.
+    pub fn segment_path(&self) -> PathBuf {
+        self.base_path().with_extension("seg")
+    }
+
+    /// Returns the path to the index file.
+    pub fn index_path(&self) -> PathBuf {
+        self.base_path().with_extension("idx")
+    }
+
+    fn base_path(&self) -> PathBuf {
+        let info = self.info();
+        let type_name = match self {
+            SnapshotFileInfo::Headers(_) => "headers",
+            SnapshotFileInfo::Bodies(_) => "bodies",
+            SnapshotFileInfo::Transactions(_) => "transactions",
+        };
+        let from_block = info.from_block / 1_000;
+        let to_block = info.to_block / 1_000;
+        let filename = format!(
+            "v{}-{:0>6}-{:0>6}-{}",
+            info.version, from_block, to_block, type_name
+        );
+        info.dir_path.join(filename)
+    }
+}
+
+impl SnapshotInfo {
+    pub fn headers(&self) -> SnapshotFileInfo {
+        SnapshotFileInfo::Headers(self.clone())
+    }
+
+    pub fn bodies(&self) -> SnapshotFileInfo {
+        SnapshotFileInfo::Bodies(self.clone())
+    }
+
+    pub fn transactions(&self) -> SnapshotFileInfo {
+        SnapshotFileInfo::Transactions(self.clone())
     }
 }
 
@@ -83,8 +146,53 @@ mod tests {
         assert_eq!(info.info().from_block, 1_500_000);
         assert_eq!(info.info().to_block, 2_000_000);
         assert_eq!(
-            info.info().path.to_str().expect("failed to convert str"),
-            path
+            info.info()
+                .dir_path
+                .to_str()
+                .expect("failed to convert str"),
+            "/var/data/erigon/snapshots"
+        );
+    }
+
+    #[test]
+    pub fn test_bodies_snapshot_file() {
+        let path = "/var/data/erigon/snapshots/v1-001500-002000-bodies.seg";
+        let info = SnapshotFileInfo::from_filename(path.as_ref()).expect("failed to parse");
+        assert_eq!(
+            info.segment_path().to_str().expect("failed to convert str"),
+            "/var/data/erigon/snapshots/v1-001500-002000-bodies.seg"
+        );
+        assert_eq!(
+            info.index_path().to_str().expect("failed to convert str"),
+            "/var/data/erigon/snapshots/v1-001500-002000-bodies.idx"
+        );
+    }
+
+    #[test]
+    pub fn test_headers_snapshot_file() {
+        let path = "/var/data/erigon/snapshots/v1-001500-002000-headers.seg";
+        let info = SnapshotFileInfo::from_filename(path.as_ref()).expect("failed to parse");
+        assert_eq!(
+            info.segment_path().to_str().expect("failed to convert str"),
+            "/var/data/erigon/snapshots/v1-001500-002000-headers.seg"
+        );
+        assert_eq!(
+            info.index_path().to_str().expect("failed to convert str"),
+            "/var/data/erigon/snapshots/v1-001500-002000-headers.idx"
+        );
+    }
+
+    #[test]
+    pub fn test_transactions_snapshot_file() {
+        let path = "/var/data/erigon/snapshots/v1-001500-002000-transactions.seg";
+        let info = SnapshotFileInfo::from_filename(path.as_ref()).expect("failed to parse");
+        assert_eq!(
+            info.segment_path().to_str().expect("failed to convert str"),
+            "/var/data/erigon/snapshots/v1-001500-002000-transactions.seg"
+        );
+        assert_eq!(
+            info.index_path().to_str().expect("failed to convert str"),
+            "/var/data/erigon/snapshots/v1-001500-002000-transactions.idx"
         );
     }
 }

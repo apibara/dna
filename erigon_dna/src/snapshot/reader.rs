@@ -14,6 +14,7 @@ use super::{
     decompress::Decompressor,
     error::SnapshotError,
     file::{SnapshotFileInfo, SnapshotInfo},
+    segment::Segment,
 };
 
 pub type Header = ();
@@ -28,14 +29,6 @@ pub struct RoSnapshots {
     transactions: Vec<Segment<Transaction>>,
 }
 
-/// Represents a single segment.
-#[derive(Debug)]
-pub struct Segment<T> {
-    decompressor: Decompressor,
-    range: Range<u64>,
-    _phantom: PhantomData<T>,
-}
-
 impl RoSnapshots {
     pub fn new(root_dir: &Path) -> Self {
         RoSnapshots {
@@ -47,6 +40,7 @@ impl RoSnapshots {
     }
 
     pub fn reopen_files(&mut self, files: &[String]) -> Result<(), SnapshotError> {
+        /*
         let mut new_headers = Vec::new();
         let mut new_bodies = Vec::new();
         let mut new_transactions = Vec::new();
@@ -76,8 +70,11 @@ impl RoSnapshots {
         self.transactions = new_transactions;
 
         Ok(())
+        */
+        todo!()
     }
 
+    /*
     pub fn view_headers(&self, block_number: u64) -> Option<&Segment<Header>> {
         // TODO: check if block number in range.
         // TODO: check if indexes loaded.
@@ -101,20 +98,5 @@ impl RoSnapshots {
             .iter()
             .find(|segment| segment.range.contains(&block_number))
     }
-}
-
-impl<T> Segment<T> {
-    pub fn from_info(info: SnapshotInfo) -> Self {
-        let decompressor = Decompressor::new(info.path).expect("failed to open decompressor");
-        let range = info.from_block..info.to_block;
-        Self {
-            decompressor,
-            range,
-            _phantom: PhantomData::default(),
-        }
-    }
-
-    pub fn decompressor(&self) -> &Decompressor {
-        &self.decompressor
-    }
+    */
 }

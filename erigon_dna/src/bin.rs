@@ -33,6 +33,7 @@ async fn main() -> anyhow::Result<()> {
         .into_inner();
     info!(snapshots = ?snapshots, "snapshots");
 
+    /*
     let datadir = Path::new(&args.datadir);
     let mut snap_reader = RoSnapshots::new(datadir);
     snap_reader.reopen_files(&snapshots.blocks_files)?;
@@ -57,6 +58,7 @@ async fn main() -> anyhow::Result<()> {
         info!(i = counter, header = ?header, "got header");
         counter += 1;
     }
+    */
 
     Ok(())
 }

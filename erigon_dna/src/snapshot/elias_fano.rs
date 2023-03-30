@@ -140,6 +140,14 @@ impl EliasFano {
         println!("sel = {}, val = {}", sel, val);
         Some(val)
     }
+
+    pub fn universe(&self) -> u64 {
+        self.universe
+    }
+
+    pub fn count(&self) -> u64 {
+        self.count
+    }
 }
 
 fn derive_bit_fields(universe: u64, count: u64) -> (u64, u64, u64, u64, u64) {
