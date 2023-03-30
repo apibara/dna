@@ -165,6 +165,21 @@ impl Decompressor {
         Ok(decompressor)
     }
 
+    /// Returns the segment file name.
+    pub fn file_name(&self) -> &PathBuf {
+        &self.file_name
+    }
+
+    /// Returns the segment file modification time.
+    pub fn mod_time(&self) -> &SystemTime {
+        &self.mod_time
+    }
+
+    /// Returns the segment file size.
+    pub fn size(&self) -> u64 {
+        self.size
+    }
+
     fn pattern_root(&self) -> &Pattern {
         self.pattern_at_index(0)
     }
@@ -199,10 +214,6 @@ impl Decompressor {
             pos: 0,
             bit: 0,
         }
-    }
-
-    pub fn size(&self) -> u64 {
-        self.size
     }
 
     pub fn count(&self) -> u64 {
@@ -263,7 +274,7 @@ impl<'a> Getter<'a> {
             add += word_len - last_uncovered;
         }
 
-        self.pos += add as usize;
+        self.pos += add;
         Some(add)
     }
 
@@ -346,11 +357,9 @@ impl<'a> Getter<'a> {
     }
 
     fn next_pos(&mut self, clean: bool) -> usize {
-        if clean {
-            if self.bit > 0 {
-                self.pos += 1;
-                self.bit = 0;
-            }
+        if clean && self.bit > 0 {
+            self.pos += 1;
+            self.bit = 0;
         }
 
         let pos_table = self
@@ -395,7 +404,7 @@ impl<'a> Getter<'a> {
             let codeword_idx = table.patterns[0].expect("pattern table is bad (1)");
             let cw = self.decompressor.codeword_at_index(codeword_idx);
             let src_pat = &cw.pattern;
-            buf[..src_pat.len()].copy_from_slice(&src_pat);
+            buf[..src_pat.len()].copy_from_slice(src_pat);
 
             return src_pat.len();
         }
@@ -428,7 +437,7 @@ impl<'a> Getter<'a> {
             self.bit %= 8;
         }
 
-        return wrote_bytes;
+        wrote_bytes
     }
 }
 
@@ -527,7 +536,7 @@ impl PatternTable {
             depth + 1,
             max_depth - 1,
         );
-        return b0 + b1;
+        b0 + b1
     }
 
     fn new_codeword(
@@ -695,7 +704,7 @@ impl PositionTable {
             depth + 1,
             max_depth - 1,
         );
-        return b0 + b1;
+        b0 + b1
     }
 }
 

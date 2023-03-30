@@ -80,7 +80,7 @@ impl SnapshotFileInfo {
             "headers" => Ok(SnapshotFileInfo::Headers(info)),
             "bodies" => Ok(SnapshotFileInfo::Bodies(info)),
             "transactions" => Ok(SnapshotFileInfo::Transactions(info)),
-            _ => return Err(SnapshotInfoError::MalformedFilename),
+            _ => Err(SnapshotInfoError::MalformedFilename),
         }
     }
 
@@ -121,14 +121,27 @@ impl SnapshotFileInfo {
 }
 
 impl SnapshotInfo {
+    /// Creates a new snapshot info.
+    pub fn new(version: u8, from_block: u64, to_block: u64, dir_path: &Path) -> Self {
+        Self {
+            version,
+            from_block,
+            to_block,
+            dir_path: dir_path.to_path_buf(),
+        }
+    }
+
+    /// Returns the headers file info.
     pub fn headers(&self) -> SnapshotFileInfo {
         SnapshotFileInfo::Headers(self.clone())
     }
 
+    /// Returns the bodies file info.
     pub fn bodies(&self) -> SnapshotFileInfo {
         SnapshotFileInfo::Bodies(self.clone())
     }
 
+    /// Returns the transactions file info.
     pub fn transactions(&self) -> SnapshotFileInfo {
         SnapshotFileInfo::Transactions(self.clone())
     }

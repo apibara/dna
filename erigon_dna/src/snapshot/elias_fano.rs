@@ -6,13 +6,14 @@ use tracing::trace;
 
 #[derive(Debug, thiserror::Error)]
 pub enum EliasFanoError {
-    #[error("failed to read elias fano data from reader")]
-    ReadError(#[from] std::io::Error),
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
 }
 
 /// Elias-Fano data structure.
 ///
 /// Based on Erigon's `recsplit/eliasfano32/elias_fano.go`.
+#[derive(Debug)]
 pub struct EliasFano {
     count: u64,
     universe: u64,
@@ -27,7 +28,7 @@ const LOG2_Q: u64 = 8u64;
 const Q: u64 = 1u64 << LOG2_Q;
 const Q_MASK: u64 = Q - 1;
 const SUPER_Q: u64 = 1u64 << 14;
-const SUPER_Q_MASK: u64 = SUPER_Q - 1;
+// const SUPER_Q_MASK: u64 = SUPER_Q - 1;
 const Q_PER_SUPER_Q: u64 = SUPER_Q / Q;
 const SUPER_Q_SIZE: u64 = 1u64 + Q_PER_SUPER_Q / 2;
 
@@ -36,7 +37,7 @@ impl EliasFano {
         let count = cursor.read_u64::<BigEndian>()?;
         let universe = cursor.read_u64::<BigEndian>()?;
 
-        let (l, lower_bits_mask, words_lower_bits, words_upper_bits, jump_words_size) =
+        let (_l, lower_bits_mask, words_lower_bits, words_upper_bits, jump_words_size) =
             derive_bit_fields(universe, count);
 
         trace!(
@@ -111,7 +112,7 @@ impl EliasFano {
         let jump_idx = jump_super_q + 1 + (jump_inside_super_q >> 1);
         let jump_shift = 32 * (jump_inside_super_q % 2);
         let mask = 0xffffffffu64 << jump_shift;
-        let jump = self.jumps[jump_super_q as usize] + (self.jumps[jump_idx as usize] & mask)
+        let jump = (self.jumps[jump_super_q as usize] + (self.jumps[jump_idx as usize] & mask))
             >> jump_shift;
 
         let mut curr_word = jump / 64;
@@ -119,25 +120,29 @@ impl EliasFano {
         let mut d = (index & Q_MASK) as i64;
 
         let mut bit_count = window.count_ones() as i64;
+        /*
         println!(
             "ef.get cw = {}, w = {} d = {}, bc = {}",
             curr_word, window, d, bit_count
         );
+        */
         while bit_count <= d {
             curr_word += 1;
             window = self.upper_bits[curr_word as usize];
             d -= bit_count;
+            /*
             println!(
                 "loop curr = {}, window = {}, d = {}, bc = {}",
                 curr_word, window, d, bit_count
             );
+            */
             bit_count = window.count_ones() as i64;
         }
 
         let sel = broadword::select1_raw(d as usize, window) as u64;
         let val = (curr_word * 64 + sel - index) << self.l | (lower & self.lower_bits_mask);
 
-        println!("sel = {}, val = {}", sel, val);
+        // println!("sel = {}, val = {}", sel, val);
         Some(val)
     }
 
