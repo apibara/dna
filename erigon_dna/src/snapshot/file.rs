@@ -1,6 +1,9 @@
 //! Snapshot file info.
 
-use std::path::{Path, PathBuf};
+use std::{
+    ops::Range,
+    path::{Path, PathBuf},
+};
 
 /// Information about a snapshot file.
 #[derive(Debug, Clone)]
@@ -103,6 +106,11 @@ impl SnapshotFileInfo {
         self.base_path().with_extension("idx")
     }
 
+    /// Returns the range of blocks covered by the file.
+    pub fn range(&self) -> Range<u64> {
+        self.info().range()
+    }
+
     fn base_path(&self) -> PathBuf {
         let info = self.info();
         let type_name = match self {
@@ -144,6 +152,11 @@ impl SnapshotInfo {
     /// Returns the transactions file info.
     pub fn transactions(&self) -> SnapshotFileInfo {
         SnapshotFileInfo::Transactions(self.clone())
+    }
+
+    /// Returns the range of blocks covered by the file.
+    pub fn range(&self) -> Range<u64> {
+        self.from_block..self.to_block
     }
 }
 

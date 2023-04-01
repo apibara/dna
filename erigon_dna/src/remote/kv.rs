@@ -7,9 +7,9 @@ use tokio_stream::wrappers::ReceiverStream;
 use tonic::{transport::Channel, Streaming};
 use tracing::{debug, trace};
 
-use crate::erigon::{
-    proto::remote::{kv_client::KvClient, Cursor, Op, Pair},
-    tables::TableValue,
+use crate::{
+    erigon::tables::TableValue,
+    remote::proto::remote::{kv_client::KvClient, Cursor, Op, Pair},
 };
 
 pub struct RemoteTx {

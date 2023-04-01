@@ -1,11 +1,11 @@
-use std::path::Path;
+use std::{path::Path, time::Instant};
 
 use apibara_node::o11y;
-use bytesize::ByteSize;
 use clap::Parser;
-use erigon_dna::snapshot::{file::SnapshotInfo, segment::Segment};
-use reth_primitives::Header;
+use erigon_dna::snapshot::reader::SnapshotReader;
 use tracing::info;
+
+use erigon_dna::remote::{proto::remote::SnapshotsRequest, KvClient};
 
 #[derive(Parser)]
 pub struct Cli {
@@ -19,7 +19,6 @@ async fn main() -> anyhow::Result<()> {
 
     let args = Cli::parse();
 
-    /*
     let mut client = KvClient::connect("http://localhost:9090").await?;
     let version = client.version(()).await?.into_inner();
     info!(version = ?version, "connected to KV");
@@ -29,9 +28,29 @@ async fn main() -> anyhow::Result<()> {
         .await?
         .into_inner();
     info!(snapshots = ?snapshots, "snapshots");
-    */
 
-    let datadir = Path::new(&args.datadir);
+    let snapshots_dir = Path::new(&args.datadir).join("snapshots");
+
+    let mut snapshot_reader = SnapshotReader::new(snapshots_dir);
+    snapshot_reader.reopen_snapshots(snapshots.blocks_files.iter())?;
+
+    let mut now = Instant::now();
+    let interval = 100_000;
+    for n in 0..8_632_000 {
+        let _header = snapshot_reader.header(n)?;
+        // info!(n = n, header = ?header, "found header");
+        if n % interval == 0 {
+            let ms = now.elapsed().as_millis();
+            let rate = if ms > 0 {
+                1000.0 * (interval as f64) / (now.elapsed().as_millis() as f64)
+            } else {
+                0.0
+            };
+            info!(n = n, elapsed = ?now.elapsed(), rate = %rate, "elapsed");
+            now = Instant::now();
+        }
+    }
+    /*
     let snapshot_info = SnapshotInfo::new(1, 500_000, 1_000_000, datadir);
     let headers_snapshot_info = snapshot_info.headers();
     info!(info = ?headers_snapshot_info, "reading headers segment");
@@ -43,6 +62,7 @@ async fn main() -> anyhow::Result<()> {
     for block in reader.take(1) {
         info!(block = ?block, "block");
     }
+    */
     /*
     let datadir = Path::new(&args.datadir);
     let mut snap_reader = RoSnapshots::new(datadir);

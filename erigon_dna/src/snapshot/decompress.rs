@@ -7,7 +7,7 @@ use std::{
 
 use byteorder::{BigEndian, ReadBytesExt};
 use memmap::Mmap;
-use tracing::{info, trace};
+use tracing::trace;
 
 /// Tables with bitlen greater than this will be condensed.
 /// To disable at all, set to 9.
@@ -51,6 +51,7 @@ pub struct Getter<'a> {
 
 impl Decompressor {
     pub fn new(file_name: PathBuf) -> Result<Self, DecompressorError> {
+        trace!(file = ?file_name, "open compressed segment file");
         let stat = fs::metadata(&file_name).expect("failed to stat file");
 
         let file = fs::File::open(&file_name).expect("failed to open file");
@@ -65,7 +66,7 @@ impl Decompressor {
             .read_u64::<BigEndian>()
             .expect("failed to read empty words count");
 
-        info!(
+        trace!(
             words_count = words_count,
             empty_words_count = empty_words_count,
             "read file header"

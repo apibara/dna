@@ -1,5 +1,5 @@
 //! Read a snapshot segment.
-use std::marker::PhantomData;
+use std::{marker::PhantomData, ops::Range};
 
 use reth_rlp::Decodable;
 
@@ -17,6 +17,7 @@ pub trait SegmentItem: Sized {
 pub struct Segment<T: SegmentItem> {
     decompressor: Decompressor,
     index: Index,
+    range: Range<u64>,
     _phantom: PhantomData<T>,
 }
 
@@ -50,10 +51,15 @@ where
         let segment = Self {
             decompressor,
             index,
+            range: info.range(),
             _phantom: PhantomData::default(),
         };
 
         Ok(segment)
+    }
+
+    pub fn contains(&self, block_number: u64) -> bool {
+        self.range.contains(&block_number)
     }
 
     pub fn new_reader(&self, buffer_size: usize) -> SegmentReader<T> {

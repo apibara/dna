@@ -60,9 +60,9 @@ impl EliasFano {
         cursor.read_u64_into::<LittleEndian>(&mut jumps)?;
 
         trace!(
-            lower_bits = ?lower_bits,
-            upper_bits = ?upper_bits,
-            jumps = ?jumps,
+            lower_bits_size = lower_bits.len(),
+            upper_bits_size = upper_bits.len(),
+            jumps_size = jumps.len(),
             "read ef data"
         );
 
@@ -93,6 +93,7 @@ impl EliasFano {
 
     /// Returns the value of the `index`-th element.
     pub fn get(&self, index: u64) -> Option<u64> {
+        // println!("get index {}", index);
         if index > self.count {
             return None;
         }
@@ -112,8 +113,14 @@ impl EliasFano {
         let jump_idx = jump_super_q + 1 + (jump_inside_super_q >> 1);
         let jump_shift = 32 * (jump_inside_super_q % 2);
         let mask = 0xffffffffu64 << jump_shift;
-        let jump = (self.jumps[jump_super_q as usize] + (self.jumps[jump_idx as usize] & mask))
-            >> jump_shift;
+        let jump = self.jumps[jump_super_q as usize]
+            + ((self.jumps[jump_idx as usize] & mask) >> jump_shift);
+
+        // println!("mask = {0:x} {0:}", mask);
+        // println!("j1 = {}, j2 = {}", self.jumps[jump_super_q as usize], self.jumps[jump_idx as usize]);
+        // println!("j3 = {}", j & mask);
+        // println!("jump_sq = {}, j_i_sq = {}, j_idx = {}, j_sh = {}", jump_super_q, jump_inside_super_q, jump_idx, jump_shift);
+        // println!("lower = {}, jump = {}", lower, jump);
 
         let mut curr_word = jump / 64;
         let mut window = self.upper_bits[curr_word as usize] & (u64::MAX << (jump % 64));
