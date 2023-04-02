@@ -87,6 +87,10 @@ where
         self.send_op(Op::SeekExact, Some(key)).await
     }
 
+    pub async fn seek(&self, key: &T::Key) -> Result<(T::Key, T::Value), tonic::Status> {
+        self.send_op(Op::Seek, Some(key)).await
+    }
+
     async fn send_op(
         &self,
         op: Op,

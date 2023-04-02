@@ -2,9 +2,12 @@ use std::io::Cursor;
 
 use apibara_node::db::{Decodable, DecodeError, Encodable, Table};
 use byteorder::{BigEndian, ReadBytesExt};
-use ethers_core::types::H256;
+use ethers_core::types::{H160, H256};
 
-use crate::erigon::types::{BlockHash, Forkchoice, GlobalBlockId, Header, LogId};
+use crate::erigon::types::{
+    BlockHash, Forkchoice, GlobalBlockId, Header, Log, LogAddressIndex, LogId, LogTopicIndex,
+    TransactionLog,
+};
 
 /// Map block numbers to block hashes.
 #[derive(Clone, Debug, Copy, Default)]
@@ -29,6 +32,10 @@ pub struct ReceiptTable;
 /// Transaction logs.
 #[derive(Clone, Debug, Copy, Default)]
 pub struct LogTable;
+
+/// Stores bitmap indices of blocks that contained logs for the address.
+#[derive(Clone, Debug, Copy, Default)]
+pub struct LogAddressIndexTable;
 
 /// Block body.
 #[derive(Clone, Debug, Copy, Default)]
@@ -196,6 +203,86 @@ impl Decodable for BlockHash {
     }
 }
 
+impl Encodable for LogAddressIndex {
+    type Encoded = Vec<u8>;
+
+    fn encode(&self) -> Self::Encoded {
+        let mut res = self.log_address.to_fixed_bytes().to_vec();
+        res.extend((self.block as u32).to_be_bytes().to_vec());
+        res
+    }
+}
+
+impl Decodable for LogAddressIndex {
+    fn decode(b: &[u8]) -> Result<Self, DecodeError> {
+        let log_address = H160::from_slice(&b[..20]);
+        let mut cursor = Cursor::new(&b[b.len() - 4..]);
+        let block = cursor.read_u32::<BigEndian>().unwrap();
+
+        Ok(LogAddressIndex {
+            log_address,
+            block: block as u64,
+        })
+    }
+}
+
+struct H256Wrapper(H256);
+
+impl<'b, C> minicbor::Decode<'b, C> for H256Wrapper {
+    fn decode(d: &mut minicbor::Decoder<'b>, ctx: &mut C) -> Result<Self, minicbor::decode::Error> {
+        let topic = H256::from_slice(d.bytes()?);
+        Ok(H256Wrapper(topic))
+    }
+}
+
+impl<'b, C> minicbor::Decode<'b, C> for Log {
+    fn decode(d: &mut minicbor::Decoder<'b>, ctx: &mut C) -> Result<Self, minicbor::decode::Error> {
+        d.array()?;
+        let address = H160::from_slice(d.bytes()?);
+        let mut topics = Vec::new();
+        for topic in d.array_iter::<H256Wrapper>()? {
+            topics.push(topic?.0);
+        }
+        // data can be null
+        let has_data = {
+            let mut probe = d.probe();
+            probe.datatype()? != minicbor::data::Type::Null
+        };
+        let data = if has_data {
+            d.bytes()?.to_vec()
+        } else {
+            d.skip()?;
+            Vec::new()
+        };
+        Ok(Log {
+            address,
+            topics,
+            data,
+        })
+    }
+}
+
+impl<'b, C> minicbor::Decode<'b, C> for TransactionLog {
+    fn decode(d: &mut minicbor::Decoder<'b>, ctx: &mut C) -> Result<Self, minicbor::decode::Error> {
+        let mut logs = Vec::default();
+        for log in d.array_iter::<Log>()? {
+            let log = log?;
+            logs.push(log);
+        }
+        Ok(TransactionLog { logs })
+    }
+}
+
+impl Decodable for TransactionLog {
+    fn decode(b: &[u8]) -> Result<Self, DecodeError> {
+        let mut decoder = minicbor::Decoder::new(&b);
+        let log = decoder
+            .decode::<TransactionLog>()
+            .map_err(|err| DecodeError::Other(err.into()))?;
+        Ok(log)
+    }
+}
+
 impl Table for ReceiptTable {
     type Key = u64;
     type Value = Vec<u8>;
@@ -207,7 +294,7 @@ impl Table for ReceiptTable {
 
 impl Table for LogTable {
     type Key = LogId;
-    type Value = Vec<u8>;
+    type Value = TransactionLog;
 
     fn db_name() -> &'static str {
         "TransactionLog"
@@ -220,6 +307,15 @@ impl Table for BlockBodyTable {
 
     fn db_name() -> &'static str {
         "BlockBody"
+    }
+}
+
+impl Table for LogAddressIndexTable {
+    type Key = LogAddressIndex;
+    type Value = Vec<u8>;
+
+    fn db_name() -> &'static str {
+        "LogAddressIndex"
     }
 }
 

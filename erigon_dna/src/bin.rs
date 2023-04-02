@@ -1,18 +1,63 @@
-use std::{path::Path, time::Instant};
+use std::{io::Cursor, path::Path, time::Instant};
 
 use apibara_node::o11y;
 use clap::Parser;
+use croaring::Bitmap;
 use erigon_dna::{
-    erigon::{db::ErigonDB, types::Forkchoice},
-    remote::{proto::remote::SnapshotsRequest, KvClient},
+    erigon::{
+        tables,
+        types::{Forkchoice, LogAddressIndex},
+    },
+    remote::{kv::RemoteTx, proto::remote::SnapshotsRequest, KvClient},
     snapshot::reader::SnapshotReader,
 };
+use ethers_core::types::{H160, H256};
 use tracing::info;
 
 #[derive(Parser)]
 pub struct Cli {
     #[arg(long)]
     pub datadir: String,
+}
+
+/// Reads the bitmaps for the given addresses.
+async fn get_addresses_bitmap(
+    txn: &RemoteTx,
+    addresses: impl Iterator<Item = H160>,
+    from_block: u64,
+    to_block: u64,
+) -> Bitmap {
+    let mut curr = txn
+        .open_cursor::<tables::LogAddressIndexTable>()
+        .await
+        .unwrap();
+    let mut chunks = Vec::new();
+    for log_address in addresses {
+        println!("get addr = {:?}", log_address);
+        let log_addr_index = LogAddressIndex {
+            log_address,
+            block: from_block,
+        };
+
+        let mut value = curr.seek(&log_addr_index).await.unwrap();
+        while let (k, v) = value {
+            if k.log_address != log_address {
+                break;
+            }
+            println!("k = {:?}", k);
+            let bm = Bitmap::deserialize(&v);
+            println!("v = {:?}", bm);
+            chunks.push(bm);
+
+            if k.block >= to_block {
+                break;
+            }
+
+            value = curr.next().await.unwrap();
+        }
+    }
+    let chunks: Vec<&Bitmap> = chunks.iter().collect();
+    Bitmap::fast_or(&chunks)
 }
 
 #[tokio::main]
@@ -31,12 +76,50 @@ async fn main() -> anyhow::Result<()> {
         .into_inner();
     info!(snapshots = ?snapshots, "snapshots");
 
-    // let snapshots_dir = Path::new(&args.datadir).join("snapshots");
-    let chaindata_dir = Path::new(&args.datadir).join("chaindata");
+    let txn = client.begin_txn().await?;
 
-    let db = ErigonDB::open(&chaindata_dir).unwrap();
-    db.test().unwrap();
-    // let hash = db.read_forkchoice(&Forkchoice::HeadBlockHash).unwrap();
+    /*
+    let addr = vec![
+        "0x1dc4c1cefef38a777b15aa20260a54e584b16c48".parse().unwrap(),
+        "0xaf4159a80b6cc41ed517db1c453d1ef5c2e4db72".parse().unwrap(),
+    ];
+
+    let mut bitmap = Bitmap::create();
+    bitmap.add_range(13520..1_000_000);
+    println!("starting = {:?}", bitmap);
+    let addr_bm = get_addresses_bitmap(&txn, addr.into_iter(), 0, 1_000_000).await;
+    println!("addr = {:?}", addr_bm);
+    bitmap &= addr_bm;
+    println!("final = {:?}", bitmap);
+    */
+    let mut curr = txn.open_cursor::<tables::LogTable>().await?;
+
+    let mut value = curr.first().await?;
+    while let (k, v) = value {
+        println!("k = {:?}", k);
+        println!("v = {:?}", v);
+        value = curr.next().await?;
+    }
+    /*
+    {
+        let mut curr = txn.open_cursor::<tables::LogAddressIndexTable>().await?;
+        let mut value = curr.first().await?;
+
+        let mut count = 0;
+        while let (k, v) = value {
+            let sub = Bitmap::deserialize(&v);
+            println!("log = {:?}", sub);
+            value = curr.next().await?;
+            count += 1;
+            if count > 10 {
+                break;
+            }
+        }
+    }
+    */
+
+    // let snapshots_dir = Path::new(&args.datadir).join("snapshots");
+    // let chaindata_dir = Path::new(&args.datadir).join("chaindata");
     // println!("hash = {:?}", hash);
     /*
     let mut snapshot_reader = SnapshotReader::new(snapshots_dir);

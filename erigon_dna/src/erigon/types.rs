@@ -1,4 +1,4 @@
-use ethers_core::types::H256;
+use ethers_core::types::{H160, H256};
 
 pub use reth_primitives::Header;
 
@@ -13,6 +13,30 @@ pub struct LogId(pub(crate) u64, pub(crate) u32);
 /// Block hash.
 #[derive(Clone, Debug, Copy, Default)]
 pub struct BlockHash(pub(crate) H256);
+
+#[derive(Clone, Debug, Default)]
+pub struct LogTopicIndex {
+    pub log_topic: Vec<u8>,
+    pub shard: [u8; 2],
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct LogAddressIndex {
+    pub log_address: H160,
+    pub block: u64,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct TransactionLog {
+    pub logs: Vec<Log>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct Log {
+    pub address: H160,
+    pub topics: Vec<H256>,
+    pub data: Vec<u8>,
+}
 
 /// Fork choice.
 #[derive(Clone, Debug, Copy)]
