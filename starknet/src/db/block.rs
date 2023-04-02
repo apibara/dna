@@ -3,11 +3,14 @@
 use std::io::Cursor;
 
 use apibara_core::starknet::v1alpha2;
-use apibara_node::db::{KeyDecodeError, Table, TableKey};
+use apibara_node::db::{Decodable, DecodeError, Encodable, Table};
 use byteorder::{BigEndian, ReadBytesExt};
 use prost::Message;
 
-use crate::core::{BlockHash, GlobalBlockId};
+use crate::{
+    core::{BlockHash, GlobalBlockId},
+    db::serde::EncodedMessage,
+};
 
 #[derive(Clone, PartialEq, Message)]
 pub struct BlockBody {
@@ -61,15 +64,17 @@ pub struct BlockStatus {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct BlockHeaderTable {}
 
-impl TableKey for BlockHash {
+impl Encodable for BlockHash {
     type Encoded = [u8; 32];
 
     fn encode(&self) -> Self::Encoded {
         (*self).into_bytes()
     }
+}
 
-    fn decode(b: &[u8]) -> Result<Self, KeyDecodeError> {
-        BlockHash::from_slice(b).map_err(|err| KeyDecodeError::InvalidByteSize {
+impl Decodable for BlockHash {
+    fn decode(b: &[u8]) -> Result<Self, DecodeError> {
+        BlockHash::from_slice(b).map_err(|err| DecodeError::InvalidByteSize {
             expected: err.expected,
             actual: err.actual,
         })
@@ -79,7 +84,7 @@ impl TableKey for BlockHash {
 // A pair (block number, block hash) is encoded as:
 // - 8 bytes big endian representation of the block number
 // - 32 bytes block hash
-impl TableKey for GlobalBlockId {
+impl Encodable for GlobalBlockId {
     type Encoded = [u8; 40];
 
     fn encode(&self) -> Self::Encoded {
@@ -88,14 +93,16 @@ impl TableKey for GlobalBlockId {
         out[8..].copy_from_slice(self.hash().as_bytes());
         out
     }
+}
 
-    fn decode(b: &[u8]) -> Result<Self, KeyDecodeError> {
+impl Decodable for GlobalBlockId {
+    fn decode(b: &[u8]) -> Result<Self, DecodeError> {
         let mut cursor = Cursor::new(b);
         let block_number = cursor
             .read_u64::<BigEndian>()
-            .map_err(KeyDecodeError::ReadError)?;
+            .map_err(DecodeError::ReadError)?;
         let block_hash =
-            BlockHash::from_slice(&b[8..]).map_err(|err| KeyDecodeError::InvalidByteSize {
+            BlockHash::from_slice(&b[8..]).map_err(|err| DecodeError::InvalidByteSize {
                 expected: err.expected,
                 actual: err.actual,
             })?;
@@ -114,7 +121,7 @@ impl Table for BlockStatusTable {
 
 impl Table for BlockHeaderTable {
     type Key = GlobalBlockId;
-    type Value = v1alpha2::BlockHeader;
+    type Value = EncodedMessage<v1alpha2::BlockHeader>;
 
     fn db_name() -> &'static str {
         "BlockHeader"

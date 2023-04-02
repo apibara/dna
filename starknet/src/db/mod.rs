@@ -1,5 +1,6 @@
 mod block;
 mod chain;
+mod serde;
 mod state;
 mod storage;
 mod transaction;

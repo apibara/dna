@@ -13,6 +13,7 @@ use crate::core::GlobalBlockId;
 
 use super::{
     block::{BlockBody, BlockReceipts, HasherKeys, RawBloom},
+    serde::EncodedMessage,
     tables,
 };
 
@@ -158,7 +159,7 @@ impl<E: EnvironmentKind> StorageReader for DatabaseStorage<E> {
         let block_id = match cursor.last()? {
             None => None,
             Some((number, hash)) => {
-                let hash = (&hash).try_into().map_err(libmdbx::Error::decode_error)?;
+                let hash = (&hash.0).try_into().map_err(libmdbx::Error::decode_error)?;
                 Some(GlobalBlockId::new(number, hash))
             }
         };
@@ -173,7 +174,7 @@ impl<E: EnvironmentKind> StorageReader for DatabaseStorage<E> {
         let mut status_cursor = txn.open_cursor::<tables::BlockStatusTable>()?;
         let mut maybe_block_id = canon_cursor.last()?;
         while let Some((block_num, block_hash)) = maybe_block_id {
-            let block_hash = (&block_hash)
+            let block_hash = (&block_hash.0)
                 .try_into()
                 .map_err(libmdbx::Error::decode_error)?;
             let block_id = GlobalBlockId::new(block_num, block_hash);
@@ -202,7 +203,7 @@ impl<E: EnvironmentKind> StorageReader for DatabaseStorage<E> {
                 Ok(None)
             }
             Some((_, block_hash)) => {
-                let block_hash = (&block_hash)
+                let block_hash = (&block_hash.0)
                     .try_into()
                     .map_err(libmdbx::Error::decode_error)?;
                 let block_id = GlobalBlockId::new(number, block_hash);
@@ -231,7 +232,7 @@ impl<E: EnvironmentKind> StorageReader for DatabaseStorage<E> {
     ) -> Result<Option<v1alpha2::BlockHeader>, Self::Error> {
         let txn = self.db.begin_ro_txn()?;
         let mut cursor = txn.open_cursor::<tables::BlockHeaderTable>()?;
-        let header = cursor.seek_exact(id)?.map(|t| t.1);
+        let header = cursor.seek_exact(id)?.map(|t| t.1 .0);
         txn.commit()?;
         Ok(header)
     }
@@ -269,7 +270,7 @@ impl<E: EnvironmentKind> StorageReader for DatabaseStorage<E> {
     ) -> Result<Option<v1alpha2::StateUpdate>, Self::Error> {
         let txn = self.db.begin_ro_txn()?;
         let mut cursor = txn.open_cursor::<tables::StateUpdateTable>()?;
-        let state_update = cursor.seek_exact(id)?.map(|t| t.1);
+        let state_update = cursor.seek_exact(id)?.map(|t| t.1 .0);
         txn.commit()?;
         Ok(state_update)
     }
@@ -289,7 +290,8 @@ impl<'env, 'txn, E: EnvironmentKind> StorageWriter for DatabaseStorageWriter<'en
         let number = id.number();
         let hash = id.hash().into();
         self.canonical_chain_cursor.seek_exact(&number)?;
-        self.canonical_chain_cursor.put(&number, &hash)?;
+        self.canonical_chain_cursor
+            .put(&number, &EncodedMessage(hash))?;
         Ok(())
     }
 
@@ -298,7 +300,7 @@ impl<'env, 'txn, E: EnvironmentKind> StorageWriter for DatabaseStorageWriter<'en
         let number = id.number();
         let target_hash = id.hash().into();
         if let Some((_, current_hash)) = self.canonical_chain_cursor.seek_exact(&number)? {
-            if current_hash == target_hash {
+            if current_hash.0 == target_hash {
                 self.canonical_chain_cursor.del()?;
                 self.write_status(id, v1alpha2::BlockStatus::Rejected)?;
             }
@@ -327,7 +329,7 @@ impl<'env, 'txn, E: EnvironmentKind> StorageWriter for DatabaseStorageWriter<'en
         header: v1alpha2::BlockHeader,
     ) -> Result<(), Self::Error> {
         self.header_cursor.seek_exact(id)?;
-        self.header_cursor.put(id, &header)?;
+        self.header_cursor.put(id, &EncodedMessage(header))?;
         Ok(())
     }
 
@@ -377,7 +379,8 @@ impl<'env, 'txn, E: EnvironmentKind> StorageWriter for DatabaseStorageWriter<'en
         state_update: v1alpha2::StateUpdate,
     ) -> Result<(), Self::Error> {
         self.state_update_cursor.seek_exact(id)?;
-        self.state_update_cursor.put(id, &state_update)?;
+        self.state_update_cursor
+            .put(id, &EncodedMessage(state_update))?;
         Ok(())
     }
 }

@@ -1,9 +1,8 @@
 use std::io::Cursor;
 
-use apibara_node::db::{KeyDecodeError, Table, TableKey};
+use apibara_node::db::{Decodable, DecodeError, Encodable, Table};
 use byteorder::{BigEndian, ReadBytesExt};
 use ethers_core::types::H256;
-use reth_rlp::Decodable;
 
 use crate::erigon::types::{BlockHash, Forkchoice, GlobalBlockId, Header, LogId};
 
@@ -35,11 +34,10 @@ pub struct LogTable;
 #[derive(Clone, Debug, Copy, Default)]
 pub struct BlockBodyTable;
 
-pub trait TableValue: Sized {
-    fn decode(b: &[u8]) -> Result<Self, KeyDecodeError>;
-}
+#[derive(Default, Clone)]
+pub struct Rlp<T: reth_rlp::Decodable>(pub T);
 
-impl TableKey for GlobalBlockId {
+impl Encodable for GlobalBlockId {
     type Encoded = [u8; 40];
 
     fn encode(&self) -> Self::Encoded {
@@ -54,10 +52,12 @@ impl TableKey for GlobalBlockId {
 
         out
     }
+}
 
-    fn decode(b: &[u8]) -> Result<Self, KeyDecodeError> {
+impl Decodable for GlobalBlockId {
+    fn decode(b: &[u8]) -> Result<Self, DecodeError> {
         if b.len() != 40 {
-            return Err(KeyDecodeError::InvalidByteSize {
+            return Err(DecodeError::InvalidByteSize {
                 expected: 40,
                 actual: b.len(),
             });
@@ -65,13 +65,13 @@ impl TableKey for GlobalBlockId {
         let mut cursor = Cursor::new(b);
         let block_number = cursor
             .read_u64::<BigEndian>()
-            .map_err(KeyDecodeError::ReadError)?;
+            .map_err(DecodeError::ReadError)?;
         let block_hash = H256::from_slice(&b[8..]);
         Ok(GlobalBlockId(block_number, block_hash))
     }
 }
 
-impl TableKey for LogId {
+impl Encodable for LogId {
     type Encoded = [u8; 12];
 
     fn encode(&self) -> Self::Encoded {
@@ -86,10 +86,12 @@ impl TableKey for LogId {
 
         out
     }
+}
 
-    fn decode(b: &[u8]) -> Result<Self, KeyDecodeError> {
+impl Decodable for LogId {
+    fn decode(b: &[u8]) -> Result<Self, DecodeError> {
         if b.len() != 12 {
-            return Err(KeyDecodeError::InvalidByteSize {
+            return Err(DecodeError::InvalidByteSize {
                 expected: 12,
                 actual: b.len(),
             });
@@ -97,17 +99,17 @@ impl TableKey for LogId {
         let mut cursor = Cursor::new(b);
         let block_number = cursor
             .read_u64::<BigEndian>()
-            .map_err(KeyDecodeError::ReadError)?;
+            .map_err(DecodeError::ReadError)?;
         let log_index = cursor
             .read_u32::<BigEndian>()
-            .map_err(KeyDecodeError::ReadError)?;
+            .map_err(DecodeError::ReadError)?;
         Ok(LogId(block_number, log_index))
     }
 }
 
 impl Table for HeaderTable {
     type Key = GlobalBlockId;
-    type Value = Header;
+    type Value = Rlp<Header>;
 
     fn db_name() -> &'static str {
         "Header"
@@ -116,47 +118,31 @@ impl Table for HeaderTable {
 
 impl Table for CanonicalHeaderTable {
     type Key = u64;
-    type Value = H256;
+    type Value = Rlp<H256>;
 
     fn db_name() -> &'static str {
         "CanonicalHeader"
     }
 }
 
-impl TableValue for H256 {
-    fn decode(b: &[u8]) -> Result<Self, KeyDecodeError> {
-        Ok(H256::from_slice(b))
-    }
-}
-
-impl TableValue for Header {
-    fn decode(b: &[u8]) -> Result<Self, KeyDecodeError> {
-        let mut t = b;
-        let decoded = <Header as Decodable>::decode(&mut t).expect("failed to decode rlp header");
-        Ok(decoded)
+impl<T: reth_rlp::Decodable> Decodable for Rlp<T> {
+    fn decode(mut b: &[u8]) -> Result<Self, DecodeError> {
+        let decoded = T::decode(&mut b).map_err(|err| DecodeError::Other(Box::new(err)))?;
+        Ok(Rlp(decoded))
     }
 }
 
 impl Table for LastForkchoiceTable {
     type Key = Forkchoice;
-    type Value = H256;
+    type Value = Rlp<H256>;
 
     fn db_name() -> &'static str {
         "LastForkchoice"
     }
 }
 
-impl TableKey for Forkchoice {
+impl Encodable for Forkchoice {
     type Encoded = Vec<u8>;
-    fn decode(b: &[u8]) -> Result<Self, KeyDecodeError> {
-        let str_value = String::from_utf8(b.to_vec()).expect("key decode error");
-        match str_value.as_str() {
-            "headBlockHash" => Ok(Forkchoice::HeadBlockHash),
-            "safeBlockHash" => Ok(Forkchoice::SafeBlockHash),
-            "finalizedBlockHash" => Ok(Forkchoice::FinalizedBlockHash),
-            _ => panic!("invalid forkchoice"),
-        }
-    }
 
     fn encode(&self) -> Self::Encoded {
         let str_value = match self {
@@ -165,6 +151,18 @@ impl TableKey for Forkchoice {
             Forkchoice::FinalizedBlockHash => "finalizedBlockHash",
         };
         str_value.as_bytes().to_vec()
+    }
+}
+
+impl Decodable for Forkchoice {
+    fn decode(b: &[u8]) -> Result<Self, DecodeError> {
+        let str_value = String::from_utf8(b.to_vec()).expect("key decode error");
+        match str_value.as_str() {
+            "headBlockHash" => Ok(Forkchoice::HeadBlockHash),
+            "safeBlockHash" => Ok(Forkchoice::SafeBlockHash),
+            "finalizedBlockHash" => Ok(Forkchoice::FinalizedBlockHash),
+            _ => panic!("invalid forkchoice"),
+        }
     }
 }
 
@@ -177,16 +175,18 @@ impl Table for HeaderNumberTable {
     }
 }
 
-impl TableKey for BlockHash {
+impl Encodable for BlockHash {
     type Encoded = [u8; 32];
 
     fn encode(&self) -> Self::Encoded {
         self.0.to_fixed_bytes()
     }
+}
 
-    fn decode(b: &[u8]) -> Result<Self, KeyDecodeError> {
+impl Decodable for BlockHash {
+    fn decode(b: &[u8]) -> Result<Self, DecodeError> {
         if b.len() != 32 {
-            return Err(KeyDecodeError::InvalidByteSize {
+            return Err(DecodeError::InvalidByteSize {
                 expected: 32,
                 actual: b.len(),
             });
@@ -232,21 +232,5 @@ impl From<BlockHash> for H256 {
 impl From<H256> for BlockHash {
     fn from(b: H256) -> Self {
         BlockHash(b)
-    }
-}
-
-impl TableValue for u64 {
-    fn decode(b: &[u8]) -> Result<Self, KeyDecodeError> {
-        let mut cursor = Cursor::new(b);
-        let block_number = cursor
-            .read_u64::<BigEndian>()
-            .map_err(KeyDecodeError::ReadError)?;
-        Ok(block_number)
-    }
-}
-
-impl TableValue for Vec<u8> {
-    fn decode(b: &[u8]) -> Result<Self, KeyDecodeError> {
-        Ok(b.to_vec())
     }
 }

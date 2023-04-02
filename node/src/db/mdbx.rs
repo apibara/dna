@@ -2,13 +2,14 @@ use std::{marker::PhantomData, ops::Range, path::Path};
 
 use apibara_core::stream::{MessageData, RawMessageData};
 use libmdbx::{
-    Cursor, Database, DatabaseFlags, Environment, EnvironmentBuilder, EnvironmentKind,
-    Error as MdbxError, Geometry, TableObject, Transaction, TransactionKind, WriteFlags, RW,
+    Cursor, Database, DatabaseFlags, Environment, EnvironmentBuilder, EnvironmentFlags,
+    EnvironmentKind, Error as MdbxError, Geometry, Mode, TableObject, Transaction, TransactionKind,
+    WriteFlags, RW,
 };
 use prost::Message;
 
 use super::{
-    table::{Table, TableKey},
+    table::{Decodable, Encodable, Table, TableKey},
     DupSortTable,
 };
 
@@ -41,6 +42,7 @@ pub type MdbxResult<T> = Result<T, MdbxError>;
 pub struct MdbxEnvironmentBuilder<E: EnvironmentKind> {
     env: EnvironmentBuilder<E>,
     max_dbs: usize,
+    readonly: Option<bool>,
     geometry: Geometry<Range<usize>>,
 }
 
@@ -58,16 +60,14 @@ pub trait MdbxTransactionExt<K: TransactionKind, E: EnvironmentKind> {
     /// Open a database accessed through a type-safe [MdbxTable].
     fn open_table<T>(&self) -> MdbxResult<MdbxTable<'_, T, K, E>>
     where
-        T: Table,
-        T::Value: Message;
+        T: Table;
 
     /// Shorthand for `open_table()?.cursor()?;`
     ///
     /// Cannot use `cursor` as name since it's a method on transaction.
     fn open_cursor<T>(&self) -> MdbxResult<TableCursor<'_, T, K>>
     where
-        T: Table,
-        T::Value: Message;
+        T: Table;
 }
 
 /// Extension methods over mdbx RW transactions.
@@ -105,6 +105,7 @@ impl<E: EnvironmentKind> MdbxEnvironmentBuilder<E> {
         MdbxEnvironmentBuilder {
             env,
             max_dbs: 100,
+            readonly: None,
             geometry,
         }
     }
@@ -124,10 +125,22 @@ impl<E: EnvironmentKind> MdbxEnvironmentBuilder<E> {
         self
     }
 
+    /// Change the database mode to be readonly.
+    pub fn readonly(mut self) -> Self {
+        self.readonly = Some(true);
+        self
+    }
+
     /// Open the environment.
     pub fn open(mut self, path: &Path) -> MdbxResult<Environment<E>> {
+        let mut flags = EnvironmentFlags::default();
+        if self.readonly.unwrap_or(false) {
+            flags.mode = Mode::ReadOnly;
+        }
+
         self.env
             .set_geometry(self.geometry)
+            .set_flags(flags)
             .set_max_dbs(self.max_dbs)
             .open(path)
     }
@@ -156,7 +169,6 @@ where
     fn open_cursor<T>(&self) -> MdbxResult<TableCursor<'_, T, K>>
     where
         T: Table,
-        T::Value: Message,
     {
         self.open_table::<T>()?.cursor()
     }
@@ -176,7 +188,7 @@ struct TableObjectWrapper<T>(T);
 
 impl<'txn, T> TableObject<'txn> for TableObjectWrapper<T>
 where
-    T: Message + Default + Clone,
+    T: Decodable + Default + Clone,
 {
     fn decode(data_val: &[u8]) -> MdbxResult<Self>
     where
@@ -223,7 +235,6 @@ where
 impl<'txn, T, K, E> MdbxTable<'txn, T, K, E>
 where
     T: Table,
-    T::Value: Message,
     K: TransactionKind,
     E: EnvironmentKind,
 {
@@ -235,7 +246,15 @@ where
             phantom: Default::default(),
         })
     }
+}
 
+impl<'txn, T, K, E> MdbxTable<'txn, T, K, E>
+where
+    T: Table,
+    T::Value: Decodable + Default + Clone,
+    K: TransactionKind,
+    E: EnvironmentKind,
+{
     /// Get an item in the table by its `key`.
     pub fn get(&self, key: &T::Key) -> MdbxResult<Option<T::Value>> {
         let data = self
@@ -248,7 +267,7 @@ where
 impl<'txn, T, K> TableCursor<'txn, T, K>
 where
     T: Table,
-    T::Value: Message,
+    T::Value: Decodable + Default + Clone,
     K: TransactionKind,
 {
     /// Get key/data at current cursor position.
@@ -304,7 +323,7 @@ impl<'txn, T, K> TableCursor<'txn, T, K>
 where
     T: DupSortTable,
     K: TransactionKind,
-    T::Value: Message,
+    T::Value: Decodable + Default + Clone,
 {
     /// Position at the first item of the current key.
     pub fn first_dup(&mut self) -> MdbxResult<Option<T::Value>> {
@@ -346,12 +365,12 @@ where
 impl<'txn, T> TableCursor<'txn, T, RW>
 where
     T: Table,
-    T::Value: Message,
+    T::Value: Encodable,
 {
     pub fn put(&mut self, key: &T::Key, value: &T::Value) -> MdbxResult<()> {
-        let data = T::Value::encode_to_vec(value);
+        let data = T::Value::encode(value);
         self.cursor
-            .put(key.encode().as_ref(), &data, WriteFlags::default())?;
+            .put(key.encode().as_ref(), data.as_ref(), WriteFlags::default())?;
         Ok(())
     }
 
@@ -364,12 +383,12 @@ where
 impl<'txn, T> TableCursor<'txn, T, RW>
 where
     T: DupSortTable,
-    T::Value: Message,
+    T::Value: Encodable,
 {
     pub fn append_dup(&mut self, key: &T::Key, value: &T::Value) -> MdbxResult<()> {
-        let data = T::Value::encode_to_vec(value);
+        let data = T::Value::encode(value);
         self.cursor
-            .put(key.encode().as_ref(), &data, WriteFlags::APPEND_DUP)?;
+            .put(key.encode().as_ref(), data.as_ref(), WriteFlags::APPEND_DUP)?;
         Ok(())
     }
 }

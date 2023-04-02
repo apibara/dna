@@ -2,10 +2,12 @@ use std::{path::Path, time::Instant};
 
 use apibara_node::o11y;
 use clap::Parser;
-use erigon_dna::snapshot::reader::SnapshotReader;
+use erigon_dna::{
+    erigon::{db::ErigonDB, types::Forkchoice},
+    remote::{proto::remote::SnapshotsRequest, KvClient},
+    snapshot::reader::SnapshotReader,
+};
 use tracing::info;
-
-use erigon_dna::remote::{proto::remote::SnapshotsRequest, KvClient};
 
 #[derive(Parser)]
 pub struct Cli {
@@ -29,8 +31,14 @@ async fn main() -> anyhow::Result<()> {
         .into_inner();
     info!(snapshots = ?snapshots, "snapshots");
 
-    let snapshots_dir = Path::new(&args.datadir).join("snapshots");
+    // let snapshots_dir = Path::new(&args.datadir).join("snapshots");
+    let chaindata_dir = Path::new(&args.datadir).join("chaindata");
 
+    let db = ErigonDB::open(&chaindata_dir).unwrap();
+    db.test().unwrap();
+    // let hash = db.read_forkchoice(&Forkchoice::HeadBlockHash).unwrap();
+    // println!("hash = {:?}", hash);
+    /*
     let mut snapshot_reader = SnapshotReader::new(snapshots_dir);
     snapshot_reader.reopen_snapshots(snapshots.blocks_files.iter())?;
 
@@ -50,6 +58,7 @@ async fn main() -> anyhow::Result<()> {
             now = Instant::now();
         }
     }
+    */
     /*
     let snapshot_info = SnapshotInfo::new(1, 500_000, 1_000_000, datadir);
     let headers_snapshot_info = snapshot_info.headers();

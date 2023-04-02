@@ -1,16 +1,13 @@
 use std::{fmt::Display, marker::PhantomData};
 
-use apibara_node::db::{Table, TableKey};
+use apibara_node::db::{Decodable, Encodable, Table};
 use futures::TryStreamExt;
 use tokio::sync::{mpsc, Mutex};
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{transport::Channel, Streaming};
 use tracing::{debug, trace};
 
-use crate::{
-    erigon::tables::TableValue,
-    remote::proto::remote::{kv_client::KvClient, Cursor, Op, Pair},
-};
+use super::proto::remote::{kv_client::KvClient, Cursor, Op, Pair};
 
 pub struct RemoteTx {
     inner: Mutex<Streaming<Pair>>,
@@ -21,7 +18,6 @@ pub struct RemoteTx {
 pub struct RemoteCursor<'a, T>
 where
     T: Table,
-    T::Value: TableValue,
 {
     txn: &'a RemoteTx,
     cursor_id: u32,
@@ -37,7 +33,6 @@ impl RemoteTx {
     pub async fn open_cursor<T>(&self) -> Result<RemoteCursor<'_, T>, tonic::Status>
     where
         T: Table,
-        T::Value: TableValue,
     {
         let bucket_name = T::db_name().to_string();
         let pair = self
@@ -69,8 +64,8 @@ impl RemoteTx {
 impl<'a, T> RemoteCursor<'a, T>
 where
     T: Table,
-    T::Value: TableValue,
-    <T::Key as TableKey>::Encoded: Into<Vec<u8>>,
+    T::Value: Decodable,
+    <T::Key as Encodable>::Encoded: Into<Vec<u8>>,
 {
     pub async fn first(&self) -> Result<(T::Key, T::Value), tonic::Status> {
         self.send_op(Op::First, None).await
