@@ -33,6 +33,9 @@ struct StartCommand {
     /// Indexer name. Defaults to `starknet`.
     #[arg(long, env)]
     name: Option<String>,
+    /// Wait for RPC to be available before starting.
+    #[arg(long, env)]
+    wait_for_rpc: bool,
 }
 
 async fn start(args: StartCommand) -> Result<()> {
@@ -61,7 +64,7 @@ async fn start(args: StartCommand) -> Result<()> {
         }
     })?;
 
-    node.build()?.start(cts.clone()).await?;
+    node.build()?.start(cts.clone(), args.wait_for_rpc).await?;
 
     Ok(())
 }
