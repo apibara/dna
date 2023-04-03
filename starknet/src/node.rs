@@ -73,9 +73,13 @@ where
     }
 
     /// Starts the node.
-    pub async fn start(self, ct: CancellationToken) -> Result<(), StarkNetNodeError> {
+    pub async fn start(self, ct: CancellationToken, wait_for_rpc: bool) -> Result<(), StarkNetNodeError> {
         info!("starting starknet node");
         self.ensure_tables()?;
+
+        if wait_for_rpc {
+            self.wait_for_rpc(ct.clone()).await?;
+        }
 
         // TODO: config from command line
         let (block_ingestion_client, block_ingestion) = BlockIngestion::new(
@@ -138,6 +142,28 @@ where
         tables::ensure(&txn)?;
         txn.commit()?;
         Ok(())
+    }
+
+    async fn wait_for_rpc(&self, ct: CancellationToken) -> Result<(), StarkNetNodeError> {
+        let mut timeout_seconds = 1;
+        loop {
+            if ct.is_cancelled() {
+                return Ok(())
+            }
+
+            match self.sequencer_provider.get_head().await {
+                Ok(_) => return Ok(()),
+                Err(_) => {
+                    info!("waiting for RPC server to be available");
+                    tokio::select! {
+                        _ = ct.cancelled() => {
+                        },
+                        _ = tokio::time::sleep(Duration::from_secs(timeout_seconds)) => {},
+                    };
+                    timeout_seconds = u64::min(timeout_seconds * 2, 30);
+                }
+            }
+        }
     }
 }
 
