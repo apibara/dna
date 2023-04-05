@@ -4,11 +4,12 @@ use apibara_node::o11y;
 use clap::Parser;
 use croaring::Bitmap;
 use erigon_dna::{
+    access::Erigon,
     erigon::{
         tables,
         types::{Forkchoice, LogAddressIndex},
     },
-    remote::{kv::RemoteTx, proto::remote::SnapshotsRequest, KvClient},
+    remote::{kv::RemoteTx, proto::remote::SnapshotsRequest, KvClient, RemoteDB},
     snapshot::reader::SnapshotReader,
 };
 use ethers_core::types::{H160, H256};
@@ -40,7 +41,7 @@ async fn get_addresses_bitmap(
         };
 
         let mut value = curr.seek(&log_addr_index).await.unwrap();
-        while let (k, v) = value {
+        while let Some((k, v)) = value {
             if k.log_address != log_address {
                 break;
             }
@@ -76,9 +77,38 @@ async fn main() -> anyhow::Result<()> {
         .into_inner();
     info!(snapshots = ?snapshots, "snapshots");
 
-    let txn = client.begin_txn().await?;
+    let remote_db = RemoteDB::new(client);
 
+    let snapshots_dir = Path::new(&args.datadir).join("snapshots");
+    let mut snapshot_reader = SnapshotReader::new(snapshots_dir);
+    snapshot_reader.reopen_snapshots(snapshots.blocks_files.iter())?;
+
+    let mut erigon = Erigon::new(snapshot_reader, remote_db);
+
+    let start = 8_000_000;
+    let mut num = 0;
+    loop {
+        // let block = erigon.header_by_number(num).await?.unwrap();
+        // println!("  {} {:?}", num, block);
+        let logs = erigon.logs_by_block_number(start + num).await?;
+        let mut count = 0;
+        while let Some((log_id, log)) = logs.next_log().await? {
+            count += 1;
+        }
+        println!("  {} {}", start + num, count);
+        num += 1;
+        if num >= 10 {
+            break;
+        }
+    }
     /*
+    let genesis = erigon.header_by_number(0).await?.unwrap();
+    println!("genesis = {:?}", genesis);
+    let recent = erigon.header_by_number(8780040).await?.unwrap();
+    println!("recent = {:?}", recent);
+    */
+    /*
+    let txn = client.begin_txn().await?;
     let addr = vec![
         "0x1dc4c1cefef38a777b15aa20260a54e584b16c48".parse().unwrap(),
         "0xaf4159a80b6cc41ed517db1c453d1ef5c2e4db72".parse().unwrap(),
@@ -92,14 +122,18 @@ async fn main() -> anyhow::Result<()> {
     bitmap &= addr_bm;
     println!("final = {:?}", bitmap);
     */
-    let mut curr = txn.open_cursor::<tables::LogTable>().await?;
+    /*
+    let txn = client.begin_txn().await?;
+    let curr = txn.open_cursor::<tables::LogTable>().await?;
 
-    let mut value = curr.first().await?;
-    while let (k, v) = value {
+    // let mut value = curr.first().await?;
+    let mut value = curr.prefix(&8_000_999).await?;
+    while let Some((k, v)) = value {
         println!("k = {:?}", k);
         println!("v = {:?}", v);
         value = curr.next().await?;
     }
+    */
     /*
     {
         let mut curr = txn.open_cursor::<tables::LogAddressIndexTable>().await?;

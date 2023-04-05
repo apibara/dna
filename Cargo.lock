@@ -1346,6 +1346,7 @@ name = "erigon-dna"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "apibara-core",
  "apibara-node",
  "broadword",
  "byteorder",

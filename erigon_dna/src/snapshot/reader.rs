@@ -50,7 +50,10 @@ impl SnapshotReader {
     }
 
     /// Returns the header for the given block number.
-    pub fn header(&self, block_number: u64) -> Result<Option<Header>, SnapshotReaderError> {
+    pub fn header_by_number(
+        &self,
+        block_number: u64,
+    ) -> Result<Option<Header>, SnapshotReaderError> {
         if let Some(segments) = &self.segments {
             segments.header(block_number)
         } else {

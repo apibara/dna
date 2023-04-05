@@ -11,6 +11,8 @@ message Block {
   BlockStatus status = 1;
   // Block header.
   BlockHeader header = 2;
+  // Transaction logs.
+  repeated LogWithTransaction logs = 3;
 }
 
 // BlockHeader contains the data used to compute the block hash.
@@ -69,4 +71,32 @@ enum BlockStatus {
   BLOCK_STATUS_FINALIZED = 4;
   // Block was rejected and is not part of the canonical chain anymore.
   BLOCK_STATUS_REJECTED = 5;
+}
+
+// A log with the transaction that produced it.
+message LogWithTransaction {
+  // The transaction.
+  Transaction transaction = 1;
+  // The transaction's receipt.
+  Receipt receipt = 2;
+  // The log.
+  Log log = 3;
+}
+
+// A transaction.
+message Transaction {
+}
+
+// A transaction receipt.
+message Receipt {
+}
+
+// A log.
+message Log {
+  // The address that produced the log.
+  H160 address = 1;
+  // The log topics.
+  repeated H256 topics = 2;
+  // The log data.
+  bytes data = 3;
 }

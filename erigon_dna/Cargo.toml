@@ -13,6 +13,7 @@ path = "src/bin.rs"
 
 [dependencies]
 anyhow = "1.0.66"
+apibara-core = { path = "../core", default-features = false, features = ["ethereum"] }
 apibara-node = { path = "../node" }
 broadword = "0.2.2"
 byteorder = "1.4.3"

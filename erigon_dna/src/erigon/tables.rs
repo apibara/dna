@@ -5,8 +5,7 @@ use byteorder::{BigEndian, ReadBytesExt};
 use ethers_core::types::{H160, H256};
 
 use crate::erigon::types::{
-    BlockHash, Forkchoice, GlobalBlockId, Header, Log, LogAddressIndex, LogId, LogTopicIndex,
-    TransactionLog,
+    BlockHash, Forkchoice, GlobalBlockId, Header, Log, LogAddressIndex, LogId, TransactionLog,
 };
 
 /// Map block numbers to block hashes.
@@ -125,7 +124,7 @@ impl Table for HeaderTable {
 
 impl Table for CanonicalHeaderTable {
     type Key = u64;
-    type Value = Rlp<H256>;
+    type Value = BlockHash;
 
     fn db_name() -> &'static str {
         "CanonicalHeader"

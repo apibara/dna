@@ -1,0 +1,34 @@
+syntax = "proto3";
+
+package apibara.ethereum.v1alpha2;
+
+import "v1alpha2/types.proto";
+
+// Filter block data.
+message Filter {
+  // Block header information.
+  HeaderFilter header = 1;
+  // Transaction logs.
+  LogFilter logs = 2;
+}
+
+// Filter header.
+message HeaderFilter {
+  // If true, only include headers if any other filter matches.
+  bool weak = 1;
+  // If true, include the rlp-encoded header data.
+  bool rlp = 2;
+}
+
+message LogFilter {
+  // Include logs emitted by this address.
+  H160 address = 1;
+  // Include logs with these topics.
+  repeated TopicChoice topics = 2;
+}
+
+message TopicChoice {
+  // Match any of these topics.
+  // An empty list matches any topic.
+  repeated H256 choices = 1;
+}

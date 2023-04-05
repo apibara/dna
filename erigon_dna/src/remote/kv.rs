@@ -1,6 +1,6 @@
 use std::{fmt::Display, marker::PhantomData};
 
-use apibara_node::db::{Decodable, Encodable, Table};
+use apibara_node::db::{Decodable, Encodable, Table, TableKey};
 use futures::TryStreamExt;
 use tokio::sync::{mpsc, Mutex};
 use tokio_stream::wrappers::ReceiverStream;
@@ -67,36 +67,56 @@ where
     T::Value: Decodable,
     <T::Key as Encodable>::Encoded: Into<Vec<u8>>,
 {
-    pub async fn first(&self) -> Result<(T::Key, T::Value), tonic::Status> {
+    pub async fn first(&self) -> Result<Option<(T::Key, T::Value)>, tonic::Status> {
         self.send_op(Op::First, None).await
     }
 
-    pub async fn last(&self) -> Result<(T::Key, T::Value), tonic::Status> {
+    pub async fn last(&self) -> Result<Option<(T::Key, T::Value)>, tonic::Status> {
         self.send_op(Op::Last, None).await
     }
 
-    pub async fn next(&self) -> Result<(T::Key, T::Value), tonic::Status> {
+    pub async fn next(&self) -> Result<Option<(T::Key, T::Value)>, tonic::Status> {
         self.send_op(Op::Next, None).await
     }
 
-    pub async fn prev(&self) -> Result<(T::Key, T::Value), tonic::Status> {
+    pub async fn prev(&self) -> Result<Option<(T::Key, T::Value)>, tonic::Status> {
         self.send_op(Op::Prev, None).await
     }
 
-    pub async fn seek_exact(&self, key: &T::Key) -> Result<(T::Key, T::Value), tonic::Status> {
+    pub async fn seek_exact(
+        &self,
+        key: &T::Key,
+    ) -> Result<Option<(T::Key, T::Value)>, tonic::Status> {
         self.send_op(Op::SeekExact, Some(key)).await
     }
 
-    pub async fn seek(&self, key: &T::Key) -> Result<(T::Key, T::Value), tonic::Status> {
+    pub async fn seek(&self, key: &T::Key) -> Result<Option<(T::Key, T::Value)>, tonic::Status> {
         self.send_op(Op::Seek, Some(key)).await
+    }
+
+    pub async fn prefix<P>(&self, key: &P) -> Result<Option<(T::Key, T::Value)>, tonic::Status>
+    where
+        P: TableKey,
+        <P as Encodable>::Encoded: Into<Vec<u8>>,
+    {
+        let key = key.encode().into();
+        self.send_op_with_key(Op::Seek, key).await
     }
 
     async fn send_op(
         &self,
         op: Op,
         key: Option<&T::Key>,
-    ) -> Result<(T::Key, T::Value), tonic::Status> {
+    ) -> Result<Option<(T::Key, T::Value)>, tonic::Status> {
         let key = key.map(|k| k.encode().into()).unwrap_or_default();
+        self.send_op_with_key(op, key).await
+    }
+
+    async fn send_op_with_key(
+        &self,
+        op: Op,
+        key: Vec<u8>,
+    ) -> Result<Option<(T::Key, T::Value)>, tonic::Status> {
         trace!(cid = self.cursor_id, op = ?op, key = ?key, "send_op");
         let pair = self
             .txn
@@ -108,9 +128,12 @@ where
             })
             .await?;
         trace!(cid = self.cursor_id, op = ?op, pair = ?pair, "pair <- send_op");
+        if pair.k.is_empty() {
+            return Ok(None);
+        }
         let key = T::Key::decode(&pair.k).expect("failed to decode key");
         let value = T::Value::decode(&pair.v).expect("failed to decode value");
-        Ok((key, value))
+        Ok(Some((key, value)))
     }
 }
 
