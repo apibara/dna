@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package apibara.ethereum.v1alpha2;
+
+// A sequence of bytes 256 bits long.
+message H256 {
+  fixed64 lo_lo = 1;
+  fixed64 lo_hi = 2;
+  fixed64 hi_lo = 3;
+  fixed64 hi_hi = 4;
+}
+
+// A sequence of bytes 160 bits long.
+//
+// This is typically used to represent Ethereum addresses.
+message H160 {
+  fixed64 lo_lo = 1;
+  fixed64 lo_hi = 2;
+  fixed32 hi = 3;
+}
+

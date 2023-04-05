@@ -1,0 +1,72 @@
+syntax = "proto3";
+
+package apibara.ethereum.v1alpha2;
+
+import "google/protobuf/timestamp.proto";
+import "v1alpha2/types.proto";
+
+// All the data contained in a block.
+message Block {
+  // Status of the block.
+  BlockStatus status = 1;
+  // Block header.
+  BlockHeader header = 2;
+}
+
+// BlockHeader contains the data used to compute the block hash.
+message BlockHeader {
+  // The block hash. Computed as `keccak256(rlp(block_header))`.
+  H256 block_hash = 1;
+  // The hash of the block's parent.
+  H256 parent_block_hash = 2;
+  // The hash of the block's ommers.
+  H256 ommers_hash = 3;
+  // The address of the beneficiary to whom the mining rewards were given.
+  H160 beneficiary = 4;
+  // The hash of the root of the state trie.
+  H256 state_root = 5;
+  // The hash of the root of the transactions trie.
+  H256 transactions_root = 6;
+  // The hash of the root of the receipts trie.
+  H256 receipts_root = 7;
+  // The hash of the root of the receipts trie.
+  H256 withdrawals_root = 8;
+  // The bloom filter for the logs of the block.
+  bytes logs_bloom = 9;
+  // The difficulty for this block.
+  uint64 difficulty = 10;
+  // Block height.
+  uint64 block_number = 11;
+  // The maximum gas allowed in this block.
+  uint64 gas_limit = 12;
+  // The gas used by all transactions in this block.
+  uint64 gas_used = 13;
+  // Timestamp when block  was produced.
+  google.protobuf.Timestamp timestamp = 14;
+  // The hash which combined with the nonce forms a valid proof of work.
+  H256 mix_hash = 15;
+  // The nonce proving the block's proof of work.
+  uint64 nonce = 16;
+  // EIP1559 base fee.
+  uint64 base_fee_per_gas = 17;
+  // Extra data field of this block.
+  bytes extra_data = 18;
+}
+
+// Status of a block.
+enum BlockStatus {
+  // Unknown block status.
+  BLOCK_STATUS_UNSPECIFIED = 0;
+  // Block not accepted yet.
+  BLOCK_STATUS_PENDING = 1;
+  // Block accepted.
+  BLOCK_STATUS_ACCEPTED = 2;
+  // Block is safe.
+  // This means is part of the canonical chain and has been accepted by 2/3 of
+  // the validators. The block can still be reorged, but it's very unlikely.
+  BLOCK_STATUS_SAFE = 3;
+  // Block finalized.
+  BLOCK_STATUS_FINALIZED = 4;
+  // Block was rejected and is not part of the canonical chain anymore.
+  BLOCK_STATUS_REJECTED = 5;
+}

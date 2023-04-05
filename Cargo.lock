@@ -107,6 +107,7 @@ name = "apibara-core"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "ethers-core 2.0.2",
  "hex",
  "pbjson",
  "pbjson-build",
@@ -1352,7 +1353,7 @@ dependencies = [
  "clap 4.2.4",
  "croaring",
  "ctrlc",
- "ethers-core 2.0.1",
+ "ethers-core 2.0.2",
  "futures 0.3.27",
  "hex",
  "memmap",
@@ -1499,9 +1500,9 @@ dependencies = [
 
 [[package]]
 name = "ethers-core"
-version = "2.0.1"
+version = "2.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5a73bf2bbd4e19fd5c5dca74ea68d8799acc87f0e30ccda6609e79d7559f7317"
+checksum = "40bf114f1017ace0f622f1652f59c2c5e1abfe7d88891cca0c43da979b351de0"
 dependencies = [
  "arrayvec",
  "bytes 1.4.0",
