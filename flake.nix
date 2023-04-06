@@ -48,6 +48,19 @@
               ExposedPorts = ports;
             };
           };
+
+        cargoFmt = pkgs.stdenvNoCC.mkDerivation {
+          name = "cargo-fmt";
+          src = ./.;
+          phases = [ "unpackPhase" "buildPhase" ];
+          nativeBuildInputs = [
+            rustPkgs.rustToolchain
+          ];
+          buildPhase = ''
+            cargo fmt --check
+            touch $out
+          '';
+        };
       in
       {
         # format with `nix fmt`
@@ -64,6 +77,10 @@
               protobuf
             ];
           };
+        };
+
+        checks = {
+          inherit cargoFmt;
         };
 
         packages = {

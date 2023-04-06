@@ -18,7 +18,6 @@ let
   overrides = final.rustBuilder.overrides.all ++ [
     mdbx-sys
   ];
-  hellOverrides = { };
 in
 {
   rustVersion = prev.rust-bin.stable.latest.default.override {

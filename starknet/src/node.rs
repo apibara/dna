@@ -73,7 +73,11 @@ where
     }
 
     /// Starts the node.
-    pub async fn start(self, ct: CancellationToken, wait_for_rpc: bool) -> Result<(), StarkNetNodeError> {
+    pub async fn start(
+        self,
+        ct: CancellationToken,
+        wait_for_rpc: bool,
+    ) -> Result<(), StarkNetNodeError> {
         info!("starting starknet node");
         self.ensure_tables()?;
 
@@ -148,7 +152,7 @@ where
         let mut timeout_seconds = 1;
         loop {
             if ct.is_cancelled() {
-                return Ok(())
+                return Ok(());
             }
 
             match self.sequencer_provider.get_head().await {
