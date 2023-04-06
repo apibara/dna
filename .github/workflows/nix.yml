@@ -8,8 +8,27 @@ on:
   pull_request:
 
 jobs:
+  run_checks:
+    name: run checks
+    runs-on: ubuntu-22.04
+    steps:
+    - name: checkout sources
+      uses: actions/checkout@v2
+    - name: install nix
+      uses: cachix/install-nix-action@v19
+    - name: setup cachix
+      uses: cachix/cachix-action@v12
+      with:
+        name: apibara-public
+        authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
+
+    - name: run flake check
+      run: nix flake check
+
   build_binaries:
     name: build ${{ matrix.binary }}, target=${{ matrix.job.target }}, os=${{ matrix.job.os }}
+    needs:
+    - run_checks
     runs-on: ${{ matrix.job.os }}
     strategy:
       matrix:
