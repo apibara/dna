@@ -1,6 +1,7 @@
 use std::fmt::{Debug, Display};
 
-use apibara_core::{node::v1alpha2::Cursor, starknet::v1alpha2};
+use apibara_core::{node::v1alpha2::Cursor as ProtoCursor, starknet::v1alpha2};
+use apibara_node::{core::Cursor, stream::IngestionMessage as GenericIngestionMessage};
 use starknet::core::types::{FieldElement, FromByteArrayError};
 
 #[derive(Default, Debug, Copy, Clone, PartialEq)]
@@ -10,7 +11,7 @@ pub struct BlockHash([u8; 32]);
 #[derive(Copy, Clone, PartialEq)]
 pub struct GlobalBlockId(u64, BlockHash);
 
-pub type IngestionMessage = apibara_node::stream::IngestionMessage<GlobalBlockId>;
+pub type IngestionMessage = GenericIngestionMessage<GlobalBlockId>;
 
 #[derive(Debug, thiserror::Error)]
 #[error("invalid block hash size")]
@@ -64,7 +65,7 @@ impl GlobalBlockId {
         GlobalBlockId(number, hash)
     }
 
-    pub fn from_cursor(cursor: &Cursor) -> Result<Self, InvalidBlockHashSize> {
+    pub fn from_cursor(cursor: &ProtoCursor) -> Result<Self, InvalidBlockHashSize> {
         let hash = if cursor.unique_key.is_empty() {
             BlockHash::zero()
         } else {
@@ -105,8 +106,8 @@ impl GlobalBlockId {
     }
 
     /// Returns a cursor corresponding to the block id.
-    pub fn to_cursor(&self) -> Cursor {
-        Cursor {
+    pub fn to_cursor(&self) -> ProtoCursor {
+        ProtoCursor {
             order_key: self.number(),
             unique_key: self.hash().as_bytes().to_vec(),
         }
@@ -159,11 +160,12 @@ impl Default for GlobalBlockId {
 }
 
 impl apibara_node::core::Cursor for GlobalBlockId {
-    fn from_proto(cursor: &Cursor) -> Option<Self> {
+    fn from_proto(cursor: &ProtoCursor) -> Option<Self> {
         GlobalBlockId::from_cursor(cursor).ok()
     }
 
-    fn to_proto(&self) -> Cursor {
+    fn to_proto(&self) -> ProtoCursor {
         self.to_cursor()
     }
 }
+
