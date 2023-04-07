@@ -43,7 +43,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .compile_well_known_types(true)
         .extern_path(".google.protobuf", "::pbjson_types")
         .compile(
-            &["proto/ethereum/v1alpha2/ethereum.proto"],
+            &[
+                "proto/ethereum/v1alpha2/ethereum.proto",
+                "proto/ethereum/v1alpha2/filter.proto",
+            ],
             &["proto/ethereum"],
         )?;
 

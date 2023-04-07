@@ -77,6 +77,7 @@ async fn main() -> anyhow::Result<()> {
         .into_inner();
     info!(snapshots = ?snapshots, "snapshots");
 
+    /*
     let remote_db = RemoteDB::new(client);
 
     let snapshots_dir = Path::new(&args.datadir).join("snapshots");
@@ -87,6 +88,7 @@ async fn main() -> anyhow::Result<()> {
 
     let start = 8_000_000;
     let mut num = 0;
+    let mut now = Instant::now();
     loop {
         // let block = erigon.header_by_number(num).await?.unwrap();
         // println!("  {} {:?}", num, block);
@@ -95,12 +97,9 @@ async fn main() -> anyhow::Result<()> {
         while let Some((log_id, log)) = logs.next_log().await? {
             count += 1;
         }
-        println!("  {} {}", start + num, count);
-        num += 1;
-        if num >= 10 {
-            break;
-        }
+
     }
+    */
     /*
     let genesis = erigon.header_by_number(0).await?.unwrap();
     println!("genesis = {:?}", genesis);

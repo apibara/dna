@@ -1,3 +1,4 @@
+use apibara_core::node::v1alpha2::Cursor;
 use ethers_core::types::{H160, H256};
 
 pub use reth_primitives::Header;
@@ -50,4 +51,14 @@ impl GlobalBlockId {
     pub fn new(number: u64, hash: H256) -> Self {
         GlobalBlockId(number, hash)
     }
+
+    pub fn from_cursor(cursor: &Cursor) -> Option<Self> {
+        let hash = if cursor.unique_key.is_empty() {
+            H256::zero()
+        } else {
+            H256::from_slice(&cursor.unique_key)
+        };
+        Some(Self::new(cursor.order_key, hash))
+    }
 }
+

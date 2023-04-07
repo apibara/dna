@@ -3,7 +3,7 @@ use std::fmt::{Debug, Display};
 use apibara_core::{node::v1alpha2::Cursor, starknet::v1alpha2};
 use starknet::core::types::{FieldElement, FromByteArrayError};
 
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Default, Debug, Copy, Clone, PartialEq)]
 pub struct BlockHash([u8; 32]);
 
 /// Global identifier for blocks.
