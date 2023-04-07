@@ -6,15 +6,15 @@ edition = "2021"
 [features]
 default = ["ethereum", "starknet"]
 starknet = ["dep:starknet"]
-ethereum = ["dep:ethers-core"]
+ethereum = ["dep:reth-primitives"]
 
 [dependencies]
 anyhow = "1.0.66"
-ethers-core = { version = "2.0.2", optional = true }
 hex = { version = "0.4.3", features = ["serde"] }
 pbjson = "0.5.1"
 pbjson-types = "0.5.1"
 prost = "0.11.0"
+reth-primitives = { git = "https://github.com/paradigmxyz/reth", rev = "139c0c45", optional = true }
 serde = "1.0.155"
 starknet = { git = "https://github.com/xJonathanLEI/starknet-rs", rev = "ca077d3104e11a59d873f79e6090f0ec8cb3fc58", optional = true }
 thiserror = "1.0.32"

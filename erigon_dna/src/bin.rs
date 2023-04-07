@@ -1,10 +1,9 @@
-use std::{io::Cursor, net::SocketAddr, path::Path, time::Instant};
+use std::net::SocketAddr;
 
 use apibara_node::o11y;
 use clap::Parser;
 use erigon_dna::server::Server;
 use tokio_util::sync::CancellationToken;
-use tracing::info;
 
 #[derive(Parser)]
 pub struct Cli {

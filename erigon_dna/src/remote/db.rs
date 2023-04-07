@@ -1,14 +1,15 @@
 //! Erigon remote db.
-use std::sync::Mutex;
 
-use reth_primitives::Header;
+use croaring::Bitmap;
+use reth_primitives::{Header, H160};
+use tokio::sync::Mutex;
 use tonic::transport::Channel;
 use tracing::trace;
 
 use crate::erigon::{
     tables,
     types::{LogId, TransactionLog},
-    BlockHash, GlobalBlockId,
+    BlockHash, Forkchoice, GlobalBlockId, LogAddressIndex,
 };
 
 use super::{
@@ -72,6 +73,66 @@ impl RemoteDB {
         })
     }
 
+    /// Returns the request fork choice.
+    pub async fn forkchoice(
+        &mut self,
+        choice: Forkchoice,
+    ) -> Result<Option<GlobalBlockId>, RemoteDBError> {
+        trace!(forkchoice = ?choice, "forkchoice");
+        let txn = self.client.begin_txn().await?;
+        let curr = txn.open_cursor::<tables::LastForkchoiceTable>().await?;
+        match curr.seek_exact(&choice).await?.map(|(_, hash)| hash) {
+            None => Ok(None),
+            Some(hash) => {
+                if let Some(number) = self.block_number_by_hash_with_txn(&txn, &hash).await? {
+                    let id = GlobalBlockId::new(number, hash.0);
+                    Ok(Some(id))
+                } else {
+                    Ok(None)
+                }
+            }
+        }
+    }
+
+    pub async fn log_bitmap_for_addresses(
+        &mut self,
+        addresses: impl Iterator<Item = H160>,
+        from_block: u64,
+        to_block: u64,
+    ) -> Result<Bitmap, RemoteDBError> {
+        trace!(
+            from_block = from_block,
+            to_block = to_block,
+            "logs bitmap for addresses"
+        );
+        let txn = self.client.begin_txn().await?;
+        let curr = txn.open_cursor::<tables::LogAddressIndexTable>().await?;
+        let mut chunks = Vec::new();
+        for log_address in addresses {
+            let log_addr_index = LogAddressIndex {
+                log_address,
+                block: from_block,
+            };
+
+            let mut value = curr.seek(&log_addr_index).await?;
+
+            while let Some((k, v)) = value {
+                if k.log_address != log_address {
+                    break;
+                }
+                let bm = Bitmap::deserialize(&v);
+                chunks.push(bm);
+                if k.block >= to_block {
+                    break;
+                }
+
+                value = curr.next().await?;
+            }
+        }
+        let chunks: Vec<&Bitmap> = chunks.iter().collect();
+        Ok(Bitmap::fast_or(&chunks))
+    }
+
     /// Returns the block number by the block hash.
     pub async fn block_number_by_hash(
         &mut self,
@@ -117,11 +178,21 @@ impl RemoteDB {
         };
         Ok(Some(global_id))
     }
+
+    async fn block_number_by_hash_with_txn(
+        &mut self,
+        txn: &RemoteTx,
+        hash: &BlockHash,
+    ) -> Result<Option<u64>, RemoteDBError> {
+        let curr = txn.open_cursor::<tables::HeaderNumberTable>().await?;
+        let number = curr.seek_exact(&hash).await?.map(|(_, number)| number);
+        Ok(number)
+    }
 }
 
 impl<'a> LogStream<'a> {
     pub async fn next_log(&'a self) -> Result<Option<(LogId, TransactionLog)>, RemoteDBError> {
-        let mut maybe_cursor = self.cursor.lock().expect("log stream cursor lock");
+        let mut maybe_cursor = self.cursor.lock().await;
         match &mut *maybe_cursor {
             None => {
                 let cursor = self.txn.open_cursor::<tables::LogTable>().await?;

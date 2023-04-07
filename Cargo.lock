@@ -107,7 +107,6 @@ name = "apibara-core"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "ethers-core 2.0.2",
  "hex",
  "pbjson",
  "pbjson-build",
@@ -115,6 +114,7 @@ dependencies = [
  "prost",
  "quickcheck",
  "quickcheck_macros",
+ "reth-primitives",
  "serde",
  "serde_json",
  "starknet",
@@ -1348,6 +1348,7 @@ dependencies = [
  "anyhow",
  "apibara-core",
  "apibara-node",
+ "async-stream",
  "broadword",
  "byteorder",
  "bytesize",

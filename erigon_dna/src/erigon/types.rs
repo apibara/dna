@@ -1,6 +1,6 @@
 use apibara_core::node::v1alpha2;
 use apibara_node::Cursor;
-use ethers_core::types::{H160, H256};
+use reth_primitives::{H160, H256};
 
 pub use reth_primitives::Header;
 
@@ -53,6 +53,14 @@ impl GlobalBlockId {
         GlobalBlockId(number, hash)
     }
 
+    pub fn number(&self) -> u64 {
+        self.0
+    }
+
+    pub fn hash(&self) -> &H256 {
+        &self.1
+    }
+
     pub fn from_proto(cursor: &v1alpha2::Cursor) -> Option<Self> {
         let hash = if cursor.unique_key.is_empty() {
             H256::zero()
@@ -64,8 +72,8 @@ impl GlobalBlockId {
 
     pub fn to_proto(&self) -> v1alpha2::Cursor {
         v1alpha2::Cursor {
-            order_key: self.0,
-            unique_key: self.1.0.to_vec(),
+            order_key: self.number(),
+            unique_key: self.hash().as_bytes().to_vec(),
         }
     }
 }

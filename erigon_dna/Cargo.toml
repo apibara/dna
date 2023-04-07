@@ -15,6 +15,7 @@ path = "src/bin.rs"
 anyhow = "1.0.66"
 apibara-core = { path = "../core", default-features = false, features = ["ethereum"] }
 apibara-node = { path = "../node" }
+async-stream = "0.3.5"
 broadword = "0.2.2"
 byteorder = "1.4.3"
 bytesize = "1.2.0"

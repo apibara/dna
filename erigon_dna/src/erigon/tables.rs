@@ -2,7 +2,7 @@ use std::io::Cursor;
 
 use apibara_node::db::{Decodable, DecodeError, Encodable, Table};
 use byteorder::{BigEndian, ReadBytesExt};
-use ethers_core::types::{H160, H256};
+use reth_primitives::{H160, H256};
 
 use crate::erigon::types::{
     BlockHash, Forkchoice, GlobalBlockId, Header, Log, LogAddressIndex, LogId, TransactionLog,
@@ -140,7 +140,7 @@ impl<T: reth_rlp::Decodable> Decodable for Rlp<T> {
 
 impl Table for LastForkchoiceTable {
     type Key = Forkchoice;
-    type Value = Rlp<H256>;
+    type Value = BlockHash;
 
     fn db_name() -> &'static str {
         "LastForkchoice"
