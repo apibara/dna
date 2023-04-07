@@ -1,3 +1,4 @@
 //! Stream Erigon data.
-mod configuration;
-mod data;
+mod filtered;
+
+pub use self::filtered::FilteredDataStream;

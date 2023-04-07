@@ -1,18 +1,9 @@
-use std::{io::Cursor, path::Path, time::Instant};
+use std::{io::Cursor, net::SocketAddr, path::Path, time::Instant};
 
 use apibara_node::o11y;
 use clap::Parser;
-use croaring::Bitmap;
-use erigon_dna::{
-    access::Erigon,
-    erigon::{
-        tables,
-        types::{Forkchoice, LogAddressIndex},
-    },
-    remote::{kv::RemoteTx, proto::remote::SnapshotsRequest, KvClient, RemoteDB},
-    snapshot::reader::SnapshotReader,
-};
-use ethers_core::types::{H160, H256};
+use erigon_dna::server::Server;
+use tokio_util::sync::CancellationToken;
 use tracing::info;
 
 #[derive(Parser)]
@@ -21,6 +12,7 @@ pub struct Cli {
     pub datadir: String,
 }
 
+/*
 /// Reads the bitmaps for the given addresses.
 async fn get_addresses_bitmap(
     txn: &RemoteTx,
@@ -60,6 +52,7 @@ async fn get_addresses_bitmap(
     let chunks: Vec<&Bitmap> = chunks.iter().collect();
     Bitmap::fast_or(&chunks)
 }
+*/
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -67,6 +60,11 @@ async fn main() -> anyhow::Result<()> {
 
     let args = Cli::parse();
 
+    let server = Server::new("http://localhost:9090".to_string(), args.datadir.into());
+    let addr: SocketAddr = "0.0.0.0:7171".parse().unwrap();
+    let ct = CancellationToken::new();
+    server.start(addr, ct).await?;
+    /*
     let mut client = KvClient::connect("http://localhost:9090").await?;
     let version = client.version(()).await?.into_inner();
     info!(version = ?version, "connected to KV");
@@ -76,6 +74,7 @@ async fn main() -> anyhow::Result<()> {
         .await?
         .into_inner();
     info!(snapshots = ?snapshots, "snapshots");
+    */
 
     /*
     let remote_db = RemoteDB::new(client);

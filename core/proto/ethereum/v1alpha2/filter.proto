@@ -9,7 +9,7 @@ message Filter {
   // Block header information.
   HeaderFilter header = 1;
   // Transaction logs.
-  LogFilter logs = 2;
+  repeated LogFilter logs = 2;
 }
 
 // Filter header.
