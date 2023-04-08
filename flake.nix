@@ -106,6 +106,8 @@
             compileMode = "test";
           };
 
+          erigon-dna = rustPkgs.workspace.erigon-dna { };
+
           # docker images
           apibara-starknet-image = dockerizeCrateBin {
             crate = (rustPkgs.workspace.apibara-starknet { });
