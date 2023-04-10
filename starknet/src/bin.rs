@@ -49,11 +49,12 @@ async fn start(args: StartCommand) -> Result<()> {
         StarkNetNode::<HttpProvider, SimpleRequestObserver, NoWriteMap>::builder(&args.rpc)?
             .with_request_observer(MetadataKeyRequestObserver::new("x-api-key".to_string()));
     
-    let tempdir;
+    let tempdir = TempDir::new("apibara").unwrap();
     // give precedence to --devnet
     if args.devnet {
-        tempdir = TempDir::new("apibara");
-        node.with_datadir(tempdir.expect("no tempdir").into_path());
+        // tempdir = TempDir::new("apibara").unwrap();
+        node.with_datadir(tempdir.path().to_path_buf());
+ 
     } 
     if let Some(datadir) = args.data {
         node.with_datadir(datadir);
@@ -75,8 +76,7 @@ async fn start(args: StartCommand) -> Result<()> {
 
     node.build()?.start(cts.clone(), args.wait_for_rpc).await?;
 
-    tempdir?.close()?; 
-
+    tempdir.close()?;
     Ok(())
 }
 
