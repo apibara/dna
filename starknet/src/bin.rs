@@ -49,34 +49,48 @@ async fn start(args: StartCommand) -> Result<()> {
         StarkNetNode::<HttpProvider, SimpleRequestObserver, NoWriteMap>::builder(&args.rpc)?
             .with_request_observer(MetadataKeyRequestObserver::new("x-api-key".to_string()));
     
-    let tempdir = TempDir::new("apibara").unwrap();
-    // give precedence to --devnet
-    if args.devnet {
-        // tempdir = TempDir::new("apibara").unwrap();
-        node.with_datadir(tempdir.path().to_path_buf());
- 
-    } 
-    if let Some(datadir) = args.data {
-        node.with_datadir(datadir);
-    } else if let Some(name) = args.name {
-        let datadir = default_data_dir()
-            .map(|p| p.join(name))
-            .expect("no datadir");
-        node.with_datadir(datadir);
-    }
+    match args.devnet {
+        true => {
+            let tempdir: TempDir;
+            tempdir = TempDir::new("apibara").unwrap();
+            node.with_datadir(tempdir.path().to_path_buf());
 
-    // Setup cancellation for graceful shutdown
-    let cts = CancellationToken::new();
-    ctrlc::set_handler({
-        let cts = cts.clone();
-        move || {
-            cts.cancel();
+            // Setup cancellation for graceful shutdown
+            let cts = CancellationToken::new();
+            ctrlc::set_handler({
+                let cts = cts.clone();
+                move || {
+                    cts.cancel();
+                }
+            })?;
+
+            node.build()?.start(cts.clone(), args.wait_for_rpc).await?;
+            
+            tempdir.close()?;
+        },
+        false => {
+            if let Some(datadir) = args.data {
+                node.with_datadir(datadir);
+            } else if let Some(name) = args.name {
+                let datadir = default_data_dir()
+                    .map(|p| p.join(name))
+                    .expect("no datadir");
+                node.with_datadir(datadir);
+            }
+        
+            // Setup cancellation for graceful shutdown
+            let cts = CancellationToken::new();
+            ctrlc::set_handler({
+                let cts = cts.clone();
+                move || {
+                    cts.cancel();
+                }
+            })?;
+        
+            node.build()?.start(cts.clone(), args.wait_for_rpc).await?;
         }
-    })?;
-
-    node.build()?.start(cts.clone(), args.wait_for_rpc).await?;
-
-    tempdir.close()?;
+    }
+    
     Ok(())
 }
 
