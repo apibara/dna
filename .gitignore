@@ -2,3 +2,4 @@
 /_docker
 /result
 /result-bin
+*.code-workspace
