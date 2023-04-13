@@ -14,19 +14,19 @@ impl HeaderFilter {
 
 impl Filter {
     /// Configure filter header.
-    pub fn with_header(mut self, header: HeaderFilter) -> Self {
+    pub fn with_header(&mut self, header: HeaderFilter) -> &mut Self {
         self.header = Some(header);
         self
     }
 
     /// With specific state update.
-    pub fn with_state_update(mut self, state_udpate: StateUpdateFilter) -> Self {
+    pub fn with_state_update(&mut self, state_udpate: StateUpdateFilter) -> &mut Self {
         self.state_update = Some(state_udpate);
         self
     }
 
     /// Add event to subscribe to.
-    pub fn add_event<F>(mut self, closure: F) -> Self
+    pub fn add_event<F>(&mut self, closure: F) -> &mut Self
     where
         F: Fn(EventFilter) -> EventFilter,
     {
@@ -35,7 +35,7 @@ impl Filter {
     }
 
     /// Add transaction to filter.
-    pub fn add_transaction<F>(mut self, closure: F) -> Self
+    pub fn add_transaction<F>(&mut self, closure: F) -> &mut Self
     where
         F: Fn(TransactionFilter) -> TransactionFilter,
     {
@@ -45,12 +45,96 @@ impl Filter {
     }
 
     /// Add message to filter.
-    pub fn add_message<F>(mut self, closure: F) -> Self
+    pub fn add_message<F>(&mut self, closure: F) -> &mut Self
     where
         F: Fn(L2ToL1MessageFilter) -> L2ToL1MessageFilter,
     {
         self.messages.push(closure(L2ToL1MessageFilter::default()));
         self
+    }
+
+    /// Build final version of Filter
+    pub fn build(&mut self) -> Self {
+        // As the ::prost::Message already impl Default trait and doesn't seems to be overridable
+        // this a workaround to set the default value.
+        // HeaderFilter needs to be set to a value in order to correctly stream data
+        if self.header.is_none() {
+            self.header = Some(HeaderFilter::weak());
+        }
+        self.clone()
+    }
+}
+
+impl TransactionFilter {
+    /// Create `InvokeTransactionV0Filter` from `TransactionFilter`
+    pub fn invoke_transaction_v0<F>(&mut self, closure: F) -> &mut Self
+    where
+        F: Fn(InvokeTransactionV0Filter) -> InvokeTransactionV0Filter,
+    {
+        self.filter = Some(transaction_filter::Filter::InvokeV0(closure(
+            InvokeTransactionV0Filter::default(),
+        )));
+        self
+    }
+
+    /// Create `InvokeTransactionV1Filter` from `TransactionFilter`
+    pub fn invoke_transaction_v1<F>(&mut self, closure: F) -> &mut Self
+    where
+        F: Fn(InvokeTransactionV1Filter) -> InvokeTransactionV1Filter,
+    {
+        self.filter = Some(transaction_filter::Filter::InvokeV1(closure(
+            InvokeTransactionV1Filter::default(),
+        )));
+        self
+    }
+
+    /// Create `DeployTransactionFilter` from `TransactionFilter`
+    pub fn deploy_transaction<F>(&mut self, closure: F) -> &mut Self
+    where
+        F: Fn(DeployTransactionFilter) -> DeployTransactionFilter,
+    {
+        self.filter = Some(transaction_filter::Filter::Deploy(closure(
+            DeployTransactionFilter::default(),
+        )));
+        self
+    }
+
+    /// Create `DeclareTransactionFilter` from `TransactionFilter`
+    pub fn declare_transaction<F>(&mut self, closure: F) -> &mut Self
+    where
+        F: Fn(DeclareTransactionFilter) -> DeclareTransactionFilter,
+    {
+        self.filter = Some(transaction_filter::Filter::Declare(closure(
+            DeclareTransactionFilter::default(),
+        )));
+        self
+    }
+
+    /// Create `L1HandlerTransactionFilter` from `TransactionFilter`
+    pub fn l1_handler_transaction<F>(&mut self, closure: F) -> &mut Self
+    where
+        F: Fn(L1HandlerTransactionFilter) -> L1HandlerTransactionFilter,
+    {
+        self.filter = Some(transaction_filter::Filter::L1Handler(closure(
+            L1HandlerTransactionFilter::default(),
+        )));
+        self
+    }
+
+    /// Create `DeployAccountTransactionFilter` from `TransactionFilter`
+    pub fn deploy_account_transaction<F>(&mut self, closure: F) -> &mut Self
+    where
+        F: Fn(DeployAccountTransactionFilter) -> DeployAccountTransactionFilter,
+    {
+        self.filter = Some(transaction_filter::Filter::DeployAccount(closure(
+            DeployAccountTransactionFilter::default(),
+        )));
+        self
+    }
+
+    /// Builds final `TransactionFilter`
+    pub fn build(&mut self) -> Self {
+        self.clone()
     }
 }
 

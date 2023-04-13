@@ -7,7 +7,7 @@ use apibara_sdk::{ClientBuilder, Configuration, DataMessage};
 use chrono::{DateTime, Utc};
 use tokio_stream::StreamExt;
 
-fn build_filter(f: Filter) -> Filter {
+fn build_filter(mut f: Filter) -> Filter {
     // eth contract address
     let eth_address = FieldElement::from_hex(
         "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
@@ -19,10 +19,25 @@ fn build_filter(f: Filter) -> Filter {
             .unwrap();
 
     // filter all transfers from the eth address, include the block header
-    f.with_header(HeaderFilter::weak()).add_event(|ev| {
-        ev.with_from_address(eth_address.clone())
-            .with_keys(vec![transfer_key.clone()])
-    })
+    f.with_header(HeaderFilter::weak())
+        .add_event(|ev| {
+            ev.with_from_address(eth_address.clone())
+                .with_keys(vec![transfer_key.clone()])
+        })
+        // filter on transaction types : one method for each transaction type available
+        .add_transaction(|mut transaction| {
+            transaction
+                .deploy_transaction(|t| {
+                    t.with_class_hash(
+                        FieldElement::from_hex(
+                            "0x00fd1e443bbda2bc626249797725afaebe2d4dacaff13314b4036ed40115e8d6",
+                        )
+                        .unwrap(),
+                    )
+                })
+                .build()
+        })
+        .build()
 }
 
 #[tokio::main]

@@ -86,6 +86,8 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use apibara_core::{
         node::v1alpha2::DataFinality,
         starknet::v1alpha2::{FieldElement, Filter, HeaderFilter},
@@ -112,7 +114,7 @@ mod tests {
             .with_batch_size(10)
             .with_starting_block(111)
             .with_finality(DataFinality::DataStatusAccepted)
-            .with_filter(|filter| {
+            .with_filter(|mut filter| {
                 filter
                     .with_header(HeaderFilter { weak: true })
                     .add_event(|event| {
@@ -121,11 +123,55 @@ mod tests {
                             20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
                         ]))
                     })
+                    .build()
             });
 
         assert_eq!(10, config.batch_size);
         assert_eq!(111, config.starting_cursor.unwrap().order_key);
         assert_eq!(DataFinality::DataStatusAccepted, config.finality.unwrap());
         assert_eq!(true, config.filter.header.unwrap().weak);
+    }
+
+    #[test]
+    fn test_method_can_be_chained() {
+        let mut first: HashMap<String, String> = HashMap::new();
+        first.insert(
+            "addr1".into(),
+            "0x030f5a9fbcf76e2171e49435f4d6524411231f257a1b28f517cf52f82279c06b".into(),
+        );
+        first.insert(
+            "addr2".into(),
+            "0x068337d9e937a5a5a440b8d520cc43d80913c6d7769f90c3afdfaa1b7e929025".into(),
+        );
+        let mut second: HashMap<String, String> = HashMap::new();
+        second.insert(
+            "addr1".into(),
+            "0x05a85cf2c715955a5d8971e01d1d98e04c31d919b6d59824efb32cc72ae90e63".into(),
+        );
+        second.insert(
+            "addr2".into(),
+            "0x05b5a2148dc173e8c09bab0ab3e8e8d57ad0060621d01a912a8e33f123655a4b".into(),
+        );
+
+        let data = vec![first, second];
+        let config = Configuration::<Filter>::default().with_filter(|mut filter| {
+            data.iter().flatten().for_each(|(_, value)| {
+                filter
+                    .with_header(HeaderFilter::weak())
+                    .add_event(|event| {
+                        event
+                            .with_keys(vec![FieldElement::from_hex("0x05b5a2148dc173e8c09bab0ab3e8e8d57ad0060621d01a912a8e33f123655a4b").unwrap()])
+                            .with_from_address(FieldElement::from_hex(value).unwrap())
+                    })
+                    .add_transaction(|mut transaction| {
+                        transaction.invoke_transaction_v0(|t| t.with_contract_address(FieldElement::from_hex("0x05b5a2148dc173e8c09bab0ab3e8e8d57ad0060621d01a912a8e33f123655a4b").unwrap())).build()
+                    })
+                    ;
+            });
+            filter.build()
+        });
+
+        assert_eq!(4, config.filter.transactions.len());
+        assert_eq!(4, config.filter.events.len());
     }
 }
