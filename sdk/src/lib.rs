@@ -249,7 +249,9 @@ mod tests {
             .send(
                 Configuration::<Filter>::default()
                     .with_starting_block(21600)
-                    .with_filter(|filter| filter.with_header(HeaderFilter { weak: false })),
+                    .with_filter(|mut filter| {
+                        filter.with_header(HeaderFilter { weak: false }).build()
+                    }),
             )
             .await?;
 
