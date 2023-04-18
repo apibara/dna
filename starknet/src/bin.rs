@@ -1,4 +1,4 @@
-use std::{path::PathBuf};
+use std::path::PathBuf;
 
 use anyhow::Result;
 use apibara_node::{db::default_data_dir, o11y::init_opentelemetry};
@@ -48,11 +48,10 @@ async fn start(args: StartCommand) -> Result<()> {
     let mut node =
         StarkNetNode::<HttpProvider, SimpleRequestObserver, NoWriteMap>::builder(&args.rpc)?
             .with_request_observer(MetadataKeyRequestObserver::new("x-api-key".to_string()));
-    
+
     match args.devnet {
         true => {
-            let tempdir: TempDir;
-            tempdir = TempDir::new("apibara").unwrap();
+            let tempdir = TempDir::new("apibara").unwrap();
             node.with_datadir(tempdir.path().to_path_buf());
 
             // Setup cancellation for graceful shutdown
@@ -65,9 +64,9 @@ async fn start(args: StartCommand) -> Result<()> {
             })?;
 
             node.build()?.start(cts.clone(), args.wait_for_rpc).await?;
-            
+
             tempdir.close()?;
-        },
+        }
         false => {
             if let Some(datadir) = args.data {
                 node.with_datadir(datadir);
@@ -77,7 +76,7 @@ async fn start(args: StartCommand) -> Result<()> {
                     .expect("no datadir");
                 node.with_datadir(datadir);
             }
-        
+
             // Setup cancellation for graceful shutdown
             let cts = CancellationToken::new();
             ctrlc::set_handler({
@@ -86,11 +85,11 @@ async fn start(args: StartCommand) -> Result<()> {
                     cts.cancel();
                 }
             })?;
-        
+
             node.build()?.start(cts.clone(), args.wait_for_rpc).await?;
         }
     }
-    
+
     Ok(())
 }
 
