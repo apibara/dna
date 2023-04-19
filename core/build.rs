@@ -9,12 +9,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     tonic_build::configure()
         .build_client(true)
         .build_server(true)
+        .protoc_arg("--experimental_allow_proto3_optional")
         .file_descriptor_set_path(out_dir.join(NODE_DESCRIPTOR_FILE))
         .compile(&["proto/node/v1alpha2/stream.proto"], &["proto/node"])?;
 
     tonic_build::configure()
         .build_client(true)
         .build_server(true)
+        .protoc_arg("--experimental_allow_proto3_optional")
         .file_descriptor_set_path(out_dir.join(STARKNET_DESCRIPTOR_FILE))
         .compile_well_known_types(true)
         .extern_path(".google.protobuf", "::pbjson_types")
