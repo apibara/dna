@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use anyhow::Result;
 use apibara_node::{db::default_data_dir, o11y::init_opentelemetry};
 use apibara_starknet::{
@@ -7,6 +5,8 @@ use apibara_starknet::{
     HttpProvider, NoWriteMap, StarkNetNode,
 };
 use clap::{Args, Parser, Subcommand};
+use std::path::PathBuf;
+use tempdir::TempDir;
 use tokio_util::sync::CancellationToken;
 
 #[derive(Parser)]
@@ -36,6 +36,9 @@ struct StartCommand {
     /// Wait for RPC to be available before starting.
     #[arg(long, env)]
     wait_for_rpc: bool,
+    // Create a temporary directory for data, deleted when devnet is closed.
+    #[arg(long, env)]
+    devnet: bool,
 }
 
 async fn start(args: StartCommand) -> Result<()> {
@@ -44,16 +47,6 @@ async fn start(args: StartCommand) -> Result<()> {
     let mut node =
         StarkNetNode::<HttpProvider, SimpleRequestObserver, NoWriteMap>::builder(&args.rpc)?
             .with_request_observer(MetadataKeyRequestObserver::new("x-api-key".to_string()));
-
-    // give precedence to --data
-    if let Some(datadir) = args.data {
-        node.with_datadir(datadir);
-    } else if let Some(name) = args.name {
-        let datadir = default_data_dir()
-            .map(|p| p.join(name))
-            .expect("no datadir");
-        node.with_datadir(datadir);
-    }
 
     // Setup cancellation for graceful shutdown
     let cts = CancellationToken::new();
@@ -64,7 +57,22 @@ async fn start(args: StartCommand) -> Result<()> {
         }
     })?;
 
-    node.build()?.start(cts.clone(), args.wait_for_rpc).await?;
+    if args.devnet {
+        let tempdir = TempDir::new("apibara").unwrap();
+        println!("tempdir: {:?}", args.devnet);
+        node.with_datadir(tempdir.path().to_path_buf());
+        node.build()?.start(cts.clone(), args.wait_for_rpc).await?;
+    } else if let Some(datadir) = args.data {
+        println!("tempdir: true");
+        node.with_datadir(datadir);
+        node.build()?.start(cts.clone(), args.wait_for_rpc).await?;
+    } else if let Some(name) = args.name {
+        let datadir = default_data_dir()
+            .map(|p| p.join(name))
+            .expect("no datadir");
+        node.with_datadir(datadir);
+        node.build()?.start(cts.clone(), args.wait_for_rpc).await?;
+    }
 
     Ok(())
 }
