@@ -15,7 +15,7 @@ jobs:
     - name: checkout sources
       uses: actions/checkout@v2
     - name: install nix
-      uses: cachix/install-nix-action@v19
+      uses: cachix/install-nix-action@v20
     - name: setup cachix
       uses: cachix/cachix-action@v12
       with:
@@ -43,7 +43,7 @@ jobs:
     - name: checkout sources
       uses: actions/checkout@v2
     - name: install nix
-      uses: cachix/install-nix-action@v19
+      uses: cachix/install-nix-action@v20
     - name: setup cachix
       uses: cachix/cachix-action@v12
       with:
@@ -78,7 +78,7 @@ jobs:
     - name: checkout sources
       uses: actions/checkout@v2
     - name: install nix
-      uses: cachix/install-nix-action@v19
+      uses: cachix/install-nix-action@v20
     - name: setup cachix
       uses: cachix/cachix-action@v12
       with:
