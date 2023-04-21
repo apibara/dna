@@ -6,7 +6,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         PathBuf::from(env::var("OUT_DIR").unwrap()).join("reflection_v1alpha1.bin");
 
     tonic_build::configure()
-        .file_descriptor_set_path(&reflection_descriptor)
+        .file_descriptor_set_path(reflection_descriptor)
         .type_attribute(
             "ServerReflectionResponse.message_response",
             "#[allow(clippy::enum_variant_names)]",
