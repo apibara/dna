@@ -49,8 +49,8 @@ async fn start(args: StartCommand) -> Result<()> {
         StarkNetNode::<HttpProvider, SimpleRequestObserver, NoWriteMap>::builder(&args.rpc)?
             .with_request_observer(MetadataKeyRequestObserver::new("x-api-key".to_string()));
 
-    match args.devnet {
-        true => {
+    if   args.devnet {
+
             let tempdir = TempDir::new("apibara").unwrap();
             node.with_datadir(tempdir.path().to_path_buf());
 
@@ -66,8 +66,7 @@ async fn start(args: StartCommand) -> Result<()> {
             node.build()?.start(cts.clone(), args.wait_for_rpc).await?;
 
             tempdir.close()?;
-        }
-        false => {
+        } else {
             if let Some(datadir) = args.data {
                 node.with_datadir(datadir);
             } else if let Some(name) = args.name {
@@ -88,7 +87,6 @@ async fn start(args: StartCommand) -> Result<()> {
 
             node.build()?.start(cts.clone(), args.wait_for_rpc).await?;
         }
-    }
 
     Ok(())
 }
