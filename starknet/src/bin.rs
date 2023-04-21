@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use anyhow::Result;
 use apibara_node::{db::default_data_dir, o11y::init_opentelemetry};
 use apibara_starknet::{
@@ -7,6 +5,7 @@ use apibara_starknet::{
     HttpProvider, NoWriteMap, StarkNetNode,
 };
 use clap::{Args, Parser, Subcommand};
+use std::path::PathBuf;
 use tempdir::TempDir;
 use tokio_util::sync::CancellationToken;
 
@@ -49,44 +48,29 @@ async fn start(args: StartCommand) -> Result<()> {
         StarkNetNode::<HttpProvider, SimpleRequestObserver, NoWriteMap>::builder(&args.rpc)?
             .with_request_observer(MetadataKeyRequestObserver::new("x-api-key".to_string()));
 
-    if   args.devnet {
-
-            let tempdir = TempDir::new("apibara").unwrap();
-            node.with_datadir(tempdir.path().to_path_buf());
-
-            // Setup cancellation for graceful shutdown
-            let cts = CancellationToken::new();
-            ctrlc::set_handler({
-                let cts = cts.clone();
-                move || {
-                    cts.cancel();
-                }
-            })?;
-
-            node.build()?.start(cts.clone(), args.wait_for_rpc).await?;
-
-            tempdir.close()?;
-        } else {
-            if let Some(datadir) = args.data {
-                node.with_datadir(datadir);
-            } else if let Some(name) = args.name {
-                let datadir = default_data_dir()
-                    .map(|p| p.join(name))
-                    .expect("no datadir");
-                node.with_datadir(datadir);
-            }
-
-            // Setup cancellation for graceful shutdown
-            let cts = CancellationToken::new();
-            ctrlc::set_handler({
-                let cts = cts.clone();
-                move || {
-                    cts.cancel();
-                }
-            })?;
-
-            node.build()?.start(cts.clone(), args.wait_for_rpc).await?;
+    if args.devnet {
+        let tempdir = TempDir::new("apibara").unwrap();
+        node.with_datadir(tempdir.path().to_path_buf());
+        tempdir.close()?;
+    }
+    if let Some(datadir) = args.data {
+        node.with_datadir(datadir);
+    } else if let Some(name) = args.name {
+        let datadir = default_data_dir()
+            .map(|p| p.join(name))
+            .expect("no datadir");
+        node.with_datadir(datadir);
+    }
+    // Setup cancellation for graceful shutdown
+    let cts = CancellationToken::new();
+    ctrlc::set_handler({
+        let cts = cts.clone();
+        move || {
+            cts.cancel();
         }
+    })?;
+
+    node.build()?.start(cts.clone(), args.wait_for_rpc).await?;
 
     Ok(())
 }
