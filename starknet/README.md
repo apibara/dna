@@ -20,6 +20,13 @@ RUST_LOG=info apibara-starknet start --rpc https://path.to/rpc
 
 You can view a list of all options by running `apibara-starknet --help`.
 
+
+### Usage with devnet
+
+Run `apibara-starknet` with the `--devnet` flag to store data in a temporary
+directory that is automatically deleted when the Starknet DNA node stops.
+When you restart the devnet, simply restart Starknet DNA as well.
+
 ### Metrics
 
 The node can export data to any service that can ingest OpenTelemetry data.
