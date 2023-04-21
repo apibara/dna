@@ -62,7 +62,6 @@ async fn start(args: StartCommand) -> Result<()> {
         println!("tempdir: {:?}", args.devnet);
         node.with_datadir(tempdir.path().to_path_buf());
         node.build()?.start(cts.clone(), args.wait_for_rpc).await?;
-        tempdir.close()?;
     } else if let Some(datadir) = args.data {
         println!("tempdir: true");
         node.with_datadir(datadir);
