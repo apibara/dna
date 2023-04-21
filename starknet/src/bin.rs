@@ -48,19 +48,6 @@ async fn start(args: StartCommand) -> Result<()> {
         StarkNetNode::<HttpProvider, SimpleRequestObserver, NoWriteMap>::builder(&args.rpc)?
             .with_request_observer(MetadataKeyRequestObserver::new("x-api-key".to_string()));
 
-    if args.devnet {
-        let tempdir = TempDir::new("apibara").unwrap();
-        node.with_datadir(tempdir.path().to_path_buf());
-        tempdir.close()?;
-    }
-    if let Some(datadir) = args.data {
-        node.with_datadir(datadir);
-    } else if let Some(name) = args.name {
-        let datadir = default_data_dir()
-            .map(|p| p.join(name))
-            .expect("no datadir");
-        node.with_datadir(datadir);
-    }
     // Setup cancellation for graceful shutdown
     let cts = CancellationToken::new();
     ctrlc::set_handler({
@@ -70,7 +57,23 @@ async fn start(args: StartCommand) -> Result<()> {
         }
     })?;
 
-    node.build()?.start(cts.clone(), args.wait_for_rpc).await?;
+    if args.devnet {
+        let tempdir = TempDir::new("apibara").unwrap();
+        println!("tempdir: {:?}", args.devnet);
+        node.with_datadir(tempdir.path().to_path_buf());
+        node.build()?.start(cts.clone(), args.wait_for_rpc).await?;
+        tempdir.close()?;
+    } else if let Some(datadir) = args.data {
+        println!("tempdir: true");
+        node.with_datadir(datadir);
+        node.build()?.start(cts.clone(), args.wait_for_rpc).await?;
+    } else if let Some(name) = args.name {
+        let datadir = default_data_dir()
+            .map(|p| p.join(name))
+            .expect("no datadir");
+        node.with_datadir(datadir);
+        node.build()?.start(cts.clone(), args.wait_for_rpc).await?;
+    }
 
     Ok(())
 }
