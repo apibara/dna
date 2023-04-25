@@ -11,6 +11,8 @@ use apibara_core::node::v1alpha2::{stream_server, StreamDataRequest, StreamDataR
 use apibara_node::heartbeat::Heartbeat;
 use futures::Stream;
 use pin_project::pin_project;
+use tokio::sync::mpsc;
+use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Streaming};
 use tracing::warn;
 use tracing_futures::Instrument;
@@ -67,6 +69,9 @@ where
     type StreamDataStream =
         Pin<Box<dyn Stream<Item = Result<StreamDataResponse, tonic::Status>> + Send + 'static>>;
 
+    type StreamDataImmutableStream =
+        Pin<Box<dyn Stream<Item = Result<StreamDataResponse, tonic::Status>> + Send + 'static>>;
+
     async fn stream_data(
         &self,
         request: Request<Streaming<StreamDataRequest>>,
@@ -78,6 +83,33 @@ where
 
         let ingestion_stream = self.ingestion.subscribe().await;
         let ingestion_stream = IngestionStream::new(ingestion_stream);
+        
+        let data_stream = DataStream::new(
+            configuration_stream,
+            ingestion_stream,
+            self.storage.clone(),
+            self.healer.clone(),
+            Arc::new(stream_meter),
+        );
+
+        let response = ResponseStream::new(data_stream).instrument(stream_span);
+        Ok(Response::new(Box::pin(response)))
+    }
+    
+    async fn stream_data_immutable(
+        &self,
+        request: Request<StreamDataRequest>,
+    ) -> Result<Response<Self::StreamDataImmutableStream>, tonic::Status> {
+        let stream_span = self.request_observer.stream_data_span(request.metadata());
+        let stream_meter = self.request_observer.stream_data_meter(request.metadata());        
+        
+        let stream_data_request = request.into_inner();
+        let (inner_tx, inner_rx) = mpsc::channel::<Result<StreamDataRequest, tonic::Status>>(128);
+        let configuration_stream = ReceiverStream::new(inner_rx);
+        let configuration_stream = StreamConfigurationStream::new(configuration_stream);
+
+        let ingestion_stream = self.ingestion.subscribe().await;
+        let ingestion_stream = IngestionStream::new(ingestion_stream);
 
         let data_stream = DataStream::new(
             configuration_stream,
@@ -86,6 +118,8 @@ where
             self.healer.clone(),
             Arc::new(stream_meter),
         );
+        // inject configuration to stream
+        inner_tx.send(Ok(stream_data_request)).await;
 
         let response = ResponseStream::new(data_stream).instrument(stream_span);
         Ok(Response::new(Box::pin(response)))
