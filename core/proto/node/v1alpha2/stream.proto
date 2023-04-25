@@ -4,8 +4,10 @@ syntax = "proto3";
 package apibara.node.v1alpha2;
 
 service Stream {
-  // Stream data from the node.
+  // Stream data from the node (bi-directional).
   rpc StreamData(stream StreamDataRequest) returns (stream StreamDataResponse);
+  // Stream data from the node.
+  rpc StreamDataImmutable(StreamDataRequest) returns (stream StreamDataResponse);
 }
 
 // Request data to be streamed.
