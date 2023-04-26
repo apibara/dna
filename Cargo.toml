@@ -4,5 +4,7 @@ members = [
     "node",
     "sdk",
     "starknet",
+    "sink-common",
+    "sink-webhook",
     "examples/starknet-simple",
 ]
