@@ -23,6 +23,7 @@ use tonic::{
 use tracing::debug;
 
 // Re-export tonic Uri
+pub use http::uri::InvalidUri;
 pub use tonic::transport::Uri;
 
 pub use crate::config::Configuration;

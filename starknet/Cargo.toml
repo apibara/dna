@@ -51,6 +51,5 @@ quickcheck = "1.0.3"
 quickcheck_macros = "1.0.0"
 tempfile = "3.3.0"
 
-
 [build-dependencies]
 tonic-build = "0.8.0"
