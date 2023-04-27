@@ -106,11 +106,16 @@ where
                 // try fetch by block number and compare hashes
                 // this is needed because sometimes nodes prune reorged nodes
                 let block_id = BlockId::Number(global_id.number());
-                let (status, header, _body) = self
-                    .provider
-                    .get_block(&block_id)
-                    .await
-                    .map_err(BlockIngestionError::provider)?;
+                let (status, header, _body) = match self.provider.get_block(&block_id).await {
+                    Ok(block) => block,
+                    Err(err) if err.is_block_not_found() => {
+                        // block doesn't exist because chain shrank. This is a reorg.
+                        return Ok(BlockStatus::Rejected);
+                    }
+                    Err(err) => {
+                        return Err(BlockIngestionError::provider(err));
+                    }
+                };
 
                 let block_hash: BlockHash = header.block_hash.unwrap_or_default().into();
                 info!(
