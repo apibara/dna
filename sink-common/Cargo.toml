@@ -9,6 +9,7 @@ edition = "2021"
 apibara-core = { path = "../core" }
 apibara-sdk = { path = "../sdk" }
 async-trait = "0.1.68"
+exponential-backoff = "1.2.0"
 clap = { version = "4.2.4", features = ["derive", "env"] }
 prost = "0.11.9"
 serde = "1.0.160"
