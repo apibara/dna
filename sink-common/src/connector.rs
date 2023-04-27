@@ -1,8 +1,9 @@
-use std::marker::PhantomData;
+use std::{marker::PhantomData, time::Duration};
 
 use apibara_core::node::v1alpha2::{Cursor, DataFinality};
 use apibara_sdk::{ClientBuilder, Configuration, DataMessage, Uri};
 use async_trait::async_trait;
+use exponential_backoff::Backoff;
 use prost::Message;
 use tokio_stream::StreamExt;
 use tokio_util::sync::CancellationToken;
@@ -17,12 +18,13 @@ where
 
     async fn handle_data(
         &mut self,
-        cursor: Option<Cursor>,
-        end_cursor: Cursor,
-        finality: DataFinality,
-        batch: Vec<B>,
+        cursor: &Option<Cursor>,
+        end_cursor: &Cursor,
+        finality: &DataFinality,
+        batch: &[B],
     ) -> Result<(), Self::Error>;
-    async fn handle_invalidate(&mut self, cursor: Option<Cursor>) -> Result<(), Self::Error>;
+
+    async fn handle_invalidate(&mut self, cursor: &Option<Cursor>) -> Result<(), Self::Error>;
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -33,6 +35,10 @@ pub enum SinkConnectorError {
     SendConfiguration,
     #[error("Stream error: {0}")]
     Stream(#[from] Box<dyn std::error::Error>),
+    #[error("Sink error: {0}")]
+    Sink(Box<dyn std::error::Error>),
+    #[error("Maximum number of retries exceeded")]
+    MaximumRetriesExceeded,
 }
 
 pub struct SinkConnector<F, B>
@@ -42,6 +48,7 @@ where
 {
     configuration: Configuration<F>,
     stream_url: Uri,
+    backoff: Backoff,
     _phantom: PhantomData<B>,
 }
 
@@ -52,9 +59,15 @@ where
 {
     /// Creates a new connector with the given stream URL.
     pub fn new(stream_url: Uri, configuration: Configuration<F>) -> Self {
+        let retries = 10;
+        let min_delay = Duration::from_secs(1);
+        let max_delay = Duration::from_secs(60);
+        let backoff = Backoff::new(retries, min_delay, Some(max_delay));
+
         Self {
             stream_url,
             configuration,
+            backoff,
             _phantom: PhantomData::default(),
         }
     }
@@ -103,7 +116,7 @@ where
         &self,
         message: DataMessage<B>,
         sink: &mut S,
-        _ct: CancellationToken,
+        ct: CancellationToken,
     ) -> Result<(), SinkConnectorError>
     where
         S: Sink<B>,
@@ -116,17 +129,38 @@ where
                 batch,
             } => {
                 debug!(cursor = ?cursor, end_cursor = ?end_cursor, "received data");
-                // TODO: handle backoff
-                sink.handle_data(cursor, end_cursor, finality, batch)
-                    .await
-                    .unwrap();
-                Ok(())
+                for duration in &self.backoff {
+                    match sink
+                        .handle_data(&cursor, &end_cursor, &finality, &batch)
+                        .await
+                    {
+                        Ok(_) => return Ok(()),
+                        Err(err) => {
+                            warn!(err = ?err, "handle_data error");
+                            if ct.is_cancelled() {
+                                return Err(SinkConnectorError::Sink(err.into()));
+                            }
+                            tokio::time::sleep(duration).await;
+                        }
+                    }
+                }
+                Err(SinkConnectorError::MaximumRetriesExceeded)
             }
             DataMessage::Invalidate { cursor } => {
                 debug!(cursor = ?cursor, "received invalidate");
-                // TODO: handle backoff
-                sink.handle_invalidate(cursor).await.unwrap();
-                Ok(())
+                for duration in &self.backoff {
+                    match sink.handle_invalidate(&cursor).await {
+                        Ok(_) => return Ok(()),
+                        Err(err) => {
+                            warn!(err = ?err, "handle_invalidate error");
+                            if ct.is_cancelled() {
+                                return Err(SinkConnectorError::Sink(err.into()));
+                            }
+                            tokio::time::sleep(duration).await;
+                        }
+                    }
+                }
+                Err(SinkConnectorError::MaximumRetriesExceeded)
             }
         }
     }
