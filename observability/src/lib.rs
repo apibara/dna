@@ -107,4 +107,3 @@ fn init_opentelemetry_with_sdk() -> Result<(), OpenTelemetryInitError> {
 
     Ok(())
 }
-

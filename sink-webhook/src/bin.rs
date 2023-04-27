@@ -20,7 +20,7 @@ async fn main() -> anyhow::Result<()> {
     let args = Cli::parse();
     println!("args = {:?}", args);
 
-    let sink = WebhookSink {};
+    let sink = WebhookSink::new(args.target_url)?;
     let ct = CancellationToken::new();
     let connector = SinkConnector::<Filter, Block>::from_configuration_args(args.configuration)?;
 
