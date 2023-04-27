@@ -109,6 +109,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "apibara-core",
+ "apibara-observability",
  "arrayvec",
  "assert_matches",
  "async-trait",
@@ -136,6 +137,19 @@ dependencies = [
  "tonic-reflection",
  "tower",
  "tower-http",
+ "tracing",
+ "tracing-opentelemetry",
+ "tracing-subscriber",
+ "tracing-tree",
+]
+
+[[package]]
+name = "apibara-observability"
+version = "0.1.0"
+dependencies = [
+ "opentelemetry",
+ "opentelemetry-otlp",
+ "thiserror",
  "tracing",
  "tracing-opentelemetry",
  "tracing-subscriber",
