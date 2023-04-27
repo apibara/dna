@@ -14,6 +14,7 @@ path = "src/bin.rs"
 [dependencies]
 anyhow = "1.0.66"
 apibara-core = { path = "../core" }
+apibara-observability = { path = "../observability" }
 apibara-sink-common = { path = "../sink-common" }
 async-trait = "0.1.68"
 clap = { version = "4.0.32", features = ["env", "unicode", "cargo", "derive"] }

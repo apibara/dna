@@ -204,6 +204,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "apibara-core",
+ "apibara-observability",
  "apibara-sink-common",
  "async-trait",
  "clap 4.2.4",
