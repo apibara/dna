@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "core",
+    "observability",
     "node",
     "sdk",
     "starknet",
