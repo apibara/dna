@@ -6,7 +6,11 @@ use apibara_core::{
 };
 use apibara_sink_common::Sink;
 use async_trait::async_trait;
-use http::{uri::InvalidUri, Uri};
+use http::{
+    header::{InvalidHeaderName, InvalidHeaderValue},
+    uri::InvalidUri,
+    HeaderMap, HeaderName, Uri,
+};
 use reqwest::Client;
 use serde::ser::Serialize;
 use serde_json::json;
@@ -18,9 +22,20 @@ pub enum WebhookError {
     Http(#[from] reqwest::Error),
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum InvalidHeader {
+    #[error("Invalid header format")]
+    Format,
+    #[error("Invalid header name: {0}")]
+    Name(#[from] InvalidHeaderName),
+    #[error("Invalid header value: {0}")]
+    Value(#[from] InvalidHeaderValue),
+}
+
 pub struct WebhookSink {
     client: Client,
     target_url: String,
+    headers: HeaderMap,
 }
 
 impl WebhookSink {
@@ -29,11 +44,35 @@ impl WebhookSink {
         Ok(Self {
             client: Client::new(),
             target_url,
+            headers: HeaderMap::new(),
         })
     }
 
+    pub fn with_headers(mut self, headers: &[String]) -> Result<Self, InvalidHeader> {
+        let mut new_headers = HeaderMap::new();
+        for header in headers {
+            match header.split_once(':') {
+                None => return Err(InvalidHeader::Format),
+                Some((name, value)) => {
+                    let name: HeaderName = name.parse()?;
+                    let value = value.parse()?;
+                    new_headers.append(name, value);
+                }
+            }
+        }
+
+        self.headers = new_headers;
+        Ok(self)
+    }
+
     async fn send<B: Serialize + ?Sized>(&self, body: &B) -> Result<(), WebhookError> {
-        let response = self.client.post(&self.target_url).json(body).send().await?;
+        let response = self
+            .client
+            .post(&self.target_url)
+            .headers(self.headers.clone())
+            .json(body)
+            .send()
+            .await?;
 
         match response.text().await {
             Ok(text) => {

@@ -10,6 +10,8 @@ use tokio_util::sync::CancellationToken;
 struct Cli {
     #[arg(long, env)]
     target_url: String,
+    #[arg(long, short = 'H', env)]
+    header: Vec<String>,
     #[command(flatten)]
     configuration: ConfigurationArgs,
 }
@@ -20,7 +22,7 @@ async fn main() -> anyhow::Result<()> {
     let args = Cli::parse();
     println!("args = {:?}", args);
 
-    let sink = WebhookSink::new(args.target_url)?;
+    let sink = WebhookSink::new(args.target_url)?.with_headers(&args.header)?;
     let ct = CancellationToken::new();
     let connector = SinkConnector::<Filter, Block>::from_configuration_args(args.configuration)?;
 
