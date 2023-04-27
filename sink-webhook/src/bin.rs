@@ -1,4 +1,5 @@
 use apibara_core::starknet::v1alpha2::{Block, Filter};
+use apibara_observability::init_opentelemetry;
 use apibara_sink_common::{ConfigurationArgs, SinkConnector, SinkConnectorExt};
 use apibara_sink_webhook::WebhookSink;
 use clap::Parser;
@@ -15,6 +16,7 @@ struct Cli {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    init_opentelemetry()?;
     let args = Cli::parse();
     println!("args = {:?}", args);
 
