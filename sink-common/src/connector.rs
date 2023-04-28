@@ -4,16 +4,16 @@ use apibara_core::node::v1alpha2::{Cursor, DataFinality};
 use apibara_sdk::{ClientBuilder, Configuration, DataMessage, Uri};
 use async_trait::async_trait;
 use exponential_backoff::Backoff;
+use jrsonnet_evaluator::{apply_tla, val::ArrValue, val::StrValue, ObjValue, State, Val};
 use prost::Message;
+use serde::ser::Serialize;
+use serde_json::{json, Value};
 use tokio_stream::StreamExt;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, warn};
 
 #[async_trait]
-pub trait Sink<B>
-where
-    B: Message,
-{
+pub trait Sink {
     type Error: std::error::Error + Send + Sync + 'static;
 
     async fn handle_data(
@@ -21,7 +21,7 @@ where
         cursor: &Option<Cursor>,
         end_cursor: &Cursor,
         finality: &DataFinality,
-        batch: &[B],
+        batch: &Value,
     ) -> Result<(), Self::Error>;
 
     async fn handle_invalidate(&mut self, cursor: &Option<Cursor>) -> Result<(), Self::Error>;
@@ -35,10 +35,17 @@ pub enum SinkConnectorError {
     SendConfiguration,
     #[error("Stream error: {0}")]
     Stream(#[from] Box<dyn std::error::Error>),
+    #[error("Transform error: {0}")]
+    Transform(#[from] jrsonnet_evaluator::Error),
     #[error("Sink error: {0}")]
     Sink(Box<dyn std::error::Error>),
     #[error("Maximum number of retries exceeded")]
     MaximumRetriesExceeded,
+}
+
+pub struct Transformer {
+    state: State,
+    expr: Val,
 }
 
 pub struct SinkConnector<F, B>
@@ -49,16 +56,21 @@ where
     configuration: Configuration<F>,
     stream_url: Uri,
     backoff: Backoff,
+    transformer: Option<Transformer>,
     _phantom: PhantomData<B>,
 }
 
 impl<F, B> SinkConnector<F, B>
 where
     F: Message + Default + Clone,
-    B: Message + Default,
+    B: Message + Default + Serialize,
 {
     /// Creates a new connector with the given stream URL.
-    pub fn new(stream_url: Uri, configuration: Configuration<F>) -> Self {
+    pub fn new(
+        stream_url: Uri,
+        configuration: Configuration<F>,
+        transformer: Option<Transformer>,
+    ) -> Self {
         let retries = 10;
         let min_delay = Duration::from_secs(1);
         let max_delay = Duration::from_secs(60);
@@ -68,6 +80,7 @@ where
             stream_url,
             configuration,
             backoff,
+            transformer,
             _phantom: PhantomData::default(),
         }
     }
@@ -79,7 +92,7 @@ where
         ct: CancellationToken,
     ) -> Result<(), SinkConnectorError>
     where
-        S: Sink<B>,
+        S: Sink,
     {
         debug!("start consume stream");
         let (mut data_stream, data_client) = ClientBuilder::<F, B>::default()
@@ -119,7 +132,7 @@ where
         ct: CancellationToken,
     ) -> Result<(), SinkConnectorError>
     where
-        S: Sink<B>,
+        S: Sink,
     {
         match message {
             DataMessage::Data {
@@ -129,9 +142,15 @@ where
                 batch,
             } => {
                 debug!(cursor = ?cursor, end_cursor = ?end_cursor, "received data");
+                let data = if let Some(transformer) = &self.transformer {
+                    let result = transformer.apply_tla(batch)?;
+                    json!(result)
+                } else {
+                    json!(batch)
+                };
                 for duration in &self.backoff {
                     match sink
-                        .handle_data(&cursor, &end_cursor, &finality, &batch)
+                        .handle_data(&cursor, &end_cursor, &finality, &data)
                         .await
                     {
                         Ok(_) => return Ok(()),
@@ -163,5 +182,58 @@ where
                 Err(SinkConnectorError::MaximumRetriesExceeded)
             }
         }
+    }
+}
+
+trait ToVal {
+    fn to_val(&self) -> Result<Val, SinkConnectorError>;
+}
+
+impl ToVal for Value {
+    fn to_val(&self) -> Result<Val, SinkConnectorError> {
+        match self {
+            Value::Null => Ok(Val::Null),
+            Value::Bool(b) => Ok(Val::Bool(*b)),
+            Value::Number(n) => {
+                if let Some(n) = n.as_i64() {
+                    Ok(Val::Num(n as f64))
+                } else if let Some(n) = n.as_u64() {
+                    Ok(Val::Num(n as f64))
+                } else if let Some(n) = n.as_f64() {
+                    Ok(Val::Num(n))
+                } else {
+                    panic!("invalid number")
+                }
+            }
+            Value::String(s) => Ok(Val::Str(StrValue::Flat(s.into()))),
+            Value::Array(a) => {
+                let inner: ArrValue = a
+                    .iter()
+                    .map(|v| v.to_val())
+                    .collect::<Result<Vec<_>, _>>()?
+                    .into();
+                Ok(Val::Arr(inner))
+            }
+            Value::Object(o) => {
+                let mut builder = ObjValue::builder();
+                for (k, v) in o.iter() {
+                    let value = v.to_val()?;
+                    builder.member(k.into()).value(value)?;
+                }
+                Ok(Val::Obj(builder.build()))
+            }
+        }
+    }
+}
+
+impl Transformer {
+    pub fn new(state: State, expr: Val) -> Self {
+        Self { state, expr }
+    }
+
+    pub fn apply_tla<D: Serialize>(&self, data: D) -> Result<Val, SinkConnectorError> {
+        let data = json!(data).to_val()?;
+        let result = apply_tla(self.state.clone(), &vec![data], self.expr.clone())?;
+        Ok(result)
     }
 }

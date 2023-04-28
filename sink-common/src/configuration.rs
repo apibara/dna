@@ -1,10 +1,19 @@
-use std::{fs::File, io::BufReader, path::Path};
+use std::{
+    fs::{self, File},
+    io::BufReader,
+    path::Path,
+};
 
 use apibara_core::node::v1alpha2::DataFinality;
 use apibara_sdk::Configuration;
 use clap::Args;
+use jrsonnet_evaluator::{trace::PathResolver, State};
+use jrsonnet_stdlib::ContextInitializer;
 use prost::Message;
 use serde::de;
+use tracing::warn;
+
+use super::connector::Transformer;
 
 #[derive(Debug, thiserror::Error)]
 pub enum FilterError {
@@ -20,6 +29,14 @@ pub enum ConfigurationError {
     Filter(#[from] FilterError),
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum TransformError {
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("Snippet evaluation error")]
+    Evaluation,
+}
+
 /// Stream configuration command line flags.
 #[derive(Args, Debug)]
 pub struct ConfigurationArgs {
@@ -29,6 +46,9 @@ pub struct ConfigurationArgs {
     /// The json-encoded filter to use. If it starts with `@`, it is interpreted as a path to a file.
     #[arg(long, env)]
     pub filter: String,
+    /// Jsonnet transformation to apply to data. If it starts with `@`, it is interpreted as a path to a file.
+    #[arg(long, env)]
+    pub transform: Option<String>,
     /// DNA stream url. If starting with `https://`, use a secure connection.
     #[arg(long, env)]
     pub stream_url: String,
@@ -98,6 +118,34 @@ impl ConfigurationArgs {
         };
 
         Ok(configuration)
+    }
+
+    /// Returns the jsonnet transformation to apply to data.
+    pub fn to_transformer(&self) -> Result<Option<Transformer>, TransformError> {
+        if let Some(transform) = &self.transform {
+            let transform = if let Some(path) = transform.strip_prefix('@') {
+                let transform_path = Path::new(path);
+                fs::read_to_string(transform_path)?
+            } else {
+                transform.to_string()
+            };
+
+            let state = State::default();
+            let stdlib = ContextInitializer::new(state.clone(), PathResolver::new_cwd_fallback());
+            state.set_context_initializer(stdlib);
+            let expr = state
+                .evaluate_snippet("<transform>".to_owned(), transform)
+                .map_err(|err| {
+                    // jrsonnet Error does not implement `Send` because of an `Rc<str>` somewhere.
+                    // for now, just print a warning.
+                    warn!(err = ?err, "failed to evaluate snipped");
+                    TransformError::Evaluation
+                })?;
+            let transformer = Transformer::new(state, expr);
+            Ok(Some(transformer))
+        } else {
+            Ok(None)
+        }
     }
 
     fn new_filter<F>(&self) -> Result<F, FilterError>
