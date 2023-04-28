@@ -1,9 +1,6 @@
 use std::str::FromStr;
 
-use apibara_core::{
-    node::v1alpha2::{Cursor, DataFinality},
-    starknet::v1alpha2::Block,
-};
+use apibara_core::node::v1alpha2::{Cursor, DataFinality};
 use apibara_sink_common::Sink;
 use async_trait::async_trait;
 use http::{
@@ -13,7 +10,7 @@ use http::{
 };
 use reqwest::Client;
 use serde::ser::Serialize;
-use serde_json::json;
+use serde_json::{json, Value};
 use tracing::{debug, info, warn};
 
 #[derive(Debug, thiserror::Error)]
@@ -88,7 +85,7 @@ impl WebhookSink {
 }
 
 #[async_trait]
-impl Sink<Block> for WebhookSink {
+impl Sink for WebhookSink {
     type Error = WebhookError;
 
     async fn handle_data(
@@ -96,9 +93,15 @@ impl Sink<Block> for WebhookSink {
         cursor: &Option<Cursor>,
         end_cursor: &Cursor,
         finality: &DataFinality,
-        batch: &[Block],
+        batch: &Value,
     ) -> Result<(), Self::Error> {
-        info!(cursor = ?cursor, end_cursor = ?end_cursor, "calling web hook with data");
+        info!(
+            cursor = ?cursor,
+            end_cursor = ?end_cursor,
+            finality = ?finality,
+            batch = ?batch,
+            "calling web hook with data"
+        );
         let body = json!({
             "data": {
                 "cursor": cursor,

@@ -2,8 +2,9 @@ mod configuration;
 mod connector;
 
 use apibara_sdk::InvalidUri;
+use configuration::TransformError;
 use prost::Message;
-use serde::de;
+use serde::{de, ser};
 
 pub use self::configuration::{
     ConfigurationArgs, ConfigurationError, FilterError, FinalityArgs, StartingCursorArgs,
@@ -16,6 +17,8 @@ pub enum SinkConnectorFromConfigurationError {
     Configuration(#[from] ConfigurationError),
     #[error("Failed to parse stream URL: {0}")]
     Uri(#[from] InvalidUri),
+    #[error("Failed to parse transform: {0}")]
+    Transform(#[from] TransformError),
 }
 
 pub trait SinkConnectorExt: Sized {
@@ -27,14 +30,15 @@ pub trait SinkConnectorExt: Sized {
 impl<F, B> SinkConnectorExt for SinkConnector<F, B>
 where
     F: Message + Default + Clone + de::DeserializeOwned,
-    B: Message + Default,
+    B: Message + Default + ser::Serialize,
 {
     fn from_configuration_args(
         args: ConfigurationArgs,
     ) -> Result<Self, SinkConnectorFromConfigurationError> {
         let configuration = args.to_configuration::<F>()?;
         let stream_url = args.stream_url.parse()?;
-        let connector = SinkConnector::new(stream_url, configuration);
+        let transformer = args.to_transformer()?;
+        let connector = SinkConnector::new(stream_url, configuration, transformer);
         Ok(connector)
     }
 }
