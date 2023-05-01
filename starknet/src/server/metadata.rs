@@ -1,6 +1,6 @@
 use apibara_node::o11y::{self, Counter, KeyValue};
 use tonic::metadata::MetadataMap;
-use tracing::{info_span, Span};
+use tracing::{debug_span, Span};
 
 pub trait RequestObserver: Send + Sync + 'static {
     type Meter: RequestMeter;
@@ -30,12 +30,12 @@ pub struct SimpleMeter {
 ///
 /// This can be used to add information like current user or api keys.
 pub struct MetadataKeyRequestObserver {
-    key: String,
+    keys: Vec<String>,
 }
 
 /// A [RequestMeter] that adds information about the key used.
 pub struct MetadataKeyMeter {
-    key: String,
+    metadata: Vec<KeyValue>,
     counter: Counter<u64>,
 }
 
@@ -47,22 +47,15 @@ impl Default for SimpleMeter {
 }
 
 impl MetadataKeyMeter {
-    pub fn new(key: String) -> Self {
+    pub fn new(metadata: Vec<KeyValue>) -> Self {
         let counter = new_data_out_counter();
-        MetadataKeyMeter { key, counter }
+        MetadataKeyMeter { metadata, counter }
     }
 }
 
 impl MetadataKeyRequestObserver {
-    pub fn new(key: String) -> Self {
-        MetadataKeyRequestObserver { key }
-    }
-
-    fn request_api_key(&self, metadata: &MetadataMap) -> Option<String> {
-        metadata
-            .get(&self.key)
-            .and_then(|value| value.to_str().ok())
-            .map(|s| s.to_string())
+    pub fn new(keys: Vec<String>) -> Self {
+        MetadataKeyRequestObserver { keys }
     }
 }
 
@@ -70,7 +63,7 @@ impl RequestObserver for SimpleRequestObserver {
     type Meter = SimpleMeter;
 
     fn stream_data_span(&self, _metadata: &MetadataMap) -> Span {
-        info_span!("stream_data")
+        debug_span!("stream_data")
     }
 
     fn stream_data_meter(&self, _metadata: &MetadataMap) -> Self::Meter {
@@ -89,34 +82,30 @@ impl RequestMeter for SimpleMeter {
 impl RequestObserver for MetadataKeyRequestObserver {
     type Meter = MetadataKeyMeter;
 
-    fn stream_data_span(&self, metadata: &MetadataMap) -> Span {
-        if let Some(api_key) = self.request_api_key(metadata) {
-            info_span!("stream_data", user.key = api_key)
-        } else {
-            info_span!("stream_data")
-        }
+    fn stream_data_span(&self, _metadata: &MetadataMap) -> Span {
+        debug_span!("stream_data")
     }
 
     fn stream_data_meter(&self, metadata: &MetadataMap) -> Self::Meter {
-        if let Some(api_key) = self.request_api_key(metadata) {
-            MetadataKeyMeter::new(api_key)
-        } else {
-            MetadataKeyMeter::new("anon".to_string())
+        let mut result = Vec::with_capacity(self.keys.len());
+        for key in &self.keys {
+            if let Some(value) = metadata.get(key) {
+                if let Ok(value) = value.to_str() {
+                    result.push(KeyValue::new(key.clone(), value.to_owned()));
+                }
+            }
         }
+        MetadataKeyMeter::new(result)
     }
 }
 
 impl RequestMeter for MetadataKeyMeter {
     fn increment_counter(&self, name: &'static str, amount: u64) {
         let cx = o11y::Context::current();
-        self.counter.add(
-            &cx,
-            amount,
-            &[
-                KeyValue::new("datum", name),
-                KeyValue::new("user.key", self.key.clone()),
-            ],
-        );
+        // Once otel supports default attributes, we can use those instead of
+        // concatenating the attributes here.
+        let attributes = &[&[KeyValue::new("datum", name)], self.metadata.as_slice()].concat();
+        self.counter.add(&cx, amount, attributes);
     }
 }
 

@@ -41,6 +41,9 @@ struct StartCommand {
     /// Create a temporary directory for data, deleted when devnet is closed.
     #[arg(long, env)]
     devnet: bool,
+    /// Use the specified metadata key for tracing and metering.
+    #[arg(long, env)]
+    use_metadata: Vec<String>,
 }
 
 async fn start(args: StartCommand) -> Result<()> {
@@ -48,7 +51,7 @@ async fn start(args: StartCommand) -> Result<()> {
 
     let mut node =
         StarkNetNode::<HttpProvider, SimpleRequestObserver, NoWriteMap>::builder(&args.rpc)?
-            .with_request_observer(MetadataKeyRequestObserver::new("x-api-key".to_string()));
+            .with_request_observer(MetadataKeyRequestObserver::new(args.use_metadata));
 
     // Setup cancellation for graceful shutdown
     let cts = CancellationToken::new();
