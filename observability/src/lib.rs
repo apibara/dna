@@ -15,7 +15,7 @@ use opentelemetry_otlp::WithExportConfig;
 use tracing::dispatcher::SetGlobalDefaultError;
 
 pub use opentelemetry::metrics::{ObservableCounter, ObservableGauge};
-pub use opentelemetry::{Context, KeyValue};
+pub use opentelemetry::{Context, Key, KeyValue};
 use tracing_opentelemetry::MetricsLayer;
 use tracing_subscriber::{filter, prelude::*, EnvFilter};
 
