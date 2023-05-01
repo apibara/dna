@@ -9,7 +9,7 @@ use std::{
 use apibara_core::node::v1alpha2::StreamDataResponse;
 use futures::Stream;
 use pin_project::pin_project;
-use tracing::info_span;
+use tracing::debug_span;
 
 use crate::{
     core::IngestionMessage, db::StorageReader, healer::HealerClient, server::RequestMeter,
@@ -76,7 +76,7 @@ where
     fn poll_next(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<Option<Self::Item>> {
         let mut this = self.project();
 
-        let _span = info_span!("poll_data_stream");
+        let _span = debug_span!("poll_data_stream");
 
         // listen for configuration changes
         match this.configuration_stream.poll_next(cx) {

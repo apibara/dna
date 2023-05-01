@@ -9,7 +9,7 @@ use apibara_node::db::libmdbx::{Environment, EnvironmentKind};
 use tokio::task::JoinError;
 use tokio_util::sync::CancellationToken;
 use tonic::transport::Server as TonicServer;
-use tracing::{error, info, info_span};
+use tracing::{debug_span, error, info};
 
 use crate::{
     db::DatabaseStorage, healer::HealerClient, ingestion::IngestionStreamClient,
@@ -90,7 +90,7 @@ where
         info!(addr = %addr, "starting server");
 
         TonicServer::builder()
-            .trace_fn(|_| info_span!("node_server"))
+            .trace_fn(|_| debug_span!("node_server"))
             .add_service(health_service)
             .add_service(stream_service)
             .add_service(reflection_service)
