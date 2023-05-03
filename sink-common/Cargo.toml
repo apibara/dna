@@ -9,16 +9,16 @@ license.workspace = true
 [dependencies]
 apibara-core = { path = "../core" }
 apibara-sdk = { path = "../sdk" }
-async-trait = "0.1.68"
-clap = { version = "4.2.4", features = ["derive", "env"] }
+async-trait = { workspace = true }
+clap = { workspace = true }
 exponential-backoff = "1.2.0"
 jrsonnet-evaluator = "0.5.0-pre8"
 jrsonnet-stdlib = "0.5.0-pre8"
-prost = "0.11.9"
-serde = "1.0.160"
-serde_json = "1.0.96"
-thiserror = "1.0.40"
-tokio = { version = "1.20.1", features = ["full"] }
-tokio-stream = "0.1.14"
-tokio-util = "0.7.8"
-tracing = "0.1.38"
+prost = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-stream = { workspace = true }
+tokio-util = { workspace = true }
+tracing = { workspace = true }

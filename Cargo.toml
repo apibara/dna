@@ -15,3 +15,41 @@ authors = ["Francesco Ceccon", "The Apibara contributors"]
 edition = "2021"
 repository = "https://github.com/apibara/dna"
 license = "Apache-2.0"
+
+[workspace.dependencies]
+anyhow = "1.0.66"
+async-trait = "0.1.57"
+backoff = { version = "0.4.0", features = ["tokio"] }
+byteorder = "1.4.3"
+chrono = "0.4.22"
+clap = { version = "4.0.32", features = ["env", "unicode", "cargo", "derive"] }
+ctrlc = { version = "3.2.3", features = ["termination"] }
+futures = "0.3.24"
+hex = "0.4.3"
+http = "0.2.9"
+lazy_static = "1.4.0"
+opentelemetry = { version = "0.18.0", features = ["trace", "metrics", "rt-tokio"] }
+opentelemetry-otlp = { version = "0.11.0", features = ["trace", "metrics", "grpc-tonic"] }
+pbjson = "0.5.1"
+pbjson-build = "0.5.1"
+pbjson-types = "0.5.1"
+pin-project = "1.0.12"
+prost = "0.11.0"
+quickcheck = "1.0.3"
+quickcheck_macros = "1.0.0"
+serde = "1.0.155"
+serde_json = "1.0.94"
+starknet = { git = "https://github.com/xJonathanLEI/starknet-rs", rev = "ca077d3104e11a59d873f79e6090f0ec8cb3fc58" }
+thiserror = "1.0.32"
+tokio = { version = "1.20.1", features = ["full"] }
+tokio-stream = { version = "0.1.10", features = ["sync"] }
+tokio-util = "0.7.3"
+tonic = "0.8.0"
+tonic-build = "0.8.0"
+tonic-health = "0.7.0"
+tracing = { version = "0.1.36", features = ["max_level_trace", "release_max_level_debug"] }
+tracing-futures = { version = "0.2.5", features = ["tokio", "futures-03"] }
+tracing-opentelemetry = "0.18.0"
+tracing-subscriber = { version = "0.3.15", features = ["std", "env-filter"] }
+tracing-tree = "0.2.2"
+url = "2.2.2"

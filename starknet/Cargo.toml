@@ -15,44 +15,43 @@ name = "apibara-starknet"
 path = "src/bin.rs"
 
 [dependencies]
-anyhow = "1.0.66"
+anyhow = { workspace = true }
 apibara-core = { path = "../core" }
 apibara-node = { path = "../node" }
-backoff = { version = "0.4.0", features = ["tokio"] }
+backoff = { workspace = true }
 bloomfilter = "1.0.9"
 byte-unit = "4.0.14"
-byteorder = "1.4.3"
+byteorder = { workspace = true }
 chrono = "0.4.22"
-clap = { version = "4.0.32", features = ["env", "unicode", "cargo", "derive"] }
-ctrlc = { version = "3.2.3", features = ["termination"] }
-futures = "0.3.24"
-hex = "0.4.3"
-hyper = "0.14.20"
-lazy_static = "1.4.0"
-pbjson-types = "0.5.1"
-pin-project = "1.0.12"
-prost = "0.11.0"
-starknet = { git = "https://github.com/xJonathanLEI/starknet-rs", rev = "ca077d3104e11a59d873f79e6090f0ec8cb3fc58" }
+clap = { workspace = true }
+ctrlc = { workspace = true }
+futures = { workspace = true }
+hex = { workspace = true }
+lazy_static = { workspace = true }
+pbjson-types = { workspace = true }
+pin-project = { workspace = true }
+prost = { workspace = true }
+starknet = { workspace = true }
 tempdir = "0.3.7"
-thiserror = "1.0.32"
-tokio = { version = "1.20.1", features = ["full"] }
-tokio-stream = { version = "0.1.10", features = ["sync"] }
-tokio-util = "0.7.3"
-tonic = "0.8.0"
-tonic-health = "0.7.0"
-tonic-reflection = { version = "0.5.0", path = "../tonic-reflection-patched" }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-stream = { workspace = true }
+tokio-util = { workspace = true }
+tonic = { workspace = true }
+tonic-health = { workspace = true }
+tonic-reflection = { path = "../tonic-reflection-patched" }
 tower = "0.4.13"
 tower-http = { version = "0.3.4", features = ["trace"] }
-tracing = { version = "0.1.36", features = ["max_level_trace", "release_max_level_debug"] }
-tracing-futures = { version = "0.2.5", features = ["tokio", "futures-03"] }
-url = "2.2.2"
+tracing = { workspace = true }
+tracing-futures = { workspace = true }
+url = { workspace = true }
 
 [dev-dependencies]
 assert_matches = "1.5.0"
 env_logger = "0.9.0"
-quickcheck = "1.0.3"
-quickcheck_macros = "1.0.0"
+quickcheck = { workspace = true }
+quickcheck_macros = { workspace = true }
 tempfile = "3.3.0"
 
 [build-dependencies]
-tonic-build = "0.8.0"
+tonic-build = { workspace = true }

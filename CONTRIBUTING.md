@@ -71,7 +71,7 @@ and cache the dependencies. If you add a new dependency to a project, you must
 regenerate the `Cargo.nix` file. From the project root, run:
 
 ```
-nix run GitHub:cargo2nix/cargo2nix
+nix run GitHub:cargo2nix/cargo2nix/unstable
 ```
 
 **Committing changes**

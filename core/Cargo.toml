@@ -7,23 +7,23 @@ repository.workspace = true
 license.workspace = true
 
 [dependencies]
-anyhow = "1.0.66"
-hex = { version = "0.4.3", features = ["serde"] }
-pbjson = "0.5.1"
-pbjson-types = "0.5.1"
-prost = "0.11.0"
-serde = "1.0.155"
-starknet = { git = "https://github.com/xJonathanLEI/starknet-rs", rev = "ca077d3104e11a59d873f79e6090f0ec8cb3fc58" }
-thiserror = "1.0.32"
-tokio = { version = "1.20.1", features = ["full"] }
-tonic = "0.8.0"
-tracing = "0.1.36"
+anyhow = { workspace = true }
+hex = { workspace = true }
+pbjson = { workspace = true }
+pbjson-types = { workspace = true }
+prost = { workspace = true }
+serde = { workspace = true }
+starknet = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tonic = { workspace = true }
+tracing = { workspace = true }
 
 [dev-dependencies]
-quickcheck = "1.0.3"
-quickcheck_macros = "1.0.0"
-serde_json = "1.0.94"
+quickcheck = { workspace = true }
+quickcheck_macros = { workspace = true }
+serde_json = { workspace = true }
 
 [build-dependencies]
-pbjson-build = "0.5.1"
-tonic-build = "0.8.0"
+pbjson-build = { workspace = true }
+tonic-build = { workspace = true }

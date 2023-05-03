@@ -7,21 +7,20 @@ repository.workspace = true
 license.workspace = true
 
 [dependencies]
-anyhow = "1.0.66"
+anyhow = { workspace = true }
 apibara-core = { path = "../core" }
 async-stream = "0.3.4"
-async-trait = "0.1.64"
-futures = "0.3.26"
+async-trait = { workspace = true }
+futures = { workspace = true }
 futures-util = "0.3.26"
-hex = "0.4.3"
-http = "0.2.9"
-hyper = "0.14.24"
-pin-project = "1.0.12"
-prost = "0.11.0"
-thiserror = "1.0.32"
-tokio = { version = "1.20.1", features = ["full"] }
-tokio-stream = "0.1.12"
-tokio-util = "0.7.7"
-tonic = { version = "0.8.0", features = ["tls", "tls-roots", "prost"]}
-tracing = "0.1.36"
+hex = { workspace = true }
+http = { workspace = true }
+pin-project = { workspace = true }
+prost = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-stream = { workspace = true }
+tokio-util = { workspace = true }
+tonic = { workspace = true }
+tracing = { workspace = true }
 
