@@ -9,3 +9,9 @@ members = [
     "sink-webhook",
     "examples/starknet-simple",
 ]
+
+[workspace.package]
+authors = ["Francesco Ceccon", "The Apibara contributors"]
+edition = "2021"
+repository = "https://github.com/apibara/dna"
+license = "Apache-2.0"

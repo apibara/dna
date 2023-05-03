@@ -1,7 +1,10 @@
 [package]
 name = "apibara-observability"
 version = "0.1.0"
-edition = "2021"
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
 
 [dependencies]
 opentelemetry = { version = "0.18.0", features = ["trace", "metrics", "rt-tokio"] }

@@ -1,7 +1,10 @@
 [package]
 name = "apibara-sdk"
 version = "0.1.0"
-edition = "2021"
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
 
 [dependencies]
 anyhow = "1.0.66"
