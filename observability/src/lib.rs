@@ -44,6 +44,10 @@ pub fn init_opentelemetry() -> Result<(), OpenTelemetryInitError> {
         .map(|v| v == "true")
         .unwrap_or(false);
 
+    if std::env::var("RUST_LOG").is_err() {
+        std::env::set_var("RUST_LOG", "info");
+    }
+
     if sdk_disabled {
         init_opentelemetry_no_sdk()
     } else {
