@@ -26,25 +26,25 @@ use tracing::info;
 pub struct StartArgs {
     /// StarkNet RPC address.
     #[arg(long, env)]
-    rpc: String,
+    pub rpc: String,
     /// Data directory. Defaults to `$XDG_DATA_HOME`.
     #[arg(long, env)]
-    data: Option<PathBuf>,
+    pub data: Option<PathBuf>,
     /// Indexer name. Defaults to `starknet`.
     #[arg(long, env)]
-    name: Option<String>,
+    pub name: Option<String>,
     /// Wait for RPC to be available before starting.
     #[arg(long, env)]
-    wait_for_rpc: bool,
+    pub wait_for_rpc: bool,
     /// Create a temporary directory for data, deleted when devnet is closed.
     #[arg(long, env)]
-    devnet: bool,
+    pub devnet: bool,
     /// Use the specified metadata key for tracing and metering.
     #[arg(long, env)]
-    use_metadata: Vec<String>,
+    pub use_metadata: Vec<String>,
 }
 
-pub async fn start_node(args: StartArgs) -> Result<()> {
+pub async fn start_node(args: StartArgs, cts: CancellationToken) -> Result<()> {
     init_opentelemetry()?;
 
     let mut node =
@@ -52,7 +52,6 @@ pub async fn start_node(args: StartArgs) -> Result<()> {
             .with_request_observer(MetadataKeyRequestObserver::new(args.use_metadata));
 
     // Setup cancellation for graceful shutdown
-    let cts = CancellationToken::new();
     ctrlc::set_handler({
         let cts = cts.clone();
         move || {
