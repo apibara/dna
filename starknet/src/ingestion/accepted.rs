@@ -162,6 +162,11 @@ where
             .map_err(BlockIngestionError::provider)?;
 
         let is_synced = new_head == self.current_head;
+        debug!(
+            new_head = ?new_head,
+            current_head = ?self.current_head,
+            "check head"
+        );
 
         // synced and pending block ingested. nothing to do until next block.
         if is_synced && self.pending_ingested {
