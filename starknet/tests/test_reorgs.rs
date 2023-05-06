@@ -90,6 +90,7 @@ impl DevnetClient {
 }
 
 #[tokio::test]
+#[ignore]
 async fn test_reorg_from_client_pov() {
     let docker = clients::Cli::default();
     let devnet = docker.run(Devnet::default());

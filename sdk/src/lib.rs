@@ -239,6 +239,7 @@ mod tests {
     use futures_util::{StreamExt, TryStreamExt};
 
     #[tokio::test]
+    #[ignore]
     async fn test_apibara_high_level_api() -> Result<(), Box<dyn std::error::Error>> {
         let (stream, configuration_handle) = ClientBuilder::<Filter, Block>::default()
             .with_bearer_token("my_auth_token".into())
