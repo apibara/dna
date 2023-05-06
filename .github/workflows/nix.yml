@@ -25,10 +25,46 @@ jobs:
     - name: run flake check
       run: nix flake check
 
+  run_tests:
+    name: run tests, crate=${{ matrix.crate }}
+    runs-on: ubuntu-22.04
+    needs:
+    - run_checks
+    strategy:
+      matrix:
+        crate:
+        - core-lib
+        - node-lib
+        - sdk-lib
+        - apibara-starknet
+    steps:
+    - name: checkout sources
+      uses: actions/checkout@v2
+    - name: install nix
+      uses: cachix/install-nix-action@v20
+    - name: setup cachix
+      uses: cachix/cachix-action@v12
+      with:
+        name: apibara-public
+        authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
+
+    - name: run build
+      run: nix build .#${{ matrix.crate }}-test
+    - name: run tests
+      run: |
+        for testBin in ./result-bin/bin/*; do
+          if [ ${testBin} == ./result-bin/bin/${{ matrix.crate }} ]; then
+            echo "skip binary ${testBin}"
+          else
+            echo "run test ${testBin}"
+            ./${testBin}
+          fi
+        done
+
   build_binaries:
     name: build ${{ matrix.binary }}, target=${{ matrix.job.target }}, os=${{ matrix.job.os }}
     needs:
-    - run_checks
+    - run_tests
     runs-on: ${{ matrix.job.os }}
     strategy:
       matrix:

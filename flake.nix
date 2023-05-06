@@ -86,11 +86,25 @@
         packages = {
           # libs
           core-lib = rustPkgs.workspace.apibara-core { };
+          core-lib-test = rustPkgs.workspace.apibara-core {
+            compileMode = "test";
+          };
+
           node-lib = rustPkgs.workspace.apibara-node { };
+          node-lib-test = rustPkgs.workspace.apibara-node {
+            compileMode = "test";
+          };
+
           sdk-lib = rustPkgs.workspace.apibara-sdk { };
+          sdk-lib-test = rustPkgs.workspace.apibara-sdk {
+            compileMode = "test";
+          };
 
           # binaries
           apibara-starknet = rustPkgs.workspace.apibara-starknet { };
+          apibara-starknet-test = rustPkgs.workspace.apibara-starknet {
+            compileMode = "test";
+          };
 
           # docker images
           apibara-starknet-image = dockerizeCrateBin {
