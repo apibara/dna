@@ -99,6 +99,15 @@ impl GlobalBlockId {
         Ok(Self::new(header.block_number, hash))
     }
 
+    pub fn from_block_header_parent(header: &v1alpha2::BlockHeader) -> Result<Self, InvalidBlock> {
+        let hash = header
+            .parent_block_hash
+            .as_ref()
+            .ok_or(InvalidBlock::MissingHash)?;
+        let hash = hash.into();
+        Ok(Self::new(header.block_number - 1, hash))
+    }
+
     pub fn number(&self) -> u64 {
         self.0
     }

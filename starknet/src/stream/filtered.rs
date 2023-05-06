@@ -442,6 +442,8 @@ where
                 .ok_or(FilteredDataStreamError::MissingBlockStatus(new_root))
                 .map_err(StreamError::internal)?;
 
+            debug!(new_root = %new_root, status = ?status, "read cursor status");
+
             // check if `new_root` is the new root.
             if status.is_accepted() || status.is_finalized() {
                 break;
@@ -454,7 +456,8 @@ where
                 .ok_or(FilteredDataStreamError::MissingBlockHeader(new_root))
                 .map_err(StreamError::internal)?;
 
-            new_root = GlobalBlockId::from_block_header(&header).map_err(StreamError::internal)?;
+            new_root =
+                GlobalBlockId::from_block_header_parent(&header).map_err(StreamError::internal)?;
         }
 
         self.previous_iter_cursor = Some(new_root);
@@ -466,6 +469,8 @@ where
             stream_id: self.stream_id,
             message: Some(Message::Invalidate(invalidate)),
         };
+
+        debug!("send invalidate message");
 
         Ok(Some(response))
     }
