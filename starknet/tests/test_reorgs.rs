@@ -1,97 +1,27 @@
+mod common;
+
 use std::time::Duration;
 
 use apibara_core::{
     node::v1alpha2::DataFinality,
     starknet::v1alpha2::{Block, Filter, HeaderFilter},
 };
+use apibara_node::o11y::init_opentelemetry;
 use apibara_sdk::{ClientBuilder, Configuration, DataMessage};
 use apibara_starknet::{start_node, StartArgs};
 use futures::FutureExt;
-use serde_json::json;
-use testcontainers::{clients, core::WaitFor, Image, ImageArgs};
+use testcontainers::clients;
 use tokio_stream::StreamExt;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
-#[derive(Default, Clone, Debug)]
-pub struct Devnet;
-
-#[derive(Default, Clone, Debug)]
-pub struct DevnetArgs;
-
-impl Image for Devnet {
-    type Args = DevnetArgs;
-
-    fn name(&self) -> String {
-        "shardlabs/starknet-devnet".to_string()
-    }
-
-    fn tag(&self) -> String {
-        "e0c5aa285b3f90f7f452008f41e0e780e4a5958f-seed0".to_string()
-    }
-
-    fn ready_conditions(&self) -> Vec<WaitFor> {
-        vec![WaitFor::message_on_stdout(
-            "Listening on http://0.0.0.0:5050/",
-        )]
-    }
-
-    fn expose_ports(&self) -> Vec<u16> {
-        vec![5050]
-    }
-}
-
-impl ImageArgs for DevnetArgs {
-    fn into_iterator(self) -> Box<dyn Iterator<Item = String>> {
-        Box::new(vec!["--disable-rpc-request-validation".to_string()].into_iter())
-    }
-}
-
-pub struct DevnetClient {
-    client: reqwest::Client,
-    base_url: String,
-}
-
-impl DevnetClient {
-    pub fn new(base_url: String) -> Self {
-        DevnetClient {
-            client: reqwest::Client::new(),
-            base_url,
-        }
-    }
-
-    pub async fn mint(&self) -> Result<(), reqwest::Error> {
-        let body = json!({
-            "address": "0x2f11193236547f88303219f3952f7da05c62b01d6656467321ca7e186a39288",
-            "amount": 1000,
-        });
-        let response = self
-            .client
-            .post(format!("{}/mint", self.base_url))
-            .json(&body)
-            .send()
-            .await?;
-        let _text = response.text().await?;
-        Ok(())
-    }
-
-    pub async fn abort_blocks(&self, block_hash: &str) -> Result<(), reqwest::Error> {
-        let body = json!({ "startingBlockHash": block_hash });
-        let response = self
-            .client
-            .post(format!("{}/abort_blocks", self.base_url))
-            .json(&body)
-            .send()
-            .await?;
-        let text = response.text().await?;
-        info!(response = text, "aborted blocks");
-        Ok(())
-    }
-}
+use common::{Devnet, DevnetClient};
 
 #[tokio::test]
 #[ignore]
 async fn test_reorg_from_client_pov() {
+    init_opentelemetry().unwrap();
+
     let docker = clients::Cli::default();
     let devnet = docker.run(Devnet::default());
 
@@ -153,12 +83,12 @@ async fn test_reorg_from_client_pov() {
                 } => {
                     if let Some(cursor) = cursor {
                         assert_eq!(cursor.order_key, i - 1);
-                        assert!(cursor.unique_key.len() > 0);
+                        assert!(!cursor.unique_key.is_empty());
                     } else {
                         assert_eq!(i, 0);
                     }
                     assert_eq!(end_cursor.order_key, i);
-                    assert!(end_cursor.unique_key.len() > 0);
+                    assert!(!end_cursor.unique_key.is_empty());
                     assert_eq!(batch.len(), 1);
                     let block = batch.remove(0);
                     if i == 5 {
