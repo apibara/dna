@@ -16,13 +16,13 @@ use std::path::PathBuf;
 
 use crate::server::{MetadataKeyRequestObserver, SimpleRequestObserver};
 use anyhow::Result;
-use apibara_node::{db::default_data_dir, o11y::init_opentelemetry};
+use apibara_node::db::default_data_dir;
 use clap::Args;
 use tempdir::TempDir;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
-#[derive(Args)]
+#[derive(Clone, Debug, Args)]
 pub struct StartArgs {
     /// StarkNet RPC address.
     #[arg(long, env)]
@@ -44,20 +44,21 @@ pub struct StartArgs {
     pub use_metadata: Vec<String>,
 }
 
-pub async fn start_node(args: StartArgs, cts: CancellationToken) -> Result<()> {
-    init_opentelemetry()?;
+/// Connect the cancellation token to the ctrl-c handler.
+pub fn set_ctrlc_handler(ct: CancellationToken) -> Result<()> {
+    ctrlc::set_handler({
+        move || {
+            ct.cancel();
+        }
+    })?;
 
+    Ok(())
+}
+
+pub async fn start_node(args: StartArgs, cts: CancellationToken) -> Result<()> {
     let mut node =
         StarkNetNode::<HttpProvider, SimpleRequestObserver, NoWriteMap>::builder(&args.rpc)?
             .with_request_observer(MetadataKeyRequestObserver::new(args.use_metadata));
-
-    // Setup cancellation for graceful shutdown
-    ctrlc::set_handler({
-        let cts = cts.clone();
-        move || {
-            cts.cancel();
-        }
-    })?;
 
     if args.devnet {
         let tempdir = TempDir::new("apibara")?;

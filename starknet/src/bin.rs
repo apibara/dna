@@ -1,5 +1,6 @@
 use anyhow::Result;
-use apibara_starknet::{start_node, StartArgs};
+use apibara_node::o11y::init_opentelemetry;
+use apibara_starknet::{set_ctrlc_handler, start_node, StartArgs};
 use clap::{Parser, Subcommand};
 use tokio_util::sync::CancellationToken;
 
@@ -18,7 +19,11 @@ enum CliCommand {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    init_opentelemetry()?;
+
     let cts = CancellationToken::new();
+    set_ctrlc_handler(cts.clone())?;
+
     match Cli::parse().command {
         CliCommand::Start(args) => start_node(args, cts).await,
     }
