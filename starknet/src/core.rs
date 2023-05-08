@@ -163,3 +163,15 @@ impl Debug for GlobalBlockId {
         write!(f, "GBI({})", self)
     }
 }
+
+impl Default for GlobalBlockId {
+    fn default() -> Self {
+        Self::new(0, BlockHash::zero())
+    }
+}
+
+impl apibara_node::core::Cursor for GlobalBlockId {
+    fn from_proto(cursor: &Cursor) -> Option<Self> {
+        GlobalBlockId::from_cursor(cursor).ok()
+    }
+}
