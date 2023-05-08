@@ -5,7 +5,9 @@ mod storage;
 mod transaction;
 
 pub use self::block::{BlockBody, BlockReceipts, BlockStatus};
-pub use self::storage::{DatabaseStorage, DatabaseStorageWriter, StorageReader, StorageWriter};
+pub use self::storage::{
+    DatabaseStorage, DatabaseStorageWriter, MockStorageReader, StorageReader, StorageWriter,
+};
 
 pub mod tables {
     use apibara_node::db::libmdbx::{EnvironmentKind, Error as MdbxError, Transaction, RW};

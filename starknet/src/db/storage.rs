@@ -7,6 +7,7 @@ use apibara_node::db::{
     libmdbx::{self, Environment, EnvironmentKind, Transaction, RW},
     MdbxErrorExt, MdbxTransactionExt, TableCursor,
 };
+use mockall::automock;
 
 use crate::core::GlobalBlockId;
 
@@ -18,7 +19,12 @@ use super::{
 /// Bloom filter over field elements.
 pub type Bloom = bloomfilter::Bloom<v1alpha2::FieldElement>;
 
+/// An empty error type. Use by [MockStorageReader].
+#[derive(Debug, thiserror::Error)]
+pub enum MockStorageReaderError {}
+
 /// An object to read chain data from storage.
+#[automock(type Error=MockStorageReaderError;)]
 pub trait StorageReader {
     type Error: std::error::Error + Send + Sync + 'static;
 
