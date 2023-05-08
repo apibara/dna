@@ -50,14 +50,24 @@ jobs:
 
     - name: run build
       run: nix build .#${{ matrix.crate }}-test
-    - name: run tests
+    - name: run unit tests
       run: |
         for testBin in ./result-bin/bin/*; do
           if [ ${testBin} == ./result-bin/bin/${{ matrix.crate }} ]; then
             echo "skip binary ${testBin}"
           else
-            echo "run test ${testBin}"
+            echo "run unit test ${testBin}"
             ./${testBin}
+          fi
+        done
+    - name: run e2e tests
+      run: |
+        for testBin in ./result-bin/bin/*; do
+          if [ ${testBin} == ./result-bin/bin/${{ matrix.crate }} ]; then
+            echo "skip binary ${testBin}"
+          else
+            echo "run e2e2 test ${testBin}"
+            ./${testBin} --ignored
           fi
         done
 
