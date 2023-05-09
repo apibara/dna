@@ -10,11 +10,13 @@ pub mod stream;
 pub use crate::node::StarkNetNode;
 pub use crate::provider::HttpProvider;
 
-pub use apibara_node::db::libmdbx::NoWriteMap;
+pub use apibara_node::{
+    db::libmdbx::NoWriteMap,
+    server::{MetadataKeyRequestObserver, SimpleRequestObserver},
+};
 
 use std::path::PathBuf;
 
-use crate::server::{MetadataKeyRequestObserver, SimpleRequestObserver};
 use anyhow::Result;
 use apibara_node::db::default_data_dir;
 use clap::Args;

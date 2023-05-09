@@ -7,10 +7,13 @@ use std::{
     time::Duration,
 };
 
-use apibara_node::db::{
-    default_data_dir,
-    libmdbx::{self, Environment, EnvironmentKind},
-    MdbxEnvironmentExt,
+use apibara_node::{
+    db::{
+        default_data_dir,
+        libmdbx::{self, Environment, EnvironmentKind},
+        MdbxEnvironmentExt,
+    },
+    server::{RequestObserver, SimpleRequestObserver},
 };
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
@@ -20,7 +23,7 @@ use crate::{
     healer::{Healer, HealerError},
     ingestion::{BlockIngestion, BlockIngestionConfig, BlockIngestionError},
     provider::{HttpProviderError, Provider},
-    server::{RequestObserver, Server, ServerError, SimpleRequestObserver},
+    server::{Server, ServerError},
     HttpProvider,
 };
 

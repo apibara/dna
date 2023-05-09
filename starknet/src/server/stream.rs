@@ -8,23 +8,23 @@ use std::{
 };
 
 use apibara_core::node::v1alpha2::{stream_server, StreamDataRequest, StreamDataResponse};
-use apibara_node::heartbeat::Heartbeat;
-use futures::Stream;
+use apibara_node::{
+    server::RequestObserver,
+    stream::{new_data_stream, ResponseStream, StreamConfigurationStream, StreamError},
+};
+use futures::{Stream, StreamExt};
 use pin_project::pin_project;
 use tonic::{Request, Response, Streaming};
 use tracing::warn;
 use tracing_futures::Instrument;
 
 use crate::{
-    core::IngestionMessage,
+    core::{GlobalBlockId, IngestionMessage},
     db::StorageReader,
     healer::HealerClient,
-    // stream::{BatchDataStream, BatchMessage, StreamError},
     ingestion::IngestionStreamClient,
-    stream::{DataStream, StreamConfigurationStream, StreamError},
+    stream::{DbBatchProducer, SequentialCursorProducer},
 };
-
-use super::metadata::RequestObserver;
 
 pub struct StreamService<R: StorageReader, O: RequestObserver> {
     ingestion: Arc<IngestionStreamClient>,
@@ -78,16 +78,15 @@ where
         let stream_meter = self.request_observer.stream_data_meter(request.metadata());
 
         let configuration_stream = StreamConfigurationStream::new(request.into_inner());
-
         let ingestion_stream = self.ingestion.subscribe().await;
         let ingestion_stream = IngestionStream::new(ingestion_stream);
-
-        let data_stream = DataStream::new(
+        let batch_producer = DbBatchProducer::new(self.storage.clone());
+        let cursor_producer = SequentialCursorProducer::new(self.storage.clone());
+        let data_stream = new_data_stream(
             configuration_stream,
             ingestion_stream,
-            self.storage.clone(),
-            self.healer.clone(),
-            Arc::new(stream_meter),
+            cursor_producer,
+            batch_producer,
         );
 
         let response = ResponseStream::new(data_stream).instrument(stream_span);
@@ -98,6 +97,7 @@ where
         &self,
         request: Request<StreamDataRequest>,
     ) -> Result<Response<Self::StreamDataImmutableStream>, tonic::Status> {
+        /*
         let stream_span = self.request_observer.stream_data_span(request.metadata());
         let stream_meter = self.request_observer.stream_data_meter(request.metadata());
 
@@ -121,6 +121,8 @@ where
 
         let response = ResponseStream::new(data_stream).instrument(stream_span);
         Ok(Response::new(Box::pin(response)))
+        */
+        todo!()
     }
 }
 
@@ -185,70 +187,5 @@ where
 
     fn size_hint(&self) -> (usize, Option<usize>) {
         self.inner.size_hint()
-    }
-}
-
-#[pin_project]
-struct ResponseStream<S>
-where
-    S: Stream<Item = Result<StreamDataResponse, StreamError>>,
-{
-    #[pin]
-    inner: Heartbeat<S>,
-}
-
-impl<S> ResponseStream<S>
-where
-    S: Stream<Item = Result<StreamDataResponse, StreamError>>,
-{
-    pub fn new(inner: S) -> Self {
-        let inner = Heartbeat::new(inner, Duration::from_secs(30));
-        ResponseStream { inner }
-    }
-}
-
-impl<S> Stream for ResponseStream<S>
-where
-    S: Stream<Item = Result<StreamDataResponse, StreamError>> + Unpin,
-{
-    type Item = Result<StreamDataResponse, tonic::Status>;
-
-    fn poll_next(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<Option<Self::Item>> {
-        let this = self.project();
-        match this.inner.poll_next(cx) {
-            Poll::Pending => Poll::Pending,
-            Poll::Ready(None) => Poll::Ready(None),
-            Poll::Ready(Some(value)) => {
-                let response = match value {
-                    Err(_) => {
-                        // heartbeat
-                        use apibara_core::node::v1alpha2::{
-                            stream_data_response::Message, Heartbeat,
-                        };
-
-                        // stream_id is not relevant for heartbeat messages
-                        let response = StreamDataResponse {
-                            stream_id: 0,
-                            message: Some(Message::Heartbeat(Heartbeat {})),
-                        };
-                        Ok(response)
-                    }
-                    Ok(Err(err)) => {
-                        let status = match err {
-                            StreamError::Client { message } => {
-                                tonic::Status::invalid_argument(message)
-                            }
-                            StreamError::Internal(err) => {
-                                warn!(err = ?err, "stream service error");
-                                tonic::Status::internal("internal server error")
-                            }
-                        };
-                        Err(status)
-                    }
-                    Ok(Ok(response)) => Ok(response),
-                };
-                Poll::Ready(Some(response))
-            }
-        }
     }
 }
