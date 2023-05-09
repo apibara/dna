@@ -1,9 +1,7 @@
 //! Stream data from StarkNet.
-mod block;
-mod configuration;
+mod batch_producer;
 mod cursor_producer;
 mod data;
-mod error;
-mod filtered;
 
-pub use self::{configuration::StreamConfigurationStream, data::DataStream, error::StreamError};
+pub use self::batch_producer::DbBatchProducer;
+pub use self::cursor_producer::SequentialCursorProducer;

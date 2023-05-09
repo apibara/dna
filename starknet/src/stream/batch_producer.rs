@@ -1,61 +1,95 @@
-//! Filter data for one block.
-
 use std::sync::Arc;
 
 use apibara_core::starknet::v1alpha2;
+use apibara_node::{
+    async_trait,
+    server::RequestMeter,
+    stream::{BatchCursor, BatchProducer, StreamConfiguration, StreamError},
+};
 use tracing::trace;
 
-use crate::{core::GlobalBlockId, db::StorageReader, server::RequestMeter};
+use crate::{core::GlobalBlockId, db::StorageReader};
 
-pub trait BlockDataFilter {
-    type Error: std::error::Error + Send + Sync + 'static;
-
-    /// Returns a `Block` with data for the given block.
-    ///
-    /// If there is no data for the given block, it returns `None`.
-    fn data_for_block<M: RequestMeter>(
-        &self,
-        block_id: &GlobalBlockId,
-        meter: &Arc<M>,
-    ) -> Result<Option<v1alpha2::Block>, Self::Error>;
+/// A [BatchProducer] that reads data from the database.
+pub struct DbBatchProducer<R>
+where
+    R: StorageReader + Send + Sync + 'static,
+{
+    storage: Arc<R>,
+    inner: Option<InnerProducer<R>>,
 }
 
-pub struct DatabaseBlockDataFilter<R: StorageReader> {
+struct InnerProducer<R>
+where
+    R: StorageReader + Send + Sync + 'static,
+{
     storage: Arc<R>,
     filter: v1alpha2::Filter,
 }
 
-#[derive(Debug, Default)]
-struct DataCounter {
-    pub header: usize,
-    pub transaction: usize,
-    pub event: usize,
-    pub message: usize,
-    pub storage_diff: usize,
-    pub declared_contract: usize,
-    pub deployed_contract: usize,
-    pub nonce_update: usize,
-}
+impl<R> DbBatchProducer<R>
+where
+    R: StorageReader + Send + Sync + 'static,
+{
+    pub fn new(storage: Arc<R>) -> Self {
+        DbBatchProducer {
+            inner: None,
+            storage,
+        }
+    }
 
-impl DataCounter {
-    pub fn update_meter<M: RequestMeter>(&self, meter: &Arc<M>) {
-        meter.increment_counter("header", self.header as u64);
-        meter.increment_counter("transaction", self.transaction as u64);
-        meter.increment_counter("event", self.event as u64);
-        meter.increment_counter("message", self.message as u64);
-        meter.increment_counter("storage_diff", self.storage_diff as u64);
-        meter.increment_counter("declared_contract", self.declared_contract as u64);
-        meter.increment_counter("deployed_contract", self.deployed_contract as u64);
-        meter.increment_counter("nonce_update", self.nonce_update as u64);
+    fn block_data(&self, block_id: &GlobalBlockId) -> Result<Option<v1alpha2::Block>, R::Error> {
+        match self.inner {
+            None => Ok(None),
+            Some(ref inner) => inner.block_data(block_id),
+        }
     }
 }
 
-impl<R> DatabaseBlockDataFilter<R>
+impl<R> InnerProducer<R>
 where
-    R: StorageReader,
+    R: StorageReader + Send + Sync + 'static,
 {
-    pub fn new(storage: Arc<R>, filter: v1alpha2::Filter) -> Self {
-        DatabaseBlockDataFilter { storage, filter }
+    fn block_data(&self, block_id: &GlobalBlockId) -> Result<Option<v1alpha2::Block>, R::Error> {
+        let mut has_data = false;
+
+        let mut data_counter = DataCounter::default();
+        let status = self.status(block_id)?;
+
+        let header = self.header(block_id, &mut data_counter)?;
+        if !self.has_weak_header() {
+            has_data |= header.is_some();
+        }
+
+        let transactions = self.transactions(block_id, &mut data_counter)?;
+        has_data |= !transactions.is_empty();
+
+        let events = self.events(block_id, &mut data_counter)?;
+        has_data |= !events.is_empty();
+
+        let l2_to_l1_messages = self.l2_to_l1_messages(block_id, &mut data_counter)?;
+        has_data |= !l2_to_l1_messages.is_empty();
+
+        let state_update = self.state_update(block_id, &mut data_counter)?;
+        has_data |= state_update.is_some();
+
+        let data = v1alpha2::Block {
+            status: status as i32,
+            header,
+            state_update,
+            transactions,
+            events,
+            l2_to_l1_messages,
+        };
+
+        if has_data {
+            // emit here so that weak headers are not counted
+            // data_counter.update_meter(meter);
+
+            Ok(Some(data))
+        } else {
+            Ok(None)
+        }
     }
 
     fn status(&self, block_id: &GlobalBlockId) -> Result<v1alpha2::BlockStatus, R::Error> {
@@ -354,56 +388,55 @@ where
     }
 }
 
-impl<R> BlockDataFilter for DatabaseBlockDataFilter<R>
+#[derive(Debug, Default)]
+struct DataCounter {
+    pub header: usize,
+    pub transaction: usize,
+    pub event: usize,
+    pub message: usize,
+    pub storage_diff: usize,
+    pub declared_contract: usize,
+    pub deployed_contract: usize,
+    pub nonce_update: usize,
+}
+
+impl DataCounter {
+    pub fn update_meter<M: RequestMeter>(&self, meter: &Arc<M>) {
+        meter.increment_counter("header", self.header as u64);
+        meter.increment_counter("transaction", self.transaction as u64);
+        meter.increment_counter("event", self.event as u64);
+        meter.increment_counter("message", self.message as u64);
+        meter.increment_counter("storage_diff", self.storage_diff as u64);
+        meter.increment_counter("declared_contract", self.declared_contract as u64);
+        meter.increment_counter("deployed_contract", self.deployed_contract as u64);
+        meter.increment_counter("nonce_update", self.nonce_update as u64);
+    }
+}
+
+#[async_trait]
+impl<R> BatchProducer for DbBatchProducer<R>
 where
-    R: StorageReader,
+    R: StorageReader + Send + Sync + 'static,
 {
-    type Error = R::Error;
+    type Cursor = GlobalBlockId;
+    type Filter = v1alpha2::Filter;
+    type Block = v1alpha2::Block;
 
-    #[tracing::instrument(level = "trace", skip(self, meter))]
-    fn data_for_block<M: RequestMeter>(
-        &self,
-        block_id: &GlobalBlockId,
-        meter: &Arc<M>,
-    ) -> Result<Option<v1alpha2::Block>, Self::Error> {
-        let mut has_data = false;
+    fn reconfigure(
+        &mut self,
+        configuration: &StreamConfiguration<Self::Cursor, Self::Filter>,
+    ) -> Result<(), StreamError> {
+        todo!()
+    }
 
-        let mut data_counter = DataCounter::default();
-        let status = self.status(block_id)?;
-
-        let header = self.header(block_id, &mut data_counter)?;
-        if !self.has_weak_header() {
-            has_data |= header.is_some();
-        }
-
-        let transactions = self.transactions(block_id, &mut data_counter)?;
-        has_data |= !transactions.is_empty();
-
-        let events = self.events(block_id, &mut data_counter)?;
-        has_data |= !events.is_empty();
-
-        let l2_to_l1_messages = self.l2_to_l1_messages(block_id, &mut data_counter)?;
-        has_data |= !l2_to_l1_messages.is_empty();
-
-        let state_update = self.state_update(block_id, &mut data_counter)?;
-        has_data |= state_update.is_some();
-
-        let data = v1alpha2::Block {
-            status: status as i32,
-            header,
-            state_update,
-            transactions,
-            events,
-            l2_to_l1_messages,
-        };
-
-        if has_data {
-            // emit here so that weak headers are not counted
-            data_counter.update_meter(meter);
-
-            Ok(Some(data))
-        } else {
-            Ok(None)
-        }
+    async fn next_batch(
+        &mut self,
+        cursors: impl Iterator<Item = Self::Cursor> + Send + Sync,
+    ) -> Result<Vec<Self::Block>, StreamError> {
+        let batch: Vec<_> = cursors
+            .flat_map(|cursor| self.block_data(&cursor).transpose())
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(StreamError::internal)?;
+        Ok(batch)
     }
 }

@@ -1,54 +1,61 @@
-//! Wrap a tonic request stream and returns a stream of configuration changes.
-
 use std::{
     pin::Pin,
     task::{self, Poll},
 };
 
-use apibara_core::{
-    node::v1alpha2::{DataFinality, StreamDataRequest},
-    starknet::v1alpha2::Filter,
-};
+use apibara_core::node::v1alpha2::{DataFinality, StreamDataRequest};
 use futures::Stream;
 use pin_project::pin_project;
-use prost::Message;
+use prost::{DecodeError, Message};
 use tracing::warn;
 
-use crate::core::GlobalBlockId;
+use crate::core::Cursor;
 
-use super::StreamError;
+use super::error::StreamError;
 
 const MIN_BATCH_SIZE: usize = 1;
 const MAX_BATCH_SIZE: usize = 50;
 const DEFAULT_BATCH_SIZE: usize = 20;
 
-#[derive(Debug, Clone)]
-pub struct StreamConfiguration {
+#[derive(Default, Clone)]
+pub struct StreamConfiguration<C, F>
+where
+    C: Cursor,
+    F: Message + Default + Clone,
+{
     pub batch_size: usize,
     pub stream_id: u64,
     pub finality: DataFinality,
-    pub starting_cursor: Option<GlobalBlockId>,
-    pub filter: Filter,
+    pub starting_cursor: Option<C>,
+    pub filter: F,
 }
 
 #[derive(Default)]
-struct StreamConfigurationStreamState {
-    current: Option<StreamConfiguration>,
+struct StreamConfigurationStreamState<C, F>
+where
+    C: Cursor,
+    F: Message + Default + Clone,
+{
+    current: Option<StreamConfiguration<C, F>>,
 }
 
 #[pin_project]
-pub struct StreamConfigurationStream<S, E>
+pub struct StreamConfigurationStream<C, F, S, E>
 where
+    C: Cursor,
+    F: Message + Default + Clone,
     S: Stream<Item = Result<StreamDataRequest, E>>,
     E: std::error::Error + Send + Sync + 'static,
 {
     #[pin]
     inner: S,
-    state: StreamConfigurationStreamState,
+    state: StreamConfigurationStreamState<C, F>,
 }
 
-impl<S, E> StreamConfigurationStream<S, E>
+impl<C, F, S, E> StreamConfigurationStream<C, F, S, E>
 where
+    C: Cursor,
+    F: Message + Default + Clone,
     S: Stream<Item = Result<StreamDataRequest, E>>,
     E: std::error::Error + Send + Sync + 'static,
 {
@@ -60,11 +67,15 @@ where
     }
 }
 
-impl StreamConfigurationStreamState {
+impl<C, F> StreamConfigurationStreamState<C, F>
+where
+    C: Cursor,
+    F: Message + Default + Clone,
+{
     fn handle_request(
         &mut self,
         request: StreamDataRequest,
-    ) -> Result<StreamConfiguration, StreamError> {
+    ) -> Result<StreamConfiguration<C, F>, StreamError> {
         let batch_size = request.batch_size.unwrap_or(DEFAULT_BATCH_SIZE as u64) as usize;
         let batch_size = batch_size.clamp(MIN_BATCH_SIZE, MAX_BATCH_SIZE);
 
@@ -75,14 +86,21 @@ impl StreamConfigurationStreamState {
 
         let stream_id = request.stream_id.unwrap_or_default();
 
-        let filter = Filter::decode(request.filter.as_ref())
-            .map_err(|_| StreamError::client("invalid filter"))?;
+        let filter = F::decode(request.filter.as_ref()).map_err(|_| {
+            StreamError::invalid_request("invalid filter configuration".to_string())
+        })?;
 
-        let starting_cursor = request
-            .starting_cursor
-            .map(|c| GlobalBlockId::from_cursor(&c))
-            .transpose()
-            .map_err(|_| StreamError::client("invalid stream cursor"))?;
+        let starting_cursor = match request.starting_cursor {
+            None => None,
+            Some(starting_cursor) => match C::from_proto(&starting_cursor) {
+                Some(cursor) => Some(cursor),
+                None => {
+                    return Err(StreamError::invalid_request(
+                        "invalid starting cursor".to_string(),
+                    ));
+                }
+            },
+        };
 
         let configuration = StreamConfiguration {
             batch_size,
@@ -98,12 +116,14 @@ impl StreamConfigurationStreamState {
     }
 }
 
-impl<S, E> Stream for StreamConfigurationStream<S, E>
+impl<C, F, S, E> Stream for StreamConfigurationStream<C, F, S, E>
 where
+    C: Cursor,
+    F: Message + Default + Clone,
     S: Stream<Item = Result<StreamDataRequest, E>>,
     E: std::error::Error + Send + Sync + 'static,
 {
-    type Item = Result<StreamConfiguration, StreamError>;
+    type Item = Result<StreamConfiguration<C, F>, StreamError>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.project();

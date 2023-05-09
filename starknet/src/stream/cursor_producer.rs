@@ -4,17 +4,21 @@ use std::{
     task::{self, Poll, Waker},
 };
 
-use apibara_core::node::v1alpha2::DataFinality;
+use apibara_core::{node::v1alpha2::DataFinality, starknet::v1alpha2};
 use apibara_node::{
     async_trait,
-    stream::{CursorProducer, IngestionMessage},
+    stream::{
+        BatchCursor, CursorProducer, IngestionMessage, IngestionResponse, StreamConfiguration,
+        StreamError,
+    },
 };
-use futures::Stream;
+use futures::{stream::FusedStream, Stream};
 
 use crate::{core::GlobalBlockId, db::StorageReader};
 
 /// A [CursorProducer] that produces sequential cursors.
 pub struct SequentialCursorProducer<R: StorageReader + Send + Sync + 'static> {
+    configured: bool,
     current: Option<GlobalBlockId>,
     data_finality: DataFinality,
     ingestion_state: Option<IngestionState>,
@@ -33,14 +37,11 @@ impl<R> SequentialCursorProducer<R>
 where
     R: StorageReader + Send + Sync + 'static,
 {
-    pub fn new(
-        starting_cursor: Option<GlobalBlockId>,
-        data_finality: DataFinality,
-        storage: Arc<R>,
-    ) -> Self {
+    pub fn new(storage: Arc<R>) -> Self {
         SequentialCursorProducer {
-            current: starting_cursor,
-            data_finality,
+            configured: false,
+            current: None,
+            data_finality: DataFinality::DataStatusAccepted,
             storage,
             ingestion_state: None,
             waker: None,
@@ -65,6 +66,10 @@ where
     }
 
     fn should_produce_cursor(&mut self, next_block_number: u64) -> Result<bool, R::Error> {
+        if !self.configured {
+            return Ok(false);
+        }
+
         let finality = self.data_finality;
         let state = self.get_ingestion_state()?;
 
@@ -128,38 +133,63 @@ where
     R: StorageReader + Send + Sync + 'static,
 {
     type Cursor = GlobalBlockId;
-    type Error = R::Error;
+    type Filter = v1alpha2::Filter;
+
+    fn reconfigure(
+        &mut self,
+        configuration: &StreamConfiguration<Self::Cursor, Self::Filter>,
+    ) -> Result<(), StreamError> {
+        self.configured = true;
+        self.current = configuration.starting_cursor;
+        self.data_finality = configuration.finality;
+        Ok(())
+    }
 
     async fn handle_ingestion_message(
         &mut self,
         message: &IngestionMessage<Self::Cursor>,
-    ) -> Result<(), Self::Error> {
-        let mut state = self.get_ingestion_state()?;
-        match message {
+    ) -> Result<IngestionResponse<Self::Cursor>, StreamError> {
+        let mut state = self.get_ingestion_state().map_err(StreamError::internal)?;
+        let response = match message {
             IngestionMessage::Pending(cursor) => {
                 state.pending = Some(*cursor);
+                IngestionResponse::Ok
             }
             IngestionMessage::Accepted(cursor) => {
                 state.finalized = None;
                 state.accepted = Some(*cursor);
+                IngestionResponse::Ok
             }
             IngestionMessage::Finalized(cursor) => {
                 state.finalized = Some(*cursor);
+                IngestionResponse::Ok
             }
             IngestionMessage::Invalidate(cursor) => {
                 state.pending = None;
                 state.accepted = state.accepted.map(|c| lowest_cursor(c, *cursor));
                 state.finalized = state.finalized.map(|c| lowest_cursor(c, *cursor));
+                // if the current cursor is after the new head, then data was invalidated.
+                let is_invalidated = self
+                    .current
+                    .map(|c| c.number() > cursor.number())
+                    .unwrap_or(false);
+
                 self.current = self.current.map(|c| lowest_cursor(c, *cursor));
+
+                if is_invalidated {
+                    IngestionResponse::Invalidate(*cursor)
+                } else {
+                    IngestionResponse::Ok
+                }
             }
-        }
+        };
 
         // wake up the stream if it was waiting for a new block
         if let Some(waker) = self.waker.take() {
             waker.wake();
         }
 
-        Ok(())
+        Ok(response)
     }
 }
 
@@ -167,14 +197,18 @@ impl<R> Stream for SequentialCursorProducer<R>
 where
     R: StorageReader + Send + Sync + 'static,
 {
-    type Item = Result<GlobalBlockId, R::Error>;
+    type Item = Result<BatchCursor<GlobalBlockId>, StreamError>;
 
     fn poll_next(
         mut self: Pin<&mut Self>,
         cx: &mut task::Context<'_>,
     ) -> task::Poll<Option<Self::Item>> {
+        /*
         match self.next_cursor() {
-            Err(e) => Poll::Ready(Some(Err(e))),
+            Err(err) => {
+                let err = StreamError::internal(err);
+                Poll::Ready(Some(Err(err)))
+            }
             Ok(None) => {
                 // no new block yet, store waker and wake after a new ingestion message
                 self.waker = Some(cx.waker().clone());
@@ -182,6 +216,17 @@ where
             }
             Ok(Some(cursor)) => Poll::Ready(Some(Ok(cursor))),
         }
+        */
+        todo!()
+    }
+}
+
+impl<R> FusedStream for SequentialCursorProducer<R>
+where
+    R: StorageReader + Send + Sync + 'static,
+{
+    fn is_terminated(&self) -> bool {
+        false
     }
 }
 
@@ -189,13 +234,13 @@ where
 mod tests {
     use std::sync::Arc;
 
-    use apibara_core::node::v1alpha2::DataFinality;
-    use apibara_node::stream::{CursorProducer, IngestionMessage};
+    use apibara_core::{node::v1alpha2::DataFinality, starknet::v1alpha2::Filter};
+    use apibara_node::stream::{CursorProducer, IngestionMessage, StreamConfiguration};
     use futures::{FutureExt, StreamExt, TryStreamExt};
 
     use crate::{
         core::{BlockHash, GlobalBlockId},
-        db::MockStorageReader,
+        db::{MockStorageReader, StorageReader},
     };
 
     use super::SequentialCursorProducer;
@@ -212,6 +257,34 @@ mod tests {
         GlobalBlockId::new(num, hash)
     }
 
+    fn new_configuration(
+        starting_cursor: Option<GlobalBlockId>,
+        finality: DataFinality,
+    ) -> StreamConfiguration<GlobalBlockId, Filter> {
+        StreamConfiguration {
+            batch_size: 1,
+            stream_id: 0,
+            finality,
+            starting_cursor,
+            filter: Filter::default(),
+        }
+    }
+
+    fn new_producer<R>(
+        cursor: Option<GlobalBlockId>,
+        finality: DataFinality,
+        storage: Arc<R>,
+    ) -> SequentialCursorProducer<R>
+    where
+        R: StorageReader + Send + Sync + 'static,
+    {
+        let mut producer = SequentialCursorProducer::new(storage);
+        producer
+            .reconfigure(&new_configuration(cursor, finality))
+            .unwrap();
+        producer
+    }
+
     #[tokio::test]
     async fn test_produce_full_batch() {
         let mut storage = MockStorageReader::new();
@@ -224,11 +297,7 @@ mod tests {
         storage
             .expect_highest_finalized_block()
             .returning(|| Ok(Some(new_block_id(90))));
-        let producer = SequentialCursorProducer::new(
-            None,
-            DataFinality::DataStatusAccepted,
-            Arc::new(storage),
-        );
+        let mut producer = new_producer(None, DataFinality::DataStatusAccepted, Arc::new(storage));
 
         let cursors: Vec<_> = producer.take(10).try_collect().await.unwrap();
         assert_eq!(cursors.len(), 10);
@@ -250,11 +319,7 @@ mod tests {
             .expect_highest_finalized_block()
             .returning(|| Ok(Some(new_block_id(1))));
 
-        let mut producer = SequentialCursorProducer::new(
-            None,
-            DataFinality::DataStatusAccepted,
-            Arc::new(storage),
-        );
+        let mut producer = new_producer(None, DataFinality::DataStatusAccepted, Arc::new(storage));
 
         for i in 0..5 {
             let cursor = producer.try_next().await.unwrap().unwrap();
@@ -279,7 +344,7 @@ mod tests {
             .returning(|| Ok(Some(new_block_id(190))));
 
         let starting_cursor = new_block_id(103);
-        let producer = SequentialCursorProducer::new(
+        let producer = new_producer(
             Some(starting_cursor),
             DataFinality::DataStatusAccepted,
             Arc::new(storage),
@@ -305,11 +370,7 @@ mod tests {
             .expect_highest_finalized_block()
             .returning(|| Ok(Some(new_block_id(1))));
 
-        let mut producer = SequentialCursorProducer::new(
-            None,
-            DataFinality::DataStatusFinalized,
-            Arc::new(storage),
-        );
+        let mut producer = new_producer(None, DataFinality::DataStatusFinalized, Arc::new(storage));
 
         for i in 0..2 {
             let cursor = producer.try_next().await.unwrap().unwrap();
@@ -346,11 +407,7 @@ mod tests {
             .expect_highest_finalized_block()
             .returning(|| Ok(Some(new_block_id(1))));
 
-        let mut producer = SequentialCursorProducer::new(
-            None,
-            DataFinality::DataStatusAccepted,
-            Arc::new(storage),
-        );
+        let mut producer = new_producer(None, DataFinality::DataStatusAccepted, Arc::new(storage));
 
         for i in 0..5 {
             let cursor = producer.try_next().await.unwrap().unwrap();
@@ -387,11 +444,7 @@ mod tests {
             .expect_highest_finalized_block()
             .returning(|| Ok(Some(new_block_id(1))));
 
-        let mut producer = SequentialCursorProducer::new(
-            None,
-            DataFinality::DataStatusFinalized,
-            Arc::new(storage),
-        );
+        let mut producer = new_producer(None, DataFinality::DataStatusFinalized, Arc::new(storage));
 
         for i in 0..2 {
             let cursor = producer.try_next().await.unwrap().unwrap();
@@ -423,8 +476,7 @@ mod tests {
             .expect_highest_finalized_block()
             .returning(|| Ok(Some(new_block_id(1))));
 
-        let mut producer =
-            SequentialCursorProducer::new(None, DataFinality::DataStatusPending, Arc::new(storage));
+        let mut producer = new_producer(None, DataFinality::DataStatusPending, Arc::new(storage));
 
         for i in 0..5 {
             let cursor = producer.try_next().await.unwrap().unwrap();
@@ -461,11 +513,7 @@ mod tests {
             .expect_highest_finalized_block()
             .returning(|| Ok(Some(new_block_id(1))));
 
-        let mut producer = SequentialCursorProducer::new(
-            None,
-            DataFinality::DataStatusAccepted,
-            Arc::new(storage),
-        );
+        let mut producer = new_producer(None, DataFinality::DataStatusAccepted, Arc::new(storage));
 
         for i in 0..5 {
             let cursor = producer.try_next().await.unwrap().unwrap();
@@ -497,11 +545,7 @@ mod tests {
             .expect_highest_finalized_block()
             .returning(|| Ok(Some(new_block_id(1))));
 
-        let mut producer = SequentialCursorProducer::new(
-            None,
-            DataFinality::DataStatusAccepted,
-            Arc::new(storage),
-        );
+        let mut producer = new_producer(None, DataFinality::DataStatusAccepted, Arc::new(storage));
 
         for i in 0..1 {
             let cursor = producer.try_next().await.unwrap().unwrap();
@@ -535,11 +579,7 @@ mod tests {
             .expect_highest_finalized_block()
             .returning(|| Ok(Some(new_block_id(1))));
 
-        let mut producer = SequentialCursorProducer::new(
-            None,
-            DataFinality::DataStatusAccepted,
-            Arc::new(storage),
-        );
+        let mut producer = new_producer(None, DataFinality::DataStatusAccepted, Arc::new(storage));
 
         for i in 0..3 {
             let cursor = producer.try_next().await.unwrap().unwrap();
@@ -581,11 +621,7 @@ mod tests {
             .expect_highest_finalized_block()
             .returning(|| Ok(Some(new_block_id(4))));
 
-        let mut producer = SequentialCursorProducer::new(
-            None,
-            DataFinality::DataStatusFinalized,
-            Arc::new(storage),
-        );
+        let mut producer = new_producer(None, DataFinality::DataStatusFinalized, Arc::new(storage));
 
         for i in 0..4 {
             let cursor = producer.try_next().await.unwrap().unwrap();

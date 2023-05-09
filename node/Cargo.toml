@@ -12,6 +12,7 @@ anyhow = "1.0.66"
 apibara-core = { path = "../core" }
 apibara-observability = { path = "../observability" }
 arrayvec = "0.7.2"
+async-stream = "0.3.5"
 async-trait = "0.1.57"
 byte-unit = "4.0.14"
 byteorder = "1.4.3"

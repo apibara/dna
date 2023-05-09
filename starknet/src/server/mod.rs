@@ -5,7 +5,10 @@ mod stream;
 use std::{net::SocketAddr, sync::Arc};
 
 use apibara_core::node as node_pb;
-use apibara_node::db::libmdbx::{Environment, EnvironmentKind};
+use apibara_node::{
+    db::libmdbx::{Environment, EnvironmentKind},
+    server::{RequestObserver, SimpleRequestObserver},
+};
 use tokio::task::JoinError;
 use tokio_util::sync::CancellationToken;
 use tonic::transport::Server as TonicServer;
@@ -17,10 +20,6 @@ use crate::{
 };
 
 use self::health::HealthReporter;
-
-pub use self::metadata::{
-    MetadataKeyRequestObserver, RequestMeter, RequestObserver, SimpleRequestObserver,
-};
 
 pub struct Server<E: EnvironmentKind, O: RequestObserver> {
     db: Arc<Environment<E>>,
