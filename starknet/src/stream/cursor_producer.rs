@@ -18,12 +18,17 @@ use crate::{core::GlobalBlockId, db::StorageReader};
 
 /// A [CursorProducer] that produces sequential cursors.
 pub struct SequentialCursorProducer<R: StorageReader + Send + Sync + 'static> {
-    configured: bool,
-    current: Option<GlobalBlockId>,
-    data_finality: DataFinality,
+    configuration: Option<BatchConfiguration>,
     ingestion_state: Option<IngestionState>,
     storage: Arc<R>,
     waker: Option<Waker>,
+}
+
+struct BatchConfiguration {
+    current: Option<GlobalBlockId>,
+    pending_sent: bool,
+    data_finality: DataFinality,
+    batch_size: usize,
 }
 
 #[derive(Default, Debug)]
@@ -39,68 +44,137 @@ where
 {
     pub fn new(storage: Arc<R>) -> Self {
         SequentialCursorProducer {
-            configured: false,
-            current: None,
-            data_finality: DataFinality::DataStatusAccepted,
+            configuration: None,
             storage,
             ingestion_state: None,
             waker: None,
         }
     }
 
-    pub fn next_cursor(&mut self) -> Result<Option<GlobalBlockId>, R::Error> {
-        let next_block_number = self.current.map(|c| c.number() + 1).unwrap_or(0);
+    pub fn next_cursor(&mut self) -> Result<Option<BatchCursor<GlobalBlockId>>, R::Error> {
+        if self.configuration.is_some() {
+            self.next_cursor_with_configuration()
+        } else {
+            Ok(None)
+        }
+    }
 
-        if !self.should_produce_cursor(next_block_number)? {
+    fn next_cursor_with_configuration(
+        &mut self,
+    ) -> Result<Option<BatchCursor<GlobalBlockId>>, R::Error> {
+        // We call this from inside a `is_some` check.
+        let state = self.get_ingestion_state()?;
+        // keep borrow checker happy
+        let pending_cursor = state.pending;
+        let accepted_cursor = state.accepted;
+        let finalized_cursor = state.finalized;
+
+        let configuration = self.configuration.as_mut().expect("configuration");
+        let starting_cursor = configuration.current;
+        let next_block_number = configuration.current.map(|c| c.number() + 1).unwrap_or(0);
+
+        if let Some(finalized) = finalized_cursor {
+            if next_block_number <= finalized.number() {
+                return self.next_cursor_finalized(starting_cursor, next_block_number, &finalized);
+            }
+        }
+
+        if let Some(accepted) = accepted_cursor {
+            if next_block_number <= accepted.number() {
+                return self.next_cursor_accepted(starting_cursor, next_block_number);
+            }
+        }
+
+        if let Some(pending) = pending_cursor {
+            if next_block_number <= pending.number() {
+                return self.next_cursor_pending(starting_cursor, next_block_number);
+            }
+        }
+
+        Ok(None)
+    }
+
+    fn next_cursor_finalized(
+        &mut self,
+        starting_cursor: Option<GlobalBlockId>,
+        next_block_number: u64,
+        finalized: &GlobalBlockId,
+    ) -> Result<Option<BatchCursor<GlobalBlockId>>, R::Error> {
+        // always send finalized data.
+        let configuration = self.configuration.as_mut().expect("configuration");
+        let mut cursors = Vec::with_capacity(configuration.batch_size);
+        let final_block_number = u64::min(
+            finalized.number(),
+            next_block_number + (configuration.batch_size as u64) - 1,
+        );
+        for block_number in next_block_number..=final_block_number {
+            match self.storage.canonical_block_id(block_number)? {
+                Some(cursor) => {
+                    cursors.push(cursor);
+                }
+                None => break,
+            }
+        }
+
+        if cursors.is_empty() {
             return Ok(None);
         }
 
-        let next_cursor = self.storage.canonical_block_id(next_block_number)?;
-
-        // only update cursor if we have a new block
-        if let Some(next_cursor) = next_cursor {
-            self.current = Some(next_cursor);
-        }
-
-        Ok(next_cursor)
+        let batch_cursor = BatchCursor::new_finalized(starting_cursor, cursors);
+        configuration.current = Some(*batch_cursor.end_cursor());
+        Ok(Some(batch_cursor))
     }
 
-    fn should_produce_cursor(&mut self, next_block_number: u64) -> Result<bool, R::Error> {
-        if !self.configured {
-            return Ok(false);
+    fn next_cursor_accepted(
+        &mut self,
+        starting_cursor: Option<GlobalBlockId>,
+        next_block_number: u64,
+    ) -> Result<Option<BatchCursor<GlobalBlockId>>, R::Error> {
+        let configuration = self.configuration.as_mut().expect("configuration");
+        if configuration.data_finality == DataFinality::DataStatusFinalized
+            || configuration.data_finality == DataFinality::DataStatusUnknown
+        {
+            return Ok(None);
         }
 
-        let finality = self.data_finality;
-        let state = self.get_ingestion_state()?;
-
-        // if client request pending, produce a cursor unless we already reached the head.
-        if finality == DataFinality::DataStatusPending {
-            if let Some(pending) = state.pending {
-                return Ok(next_block_number <= pending.number());
+        match self.storage.canonical_block_id(next_block_number)? {
+            Some(cursor) => {
+                let batch_cursor = BatchCursor::new_accepted(starting_cursor, cursor);
+                configuration.current = Some(*batch_cursor.end_cursor());
+                Ok(Some(batch_cursor))
             }
+            None => Ok(None),
         }
-
-        // produce cursor only if 1) have a finalized cursor 2) next cursor is before that
-        if finality == DataFinality::DataStatusFinalized {
-            if let Some(finalized) = state.finalized {
-                return Ok(next_block_number <= finalized.number());
-            }
-        }
-
-        let accepted_finality = finality == DataFinality::DataStatusAccepted
-            || finality == DataFinality::DataStatusPending;
-
-        if accepted_finality {
-            if let Some(accepted) = state.accepted {
-                return Ok(next_block_number <= accepted.number());
-            }
-        }
-
-        // nothing matched. need more data to make a decision
-        Ok(false)
     }
 
-    fn get_ingestion_state(&mut self) -> Result<&mut IngestionState, R::Error> {
+    fn next_cursor_pending(
+        &mut self,
+        starting_cursor: Option<GlobalBlockId>,
+        next_block_number: u64,
+    ) -> Result<Option<BatchCursor<GlobalBlockId>>, R::Error> {
+        let configuration = self.configuration.as_mut().expect("configuration");
+        if configuration.data_finality != DataFinality::DataStatusPending
+            || configuration.pending_sent
+        {
+            return Ok(None);
+        }
+
+        match self.storage.canonical_block_id(next_block_number)? {
+            Some(cursor) => {
+                let batch_cursor = BatchCursor::new_pending(starting_cursor, cursor);
+                configuration.pending_sent = true;
+                Ok(Some(batch_cursor))
+            }
+            None => Ok(None),
+        }
+    }
+
+    fn get_ingestion_state(&mut self) -> Result<&IngestionState, R::Error> {
+        let state = self.get_ingestion_state_mut()?;
+        Ok(state)
+    }
+
+    fn get_ingestion_state_mut(&mut self) -> Result<&mut IngestionState, R::Error> {
         // Read new state only if we don't have one yet.
         // Initialize with default value otherwise to make the borrow checker happy.
         let new_state = if self.ingestion_state.is_some() {
@@ -139,9 +213,13 @@ where
         &mut self,
         configuration: &StreamConfiguration<Self::Cursor, Self::Filter>,
     ) -> Result<(), StreamError> {
-        self.configured = true;
-        self.current = configuration.starting_cursor;
-        self.data_finality = configuration.finality;
+        let configuration = BatchConfiguration {
+            data_finality: configuration.finality,
+            pending_sent: false,
+            current: configuration.starting_cursor,
+            batch_size: configuration.batch_size,
+        };
+        self.configuration = Some(configuration);
         Ok(())
     }
 
@@ -149,10 +227,16 @@ where
         &mut self,
         message: &IngestionMessage<Self::Cursor>,
     ) -> Result<IngestionResponse<Self::Cursor>, StreamError> {
-        let mut state = self.get_ingestion_state().map_err(StreamError::internal)?;
+        let mut state = self
+            .get_ingestion_state_mut()
+            .map_err(StreamError::internal)?;
         let response = match message {
             IngestionMessage::Pending(cursor) => {
                 state.pending = Some(*cursor);
+                // mark pending as ready to send
+                if let Some(mut configuration) = self.configuration.as_mut() {
+                    configuration.pending_sent = false;
+                }
                 IngestionResponse::Ok
             }
             IngestionMessage::Accepted(cursor) => {
@@ -169,15 +253,20 @@ where
                 state.accepted = state.accepted.map(|c| lowest_cursor(c, *cursor));
                 state.finalized = state.finalized.map(|c| lowest_cursor(c, *cursor));
                 // if the current cursor is after the new head, then data was invalidated.
-                let is_invalidated = self
-                    .current
-                    .map(|c| c.number() > cursor.number())
-                    .unwrap_or(false);
+                if let Some(mut configuration) = self.configuration.as_mut() {
+                    let is_invalidated = configuration
+                        .current
+                        .map(|c| c.number() > cursor.number())
+                        .unwrap_or(false);
 
-                self.current = self.current.map(|c| lowest_cursor(c, *cursor));
+                    configuration.current =
+                        configuration.current.map(|c| lowest_cursor(c, *cursor));
 
-                if is_invalidated {
-                    IngestionResponse::Invalidate(*cursor)
+                    if is_invalidated {
+                        IngestionResponse::Invalidate(*cursor)
+                    } else {
+                        IngestionResponse::Ok
+                    }
                 } else {
                     IngestionResponse::Ok
                 }
@@ -203,7 +292,6 @@ where
         mut self: Pin<&mut Self>,
         cx: &mut task::Context<'_>,
     ) -> task::Poll<Option<Self::Item>> {
-        /*
         match self.next_cursor() {
             Err(err) => {
                 let err = StreamError::internal(err);
@@ -214,10 +302,8 @@ where
                 self.waker = Some(cx.waker().clone());
                 Poll::Pending
             }
-            Ok(Some(cursor)) => Poll::Ready(Some(Ok(cursor))),
+            Ok(Some(batch_cursor)) => Poll::Ready(Some(Ok(batch_cursor))),
         }
-        */
-        todo!()
     }
 }
 
@@ -262,7 +348,7 @@ mod tests {
         finality: DataFinality,
     ) -> StreamConfiguration<GlobalBlockId, Filter> {
         StreamConfiguration {
-            batch_size: 1,
+            batch_size: 3,
             stream_id: 0,
             finality,
             starting_cursor,
@@ -285,8 +371,12 @@ mod tests {
         producer
     }
 
+    /// This test checks that the cursor producer keeps producing finalized batches with the
+    /// requested number of cursors.
+    ///
+    /// Finality: FINALIZED
     #[tokio::test]
-    async fn test_produce_full_batch() {
+    async fn test_produce_full_batch_finalized() {
         let mut storage = MockStorageReader::new();
         storage
             .expect_canonical_block_id()
@@ -297,360 +387,536 @@ mod tests {
         storage
             .expect_highest_finalized_block()
             .returning(|| Ok(Some(new_block_id(90))));
-        let mut producer = new_producer(None, DataFinality::DataStatusAccepted, Arc::new(storage));
 
-        let cursors: Vec<_> = producer.take(10).try_collect().await.unwrap();
-        assert_eq!(cursors.len(), 10);
-        for (i, cursor) in cursors.iter().enumerate() {
-            assert_eq!(cursor.number(), i as u64);
+        let producer = new_producer(None, DataFinality::DataStatusFinalized, Arc::new(storage));
+
+        let batches: Vec<_> = producer.take(5).try_collect().await.unwrap();
+        assert_eq!(batches.len(), 5);
+        let mut i = 0;
+        for batch in batches {
+            let cursors = batch.as_finalized().unwrap();
+            for cursor in cursors {
+                assert_eq!(cursor.number(), i as u64);
+                i += 1;
+            }
         }
     }
 
+    /// This test checks that the producer doesn't produce any cursor if the requested block is
+    /// after the most recent finalized block.
+    ///
+    /// Finality: FINALIZED
     #[tokio::test]
-    async fn test_reach_head_of_chain() {
+    async fn test_produce_nothing_if_after_finalized_as_finalized() {
         let mut storage = MockStorageReader::new();
         storage
             .expect_canonical_block_id()
             .returning(|i| Ok(Some(new_block_id(i))));
         storage
             .expect_highest_accepted_block()
-            .returning(|| Ok(Some(new_block_id(4))));
+            .returning(|| Ok(Some(new_block_id(100))));
         storage
             .expect_highest_finalized_block()
-            .returning(|| Ok(Some(new_block_id(1))));
+            .returning(|| Ok(Some(new_block_id(90))));
 
-        let mut producer = new_producer(None, DataFinality::DataStatusAccepted, Arc::new(storage));
+        let mut producer = new_producer(
+            Some(new_block_id(90)),
+            DataFinality::DataStatusFinalized,
+            Arc::new(storage),
+        );
 
-        for i in 0..5 {
-            let cursor = producer.try_next().await.unwrap().unwrap();
-            assert_eq!(cursor.number(), i as u64);
-        }
-
-        let cursor = producer.try_next().now_or_never();
-        assert!(cursor.is_none());
+        let batch = producer.try_next().now_or_never();
+        assert!(batch.is_none());
     }
 
+    /// This test checks the transition between finalized and accepted. Since the requested data is
+    /// finalized, the producer should produce partial batches with only the finalized cursors.
+    ///
+    /// Finality: FINALIZED
     #[tokio::test]
-    async fn test_start_at_given_cursor() {
+    async fn test_reach_accepted_as_finalized() {
         let mut storage = MockStorageReader::new();
         storage
             .expect_canonical_block_id()
             .returning(|i| Ok(Some(new_block_id(i))));
         storage
             .expect_highest_accepted_block()
-            .returning(|| Ok(Some(new_block_id(200))));
+            .returning(|| Ok(Some(new_block_id(15))));
         storage
             .expect_highest_finalized_block()
-            .returning(|| Ok(Some(new_block_id(190))));
+            .returning(|| Ok(Some(new_block_id(10))));
 
-        let starting_cursor = new_block_id(103);
-        let producer = new_producer(
-            Some(starting_cursor),
+        let producer = new_producer(None, DataFinality::DataStatusFinalized, Arc::new(storage));
+
+        let batches: Vec<_> = producer.take(4).try_collect().await.unwrap();
+        assert_eq!(batches.len(), 4);
+        let mut i = 0;
+        for (batch_idx, batch) in batches.iter().enumerate() {
+            let cursors = batch.as_finalized().unwrap();
+            if batch_idx == 3 {
+                // last batch is partial because it cannot contain block 11, which is accepted
+                assert_eq!(cursors.len(), 2);
+            } else {
+                assert_eq!(cursors.len(), 3);
+            }
+            for cursor in cursors {
+                assert_eq!(cursor.number(), i as u64);
+                i += 1;
+            }
+        }
+    }
+
+    /// This test checks that the producer starts producing new batches after the chain finality
+    /// status is updated.
+    ///
+    /// Finality: FINALIZED
+    #[tokio::test]
+    async fn test_handle_finalized_message_as_finalized() {
+        let mut storage = MockStorageReader::new();
+        storage
+            .expect_canonical_block_id()
+            .returning(|i| Ok(Some(new_block_id(i))));
+        storage
+            .expect_highest_accepted_block()
+            .returning(|| Ok(Some(new_block_id(15))));
+        storage
+            .expect_highest_finalized_block()
+            .returning(|| Ok(Some(new_block_id(10))));
+
+        let mut producer = new_producer(None, DataFinality::DataStatusFinalized, Arc::new(storage));
+
+        for _ in 0..4 {
+            let batch = producer.try_next().await.unwrap().unwrap();
+            assert!(batch.as_finalized().is_some());
+        }
+
+        let batch = producer.try_next().now_or_never();
+        assert!(batch.is_none());
+
+        producer
+            .handle_ingestion_message(&IngestionMessage::Finalized(new_block_id(14)))
+            .await
+            .unwrap();
+
+        let mut expected_block = 11;
+        for _ in 0..2 {
+            let batch = producer.try_next().await.unwrap().unwrap();
+            let cursors = batch.as_finalized().unwrap();
+            for cursor in cursors {
+                assert_eq!(cursor.number(), expected_block);
+                expected_block += 1;
+            }
+        }
+
+        let batch = producer.try_next().now_or_never();
+        assert!(batch.is_none());
+    }
+
+    /// This test checks that the producer produces messages after the invalidated cursor.
+    ///
+    /// Finality: FINALIZED
+    #[tokio::test]
+    async fn test_handle_invalidate_message_as_finalized() {
+        let mut storage = MockStorageReader::new();
+        storage
+            .expect_canonical_block_id()
+            .returning(|i| Ok(Some(new_block_id(i))));
+        storage
+            .expect_highest_accepted_block()
+            .returning(|| Ok(Some(new_block_id(15))));
+        storage
+            .expect_highest_finalized_block()
+            .returning(|| Ok(Some(new_block_id(10))));
+
+        let mut producer = new_producer(
+            Some(new_block_id(8)),
+            DataFinality::DataStatusFinalized,
+            Arc::new(storage),
+        );
+
+        let batch = producer.try_next().await.unwrap().unwrap();
+        assert!(batch.as_finalized().is_some());
+
+        let batch = producer.try_next().now_or_never();
+        assert!(batch.is_none());
+
+        // invalidate after current. nothing happens
+        producer
+            .handle_ingestion_message(&IngestionMessage::Invalidate(new_block_id(14)))
+            .await
+            .unwrap();
+
+        let batch = producer.try_next().now_or_never();
+        assert!(batch.is_none());
+
+        // invalidate before current. goes back
+        producer
+            .handle_ingestion_message(&IngestionMessage::Invalidate(new_block_id(4)))
+            .await
+            .unwrap();
+
+        // still no new finalized.
+        let batch = producer.try_next().now_or_never();
+        assert!(batch.is_none());
+
+        producer
+            .handle_ingestion_message(&IngestionMessage::Finalized(new_block_id(6)))
+            .await
+            .unwrap();
+
+        let batch = producer.try_next().await.unwrap().unwrap();
+        assert!(batch.as_finalized().is_some());
+    }
+
+    /// This test checks that no data is produced if the node has not ingested any finalized block
+    /// yet.
+    ///
+    /// Finality: FINALIZED
+    #[tokio::test]
+    async fn test_no_finalized_as_finalized() {
+        let mut storage = MockStorageReader::new();
+        storage
+            .expect_canonical_block_id()
+            .returning(|i| Ok(Some(new_block_id(i))));
+        storage
+            .expect_highest_accepted_block()
+            .returning(|| Ok(Some(new_block_id(14))));
+        storage
+            .expect_highest_finalized_block()
+            .returning(|| Ok(None));
+
+        let mut producer = new_producer(None, DataFinality::DataStatusFinalized, Arc::new(storage));
+
+        let batch = producer.try_next().now_or_never();
+        assert!(batch.is_none());
+
+        producer
+            .handle_ingestion_message(&IngestionMessage::Finalized(new_block_id(13)))
+            .await
+            .unwrap();
+
+        let batch = producer.try_next().await.unwrap().unwrap();
+        assert!(batch.as_finalized().is_some());
+    }
+
+    /// This test checks that no data is produced if the node has not ingested any finalized block
+    /// yet.
+    ///
+    /// Finality: FINALIZED
+    #[tokio::test]
+    async fn test_no_accepted_as_finalized() {
+        let mut storage = MockStorageReader::new();
+        storage
+            .expect_canonical_block_id()
+            .returning(|i| Ok(Some(new_block_id(i))));
+        storage
+            .expect_highest_accepted_block()
+            .returning(|| Ok(None));
+        storage
+            .expect_highest_finalized_block()
+            .returning(|| Ok(Some(new_block_id(15))));
+
+        let mut producer = new_producer(None, DataFinality::DataStatusFinalized, Arc::new(storage));
+
+        let batch = producer.try_next().await.unwrap().unwrap();
+        assert!(batch.as_finalized().is_some());
+    }
+
+    /// This test checks that the producer switches between producing finalized cursors and
+    /// accepted cursors.
+    ///
+    /// Finality: ACCEPTED
+    #[tokio::test]
+    async fn test_full_batch_as_accepted() {
+        let mut storage = MockStorageReader::new();
+        storage
+            .expect_canonical_block_id()
+            .returning(|i| Ok(Some(new_block_id(i))));
+        storage
+            .expect_highest_accepted_block()
+            .returning(|| Ok(Some(new_block_id(15))));
+        storage
+            .expect_highest_finalized_block()
+            .returning(|| Ok(Some(new_block_id(10))));
+
+        let mut producer = new_producer(
+            Some(new_block_id(8)),
             DataFinality::DataStatusAccepted,
             Arc::new(storage),
         );
 
-        let cursors: Vec<_> = producer.take(10).try_collect().await.unwrap();
-        assert_eq!(cursors.len(), 10);
-        for (i, cursor) in cursors.iter().enumerate() {
-            assert_eq!(cursor.number(), 104 + i as u64);
+        // finalized batch
+        let batch = producer.try_next().await.unwrap().unwrap();
+        assert!(batch.as_finalized().is_some());
+
+        // accepted batches
+        for block_num in 11..=15 {
+            let batch = producer.try_next().await.unwrap().unwrap();
+            assert!(batch.as_finalized().is_none());
+            let accepted = batch.as_accepted().unwrap();
+            assert_eq!(accepted.number(), block_num);
         }
+
+        let batch = producer.try_next().now_or_never();
+        assert!(batch.is_none());
     }
 
+    /// This test checks that the producer goes back to producing finalized blocks after receiving
+    /// a finalized message, if the new finalized cursor is after the current cursor.
+    ///
+    /// Finality: ACCEPTED
     #[tokio::test]
-    async fn test_handle_finalized_message_finalized_finality() {
+    async fn test_handle_finalized_message_as_accepted() {
         let mut storage = MockStorageReader::new();
         storage
             .expect_canonical_block_id()
             .returning(|i| Ok(Some(new_block_id(i))));
         storage
             .expect_highest_accepted_block()
-            .returning(|| Ok(Some(new_block_id(4))));
+            .returning(|| Ok(Some(new_block_id(15))));
         storage
             .expect_highest_finalized_block()
-            .returning(|| Ok(Some(new_block_id(1))));
+            .returning(|| Ok(Some(new_block_id(10))));
 
-        let mut producer = new_producer(None, DataFinality::DataStatusFinalized, Arc::new(storage));
+        let mut producer = new_producer(
+            Some(new_block_id(8)),
+            DataFinality::DataStatusAccepted,
+            Arc::new(storage),
+        );
 
-        for i in 0..2 {
-            let cursor = producer.try_next().await.unwrap().unwrap();
-            assert_eq!(cursor.number(), i as u64);
-        }
+        // finalized batch
+        let batch = producer.try_next().await.unwrap().unwrap();
+        assert!(batch.as_finalized().is_some());
 
-        let cursor = producer.try_next().now_or_never();
-        assert!(cursor.is_none());
+        // one finalized batch
+        let batch = producer.try_next().await.unwrap().unwrap();
+        assert!(batch.as_finalized().is_none());
+        let accepted = batch.as_accepted().unwrap();
+        assert_eq!(accepted.number(), 11);
 
         producer
-            .handle_ingestion_message(&IngestionMessage::Finalized(new_block_id(3)))
+            .handle_ingestion_message(&IngestionMessage::Finalized(new_block_id(13)))
             .await
             .unwrap();
 
-        for i in 2..4 {
-            let cursor = producer.try_next().await.unwrap().unwrap();
-            assert_eq!(cursor.number(), i as u64);
-        }
+        // finalized with block 12, 13
+        let batch = producer.try_next().await.unwrap().unwrap();
+        assert!(batch.as_finalized().is_some());
 
-        let cursor = producer.try_next().now_or_never();
-        assert!(cursor.is_none());
+        // one finalized batch
+        let batch = producer.try_next().await.unwrap().unwrap();
+        assert!(batch.as_finalized().is_none());
+        let accepted = batch.as_accepted().unwrap();
+        assert_eq!(accepted.number(), 14);
     }
 
+    /// This test checks that the producer resumes producing accepted cursors after receiving an
+    /// accepted message.
+    ///
+    /// Finality: ACCEPTED
     #[tokio::test]
-    async fn test_handle_accepted_message() {
+    async fn test_handle_accepted_message_as_accepted() {
         let mut storage = MockStorageReader::new();
         storage
             .expect_canonical_block_id()
             .returning(|i| Ok(Some(new_block_id(i))));
         storage
             .expect_highest_accepted_block()
-            .returning(|| Ok(Some(new_block_id(4))));
+            .returning(|| Ok(Some(new_block_id(15))));
         storage
             .expect_highest_finalized_block()
-            .returning(|| Ok(Some(new_block_id(1))));
+            .returning(|| Ok(Some(new_block_id(10))));
+
+        let mut producer = new_producer(
+            Some(new_block_id(11)),
+            DataFinality::DataStatusAccepted,
+            Arc::new(storage),
+        );
+
+        // accepted batches
+        for block_num in 12..=15 {
+            let batch = producer.try_next().await.unwrap().unwrap();
+            assert!(batch.as_finalized().is_none());
+            let accepted = batch.as_accepted().unwrap();
+            assert_eq!(accepted.number(), block_num);
+        }
+
+        let batch = producer.try_next().now_or_never();
+        assert!(batch.is_none());
+
+        producer
+            .handle_ingestion_message(&IngestionMessage::Accepted(new_block_id(16)))
+            .await
+            .unwrap();
+
+        // one finalized batch
+        let batch = producer.try_next().await.unwrap().unwrap();
+        assert!(batch.as_finalized().is_none());
+        let accepted = batch.as_accepted().unwrap();
+        assert_eq!(accepted.number(), 16);
+
+        let batch = producer.try_next().now_or_never();
+        assert!(batch.is_none());
+    }
+
+    /// This test checks that the producer produces messages after the invalidated cursor.
+    ///
+    /// Finality: ACCEPTED
+    #[tokio::test]
+    async fn test_handle_invalidate_message_as_accepted() {
+        let mut storage = MockStorageReader::new();
+        storage
+            .expect_canonical_block_id()
+            .returning(|i| Ok(Some(new_block_id(i))));
+        storage
+            .expect_highest_accepted_block()
+            .returning(|| Ok(Some(new_block_id(15))));
+        storage
+            .expect_highest_finalized_block()
+            .returning(|| Ok(Some(new_block_id(10))));
+
+        let mut producer = new_producer(
+            Some(new_block_id(11)),
+            DataFinality::DataStatusAccepted,
+            Arc::new(storage),
+        );
+
+        for _ in 0..2 {
+            let batch = producer.try_next().await.unwrap().unwrap();
+            assert!(batch.as_accepted().is_some());
+        }
+
+        // invalidate after current. nothing happens
+        producer
+            .handle_ingestion_message(&IngestionMessage::Invalidate(new_block_id(14)))
+            .await
+            .unwrap();
+
+        let batch = producer.try_next().await.unwrap().unwrap();
+        assert_eq!(batch.as_accepted().unwrap().number(), 14);
+
+        // invalidate before current. goes back
+        producer
+            .handle_ingestion_message(&IngestionMessage::Invalidate(new_block_id(11)))
+            .await
+            .unwrap();
+
+        // still no new accepted.
+        let batch = producer.try_next().now_or_never();
+        assert!(batch.is_none());
+
+        producer
+            .handle_ingestion_message(&IngestionMessage::Accepted(new_block_id(15)))
+            .await
+            .unwrap();
+
+        let batch = producer.try_next().await.unwrap().unwrap();
+        assert_eq!(batch.as_accepted().unwrap().number(), 12);
+    }
+
+    /// This test checks that data is produced if the node has not ingested any finalized data, but
+    /// the client requested accepted data. This happens on devnet.
+    ///
+    /// Finality: ACCEPTED
+    #[tokio::test]
+    async fn test_no_finalized_as_accepted() {
+        let mut storage = MockStorageReader::new();
+        storage
+            .expect_canonical_block_id()
+            .returning(|i| Ok(Some(new_block_id(i))));
+        storage
+            .expect_highest_accepted_block()
+            .returning(|| Ok(Some(new_block_id(14))));
+        storage
+            .expect_highest_finalized_block()
+            .returning(|| Ok(None));
 
         let mut producer = new_producer(None, DataFinality::DataStatusAccepted, Arc::new(storage));
 
-        for i in 0..5 {
-            let cursor = producer.try_next().await.unwrap().unwrap();
-            assert_eq!(cursor.number(), i as u64);
-        }
-
-        let cursor = producer.try_next().now_or_never();
-        assert!(cursor.is_none());
-
-        producer
-            .handle_ingestion_message(&IngestionMessage::Accepted(new_block_id(6)))
-            .await
-            .unwrap();
-
-        for i in 5..7 {
-            let cursor = producer.try_next().await.unwrap().unwrap();
-            assert_eq!(cursor.number(), i as u64);
-        }
-
-        let cursor = producer.try_next().now_or_never();
-        assert!(cursor.is_none());
+        let batch = producer.try_next().await.unwrap().unwrap();
+        assert_eq!(batch.as_accepted().unwrap().number(), 0);
     }
 
+    /// This test checks that finalized cursors are produced even if no accepted data has been
+    /// ingested. This happens when initially syncing the node.
+    ///
+    /// Finality: ACCEPTED
     #[tokio::test]
-    async fn test_handle_accepted_message_finalized_finality() {
+    async fn test_no_accepted_as_accepted() {
         let mut storage = MockStorageReader::new();
         storage
             .expect_canonical_block_id()
             .returning(|i| Ok(Some(new_block_id(i))));
         storage
             .expect_highest_accepted_block()
-            .returning(|| Ok(Some(new_block_id(4))));
+            .returning(|| Ok(None));
         storage
             .expect_highest_finalized_block()
-            .returning(|| Ok(Some(new_block_id(1))));
-
-        let mut producer = new_producer(None, DataFinality::DataStatusFinalized, Arc::new(storage));
-
-        for i in 0..2 {
-            let cursor = producer.try_next().await.unwrap().unwrap();
-            assert_eq!(cursor.number(), i as u64);
-        }
-
-        let cursor = producer.try_next().now_or_never();
-        assert!(cursor.is_none());
-
-        producer
-            .handle_ingestion_message(&IngestionMessage::Accepted(new_block_id(6)))
-            .await
-            .unwrap();
-
-        let cursor = producer.try_next().now_or_never();
-        assert!(cursor.is_none());
-    }
-
-    #[tokio::test]
-    async fn test_handle_pending_message() {
-        let mut storage = MockStorageReader::new();
-        storage
-            .expect_canonical_block_id()
-            .returning(|i| Ok(Some(new_block_id(i))));
-        storage
-            .expect_highest_accepted_block()
-            .returning(|| Ok(Some(new_block_id(4))));
-        storage
-            .expect_highest_finalized_block()
-            .returning(|| Ok(Some(new_block_id(1))));
-
-        let mut producer = new_producer(None, DataFinality::DataStatusPending, Arc::new(storage));
-
-        for i in 0..5 {
-            let cursor = producer.try_next().await.unwrap().unwrap();
-            assert_eq!(cursor.number(), i as u64);
-        }
-
-        let cursor = producer.try_next().now_or_never();
-        assert!(cursor.is_none());
-
-        producer
-            .handle_ingestion_message(&IngestionMessage::Pending(new_block_id(5)))
-            .await
-            .unwrap();
-
-        let cursor = producer
-            .try_next()
-            .now_or_never()
-            .unwrap()
-            .unwrap()
-            .unwrap();
-        assert_eq!(cursor.number(), 5);
-    }
-
-    #[tokio::test]
-    async fn test_handle_pending_message_accepted_finality() {
-        let mut storage = MockStorageReader::new();
-        storage
-            .expect_canonical_block_id()
-            .returning(|i| Ok(Some(new_block_id(i))));
-        storage
-            .expect_highest_accepted_block()
-            .returning(|| Ok(Some(new_block_id(4))));
-        storage
-            .expect_highest_finalized_block()
-            .returning(|| Ok(Some(new_block_id(1))));
+            .returning(|| Ok(Some(new_block_id(15))));
 
         let mut producer = new_producer(None, DataFinality::DataStatusAccepted, Arc::new(storage));
 
-        for i in 0..5 {
-            let cursor = producer.try_next().await.unwrap().unwrap();
-            assert_eq!(cursor.number(), i as u64);
-        }
-
-        let cursor = producer.try_next().now_or_never();
-        assert!(cursor.is_none());
-
-        producer
-            .handle_ingestion_message(&IngestionMessage::Pending(new_block_id(5)))
-            .await
-            .unwrap();
-
-        let cursor = producer.try_next().now_or_never();
-        assert!(cursor.is_none());
+        let batch = producer.try_next().await.unwrap().unwrap();
+        assert!(batch.as_finalized().is_some());
     }
 
+    /// This test checks that the pending producer produces finalized/accepted cursors until
+    /// reaching the head. At that point, it produces one pending block (if any).
+    ///
+    /// Finality: PENDING
     #[tokio::test]
-    async fn test_handle_invalidate_message_after_current() {
+    async fn test_produce_full_batch_pending() {
         let mut storage = MockStorageReader::new();
         storage
             .expect_canonical_block_id()
             .returning(|i| Ok(Some(new_block_id(i))));
         storage
             .expect_highest_accepted_block()
-            .returning(|| Ok(Some(new_block_id(4))));
+            .returning(|| Ok(Some(new_block_id(15))));
         storage
             .expect_highest_finalized_block()
-            .returning(|| Ok(Some(new_block_id(1))));
+            .returning(|| Ok(Some(new_block_id(10))));
 
-        let mut producer = new_producer(None, DataFinality::DataStatusAccepted, Arc::new(storage));
+        let mut producer = new_producer(
+            Some(new_block_id(8)),
+            DataFinality::DataStatusPending,
+            Arc::new(storage),
+        );
 
-        for i in 0..1 {
-            let cursor = producer.try_next().await.unwrap().unwrap();
-            assert_eq!(cursor.number(), i as u64);
+        let batch = producer.try_next().await.unwrap().unwrap();
+        assert!(batch.as_finalized().is_some());
+
+        for i in 11..=15 {
+            let batch = producer.try_next().await.unwrap().unwrap();
+            assert_eq!(batch.as_accepted().unwrap().number(), i);
         }
 
+        // no pending block yet.
+        let batch = producer.try_next().now_or_never();
+        assert!(batch.is_none());
+
         producer
-            .handle_ingestion_message(&IngestionMessage::Invalidate(new_block_id(3)))
+            .handle_ingestion_message(&IngestionMessage::Pending(new_block_id(16)))
             .await
             .unwrap();
 
-        for i in 1..4 {
-            let cursor = producer.try_next().await.unwrap().unwrap();
-            assert_eq!(cursor.number(), i as u64);
-        }
+        let batch = producer.try_next().await.unwrap().unwrap();
+        assert_eq!(batch.as_pending().unwrap().number(), 16);
 
-        let cursor = producer.try_next().now_or_never();
-        assert!(cursor.is_none());
-    }
-
-    #[tokio::test]
-    async fn test_handle_invalidate_message_before_current_accepted() {
-        let mut storage = MockStorageReader::new();
-        storage
-            .expect_canonical_block_id()
-            .returning(|i| Ok(Some(new_block_id(i))));
-        storage
-            .expect_highest_accepted_block()
-            .returning(|| Ok(Some(new_block_id(4))));
-        storage
-            .expect_highest_finalized_block()
-            .returning(|| Ok(Some(new_block_id(1))));
-
-        let mut producer = new_producer(None, DataFinality::DataStatusAccepted, Arc::new(storage));
-
-        for i in 0..3 {
-            let cursor = producer.try_next().await.unwrap().unwrap();
-            assert_eq!(cursor.number(), i as u64);
-        }
+        // only produce one pending.
+        let batch = producer.try_next().now_or_never();
+        assert!(batch.is_none());
 
         producer
-            .handle_ingestion_message(&IngestionMessage::Invalidate(new_block_id(2)))
+            .handle_ingestion_message(&IngestionMessage::Accepted(new_block_id(16)))
             .await
             .unwrap();
 
-        let cursor = producer.try_next().now_or_never();
-        assert!(cursor.is_none());
+        let batch = producer.try_next().await.unwrap().unwrap();
+        assert_eq!(batch.as_accepted().unwrap().number(), 16);
 
-        producer
-            .handle_ingestion_message(&IngestionMessage::Accepted(new_block_id(4)))
-            .await
-            .unwrap();
-
-        for i in 3..5 {
-            let cursor = producer.try_next().await.unwrap().unwrap();
-            assert_eq!(cursor.number(), i as u64);
-        }
-
-        let cursor = producer.try_next().now_or_never();
-        assert!(cursor.is_none());
-    }
-
-    #[tokio::test]
-    async fn test_handle_invalidate_message_before_current_finalized() {
-        let mut storage = MockStorageReader::new();
-        storage
-            .expect_canonical_block_id()
-            .returning(|i| Ok(Some(new_block_id(i))));
-        storage
-            .expect_highest_accepted_block()
-            .returning(|| Ok(Some(new_block_id(8))));
-        storage
-            .expect_highest_finalized_block()
-            .returning(|| Ok(Some(new_block_id(4))));
-
-        let mut producer = new_producer(None, DataFinality::DataStatusFinalized, Arc::new(storage));
-
-        for i in 0..4 {
-            let cursor = producer.try_next().await.unwrap().unwrap();
-            assert_eq!(cursor.number(), i as u64);
-        }
-
-        producer
-            .handle_ingestion_message(&IngestionMessage::Invalidate(new_block_id(2)))
-            .await
-            .unwrap();
-
-        let cursor = producer.try_next().now_or_never();
-        assert!(cursor.is_none());
-
-        producer
-            .handle_ingestion_message(&IngestionMessage::Accepted(new_block_id(6)))
-            .await
-            .unwrap();
-        producer
-            .handle_ingestion_message(&IngestionMessage::Finalized(new_block_id(3)))
-            .await
-            .unwrap();
-
-        for i in 3..4 {
-            let cursor = producer.try_next().await.unwrap().unwrap();
-            assert_eq!(cursor.number(), i as u64);
-        }
-
-        let cursor = producer.try_next().now_or_never();
-        assert!(cursor.is_none());
+        // no pending block yet.
+        let batch = producer.try_next().now_or_never();
+        assert!(batch.is_none());
     }
 }
