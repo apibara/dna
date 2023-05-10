@@ -8,8 +8,8 @@ use prost::Message;
 use crate::{core::Cursor, stream::BatchCursor};
 
 use super::{
-    BatchProducer, CursorProducer, IngestionMessage, IngestionResponse, StreamConfiguration,
-    StreamError,
+    BatchProducer, CursorProducer, IngestionMessage, IngestionResponse, ReconfigureResponse,
+    StreamConfiguration, StreamError,
 };
 
 pub fn new_data_stream<C, F, B>(
@@ -40,9 +40,28 @@ where
                 biased;
 
                 configuration_message = configuration_stream.select_next_some() => {
-                    match handle_configuration_message(&mut cursor_producer, &mut batch_producer, configuration_message) {
-                        Ok(new_stream_id) => {
+                    match handle_configuration_message(&mut cursor_producer, &mut batch_producer, configuration_message).await {
+                        Ok((new_stream_id, configure_response)) => {
                             stream_id = new_stream_id;
+                            // send invalidate message if the specified cursor is no longer valid.
+                            match configure_response {
+                                ReconfigureResponse::Ok => {},
+                                ReconfigureResponse::MissingStartingCursor => {
+                                    yield Err(StreamError::invalid_request("the specified starting cursor doesn't exist".to_string()));
+                                    break;
+                                },
+                                ReconfigureResponse::Invalidate(cursor) => {
+                                    use stream_data_response::Message;
+                                    let message = Invalidate {
+                                        cursor: Some(cursor.to_proto()),
+                                    };
+
+                                    yield Ok(StreamDataResponse {
+                                        stream_id,
+                                        message: Some(Message::Invalidate(message)),
+                                    });
+                                },
+                            };
                         },
                         Err(err) => {
                             yield Err(err);
@@ -97,20 +116,20 @@ where
     })
 }
 
-fn handle_configuration_message<C, F, B>(
+async fn handle_configuration_message<C, F, B>(
     cursor_producer: &mut impl CursorProducer<Cursor = C, Filter = F>,
     batch_producer: &mut impl BatchProducer<Cursor = C, Filter = F, Block = B>,
     configuration_message: Result<StreamConfiguration<C, F>, StreamError>,
-) -> Result<u64, StreamError>
+) -> Result<(u64, ReconfigureResponse<C>), StreamError>
 where
     C: Cursor + Send + Sync,
     F: Message + Default + Clone,
     B: Message + Default + Clone,
 {
     let configuration_message = configuration_message?;
-    cursor_producer.reconfigure(&configuration_message)?;
+    let ingestion_response = cursor_producer.reconfigure(&configuration_message).await?;
     batch_producer.reconfigure(&configuration_message)?;
-    Ok(configuration_message.stream_id)
+    Ok((configuration_message.stream_id, ingestion_response))
 }
 
 async fn handle_ingestion_message<C, F>(

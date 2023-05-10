@@ -97,7 +97,6 @@ where
         &self,
         request: Request<StreamDataRequest>,
     ) -> Result<Response<Self::StreamDataImmutableStream>, tonic::Status> {
-        /*
         let stream_span = self.request_observer.stream_data_span(request.metadata());
         let stream_meter = self.request_observer.stream_data_meter(request.metadata());
 
@@ -106,6 +105,21 @@ where
         let configuration_stream = ImmutableRequestStream {
             request: Some(stream_data_request),
         };
+
+        let configuration_stream = StreamConfigurationStream::new(configuration_stream);
+        let ingestion_stream = self.ingestion.subscribe().await;
+        let ingestion_stream = IngestionStream::new(ingestion_stream);
+        let batch_producer = DbBatchProducer::new(self.storage.clone());
+        let cursor_producer = SequentialCursorProducer::new(self.storage.clone());
+        let data_stream = new_data_stream(
+            configuration_stream,
+            ingestion_stream,
+            cursor_producer,
+            batch_producer,
+        );
+
+        let response = ResponseStream::new(data_stream).instrument(stream_span);
+        /*
         let configuration_stream = StreamConfigurationStream::new(configuration_stream);
 
         let ingestion_stream = self.ingestion.subscribe().await;
@@ -122,7 +136,7 @@ where
         let response = ResponseStream::new(data_stream).instrument(stream_span);
         Ok(Response::new(Box::pin(response)))
         */
-        todo!()
+        Ok(Response::new(Box::pin(response)))
     }
 }
 

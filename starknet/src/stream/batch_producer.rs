@@ -426,7 +426,12 @@ where
         &mut self,
         configuration: &StreamConfiguration<Self::Cursor, Self::Filter>,
     ) -> Result<(), StreamError> {
-        todo!()
+        let new_inner = InnerProducer {
+            storage: self.storage.clone(),
+            filter: configuration.filter.clone(),
+        };
+        self.inner = Some(new_inner);
+        Ok(())
     }
 
     async fn next_batch(
