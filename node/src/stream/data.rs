@@ -5,23 +5,25 @@ use async_stream::stream;
 use futures::{stream::FusedStream, Stream, StreamExt};
 use prost::Message;
 
-use crate::{core::Cursor, stream::BatchCursor};
+use crate::{core::Cursor, server::RequestMeter, stream::BatchCursor};
 
 use super::{
     BatchProducer, CursorProducer, IngestionMessage, IngestionResponse, ReconfigureResponse,
     StreamConfiguration, StreamError,
 };
 
-pub fn new_data_stream<C, F, B>(
+pub fn new_data_stream<C, F, B, M>(
     configuration_stream: impl Stream<Item = Result<StreamConfiguration<C, F>, StreamError>> + Unpin,
     ingestion_stream: impl Stream<Item = Result<IngestionMessage<C>, StreamError>> + Unpin,
     mut cursor_producer: impl CursorProducer<Cursor = C, Filter = F> + Unpin + FusedStream,
     mut batch_producer: impl BatchProducer<Cursor = C, Filter = F, Block = B>,
+    meter: M,
 ) -> impl Stream<Item = Result<StreamDataResponse, StreamError>>
 where
     C: Cursor + Send + Sync,
     F: Message + Default + Clone,
     B: Message + Default + Clone,
+    M: RequestMeter,
 {
     let mut configuration_stream = configuration_stream.fuse();
     let mut ingestion_stream = ingestion_stream.fuse();
@@ -98,7 +100,7 @@ where
                 batch_cursor = cursor_producer.select_next_some() => {
                     use stream_data_response::Message;
 
-                    match handle_batch_cursor(&mut cursor_producer, &mut batch_producer, batch_cursor).await {
+                    match handle_batch_cursor(&mut cursor_producer, &mut batch_producer, batch_cursor, &meter).await {
                         Ok(data) => {
                             yield Ok(StreamDataResponse {
                                 stream_id,
@@ -146,15 +148,17 @@ where
         .await
 }
 
-async fn handle_batch_cursor<C, F, B>(
-    cursor_producer: &mut impl CursorProducer<Cursor = C, Filter = F>,
+async fn handle_batch_cursor<C, F, B, M>(
+    _cursor_producer: &mut impl CursorProducer<Cursor = C, Filter = F>,
     batch_producer: &mut impl BatchProducer<Cursor = C, Filter = F, Block = B>,
     batch_cursor: Result<BatchCursor<C>, StreamError>,
+    meter: &M,
 ) -> Result<Data, StreamError>
 where
     C: Cursor + Send + Sync,
     F: Message + Default + Clone,
     B: Message + Default + Clone,
+    M: RequestMeter,
 {
     let batch_cursor = batch_cursor?;
     let (start_cursor, cursors, end_cursor, finality) = match batch_cursor {
@@ -180,11 +184,13 @@ where
             DataFinality::DataStatusPending,
         ),
     };
-    let batch = batch_producer.next_batch(cursors.into_iter()).await?;
+    let batch = batch_producer
+        .next_batch(cursors.into_iter(), meter)
+        .await?;
 
     Ok(Data {
-        cursor: start_cursor.and_then(|cursor| Some(cursor.to_proto())),
-        end_cursor: end_cursor.and_then(|cursor| Some(cursor.to_proto())),
+        cursor: start_cursor.map(|cursor| cursor.to_proto()),
+        end_cursor: end_cursor.map(|cursor| cursor.to_proto()),
         finality: finality as i32,
         data: batch
             .into_iter()

@@ -4,7 +4,6 @@ use std::{
     pin::Pin,
     sync::Arc,
     task::{self, Poll},
-    time::Duration,
 };
 
 use apibara_core::node::v1alpha2::{stream_server, StreamDataRequest, StreamDataResponse};
@@ -12,14 +11,13 @@ use apibara_node::{
     server::RequestObserver,
     stream::{new_data_stream, ResponseStream, StreamConfigurationStream, StreamError},
 };
-use futures::{Stream, StreamExt};
+use futures::Stream;
 use pin_project::pin_project;
-use tonic::{Request, Response, Streaming};
-use tracing::warn;
+use tonic::{metadata::MetadataMap, Request, Response, Streaming};
 use tracing_futures::Instrument;
 
 use crate::{
-    core::{GlobalBlockId, IngestionMessage},
+    core::IngestionMessage,
     db::StorageReader,
     healer::HealerClient,
     ingestion::IngestionStreamClient,
@@ -28,7 +26,6 @@ use crate::{
 
 pub struct StreamService<R: StorageReader, O: RequestObserver> {
     ingestion: Arc<IngestionStreamClient>,
-    healer: Arc<HealerClient>,
     storage: Arc<R>,
     request_observer: O,
 }
@@ -40,14 +37,13 @@ where
 {
     pub fn new(
         ingestion: Arc<IngestionStreamClient>,
-        healer: Arc<HealerClient>,
+        _healer: Arc<HealerClient>,
         storage: R,
         request_observer: O,
     ) -> Self {
         let storage = Arc::new(storage);
         StreamService {
             ingestion,
-            healer,
             storage,
             request_observer,
         }
@@ -55,6 +51,34 @@ where
 
     pub fn into_service(self) -> stream_server::StreamServer<Self> {
         stream_server::StreamServer::new(self)
+    }
+
+    async fn stream_data_with_configuration<S, E>(
+        &self,
+        metadata: MetadataMap,
+        configuration: S,
+    ) -> impl Stream<Item = Result<StreamDataResponse, tonic::Status>>
+    where
+        S: Stream<Item = Result<StreamDataRequest, E>> + Unpin,
+        E: std::error::Error + Send + Sync + 'static,
+    {
+        let stream_span = self.request_observer.stream_data_span(&metadata);
+        let stream_meter = self.request_observer.stream_data_meter(&metadata);
+
+        let configuration_stream = StreamConfigurationStream::new(configuration);
+        let ingestion_stream = self.ingestion.subscribe().await;
+        let ingestion_stream = IngestionStream::new(ingestion_stream);
+        let batch_producer = DbBatchProducer::new(self.storage.clone());
+        let cursor_producer = SequentialCursorProducer::new(self.storage.clone());
+        let data_stream = new_data_stream(
+            configuration_stream,
+            ingestion_stream,
+            cursor_producer,
+            batch_producer,
+            stream_meter,
+        );
+
+        ResponseStream::new(data_stream).instrument(stream_span)
     }
 }
 
@@ -74,22 +98,10 @@ where
         &self,
         request: Request<Streaming<StreamDataRequest>>,
     ) -> Result<Response<Self::StreamDataStream>, tonic::Status> {
-        let stream_span = self.request_observer.stream_data_span(request.metadata());
-        let stream_meter = self.request_observer.stream_data_meter(request.metadata());
-
-        let configuration_stream = StreamConfigurationStream::new(request.into_inner());
-        let ingestion_stream = self.ingestion.subscribe().await;
-        let ingestion_stream = IngestionStream::new(ingestion_stream);
-        let batch_producer = DbBatchProducer::new(self.storage.clone());
-        let cursor_producer = SequentialCursorProducer::new(self.storage.clone());
-        let data_stream = new_data_stream(
-            configuration_stream,
-            ingestion_stream,
-            cursor_producer,
-            batch_producer,
-        );
-
-        let response = ResponseStream::new(data_stream).instrument(stream_span);
+        let metadata = request.metadata().clone();
+        let response = self
+            .stream_data_with_configuration(metadata, request.into_inner())
+            .await;
         Ok(Response::new(Box::pin(response)))
     }
 
@@ -97,45 +109,13 @@ where
         &self,
         request: Request<StreamDataRequest>,
     ) -> Result<Response<Self::StreamDataImmutableStream>, tonic::Status> {
-        let stream_span = self.request_observer.stream_data_span(request.metadata());
-        let stream_meter = self.request_observer.stream_data_meter(request.metadata());
-
-        let stream_data_request = request.into_inner();
-
+        let metadata = request.metadata().clone();
         let configuration_stream = ImmutableRequestStream {
-            request: Some(stream_data_request),
+            request: Some(request.into_inner()),
         };
-
-        let configuration_stream = StreamConfigurationStream::new(configuration_stream);
-        let ingestion_stream = self.ingestion.subscribe().await;
-        let ingestion_stream = IngestionStream::new(ingestion_stream);
-        let batch_producer = DbBatchProducer::new(self.storage.clone());
-        let cursor_producer = SequentialCursorProducer::new(self.storage.clone());
-        let data_stream = new_data_stream(
-            configuration_stream,
-            ingestion_stream,
-            cursor_producer,
-            batch_producer,
-        );
-
-        let response = ResponseStream::new(data_stream).instrument(stream_span);
-        /*
-        let configuration_stream = StreamConfigurationStream::new(configuration_stream);
-
-        let ingestion_stream = self.ingestion.subscribe().await;
-        let ingestion_stream = IngestionStream::new(ingestion_stream);
-
-        let data_stream = DataStream::new(
-            configuration_stream,
-            ingestion_stream,
-            self.storage.clone(),
-            self.healer.clone(),
-            Arc::new(stream_meter),
-        );
-
-        let response = ResponseStream::new(data_stream).instrument(stream_span);
-        Ok(Response::new(Box::pin(response)))
-        */
+        let response = self
+            .stream_data_with_configuration(metadata, configuration_stream)
+            .await;
         Ok(Response::new(Box::pin(response)))
     }
 }

@@ -3,7 +3,7 @@ use futures::Stream;
 use prost::Message;
 
 use super::{configuration::StreamConfiguration, error::StreamError, ingestion::IngestionMessage};
-use crate::core::Cursor;
+use crate::{core::Cursor, server::RequestMeter};
 
 /// The response to an ingestion message.
 #[derive(Debug)]
@@ -71,9 +71,10 @@ pub trait BatchProducer {
         configuration: &StreamConfiguration<Self::Cursor, Self::Filter>,
     ) -> Result<(), StreamError>;
 
-    async fn next_batch(
+    async fn next_batch<M: RequestMeter>(
         &mut self,
         cursors: impl Iterator<Item = Self::Cursor> + Send + Sync,
+        meter: &M,
     ) -> Result<Vec<Self::Block>, StreamError>;
 }
 

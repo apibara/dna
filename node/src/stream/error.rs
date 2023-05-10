@@ -23,9 +23,7 @@ impl StreamError {
                 warn!(err = ?err, "stream error");
                 tonic::Status::internal("internal server error")
             }
-            StreamError::InvalidRequest { message } => {
-                tonic::Status::invalid_argument(message)
-            }
+            StreamError::InvalidRequest { message } => tonic::Status::invalid_argument(message),
         }
     }
 }

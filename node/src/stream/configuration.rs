@@ -6,7 +6,7 @@ use std::{
 use apibara_core::node::v1alpha2::{DataFinality, StreamDataRequest};
 use futures::Stream;
 use pin_project::pin_project;
-use prost::{DecodeError, Message};
+use prost::Message;
 use tracing::warn;
 
 use crate::core::Cursor;
