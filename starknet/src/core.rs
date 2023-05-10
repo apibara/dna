@@ -1,7 +1,7 @@
 use std::fmt::{Debug, Display};
 
 use apibara_core::{node::v1alpha2::Cursor as ProtoCursor, starknet::v1alpha2};
-use apibara_node::{core::Cursor, stream::IngestionMessage as GenericIngestionMessage};
+use apibara_node::stream::IngestionMessage as GenericIngestionMessage;
 use starknet::core::types::{FieldElement, FromByteArrayError};
 
 #[derive(Default, Debug, Copy, Clone, PartialEq)]
@@ -168,4 +168,3 @@ impl apibara_node::core::Cursor for GlobalBlockId {
         self.to_cursor()
     }
 }
-

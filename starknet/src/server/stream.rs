@@ -19,7 +19,6 @@ use tracing_futures::Instrument;
 use crate::{
     core::IngestionMessage,
     db::StorageReader,
-    healer::HealerClient,
     ingestion::IngestionStreamClient,
     stream::{DbBatchProducer, SequentialCursorProducer},
 };
@@ -35,12 +34,7 @@ where
     R: StorageReader + Send + Sync + 'static,
     O: RequestObserver,
 {
-    pub fn new(
-        ingestion: Arc<IngestionStreamClient>,
-        _healer: Arc<HealerClient>,
-        storage: R,
-        request_observer: O,
-    ) -> Self {
+    pub fn new(ingestion: Arc<IngestionStreamClient>, storage: R, request_observer: O) -> Self {
         let storage = Arc::new(storage);
         StreamService {
             ingestion,

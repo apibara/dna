@@ -15,4 +15,3 @@ pub use self::producers::{
     BatchCursor, BatchProducer, CursorProducer, IngestionResponse, ReconfigureResponse,
 };
 pub use self::response::ResponseStream;
-

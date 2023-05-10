@@ -8,9 +8,7 @@ use apibara_core::{
     ethereum::v1alpha2::{self, Filter},
     node::v1alpha2::{stream_data_response, Data, DataFinality, StreamDataResponse},
 };
-use apibara_node::stream::{
-    IngestionMessage, StreamConfiguration, StreamError,
-};
+use apibara_node::stream::{IngestionMessage, StreamConfiguration, StreamError};
 use async_stream::try_stream;
 use croaring::Bitmap;
 use futures::Stream;
