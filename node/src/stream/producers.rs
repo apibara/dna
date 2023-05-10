@@ -6,11 +6,23 @@ use super::{configuration::StreamConfiguration, error::StreamError, ingestion::I
 use crate::core::Cursor;
 
 /// The response to an ingestion message.
+#[derive(Debug)]
 pub enum IngestionResponse<C: Cursor> {
     /// Invalidate all data after the given cursor.
     Invalidate(C),
     /// No invalidation is required.
     Ok,
+}
+
+/// The response to a call to reconfigure.
+#[derive(Debug)]
+pub enum ReconfigureResponse<C: Cursor> {
+    /// Invalidate all data after the given cursor.
+    Invalidate(C),
+    /// No invalidation is required.
+    Ok,
+    /// The specified starting cursor doesn't exists.
+    MissingStartingCursor,
 }
 
 /// A batch cursor.
@@ -30,10 +42,14 @@ pub trait CursorProducer: Stream<Item = Result<BatchCursor<Self::Cursor>, Stream
     type Cursor: Cursor;
     type Filter: Message + Default + Clone;
 
-    fn reconfigure(
+    /// Reconfigure the cursor producer.
+    ///
+    /// Since the user specifies a starting cursor, this function can signal if the specified
+    /// cursor has been invalidated while the client was offline.
+    async fn reconfigure(
         &mut self,
         configuration: &StreamConfiguration<Self::Cursor, Self::Filter>,
-    ) -> Result<(), StreamError>;
+    ) -> Result<ReconfigureResponse<Self::Cursor>, StreamError>;
 
     /// Handles an ingestion message.
     ///

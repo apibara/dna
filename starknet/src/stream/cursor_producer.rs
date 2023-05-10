@@ -8,8 +8,8 @@ use apibara_core::{node::v1alpha2::DataFinality, starknet::v1alpha2};
 use apibara_node::{
     async_trait,
     stream::{
-        BatchCursor, CursorProducer, IngestionMessage, IngestionResponse, StreamConfiguration,
-        StreamError,
+        BatchCursor, CursorProducer, IngestionMessage, IngestionResponse, ReconfigureResponse,
+        StreamConfiguration, StreamError,
     },
 };
 use futures::{stream::FusedStream, Stream};
@@ -71,6 +71,7 @@ where
 
         let configuration = self.configuration.as_mut().expect("configuration");
         let starting_cursor = configuration.current;
+
         let next_block_number = configuration.current.map(|c| c.number() + 1).unwrap_or(0);
 
         if let Some(finalized) = finalized_cursor {
@@ -191,6 +192,13 @@ where
 
         Ok(self.ingestion_state.get_or_insert(new_state))
     }
+
+    /// wake up the stream if it was waiting for a new block
+    fn wake(&mut self) {
+        if let Some(waker) = self.waker.take() {
+            waker.wake();
+        }
+    }
 }
 
 fn lowest_cursor(a: GlobalBlockId, b: GlobalBlockId) -> GlobalBlockId {
@@ -209,18 +217,72 @@ where
     type Cursor = GlobalBlockId;
     type Filter = v1alpha2::Filter;
 
-    fn reconfigure(
+    async fn reconfigure(
         &mut self,
         configuration: &StreamConfiguration<Self::Cursor, Self::Filter>,
-    ) -> Result<(), StreamError> {
+    ) -> Result<ReconfigureResponse<Self::Cursor>, StreamError> {
+        let (current, response) = match configuration.starting_cursor {
+            None => (None, ReconfigureResponse::Ok),
+            Some(starting_cursor) => {
+                let starting_status = match self
+                    .storage
+                    .read_status(&starting_cursor)
+                    .map_err(StreamError::internal)?
+                {
+                    None => return Ok(ReconfigureResponse::MissingStartingCursor),
+                    Some(starting_status) => starting_status,
+                };
+
+                if starting_status.is_accepted() || starting_status.is_finalized() {
+                    (Some(starting_cursor), ReconfigureResponse::Ok)
+                } else {
+                    // the user-specified cursor is not part of the canonical chain anymore.
+                    // walk bakcwards until finding a canonical chain and use that as starting
+                    // cursor.
+                    let mut new_root = starting_cursor;
+                    loop {
+                        let status = match self
+                            .storage
+                            .read_status(&new_root)
+                            .map_err(StreamError::internal)?
+                        {
+                            None => return Ok(ReconfigureResponse::MissingStartingCursor),
+                            Some(status) => status,
+                        };
+
+                        if status.is_accepted() || status.is_finalized() {
+                            break;
+                        }
+
+                        let header = match self
+                            .storage
+                            .read_header(&new_root)
+                            .map_err(StreamError::internal)?
+                        {
+                            None => return Ok(ReconfigureResponse::MissingStartingCursor),
+                            Some(header) => header,
+                        };
+
+                        new_root = GlobalBlockId::from_block_header_parent(&header)
+                            .map_err(StreamError::internal)?;
+                    }
+
+                    (Some(new_root), ReconfigureResponse::Invalidate(new_root))
+                }
+            }
+        };
+
         let configuration = BatchConfiguration {
             data_finality: configuration.finality,
             pending_sent: false,
-            current: configuration.starting_cursor,
+            current,
             batch_size: configuration.batch_size,
         };
         self.configuration = Some(configuration);
-        Ok(())
+
+        self.wake();
+
+        Ok(response)
     }
 
     async fn handle_ingestion_message(
@@ -273,10 +335,7 @@ where
             }
         };
 
-        // wake up the stream if it was waiting for a new block
-        if let Some(waker) = self.waker.take() {
-            waker.wake();
-        }
+        self.wake();
 
         Ok(response)
     }
@@ -320,9 +379,16 @@ where
 mod tests {
     use std::sync::Arc;
 
-    use apibara_core::{node::v1alpha2::DataFinality, starknet::v1alpha2::Filter};
-    use apibara_node::stream::{CursorProducer, IngestionMessage, StreamConfiguration};
+    use apibara_core::{
+        node::v1alpha2::DataFinality,
+        starknet::v1alpha2::{BlockHeader, BlockStatus, Filter},
+    };
+    use apibara_node::stream::{
+        CursorProducer, IngestionMessage, ReconfigureResponse, StreamConfiguration,
+    };
+    use assert_matches::assert_matches;
     use futures::{FutureExt, StreamExt, TryStreamExt};
+    use mockall::predicate::eq;
 
     use crate::{
         core::{BlockHash, GlobalBlockId},
@@ -343,6 +409,19 @@ mod tests {
         GlobalBlockId::new(num, hash)
     }
 
+    fn new_block_header(
+        number: u64,
+        hash: GlobalBlockId,
+        parent_hash: GlobalBlockId,
+    ) -> BlockHeader {
+        BlockHeader {
+            block_number: number,
+            block_hash: Some(hash.hash().into()),
+            parent_block_hash: Some(parent_hash.hash().into()),
+            ..BlockHeader::default()
+        }
+    }
+
     fn new_configuration(
         starting_cursor: Option<GlobalBlockId>,
         finality: DataFinality,
@@ -356,7 +435,7 @@ mod tests {
         }
     }
 
-    fn new_producer<R>(
+    async fn new_producer<R>(
         cursor: Option<GlobalBlockId>,
         finality: DataFinality,
         storage: Arc<R>,
@@ -367,6 +446,7 @@ mod tests {
         let mut producer = SequentialCursorProducer::new(storage);
         producer
             .reconfigure(&new_configuration(cursor, finality))
+            .await
             .unwrap();
         producer
     }
@@ -388,7 +468,8 @@ mod tests {
             .expect_highest_finalized_block()
             .returning(|| Ok(Some(new_block_id(90))));
 
-        let producer = new_producer(None, DataFinality::DataStatusFinalized, Arc::new(storage));
+        let producer =
+            new_producer(None, DataFinality::DataStatusFinalized, Arc::new(storage)).await;
 
         let batches: Vec<_> = producer.take(5).try_collect().await.unwrap();
         assert_eq!(batches.len(), 5);
@@ -410,6 +491,9 @@ mod tests {
     async fn test_produce_nothing_if_after_finalized_as_finalized() {
         let mut storage = MockStorageReader::new();
         storage
+            .expect_read_status()
+            .returning(|_| Ok(Some(BlockStatus::AcceptedOnL1)));
+        storage
             .expect_canonical_block_id()
             .returning(|i| Ok(Some(new_block_id(i))));
         storage
@@ -423,7 +507,8 @@ mod tests {
             Some(new_block_id(90)),
             DataFinality::DataStatusFinalized,
             Arc::new(storage),
-        );
+        )
+        .await;
 
         let batch = producer.try_next().now_or_never();
         assert!(batch.is_none());
@@ -446,7 +531,8 @@ mod tests {
             .expect_highest_finalized_block()
             .returning(|| Ok(Some(new_block_id(10))));
 
-        let producer = new_producer(None, DataFinality::DataStatusFinalized, Arc::new(storage));
+        let producer =
+            new_producer(None, DataFinality::DataStatusFinalized, Arc::new(storage)).await;
 
         let batches: Vec<_> = producer.take(4).try_collect().await.unwrap();
         assert_eq!(batches.len(), 4);
@@ -483,7 +569,8 @@ mod tests {
             .expect_highest_finalized_block()
             .returning(|| Ok(Some(new_block_id(10))));
 
-        let mut producer = new_producer(None, DataFinality::DataStatusFinalized, Arc::new(storage));
+        let mut producer =
+            new_producer(None, DataFinality::DataStatusFinalized, Arc::new(storage)).await;
 
         for _ in 0..4 {
             let batch = producer.try_next().await.unwrap().unwrap();
@@ -519,6 +606,9 @@ mod tests {
     async fn test_handle_invalidate_message_as_finalized() {
         let mut storage = MockStorageReader::new();
         storage
+            .expect_read_status()
+            .returning(|_| Ok(Some(BlockStatus::AcceptedOnL1)));
+        storage
             .expect_canonical_block_id()
             .returning(|i| Ok(Some(new_block_id(i))));
         storage
@@ -532,7 +622,8 @@ mod tests {
             Some(new_block_id(8)),
             DataFinality::DataStatusFinalized,
             Arc::new(storage),
-        );
+        )
+        .await;
 
         let batch = producer.try_next().await.unwrap().unwrap();
         assert!(batch.as_finalized().is_some());
@@ -585,7 +676,8 @@ mod tests {
             .expect_highest_finalized_block()
             .returning(|| Ok(None));
 
-        let mut producer = new_producer(None, DataFinality::DataStatusFinalized, Arc::new(storage));
+        let mut producer =
+            new_producer(None, DataFinality::DataStatusFinalized, Arc::new(storage)).await;
 
         let batch = producer.try_next().now_or_never();
         assert!(batch.is_none());
@@ -616,7 +708,8 @@ mod tests {
             .expect_highest_finalized_block()
             .returning(|| Ok(Some(new_block_id(15))));
 
-        let mut producer = new_producer(None, DataFinality::DataStatusFinalized, Arc::new(storage));
+        let mut producer =
+            new_producer(None, DataFinality::DataStatusFinalized, Arc::new(storage)).await;
 
         let batch = producer.try_next().await.unwrap().unwrap();
         assert!(batch.as_finalized().is_some());
@@ -629,6 +722,9 @@ mod tests {
     #[tokio::test]
     async fn test_full_batch_as_accepted() {
         let mut storage = MockStorageReader::new();
+        storage
+            .expect_read_status()
+            .returning(|_| Ok(Some(BlockStatus::AcceptedOnL1)));
         storage
             .expect_canonical_block_id()
             .returning(|i| Ok(Some(new_block_id(i))));
@@ -643,7 +739,8 @@ mod tests {
             Some(new_block_id(8)),
             DataFinality::DataStatusAccepted,
             Arc::new(storage),
-        );
+        )
+        .await;
 
         // finalized batch
         let batch = producer.try_next().await.unwrap().unwrap();
@@ -669,6 +766,9 @@ mod tests {
     async fn test_handle_finalized_message_as_accepted() {
         let mut storage = MockStorageReader::new();
         storage
+            .expect_read_status()
+            .returning(|_| Ok(Some(BlockStatus::AcceptedOnL1)));
+        storage
             .expect_canonical_block_id()
             .returning(|i| Ok(Some(new_block_id(i))));
         storage
@@ -682,7 +782,8 @@ mod tests {
             Some(new_block_id(8)),
             DataFinality::DataStatusAccepted,
             Arc::new(storage),
-        );
+        )
+        .await;
 
         // finalized batch
         let batch = producer.try_next().await.unwrap().unwrap();
@@ -718,6 +819,9 @@ mod tests {
     async fn test_handle_accepted_message_as_accepted() {
         let mut storage = MockStorageReader::new();
         storage
+            .expect_read_status()
+            .returning(|_| Ok(Some(BlockStatus::AcceptedOnL1)));
+        storage
             .expect_canonical_block_id()
             .returning(|i| Ok(Some(new_block_id(i))));
         storage
@@ -731,7 +835,8 @@ mod tests {
             Some(new_block_id(11)),
             DataFinality::DataStatusAccepted,
             Arc::new(storage),
-        );
+        )
+        .await;
 
         // accepted batches
         for block_num in 12..=15 {
@@ -766,6 +871,9 @@ mod tests {
     async fn test_handle_invalidate_message_as_accepted() {
         let mut storage = MockStorageReader::new();
         storage
+            .expect_read_status()
+            .returning(|_| Ok(Some(BlockStatus::AcceptedOnL1)));
+        storage
             .expect_canonical_block_id()
             .returning(|i| Ok(Some(new_block_id(i))));
         storage
@@ -779,7 +887,8 @@ mod tests {
             Some(new_block_id(11)),
             DataFinality::DataStatusAccepted,
             Arc::new(storage),
-        );
+        )
+        .await;
 
         for _ in 0..2 {
             let batch = producer.try_next().await.unwrap().unwrap();
@@ -831,7 +940,8 @@ mod tests {
             .expect_highest_finalized_block()
             .returning(|| Ok(None));
 
-        let mut producer = new_producer(None, DataFinality::DataStatusAccepted, Arc::new(storage));
+        let mut producer =
+            new_producer(None, DataFinality::DataStatusAccepted, Arc::new(storage)).await;
 
         let batch = producer.try_next().await.unwrap().unwrap();
         assert_eq!(batch.as_accepted().unwrap().number(), 0);
@@ -854,7 +964,8 @@ mod tests {
             .expect_highest_finalized_block()
             .returning(|| Ok(Some(new_block_id(15))));
 
-        let mut producer = new_producer(None, DataFinality::DataStatusAccepted, Arc::new(storage));
+        let mut producer =
+            new_producer(None, DataFinality::DataStatusAccepted, Arc::new(storage)).await;
 
         let batch = producer.try_next().await.unwrap().unwrap();
         assert!(batch.as_finalized().is_some());
@@ -867,6 +978,9 @@ mod tests {
     #[tokio::test]
     async fn test_produce_full_batch_pending() {
         let mut storage = MockStorageReader::new();
+        storage
+            .expect_read_status()
+            .returning(|_| Ok(Some(BlockStatus::AcceptedOnL1)));
         storage
             .expect_canonical_block_id()
             .returning(|i| Ok(Some(new_block_id(i))));
@@ -881,7 +995,8 @@ mod tests {
             Some(new_block_id(8)),
             DataFinality::DataStatusPending,
             Arc::new(storage),
-        );
+        )
+        .await;
 
         let batch = producer.try_next().await.unwrap().unwrap();
         assert!(batch.as_finalized().is_some());
@@ -918,5 +1033,104 @@ mod tests {
         // no pending block yet.
         let batch = producer.try_next().now_or_never();
         assert!(batch.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_configure_with_valid_starting_cursor() {
+        let mut storage = MockStorageReader::new();
+        storage
+            .expect_read_status()
+            .returning(|_| Ok(Some(BlockStatus::AcceptedOnL1)));
+        storage
+            .expect_canonical_block_id()
+            .returning(|i| Ok(Some(new_block_id(i))));
+        storage
+            .expect_highest_accepted_block()
+            .returning(|| Ok(Some(new_block_id(15))));
+        storage
+            .expect_highest_finalized_block()
+            .returning(|| Ok(Some(new_block_id(10))));
+
+        let cursor = new_block_id(8);
+        let mut producer = SequentialCursorProducer::new(Arc::new(storage));
+        let response = producer
+            .reconfigure(&new_configuration(
+                Some(cursor),
+                DataFinality::DataStatusAccepted,
+            ))
+            .await
+            .unwrap();
+        assert_matches!(response, ReconfigureResponse::Ok);
+    }
+
+    #[tokio::test]
+    async fn test_configure_with_invalidated_starting_cursor() {
+        let mut storage = MockStorageReader::new();
+        storage
+            .expect_read_status()
+            .with(eq(new_block_id(8)))
+            .returning(|_| Ok(Some(BlockStatus::Rejected)));
+        storage
+            .expect_read_status()
+            .with(eq(new_block_id(7)))
+            .returning(|_| Ok(Some(BlockStatus::Rejected)));
+        storage
+            .expect_read_status()
+            .with(eq(new_block_id(6)))
+            .returning(|_| Ok(Some(BlockStatus::AcceptedOnL1)));
+        storage
+            .expect_read_header()
+            .with(eq(new_block_id(8)))
+            .returning(|_| Ok(Some(new_block_header(8, new_block_id(8), new_block_id(7)))));
+        storage
+            .expect_read_header()
+            .with(eq(new_block_id(7)))
+            .returning(|_| Ok(Some(new_block_header(7, new_block_id(7), new_block_id(6)))));
+        storage
+            .expect_canonical_block_id()
+            .returning(|i| Ok(Some(new_block_id(i))));
+        storage
+            .expect_highest_accepted_block()
+            .returning(|| Ok(Some(new_block_id(15))));
+        storage
+            .expect_highest_finalized_block()
+            .returning(|| Ok(Some(new_block_id(10))));
+
+        let cursor = new_block_id(8);
+        let mut producer = SequentialCursorProducer::new(Arc::new(storage));
+        let response = producer
+            .reconfigure(&new_configuration(
+                Some(cursor),
+                DataFinality::DataStatusAccepted,
+            ))
+            .await
+            .unwrap();
+        assert_matches!(response, ReconfigureResponse::Invalidate(_));
+    }
+
+    #[tokio::test]
+    async fn test_configure_with_non_existing_starting_cursor() {
+        let mut storage = MockStorageReader::new();
+        storage.expect_read_status().returning(|_| Ok(None));
+        storage
+            .expect_canonical_block_id()
+            .returning(|i| Ok(Some(new_block_id(i))));
+        storage
+            .expect_highest_accepted_block()
+            .returning(|| Ok(Some(new_block_id(15))));
+        storage
+            .expect_highest_finalized_block()
+            .returning(|| Ok(Some(new_block_id(10))));
+
+        let cursor = new_block_id(8);
+        let mut producer = SequentialCursorProducer::new(Arc::new(storage));
+        let response = producer
+            .reconfigure(&new_configuration(
+                Some(cursor),
+                DataFinality::DataStatusAccepted,
+            ))
+            .await
+            .unwrap();
+        assert_matches!(response, ReconfigureResponse::MissingStartingCursor);
     }
 }
