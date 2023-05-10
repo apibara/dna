@@ -4,7 +4,7 @@ use apibara_core::starknet::v1alpha2;
 use apibara_node::{
     async_trait,
     server::RequestMeter,
-    stream::{BatchCursor, BatchProducer, StreamConfiguration, StreamError},
+    stream::{BatchProducer, StreamConfiguration, StreamError},
 };
 use tracing::trace;
 
@@ -38,10 +38,14 @@ where
         }
     }
 
-    fn block_data(&self, block_id: &GlobalBlockId) -> Result<Option<v1alpha2::Block>, R::Error> {
+    fn block_data<M: RequestMeter>(
+        &self,
+        block_id: &GlobalBlockId,
+        meter: &M,
+    ) -> Result<Option<v1alpha2::Block>, R::Error> {
         match self.inner {
             None => Ok(None),
-            Some(ref inner) => inner.block_data(block_id),
+            Some(ref inner) => inner.block_data(block_id, meter),
         }
     }
 }
@@ -50,7 +54,11 @@ impl<R> InnerProducer<R>
 where
     R: StorageReader + Send + Sync + 'static,
 {
-    fn block_data(&self, block_id: &GlobalBlockId) -> Result<Option<v1alpha2::Block>, R::Error> {
+    fn block_data<M: RequestMeter>(
+        &self,
+        block_id: &GlobalBlockId,
+        meter: &M,
+    ) -> Result<Option<v1alpha2::Block>, R::Error> {
         let mut has_data = false;
 
         let mut data_counter = DataCounter::default();
@@ -84,7 +92,7 @@ where
 
         if has_data {
             // emit here so that weak headers are not counted
-            // data_counter.update_meter(meter);
+            data_counter.update_meter(meter);
 
             Ok(Some(data))
         } else {
@@ -401,7 +409,7 @@ struct DataCounter {
 }
 
 impl DataCounter {
-    pub fn update_meter<M: RequestMeter>(&self, meter: &Arc<M>) {
+    pub fn update_meter<M: RequestMeter>(&self, meter: &M) {
         meter.increment_counter("header", self.header as u64);
         meter.increment_counter("transaction", self.transaction as u64);
         meter.increment_counter("event", self.event as u64);
@@ -434,12 +442,13 @@ where
         Ok(())
     }
 
-    async fn next_batch(
+    async fn next_batch<M: RequestMeter>(
         &mut self,
         cursors: impl Iterator<Item = Self::Cursor> + Send + Sync,
+        meter: &M,
     ) -> Result<Vec<Self::Block>, StreamError> {
         let batch: Vec<_> = cursors
-            .flat_map(|cursor| self.block_data(&cursor).transpose())
+            .flat_map(|cursor| self.block_data(&cursor, meter).transpose())
             .collect::<Result<Vec<_>, _>>()
             .map_err(StreamError::internal)?;
         Ok(batch)
