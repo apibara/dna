@@ -1,3 +1,5 @@
+use tracing::warn;
+
 #[derive(Debug, thiserror::Error)]
 pub enum StreamError {
     #[error("internal error: {0}")]
@@ -16,6 +18,14 @@ impl StreamError {
     }
 
     pub fn into_status(self) -> tonic::Status {
-        todo!()
+        match self {
+            StreamError::Internal(err) => {
+                warn!(err = ?err, "stream error");
+                tonic::Status::internal("internal server error")
+            }
+            StreamError::InvalidRequest { message } => {
+                tonic::Status::invalid_argument(message)
+            }
+        }
     }
 }
