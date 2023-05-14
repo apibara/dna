@@ -20,7 +20,6 @@ use tracing::{info, warn};
 
 use crate::{
     db::tables,
-    healer::{Healer, HealerError},
     ingestion::{BlockIngestion, BlockIngestionConfig, BlockIngestionError},
     provider::{HttpProviderError, Provider},
     server::{Server, ServerError},
@@ -46,8 +45,6 @@ pub enum StarkNetNodeError {
     Database(#[from] libmdbx::Error),
     #[error("server error")]
     Server(#[from] ServerError),
-    #[error("healer error")]
-    Healer(#[from] HealerError),
     #[error("error parsing server address")]
     AddressParseError(#[from] AddrParseError),
 }
@@ -105,16 +102,9 @@ where
             }
         });
 
-        let (healer_client, healer) = Healer::new(self.sequencer_provider.clone(), self.db.clone());
-
-        let mut healer_handle = tokio::spawn({
-            let ct = ct.clone();
-            async move { healer.start(ct).await.map_err(StarkNetNodeError::Healer) }
-        });
-
         // TODO: configure from command line
         let server_addr: SocketAddr = "0.0.0.0:7171".parse()?;
-        let server = Server::<E, O>::new(self.db.clone(), block_ingestion_client, healer_client)
+        let server = Server::<E, O>::new(self.db.clone(), block_ingestion_client)
             .with_request_observer(self.request_span);
         let mut server_handle = tokio::spawn({
             let ct = ct.clone();
@@ -134,9 +124,6 @@ where
             }
             ret = &mut server_handle => {
                 warn!(result = ?ret, "server terminated");
-            }
-            ret = &mut healer_handle => {
-                warn!(result = ?ret, "healer terminated");
             }
         }
 
