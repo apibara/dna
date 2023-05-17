@@ -13,6 +13,7 @@ use apibara_node::{
     },
 };
 use futures::{stream::FusedStream, Stream};
+use tracing::debug;
 
 use crate::{core::GlobalBlockId, db::StorageReader};
 
@@ -224,6 +225,22 @@ where
         let (current, response) = match configuration.starting_cursor {
             None => (None, ReconfigureResponse::Ok),
             Some(starting_cursor) => {
+                let starting_cursor = if starting_cursor.hash().is_zero() {
+                    // the user specified a block number but not a hash. Find the hash
+                    // corresponding to the block number.
+                    match self
+                        .storage
+                        .canonical_block_id(starting_cursor.number())
+                        .map_err(StreamError::internal)?
+                    {
+                        Some(starting_cursor) => starting_cursor,
+                        None => return Ok(ReconfigureResponse::MissingStartingCursor),
+                    }
+                } else {
+                    starting_cursor
+                };
+
+                debug!(starting_cursor = ?starting_cursor, "reconfigure stream with starting cursor");
                 let starting_status = match self
                     .storage
                     .read_status(&starting_cursor)
