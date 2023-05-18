@@ -20,6 +20,82 @@ The protocol reduces development time by taking care of the following:
    informs clients about them.
 
 
+### Stream
+
+Stream data directly from the node into your application. DNA enables you to
+get exactly the data you need using _filters_. Filters are a collection of
+rules that are applied to each block to select what data to send in the stream.
+
+Filters are network-specific, you can find them in [core/proto](https://github.com/apibara/dna/tree/main/core/proto)
+folder:
+
+ - [Starknet Filter](https://github.com/apibara/dna/blob/main/core/proto/starknet/v1alpha2/filter.proto)
+
+For example, the following Starknet filter matches all `Transfer` events (key =
+`0x99cd..6e9`) emitted by the `0x053c...8a8` contract.
+
+```json
+{
+  "header": { "weak": true },
+  "events": [
+    {
+      "from_address": "0x053c91253bc9682c04929ca02ed00b3e423f6710d2ee7e0d5ebb06f3ecf368a8",
+      "keys": [
+        "0x99cd8bde557814842a3121e8ddfd433a539b8c9f14bf31ebf108d12e6196e9"
+      ]
+    }
+  ]
+}
+```
+
+
+### Transform
+
+Data is transformed evaluating a [jsonnet program](https://jsonnet.org/) on
+each batch of data. The input of the program is a list of network-specific data
+(usually, blocks) and the output can be anything. The resulting output is sent
+to the integration.
+
+This example flattens blocks into a list of all events and their data:
+
+```jsonnet
+function(batch)
+  std.flatMap(
+    function(block)
+      local number = std.get(block.header, "blockNumber", 0);
+      local hash = std.get(block.header, "blockHash");
+      local events = std.get(block, "events", []);
+      std.map(
+        function(ev)
+          local txHash = ev.transaction.meta.hash;
+          local event = ev.event;
+          {
+            blockNumber: number,
+            blockHash: hash,
+            txHash: txHash,
+            eventKey: event.keys[0],
+            data: event.data,
+            contract: event.fromAddress
+          },
+      events),
+  batch)
+```
+
+
+### Integrate
+
+We are developing a collection of integrations that send data directly where
+it's needed. Our integrations support all data from genesis block to the
+current pending block and they ensure data is kept up-to-date.
+
+ - [x] Webhook: call an HTTP endpoint for each batch of data.
+ - [ ] PostgreSQL: stream data into a specific table, keeping it up-to-date on
+   new blocks and chain reorganizations.
+ - [ ] MongoDB: store data into a specific collection, keeping it up-to-date on
+   new blocks and chain reorganizations.
+ - [ ] Parquet: generate Parquet files to be used for data analysis.
+
+
 ## Getting started
 
 You can get started using Apibara using one of the official SDKs:
