@@ -116,3 +116,26 @@ Becomes the following "flat" list of events:
 This list of events can be inserted directly into a database or appended to a
 csv file.
 
+
+## Persist state between restarts
+
+Sinks can persist state (= information about the last indexed block) between
+restarts by connecting to an etcd cluster.
+
+Start a local development etcd cluster with:
+
+```
+docker run --rm -p 2370:2379 -e ALLOW_NONE_AUTHENTICATION=yes bitnami/etcd
+```
+
+Then use the following cli flags to persist state:
+
+ - `--persist-to-etcd`: if set, turns on persistence. Pass the URL to the etcd
+   cluster, for example `localhost:2379`.
+ - `--sink-id`: the unique sink id, can be any string.
+
+When persistence is enabled, the sink will acquire a lock on start to avoid
+running multiple instances of the same indexer in parallel.
+This behaviour is needed in case your scheduler (e.g. Kubernetes) accidentally
+schedules two instances of the same indexer.
+
