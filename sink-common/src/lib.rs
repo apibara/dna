@@ -1,5 +1,6 @@
 mod configuration;
 mod connector;
+mod persistence;
 
 use apibara_sdk::InvalidUri;
 use configuration::TransformError;
@@ -38,7 +39,8 @@ where
         let configuration = args.to_configuration::<F>()?;
         let stream_url = args.stream_url.parse()?;
         let transformer = args.to_transformer()?;
-        let connector = SinkConnector::new(stream_url, configuration, transformer);
+        let persistence = args.to_persistence();
+        let connector = SinkConnector::new(stream_url, configuration, transformer, persistence);
         Ok(connector)
     }
 }

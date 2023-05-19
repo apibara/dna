@@ -118,9 +118,9 @@ dependencies = [
  "serde_json",
  "starknet",
  "thiserror",
- "tokio 1.26.0",
- "tonic",
- "tonic-build",
+ "tokio 1.28.1",
+ "tonic 0.8.3",
+ "tonic-build 0.8.4",
  "tracing",
 ]
 
@@ -151,10 +151,10 @@ dependencies = [
  "prost-types",
  "tempfile",
  "thiserror",
- "tokio 1.26.0",
+ "tokio 1.28.1",
  "tokio-stream",
  "tokio-util",
- "tonic",
+ "tonic 0.8.3",
  "tonic-health",
  "tonic-reflection",
  "tower",
@@ -194,10 +194,10 @@ dependencies = [
  "pin-project",
  "prost",
  "thiserror",
- "tokio 1.26.0",
+ "tokio 1.28.1",
  "tokio-stream",
  "tokio-util",
- "tonic",
+ "tonic 0.8.3",
  "tracing",
 ]
 
@@ -209,6 +209,8 @@ dependencies = [
  "apibara-sdk",
  "async-trait",
  "clap 4.2.4",
+ "ctrlc",
+ "etcd-client",
  "exponential-backoff",
  "jrsonnet-evaluator",
  "jrsonnet-stdlib",
@@ -216,7 +218,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
- "tokio 1.26.0",
+ "tokio 1.28.1",
  "tokio-stream",
  "tokio-util",
  "tracing",
@@ -232,14 +234,13 @@ dependencies = [
  "apibara-sink-common",
  "async-trait",
  "clap 4.2.4",
- "ctrlc",
  "http",
  "prost",
  "reqwest",
  "serde",
  "serde_json",
  "thiserror",
- "tokio 1.26.0",
+ "tokio 1.28.1",
  "tokio-util",
  "tracing",
 ]
@@ -278,11 +279,11 @@ dependencies = [
  "tempfile",
  "testcontainers",
  "thiserror",
- "tokio 1.26.0",
+ "tokio 1.28.1",
  "tokio-stream",
  "tokio-util",
- "tonic",
- "tonic-build",
+ "tonic 0.8.3",
+ "tonic-build 0.8.4",
  "tonic-health",
  "tonic-reflection",
  "tower",
@@ -482,7 +483,7 @@ dependencies = [
  "instant",
  "pin-project-lite",
  "rand 0.8.5",
- "tokio 1.26.0",
+ "tokio 1.28.1",
 ]
 
 [[package]]
@@ -1184,6 +1185,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "etcd-client"
+version = "0.11.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f4b0ea5ef6dc2388a4b1669fa32097249bc03a15417b97cb75e38afb309e4a89"
+dependencies = [
+ "http",
+ "prost",
+ "tokio 1.28.1",
+ "tokio-stream",
+ "tonic 0.9.2",
+ "tonic-build 0.9.2",
+ "tower",
+ "tower-service",
+]
+
+[[package]]
 name = "ethbloom"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1219,7 +1236,7 @@ dependencies = [
  "apibara-sdk",
  "chrono",
  "hex",
- "tokio 1.26.0",
+ "tokio 1.28.1",
  "tokio-stream",
 ]
 
@@ -1465,7 +1482,7 @@ dependencies = [
  "http",
  "indexmap",
  "slab",
- "tokio 1.26.0",
+ "tokio 1.28.1",
  "tokio-util",
  "tracing",
 ]
@@ -1597,7 +1614,7 @@ dependencies = [
  "itoa",
  "pin-project-lite",
  "socket2",
- "tokio 1.26.0",
+ "tokio 1.28.1",
  "tower-service",
  "tracing",
  "want",
@@ -1612,7 +1629,7 @@ dependencies = [
  "http",
  "hyper",
  "rustls",
- "tokio 1.26.0",
+ "tokio 1.28.1",
  "tokio-rustls",
 ]
 
@@ -1624,7 +1641,7 @@ checksum = "bbb958482e8c7be4bc3cf272a766a2b0bf1a6755e7a6ae777f017a31d11b13b1"
 dependencies = [
  "hyper",
  "pin-project-lite",
- "tokio 1.26.0",
+ "tokio 1.28.1",
  "tokio-io-timeout",
 ]
 
@@ -2291,8 +2308,8 @@ dependencies = [
  "opentelemetry-proto",
  "prost",
  "thiserror",
- "tokio 1.26.0",
- "tonic",
+ "tokio 1.28.1",
+ "tonic 0.8.3",
 ]
 
 [[package]]
@@ -2305,8 +2322,8 @@ dependencies = [
  "futures-util",
  "opentelemetry",
  "prost",
- "tonic",
- "tonic-build",
+ "tonic 0.8.3",
+ "tonic-build 0.8.4",
 ]
 
 [[package]]
@@ -2343,7 +2360,7 @@ dependencies = [
  "percent-encoding",
  "rand 0.8.5",
  "thiserror",
- "tokio 1.26.0",
+ "tokio 1.28.1",
  "tokio-stream",
 ]
 
@@ -2688,9 +2705,9 @@ dependencies = [
 
 [[package]]
 name = "prost-build"
-version = "0.11.8"
+version = "0.11.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2c828f93f5ca4826f97fedcbd3f9a536c16b12cff3dbbb4a007f932bbad95b12"
+checksum = "119533552c9a7ffacc21e099c24a0ac8bb19c2a2a3f363de84cd9b844feab270"
 dependencies = [
  "bytes 1.4.0",
  "heck",
@@ -2723,9 +2740,9 @@ dependencies = [
 
 [[package]]
 name = "prost-types"
-version = "0.11.8"
+version = "0.11.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "379119666929a1afd7a043aa6cf96fa67a6dce9af60c88095a4686dbce4c9c88"
+checksum = "213622a1460818959ac1181aaeb2dc9c7f63df720db7d788b3e24eacd1983e13"
 dependencies = [
  "prost",
 ]
@@ -2923,7 +2940,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_urlencoded",
- "tokio 1.26.0",
+ "tokio 1.28.1",
  "tokio-rustls",
  "tower-service",
  "url",
@@ -3768,14 +3785,13 @@ dependencies = [
 
 [[package]]
 name = "tokio"
-version = "1.26.0"
+version = "1.28.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "03201d01c3c27a29c8a5cee5b55a93ddae1ccf6f08f65365c2c918f8c1b76f64"
+checksum = "0aa32867d44e6f2ce3385e89dceb990188b8bb0fb25b0cf576647a6f98ac5105"
 dependencies = [
  "autocfg",
  "bytes 1.4.0",
  "libc",
- "memchr",
  "mio 0.8.6",
  "num_cpus",
  "parking_lot 0.12.1",
@@ -3783,7 +3799,7 @@ dependencies = [
  "signal-hook-registry",
  "socket2",
  "tokio-macros",
- "windows-sys 0.45.0",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
@@ -3846,18 +3862,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "30b74022ada614a1b4834de765f9bb43877f910cc8ce4be40e89042c9223a8bf"
 dependencies = [
  "pin-project-lite",
- "tokio 1.26.0",
+ "tokio 1.28.1",
 ]
 
 [[package]]
 name = "tokio-macros"
-version = "1.8.2"
+version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d266c00fde287f55d3f1c3e96c500c362a2b8c695076ec180f27918820bc6df8"
+checksum = "630bdcf245f78637c13ec01ffae6187cca34625e8c63150d424b59e55af2675e"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 1.0.109",
+ "syn 2.0.12",
 ]
 
 [[package]]
@@ -3886,7 +3902,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c43ee83903113e03984cb9e5cebe6c04a5116269e900e3ddba8f068a62adda59"
 dependencies = [
  "rustls",
- "tokio 1.26.0",
+ "tokio 1.28.1",
  "webpki",
 ]
 
@@ -3898,7 +3914,7 @@ checksum = "397c988d37662c7dda6d2208364a706264bf3d6138b11d436cbac0ad38832842"
 dependencies = [
  "futures-core",
  "pin-project-lite",
- "tokio 1.26.0",
+ "tokio 1.28.1",
  "tokio-util",
 ]
 
@@ -3998,7 +4014,7 @@ dependencies = [
  "futures-core",
  "futures-sink",
  "pin-project-lite",
- "tokio 1.26.0",
+ "tokio 1.28.1",
  "tracing",
 ]
 
@@ -4043,7 +4059,7 @@ dependencies = [
  "prost-derive",
  "rustls-native-certs",
  "rustls-pemfile",
- "tokio 1.26.0",
+ "tokio 1.28.1",
  "tokio-rustls",
  "tokio-stream",
  "tokio-util",
@@ -4055,10 +4071,51 @@ dependencies = [
 ]
 
 [[package]]
+name = "tonic"
+version = "0.9.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3082666a3a6433f7f511c7192923fa1fe07c69332d3c6a2e6bb040b569199d5a"
+dependencies = [
+ "async-trait",
+ "axum",
+ "base64 0.21.0",
+ "bytes 1.4.0",
+ "futures-core",
+ "futures-util",
+ "h2",
+ "http",
+ "http-body",
+ "hyper",
+ "hyper-timeout",
+ "percent-encoding",
+ "pin-project",
+ "prost",
+ "tokio 1.28.1",
+ "tokio-stream",
+ "tower",
+ "tower-layer",
+ "tower-service",
+ "tracing",
+]
+
+[[package]]
 name = "tonic-build"
 version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5bf5e9b9c0f7e0a7c027dcfaba7b2c60816c7049171f679d99ee2ff65d0de8c4"
+dependencies = [
+ "prettyplease",
+ "proc-macro2",
+ "prost-build",
+ "quote",
+ "syn 1.0.109",
+]
+
+[[package]]
+name = "tonic-build"
+version = "0.9.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a6fdaae4c2c638bb70fe42803a26fbd6fc6ac8c72f5c59f67ecc2a2dcabf4b07"
 dependencies = [
  "prettyplease",
  "proc-macro2",
@@ -4076,9 +4133,9 @@ dependencies = [
  "async-stream",
  "bytes 1.4.0",
  "prost",
- "tokio 1.26.0",
+ "tokio 1.28.1",
  "tokio-stream",
- "tonic",
+ "tonic 0.8.3",
 ]
 
 [[package]]
@@ -4090,10 +4147,10 @@ dependencies = [
  "futures-util",
  "prost",
  "prost-types",
- "tokio 1.26.0",
+ "tokio 1.28.1",
  "tokio-stream",
- "tonic",
- "tonic-build",
+ "tonic 0.8.3",
+ "tonic-build 0.8.4",
 ]
 
 [[package]]
@@ -4109,7 +4166,7 @@ dependencies = [
  "pin-project-lite",
  "rand 0.8.5",
  "slab",
- "tokio 1.26.0",
+ "tokio 1.28.1",
  "tokio-util",
  "tower-layer",
  "tower-service",

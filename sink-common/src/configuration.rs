@@ -13,6 +13,8 @@ use prost::Message;
 use serde::de;
 use tracing::warn;
 
+use crate::persistence::Persistence;
+
 use super::connector::Transformer;
 
 #[derive(Debug, thiserror::Error)]
@@ -58,6 +60,8 @@ pub struct ConfigurationArgs {
     pub starting_cursor: StartingCursorArgs,
     #[command(flatten)]
     pub network: NetworkTypeArgs,
+    #[command(flatten)]
+    pub persistence: PersistenceArgs,
 }
 
 #[derive(Args, Debug)]
@@ -89,6 +93,17 @@ pub struct FinalityArgs {
     /// Request pending blocks.
     #[arg(long, env)]
     pub pending: bool,
+}
+
+/// Flags related to state persistence.
+#[derive(Args, Debug)]
+pub struct PersistenceArgs {
+    #[arg(long, env, requires = "sink_id")]
+    /// URL to the etcd server used to persist data.
+    pub persist_to_etcd: Option<String>,
+    #[arg(long, env)]
+    /// Unique identifier for this sink.
+    pub sink_id: Option<String>,
 }
 
 impl ConfigurationArgs {
@@ -145,6 +160,20 @@ impl ConfigurationArgs {
             Ok(Some(transformer))
         } else {
             Ok(None)
+        }
+    }
+
+    pub fn to_persistence(&self) -> Option<Persistence> {
+        if let Some(etcd_url) = &self.persistence.persist_to_etcd {
+            let sink_id = self
+                .persistence
+                .sink_id
+                .as_ref()
+                .expect("sink_id is required when persist_to_etcd is set");
+            let persistence = Persistence::new(etcd_url, sink_id);
+            Some(persistence)
+        } else {
+            None
         }
     }
 
