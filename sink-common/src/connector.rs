@@ -10,7 +10,9 @@ use serde::ser::Serialize;
 use serde_json::{json, Value};
 use tokio_stream::StreamExt;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
+
+use crate::persistence::{Persistence, PersistenceError};
 
 #[async_trait]
 pub trait Sink {
@@ -37,6 +39,10 @@ pub enum SinkConnectorError {
     Stream(#[from] Box<dyn std::error::Error>),
     #[error("Transform error: {0}")]
     Transform(#[from] jrsonnet_evaluator::Error),
+    #[error("Persistence error: {0}")]
+    Persistence(#[from] PersistenceError),
+    #[error("CtrlC handler error: {0}")]
+    CtrlC(#[from] ctrlc::Error),
     #[error("Sink error: {0}")]
     Sink(Box<dyn std::error::Error>),
     #[error("Maximum number of retries exceeded")]
@@ -57,6 +63,7 @@ where
     stream_url: Uri,
     backoff: Backoff,
     transformer: Option<Transformer>,
+    persistence: Option<Persistence>,
     _phantom: PhantomData<B>,
 }
 
@@ -70,6 +77,7 @@ where
         stream_url: Uri,
         configuration: Configuration<F>,
         transformer: Option<Transformer>,
+        persistence: Option<Persistence>,
     ) -> Self {
         let retries = 10;
         let min_delay = Duration::from_secs(1);
@@ -81,19 +89,42 @@ where
             configuration,
             backoff,
             transformer,
+            persistence,
             _phantom: PhantomData::default(),
         }
     }
 
     /// Start consuming the stream, calling the configured callback for each message.
     pub async fn consume_stream<S>(
-        self,
+        mut self,
         mut sink: S,
         ct: CancellationToken,
     ) -> Result<(), SinkConnectorError>
     where
         S: Sink,
     {
+        // correctly handling Ctrl-C is very important when using persistence
+        // otherwise the lock will be released after the lease expires.
+        ctrlc::set_handler({
+            let ct = ct.clone();
+            move || {
+                ct.cancel();
+            }
+        })?;
+
+        let mut persistence = if let Some(persistence) = self.persistence.take() {
+            Some(persistence.connect().await?)
+        } else {
+            None
+        };
+
+        let lock = if let Some(persistence) = persistence.as_mut() {
+            info!("acquiring persistence lock");
+            Some(persistence.lock().await?)
+        } else {
+            None
+        };
+
         debug!("start consume stream");
         let (mut data_stream, data_client) = ClientBuilder::<F, B>::default()
             .connect(self.stream_url.clone())
@@ -108,13 +139,13 @@ where
         loop {
             tokio::select! {
                 _ = ct.cancelled() => {
-                    return Ok(())
+                    break;
                 }
                 maybe_message = data_stream.try_next() => {
                     match maybe_message.map_err(SinkConnectorError::Stream)? {
                         None => {
                             warn!("data stream closed");
-                            return Ok(())
+                            break;
                         }
                         Some(message) => {
                             self.handle_message(message, &mut sink, ct.clone()).await?;
@@ -123,6 +154,13 @@ where
                 }
             }
         }
+
+        // unlock the lock, if any.
+        if let Some(lock) = lock {
+            lock.unlock().await?;
+        }
+
+        Ok(())
     }
 
     async fn handle_message<S>(

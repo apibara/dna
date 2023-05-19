@@ -20,12 +20,13 @@ struct Cli {
 async fn main() -> anyhow::Result<()> {
     init_opentelemetry()?;
     let args = Cli::parse();
-    println!("args = {:?}", args);
 
     let sink = WebhookSink::new(args.target_url)?.with_headers(&args.header)?;
     let ct = CancellationToken::new();
     let connector = SinkConnector::<Filter, Block>::from_configuration_args(args.configuration)?;
 
+    // jsonnet error cannot be shared between threads
+    // so unwrap for now.
     connector.consume_stream(sink, ct).await.unwrap();
 
     Ok(())
