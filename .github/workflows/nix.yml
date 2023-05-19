@@ -36,7 +36,9 @@ jobs:
         - core-lib
         - node-lib
         - sdk-lib
+        - sink-common-lib
         - apibara-starknet
+        - apibara-sink-webhook
     steps:
     - name: checkout sources
       uses: actions/checkout@v2
@@ -80,6 +82,7 @@ jobs:
       matrix:
         binary:
         - apibara-starknet
+        - apibara-sink-webhook
         job:
         - os: ubuntu-22.04
           target: x86_64-unknown-linux-gnu
@@ -120,6 +123,8 @@ jobs:
         image:
         - binary: apibara-starknet
           name: starknet
+        - binary: apibara-sink-webhook
+          name: sink-webhook
     steps:
     - name: checkout sources
       uses: actions/checkout@v2
@@ -151,6 +156,7 @@ jobs:
       matrix:
         image:
         - starknet
+        - sink-webhook
     steps:
     - name: login into registry
       uses: redhat-actions/podman-login@v1
@@ -211,6 +217,7 @@ jobs:
       matrix:
         binary:
         - apibara-starknet
+        - apibara-sink-webhook
         target:
         - x86_64-unknown-linux-gnu
         - x86_64-apple-darwin
