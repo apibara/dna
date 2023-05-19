@@ -100,9 +100,19 @@
             compileMode = "test";
           };
 
+          sink-common-lib = rustPkgs.workspace.apibara-sink-common { };
+          sink-common-lib-test = rustPkgs.workspace.apibara-sink-common {
+            compileMode = "test";
+          };
+
           # binaries
           apibara-starknet = rustPkgs.workspace.apibara-starknet { };
           apibara-starknet-test = rustPkgs.workspace.apibara-starknet {
+            compileMode = "test";
+          };
+
+          apibara-sink-webhook = rustPkgs.workspace.apibara-sink-webhook { };
+          apibara-sink-webhook-test = rustPkgs.workspace.apibara-sink-webhook {
             compileMode = "test";
           };
 
@@ -112,6 +122,10 @@
             ports = {
               "7171/tcp" = { };
             };
+          };
+
+          apibara-sink-webhook-image = dockerizeCrateBin {
+            crate = (rustPkgs.workspace.apibara-sink-webhook { });
           };
         };
       }
