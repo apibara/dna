@@ -1,5 +1,8 @@
 //! Persist state to etcd.
-use etcd_client::Client;
+use apibara_core::node::v1alpha2::Cursor;
+use etcd_client::{Client, LeaseKeeper, LockOptions};
+use prost::Message;
+use tracing::debug;
 
 pub use etcd_client::LockResponse;
 
@@ -13,6 +16,8 @@ pub struct Persistence {
 pub enum PersistenceError {
     #[error("Etcd error: {0}")]
     Etcd(#[from] etcd_client::Error),
+    #[error("Cursor decode error: {0}")]
+    CursorDecode(#[from] prost::DecodeError),
 }
 
 pub struct PersistenceClient {
@@ -20,9 +25,10 @@ pub struct PersistenceClient {
     sink_id: String,
 }
 
-pub struct Lock<'a> {
-    client: &'a mut PersistenceClient,
+pub struct Lock {
     inner: LockResponse,
+    lease_id: i64,
+    keeper: LeaseKeeper,
 }
 
 impl Persistence {
@@ -43,25 +49,66 @@ impl Persistence {
 }
 
 impl PersistenceClient {
-    pub async fn lock(&mut self) -> Result<Lock<'_>, PersistenceError> {
-        let inner = self.client.lock(self.sink_id.as_str(), None).await?;
+    /// Attempts to acquire a lock on the sink.
+    pub async fn lock(&mut self) -> Result<Lock, PersistenceError> {
+        let lease = self.client.lease_grant(60, None).await?;
+        debug!(lease_id = %lease.id(), "acquired lease for lock");
+        let (keeper, _) = self.client.lease_keep_alive(lease.id()).await?;
+
+        let lock_options = LockOptions::new().with_lease(lease.id());
+        let inner = self
+            .client
+            .lock(self.sink_id.as_str(), Some(lock_options))
+            .await?;
+
         let lock = Lock {
-            client: self,
             inner,
+            lease_id: lease.id(),
+            keeper,
         };
         Ok(lock)
     }
 
-    async fn unlock(&mut self, key: &[u8]) -> Result<(), PersistenceError> {
-        println!("unlock");
-        self.client.unlock(key).await?;
+    /// Unlock a lock.
+    pub async fn unlock(&mut self, lock: Option<Lock>) -> Result<(), PersistenceError> {
+        if let Some(lock) = lock {
+            self.client.unlock(lock.inner.key()).await?;
+        }
+        Ok(())
+    }
+
+    /// Reads the currently stored cursor value.
+    pub async fn get_cursor(&mut self) -> Result<Option<Cursor>, PersistenceError> {
+        let response = self.client.get(self.sink_id.as_str(), None).await?;
+        match response.kvs().iter().next() {
+            None => Ok(None),
+            Some(kv) => {
+                let cursor = Cursor::decode(kv.value())?;
+                Ok(Some(cursor))
+            }
+        }
+    }
+
+    /// Updates the sink cursor value.
+    pub async fn put_cursor(&mut self, cursor: Cursor) -> Result<(), PersistenceError> {
+        self.client
+            .put(self.sink_id.as_str(), cursor.encode_to_vec(), None)
+            .await?;
+        Ok(())
+    }
+
+    /// Deletes any stored value for the sink cursor.
+    pub async fn delete_cursor(&mut self) -> Result<(), PersistenceError> {
+        self.client.delete(self.sink_id.as_str(), None).await?;
         Ok(())
     }
 }
 
-impl<'a> Lock<'a> {
-    pub async fn unlock(self) -> Result<(), PersistenceError> {
-        self.client.unlock(self.inner.key()).await?;
+impl Lock {
+    /// Sends a keep alive request.
+    pub async fn keep_alive(&mut self) -> Result<(), PersistenceError> {
+        debug!(lease_id = %self.lease_id, "send keep alive message");
+        self.keeper.keep_alive().await?;
         Ok(())
     }
 }

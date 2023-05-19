@@ -1,4 +1,7 @@
-use std::{marker::PhantomData, time::Duration};
+use std::{
+    marker::PhantomData,
+    time::{Duration, Instant},
+};
 
 use apibara_core::node::v1alpha2::{Cursor, DataFinality};
 use apibara_sdk::{ClientBuilder, Configuration, DataMessage, Uri};
@@ -10,9 +13,9 @@ use serde::ser::Serialize;
 use serde_json::{json, Value};
 use tokio_stream::StreamExt;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, info, warn};
+use tracing::{debug, info, trace, warn};
 
-use crate::persistence::{Persistence, PersistenceError};
+use crate::persistence::{Persistence, PersistenceClient, PersistenceError};
 
 #[async_trait]
 pub trait Sink {
@@ -118,12 +121,37 @@ where
             None
         };
 
-        let lock = if let Some(persistence) = persistence.as_mut() {
+        let mut lock = if let Some(persistence) = persistence.as_mut() {
             info!("acquiring persistence lock");
-            Some(persistence.lock().await?)
+            // lock will block until it's acquired.
+            // limit the time we wait for the lock to 30 seconds or until the cancellation token is
+            // cancelled.
+            // notice we can straight exit if the cancellation token is cancelled, since the lock
+            // is not held by us.
+            tokio::select! {
+                lock = persistence.lock() => {
+                    Some(lock?)
+                }
+                _ = tokio::time::sleep(Duration::from_secs(30)) => {
+                    info!("failed to acquire persistence lock within 30 seconds");
+                    return Ok(())
+                }
+                _ = ct.cancelled() => {
+                    return Ok(())
+                }
+            }
         } else {
             None
         };
+
+        let mut configuration = self.configuration.clone();
+        if let Some(persistence) = persistence.as_mut() {
+            let starting_cursor = persistence.get_cursor().await?;
+            if starting_cursor.is_some() {
+                info!(cursor = ?starting_cursor, "restarting from last cursor");
+                configuration.starting_cursor = starting_cursor;
+            }
+        }
 
         debug!("start consume stream");
         let (mut data_stream, data_client) = ClientBuilder::<F, B>::default()
@@ -132,9 +160,12 @@ where
 
         debug!(configuration = ?self.configuration, "sending configuration");
         data_client
-            .send(self.configuration.clone())
+            .send(configuration)
             .await
             .map_err(|_| SinkConnectorError::SendConfiguration)?;
+
+        let mut last_lock_renewal = Instant::now();
+        let min_lock_refresh = Duration::from_secs(30);
 
         loop {
             tokio::select! {
@@ -148,7 +179,16 @@ where
                             break;
                         }
                         Some(message) => {
-                            self.handle_message(message, &mut sink, ct.clone()).await?;
+                            self.handle_message(message, &mut sink, persistence.as_mut(), ct.clone()).await?;
+
+                            // Renew the lock every 30 seconds to avoid hammering etcd.
+                            if last_lock_renewal.elapsed() > min_lock_refresh {
+                                if let Some(lock) = lock.as_mut() {
+                                    // persistence.renew_lock(&lock).await?;
+                                    lock.keep_alive().await?;
+                                }
+                                last_lock_renewal = Instant::now();
+                            }
                         }
                     }
                 }
@@ -156,17 +196,18 @@ where
         }
 
         // unlock the lock, if any.
-        if let Some(lock) = lock {
-            lock.unlock().await?;
+        if let Some(mut persistence) = persistence {
+            persistence.unlock(lock).await?;
         }
 
         Ok(())
     }
 
     async fn handle_message<S>(
-        &self,
+        &mut self,
         message: DataMessage<B>,
         sink: &mut S,
+        persistence: Option<&mut PersistenceClient>,
         ct: CancellationToken,
     ) -> Result<(), SinkConnectorError>
     where
@@ -179,7 +220,7 @@ where
                 finality,
                 batch,
             } => {
-                debug!(cursor = ?cursor, end_cursor = ?end_cursor, "received data");
+                trace!(cursor = ?cursor, end_cursor = ?end_cursor, "received data");
                 let data = if let Some(transformer) = &self.transformer {
                     let result = transformer.apply_tla(batch)?;
                     json!(result)
@@ -191,7 +232,13 @@ where
                         .handle_data(&cursor, &end_cursor, &finality, &data)
                         .await
                     {
-                        Ok(_) => return Ok(()),
+                        Ok(_) => {
+                            if let Some(persistence) = persistence {
+                                persistence.put_cursor(end_cursor).await?;
+                            }
+
+                            return Ok(());
+                        }
                         Err(err) => {
                             warn!(err = ?err, "handle_data error");
                             if ct.is_cancelled() {
@@ -207,7 +254,22 @@ where
                 debug!(cursor = ?cursor, "received invalidate");
                 for duration in &self.backoff {
                     match sink.handle_invalidate(&cursor).await {
-                        Ok(_) => return Ok(()),
+                        Ok(_) => {
+                            if let Some(persistence) = persistence {
+                                // if the sink started streaming from the genesis block
+                                // and if the genesis block has been reorged, delete the
+                                // stored cursor value to restart from genesis.
+                                match cursor {
+                                    None => {
+                                        persistence.delete_cursor().await?;
+                                    }
+                                    Some(cursor) => {
+                                        persistence.put_cursor(cursor).await?;
+                                    }
+                                }
+                            }
+                            return Ok(());
+                        }
                         Err(err) => {
                             warn!(err = ?err, "handle_invalidate error");
                             if ct.is_cancelled() {
