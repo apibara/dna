@@ -3,6 +3,7 @@ mod connector;
 mod persistence;
 
 use apibara_sdk::InvalidUri;
+use bytesize::ByteSize;
 use configuration::TransformError;
 use prost::Message;
 use serde::{de, ser};
@@ -20,6 +21,8 @@ pub enum SinkConnectorFromConfigurationError {
     Uri(#[from] InvalidUri),
     #[error("Failed to parse transform: {0}")]
     Transform(#[from] TransformError),
+    #[error("Failed to message size: {0}")]
+    SizeConversion(String),
 }
 
 pub trait SinkConnectorExt: Sized {
@@ -36,11 +39,24 @@ where
     fn from_configuration_args(
         args: ConfigurationArgs,
     ) -> Result<Self, SinkConnectorFromConfigurationError> {
+        let max_message_size: ByteSize = args
+            .max_message_size
+            .as_ref()
+            .map(|s| s.parse())
+            .transpose()
+            .map_err(SinkConnectorFromConfigurationError::SizeConversion)?
+            .unwrap_or(ByteSize::mb(1));
         let configuration = args.to_configuration::<F>()?;
         let stream_url = args.stream_url.parse()?;
         let transformer = args.to_transformer()?;
         let persistence = args.to_persistence();
-        let connector = SinkConnector::new(stream_url, configuration, transformer, persistence);
+        let connector = SinkConnector::new(
+            stream_url,
+            configuration,
+            transformer,
+            persistence,
+            max_message_size.as_u64() as usize,
+        );
         Ok(connector)
     }
 }

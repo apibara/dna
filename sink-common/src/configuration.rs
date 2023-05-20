@@ -51,6 +51,10 @@ pub struct ConfigurationArgs {
     /// Jsonnet transformation to apply to data. If it starts with `@`, it is interpreted as a path to a file.
     #[arg(long, env)]
     pub transform: Option<String>,
+    /// Limits the maximum size of a decoded message. Accept message size in human readable form,
+    /// e.g. 1kb, 1MB, 1GB. If not set the default is 1MB.
+    #[arg(long, env)]
+    pub max_message_size: Option<String>,
     /// DNA stream url. If starting with `https://`, use a secure connection.
     #[arg(long, env)]
     pub stream_url: String,

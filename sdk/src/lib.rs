@@ -76,6 +76,7 @@ where
 {
     token: Option<String>,
     configuration: Option<Configuration<F>>,
+    max_message_size: Option<usize>,
     _data: PhantomData<D>,
 }
 
@@ -112,6 +113,11 @@ where
     /// Send the given configuration upon connect.
     pub fn with_configuration(mut self, configuration: Configuration<F>) -> Self {
         self.configuration = Some(configuration);
+        self
+    }
+
+    pub fn with_max_message_size(mut self, message_size: usize) -> Self {
+        self.max_message_size = Some(message_size);
         self
     }
 
