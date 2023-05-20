@@ -2,7 +2,7 @@
 use apibara_core::node::v1alpha2::Cursor;
 use etcd_client::{Client, LeaseKeeper, LockOptions};
 use prost::Message;
-use tracing::debug;
+use tracing::{debug, instrument};
 
 pub use etcd_client::LockResponse;
 
@@ -50,6 +50,7 @@ impl Persistence {
 
 impl PersistenceClient {
     /// Attempts to acquire a lock on the sink.
+    #[instrument(skip(self), level = "debug")]
     pub async fn lock(&mut self) -> Result<Lock, PersistenceError> {
         let lease = self.client.lease_grant(60, None).await?;
         debug!(lease_id = %lease.id(), "acquired lease for lock");
@@ -70,6 +71,7 @@ impl PersistenceClient {
     }
 
     /// Unlock a lock.
+    #[instrument(skip(self, lock), level = "debug")]
     pub async fn unlock(&mut self, lock: Option<Lock>) -> Result<(), PersistenceError> {
         if let Some(lock) = lock {
             self.client.unlock(lock.inner.key()).await?;
@@ -78,6 +80,7 @@ impl PersistenceClient {
     }
 
     /// Reads the currently stored cursor value.
+    #[instrument(skip(self), level = "debug")]
     pub async fn get_cursor(&mut self) -> Result<Option<Cursor>, PersistenceError> {
         let response = self.client.get(self.sink_id.as_str(), None).await?;
         match response.kvs().iter().next() {
@@ -90,6 +93,7 @@ impl PersistenceClient {
     }
 
     /// Updates the sink cursor value.
+    #[instrument(skip(self), level = "trace")]
     pub async fn put_cursor(&mut self, cursor: Cursor) -> Result<(), PersistenceError> {
         self.client
             .put(self.sink_id.as_str(), cursor.encode_to_vec(), None)
@@ -98,6 +102,7 @@ impl PersistenceClient {
     }
 
     /// Deletes any stored value for the sink cursor.
+    #[instrument(skip(self), level = "trace")]
     pub async fn delete_cursor(&mut self) -> Result<(), PersistenceError> {
         self.client.delete(self.sink_id.as_str(), None).await?;
         Ok(())
@@ -106,6 +111,7 @@ impl PersistenceClient {
 
 impl Lock {
     /// Sends a keep alive request.
+    #[instrument(skip(self), level = "debug")]
     pub async fn keep_alive(&mut self) -> Result<(), PersistenceError> {
         debug!(lease_id = %self.lease_id, "send keep alive message");
         self.keeper.keep_alive().await?;
