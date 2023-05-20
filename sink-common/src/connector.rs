@@ -67,6 +67,7 @@ where
     backoff: Backoff,
     transformer: Option<Transformer>,
     persistence: Option<Persistence>,
+    max_message_size: usize,
     _phantom: PhantomData<B>,
 }
 
@@ -81,6 +82,7 @@ where
         configuration: Configuration<F>,
         transformer: Option<Transformer>,
         persistence: Option<Persistence>,
+        max_message_size: usize,
     ) -> Self {
         let retries = 10;
         let min_delay = Duration::from_secs(1);
@@ -93,6 +95,7 @@ where
             backoff,
             transformer,
             persistence,
+            max_message_size,
             _phantom: PhantomData::default(),
         }
     }
@@ -155,6 +158,7 @@ where
 
         debug!("start consume stream");
         let (mut data_stream, data_client) = ClientBuilder::<F, B>::default()
+            .with_max_message_size(self.max_message_size)
             .connect(self.stream_url.clone())
             .await?;
 
