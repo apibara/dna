@@ -7,7 +7,7 @@ use apibara_node::db::{
     MdbxTransactionExt,
 };
 use tokio_util::sync::CancellationToken;
-use tonic_health::proto::health_server::{Health, HealthServer};
+use tonic_health::pb::health_server::{Health, HealthServer};
 use tracing::warn;
 
 use crate::db::tables;
