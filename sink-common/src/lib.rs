@@ -4,7 +4,7 @@ mod persistence;
 
 use apibara_sdk::InvalidUri;
 use bytesize::ByteSize;
-use configuration::TransformError;
+use configuration::{MetadataError, TransformError};
 use prost::Message;
 use serde::{de, ser};
 
@@ -17,6 +17,8 @@ pub use self::connector::{Sink, SinkConnector, SinkConnectorError};
 pub enum SinkConnectorFromConfigurationError {
     #[error(transparent)]
     Configuration(#[from] ConfigurationError),
+    #[error(transparent)]
+    Metadata(#[from] MetadataError),
     #[error("Failed to parse stream URL: {0}")]
     Uri(#[from] InvalidUri),
     #[error("Failed to parse transform: {0}")]
@@ -50,10 +52,12 @@ where
         let stream_url = args.stream_url.parse()?;
         let transformer = args.to_transformer()?;
         let persistence = args.to_persistence();
+        let metadata = args.to_metadata()?;
         let connector = SinkConnector::new(
             stream_url,
             configuration,
             transformer,
+            metadata,
             persistence,
             max_message_size.as_u64() as usize,
         );

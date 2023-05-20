@@ -15,16 +15,21 @@ use pin_project::pin_project;
 use prost::Message;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio_stream::wrappers::ReceiverStream;
-use tonic::{
-    metadata::{errors::InvalidMetadataValue, MetadataValue},
-    transport::Channel,
-    Streaming,
-};
+use tonic::{metadata::KeyAndValueRef, transport::Channel, Streaming};
 use tracing::debug;
 
 // Re-export tonic Uri
 pub use http::uri::InvalidUri;
-pub use tonic::transport::Uri;
+pub use tonic::{
+    metadata::{
+        errors::{InvalidMetadataKey, InvalidMetadataValue},
+        MetadataMap,
+    },
+    transport::Uri,
+};
+
+pub type MetadataKey = tonic::metadata::MetadataKey<tonic::metadata::Ascii>;
+pub type MetadataValue = tonic::metadata::MetadataValue<tonic::metadata::Ascii>;
 
 pub use crate::config::Configuration;
 
@@ -34,8 +39,8 @@ pub enum ClientBuilderError {
     FailedToBuildIndexer,
     #[error(transparent)]
     TonicError(#[from] tonic::transport::Error),
-    #[error(transparent)]
-    FailedToConfigureStream(Box<dyn std::error::Error>),
+    #[error("Failed to configure stream")]
+    FailedToConfigureStream,
     #[error(transparent)]
     InvalidMetadata(#[from] InvalidMetadataValue),
     #[error(transparent)]
@@ -77,6 +82,7 @@ where
     token: Option<String>,
     configuration: Option<Configuration<F>>,
     max_message_size: Option<usize>,
+    metadata: MetadataMap,
     _data: PhantomData<D>,
 }
 
@@ -110,6 +116,14 @@ where
         self
     }
 
+    /// Use the given `metadata` when connecting to the server.
+    ///
+    /// Notice: metadata will be merged with the authentication header if any.
+    pub fn with_metadata(mut self, metadata: MetadataMap) -> Self {
+        self.metadata = metadata;
+        self
+    }
+
     /// Send the given configuration upon connect.
     pub fn with_configuration(mut self, configuration: Configuration<F>) -> Self {
         self.configuration = Some(configuration);
@@ -131,12 +145,33 @@ where
     ) -> Result<(DataStream<F, D>, DataStreamClient<F>), ClientBuilderError> {
         let channel = Channel::builder(url).connect().await?;
 
+        // parse authorization token outside of the interceptor
+        let token_meta = if let Some(token) = self.token.clone() {
+            let token: tonic::metadata::MetadataValue<_> = format!("Bearer {token}").parse()?;
+            Some(("authorization", token))
+        } else {
+            None
+        };
+
         let mut default_client =
             StreamClient::with_interceptor(channel, move |mut req: tonic::Request<()>| {
-                if let Some(token) = self.token.clone() {
-                    let token: MetadataValue<_> = format!("Bearer {token}").parse().unwrap();
-                    req.metadata_mut().insert("authorization", token);
+                let req_meta = req.metadata_mut();
+
+                for kv in self.metadata.iter() {
+                    match kv {
+                        KeyAndValueRef::Ascii(key, value) => {
+                            req_meta.insert(key, value.clone());
+                        }
+                        KeyAndValueRef::Binary(key, value) => {
+                            req_meta.insert_bin(key, value.clone());
+                        }
+                    }
                 }
+
+                if let Some((key, value)) = token_meta.clone() {
+                    req_meta.insert(key, value);
+                }
+
                 Ok(req)
             });
 
@@ -150,7 +185,10 @@ where
         let (inner_tx, inner_rx) = mpsc::channel(128);
 
         if let Some(configuration) = self.configuration {
-            configuration_tx.send(configuration).await.unwrap();
+            configuration_tx
+                .send(configuration)
+                .await
+                .map_err(|_| ClientBuilderError::FailedToConfigureStream)?;
         }
 
         let inner_stream = default_client

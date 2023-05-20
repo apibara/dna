@@ -4,7 +4,7 @@ use std::{
 };
 
 use apibara_core::node::v1alpha2::{Cursor, DataFinality};
-use apibara_sdk::{ClientBuilder, Configuration, DataMessage, Uri};
+use apibara_sdk::{ClientBuilder, Configuration, DataMessage, MetadataMap, Uri};
 use async_trait::async_trait;
 use exponential_backoff::Backoff;
 use jrsonnet_evaluator::{apply_tla, val::ArrValue, val::StrValue, ObjValue, State, Val};
@@ -66,6 +66,7 @@ where
     stream_url: Uri,
     backoff: Backoff,
     transformer: Option<Transformer>,
+    metadata: MetadataMap,
     persistence: Option<Persistence>,
     max_message_size: usize,
     _phantom: PhantomData<B>,
@@ -81,6 +82,7 @@ where
         stream_url: Uri,
         configuration: Configuration<F>,
         transformer: Option<Transformer>,
+        metadata: MetadataMap,
         persistence: Option<Persistence>,
         max_message_size: usize,
     ) -> Self {
@@ -94,6 +96,7 @@ where
             configuration,
             backoff,
             transformer,
+            metadata,
             persistence,
             max_message_size,
             _phantom: PhantomData::default(),
@@ -159,6 +162,7 @@ where
         debug!("start consume stream");
         let (mut data_stream, data_client) = ClientBuilder::<F, B>::default()
             .with_max_message_size(self.max_message_size)
+            .with_metadata(self.metadata.clone())
             .connect(self.stream_url.clone())
             .await?;
 
