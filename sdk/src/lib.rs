@@ -140,6 +140,12 @@ where
                 Ok(req)
             });
 
+        default_client = if let Some(max_message_size) = self.max_message_size {
+            default_client.max_decoding_message_size(max_message_size)
+        } else {
+            default_client
+        };
+
         let (configuration_tx, configuration_rx) = mpsc::channel(128);
         let (inner_tx, inner_rx) = mpsc::channel(128);
 
