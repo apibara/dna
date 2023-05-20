@@ -5,7 +5,10 @@ use std::{
 };
 
 use apibara_core::node::v1alpha2::DataFinality;
-use apibara_sdk::Configuration;
+use apibara_sdk::{
+    Configuration, InvalidMetadataKey, InvalidMetadataValue, MetadataKey, MetadataMap,
+    MetadataValue,
+};
 use clap::Args;
 use jrsonnet_evaluator::{trace::PathResolver, State};
 use jrsonnet_stdlib::ContextInitializer;
@@ -39,6 +42,16 @@ pub enum TransformError {
     Evaluation,
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum MetadataError {
+    #[error("Failed to parse key: {0}")]
+    ParseKey(#[from] InvalidMetadataKey),
+    #[error("Failed to parse value: {0}")]
+    ParseValue(#[from] InvalidMetadataValue),
+    #[error("Invalid metadata format")]
+    InvalidFormat,
+}
+
 /// Stream configuration command line flags.
 #[derive(Args, Debug)]
 pub struct ConfigurationArgs {
@@ -55,6 +68,9 @@ pub struct ConfigurationArgs {
     /// e.g. 1kb, 1MB, 1GB. If not set the default is 1MB.
     #[arg(long, env)]
     pub max_message_size: Option<String>,
+    /// Add metadata to the stream, in the `key: value` format. Can be specified multiple times.
+    #[arg(long, short = 'M', env)]
+    pub metadata: Vec<String>,
     /// DNA stream url. If starting with `https://`, use a secure connection.
     #[arg(long, env)]
     pub stream_url: String,
@@ -179,6 +195,22 @@ impl ConfigurationArgs {
         } else {
             None
         }
+    }
+
+    pub fn to_metadata(&self) -> Result<MetadataMap, MetadataError> {
+        let mut metadata = MetadataMap::new();
+        for entry in &self.metadata {
+            match entry.split_once(':') {
+                None => return Err(MetadataError::InvalidFormat),
+                Some((key, value)) => {
+                    let key: MetadataKey = key.parse()?;
+                    let value: MetadataValue = value.parse()?;
+                    metadata.insert(key, value);
+                }
+            }
+        }
+
+        Ok(metadata)
     }
 
     fn new_filter<F>(&self) -> Result<F, FilterError>

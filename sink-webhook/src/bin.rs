@@ -8,8 +8,10 @@ use tokio_util::sync::CancellationToken;
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
+    /// The target url to send the request to.
     #[arg(long, env)]
     target_url: String,
+    /// Additional headers to send with the request.
     #[arg(long, short = 'H', env)]
     header: Vec<String>,
     #[command(flatten)]
