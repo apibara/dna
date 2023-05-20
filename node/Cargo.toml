@@ -32,9 +32,9 @@ thiserror = "1.0.32"
 tokio = { version = "1.20.1", features = ["full"] }
 tokio-stream = { version = "0.1.10", features = ["sync"] }
 tokio-util = "0.7.4"
-tonic = { version = "0.8.2", features = ["tls", "tls-roots"] }
-tonic-health = "0.7.0"
-tonic-reflection = { version = "0.5.0", path = "../tonic-reflection-patched" }
+tonic = { version = "0.9.0", features = ["tls", "tls-roots"] }
+tonic-health = "0.9.0"
+tonic-reflection = "0.9.0"
 tower = "0.4.13"
 tower-http = { version = "0.3.4", features = ["trace"] }
 tracing = "0.1.36"
