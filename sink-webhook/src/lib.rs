@@ -11,7 +11,7 @@ use http::{
 use reqwest::Client;
 use serde::ser::Serialize;
 use serde_json::{json, Value};
-use tracing::{debug, info, warn};
+use tracing::{debug, info, instrument, warn};
 
 #[derive(Debug, thiserror::Error)]
 pub enum WebhookError {
@@ -62,6 +62,7 @@ impl WebhookSink {
         Ok(self)
     }
 
+    #[instrument(skip(self, body), err(Debug))]
     async fn send<B: Serialize + ?Sized>(&self, body: &B) -> Result<(), WebhookError> {
         let response = self
             .client
