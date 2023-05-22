@@ -75,6 +75,7 @@
               pkg-config
               llvmPackages.libclang
               protobuf
+              python310
             ];
           };
         };
@@ -97,6 +98,11 @@
 
           sdk-lib = rustPkgs.workspace.apibara-sdk { };
           sdk-lib-test = rustPkgs.workspace.apibara-sdk {
+            compileMode = "test";
+          };
+
+          transformer-lib = rustPkgs.workspace.apibara-transformer { };
+          transformer-lib-test = rustPkgs.workspace.apibara-transformer {
             compileMode = "test";
           };
 
