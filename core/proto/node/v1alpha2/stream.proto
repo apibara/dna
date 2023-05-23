@@ -8,6 +8,8 @@ service Stream {
   rpc StreamData(stream StreamDataRequest) returns (stream StreamDataResponse);
   // Stream data from the node.
   rpc StreamDataImmutable(StreamDataRequest) returns (stream StreamDataResponse);
+  // returns the block syncing status, together with the cursors of the current finalized and accepted blocks.
+  rpc SyncStatus(stream StatusRequest) returns (stream StatusResponse);
 }
 
 // Request data to be streamed.
@@ -45,6 +47,16 @@ message Cursor {
   bytes unique_key = 2;
 }
 
+message StatusRequest {
+}
+
+message StatusResponse {
+  // Optional because the chain may be so new that no block has been finalized. For example, devnets.
+  optional Cursor finalized = 1;
+  Cursor latest = 2;
+  IngestionStatus status = 3;
+}
+
 // Data finality.
 enum DataFinality {
   DATA_STATUS_UNKNOWN = 0;
@@ -54,6 +66,12 @@ enum DataFinality {
   DATA_STATUS_ACCEPTED = 2;
   // Data is finalized and cannot be invalidated.
   DATA_STATUS_FINALIZED = 3;
+}
+
+enum IngestionStatus {
+  INGESTION_STATUS_UNKNOWN = 0;
+  INGESTION_STATUS_SYNCING = 1;
+  INGESTION_STATUS_SYNCED = 2;
 }
 
 // Invalidate data after the given cursor.
