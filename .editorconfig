@@ -16,3 +16,7 @@ indent_size = 2
 
 [*.yml]
 indent_size = 2
+
+[*.{json,js,ts}]
+indent_size = 2
+

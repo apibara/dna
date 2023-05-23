@@ -246,7 +246,7 @@ where
     F: Message + Default,
     D: Message + Default,
 {
-    type Item = Result<DataMessage<D>, Box<dyn std::error::Error>>;
+    type Item = Result<DataMessage<D>, Box<dyn std::error::Error + Send + Sync + 'static>>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         match self.configuration_rx.poll_recv(cx) {

@@ -4,7 +4,7 @@ mod persistence;
 
 use apibara_sdk::InvalidUri;
 use bytesize::ByteSize;
-use configuration::{MetadataError, TransformError};
+use configuration::MetadataError;
 use prost::Message;
 use serde::{de, ser};
 use serde_json::Value;
@@ -14,6 +14,7 @@ pub use self::configuration::{
     FinalityArgs, StartingCursorArgs,
 };
 pub use self::connector::{Sink, SinkConnector, SinkConnectorError};
+pub use apibara_transformer::TransformerError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum SinkConnectorFromConfigurationError {
@@ -24,7 +25,7 @@ pub enum SinkConnectorFromConfigurationError {
     #[error("Failed to parse stream URL: {0}")]
     Uri(#[from] InvalidUri),
     #[error("Failed to parse transform: {0}")]
-    Transform(#[from] TransformError),
+    Transform(#[from] TransformerError),
     #[error("Failed to message size: {0}")]
     SizeConversion(String),
 }

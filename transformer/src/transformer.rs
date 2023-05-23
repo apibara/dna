@@ -12,6 +12,7 @@ pub struct Transformer {
     runtime: JsRuntime,
     module: ModuleSpecifier,
     timeout: Duration,
+    resource_id: u32,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -28,16 +29,13 @@ impl Transformer {
     /// Creates a [Transformer] from the given file.
     ///
     /// A relative file path is considered relative to the given current directory.
-    pub async fn from_file(
-        path: &str,
-        current_dir: impl AsRef<Path>,
-    ) -> Result<Self, TransformerError> {
+    pub fn from_file(path: &str, current_dir: impl AsRef<Path>) -> Result<Self, TransformerError> {
         let module = deno_core::resolve_path(path, current_dir.as_ref())?;
-        Self::from_module(module).await
+        Self::from_module(module)
     }
 
     /// Creates a [Transformer] from the given module specifier.
-    pub async fn from_module(module: ModuleSpecifier) -> Result<Self, TransformerError> {
+    pub fn from_module(module: ModuleSpecifier) -> Result<Self, TransformerError> {
         let ext = Extension::builder("transformer")
             .ops(vec![(op_return::decl())])
             .build();
@@ -48,15 +46,17 @@ impl Transformer {
             ..RuntimeOptions::default()
         });
 
-        let module_id = runtime.load_side_module(&module, None).await?;
+        let module_id =
+            deno_core::futures::executor::block_on(runtime.load_side_module(&module, None))?;
         let module_result = runtime.mod_evaluate(module_id);
-        runtime.run_event_loop(false).await?;
-        module_result.await.unwrap()?;
+        deno_core::futures::executor::block_on(runtime.run_event_loop(false))?;
+        deno_core::futures::executor::block_on(module_result).unwrap()?;
 
         Ok(Transformer {
             runtime,
             module,
             timeout: Duration::from_secs(5),
+            resource_id: 0,
         })
     }
 
@@ -85,8 +85,11 @@ impl Transformer {
         let mut state = state.borrow_mut();
         let resource_table = &mut state.resource_table;
 
-        let entry: Rc<ReturnValueResource> = resource_table.take(0).expect("resource entry");
+        let entry: Rc<ReturnValueResource> = resource_table
+            .take(self.resource_id)
+            .expect("resource entry");
         let value = Rc::try_unwrap(entry).expect("value");
+        self.resource_id += 1;
 
         Ok(value.value)
     }

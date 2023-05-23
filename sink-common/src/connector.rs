@@ -5,9 +5,9 @@ use std::{
 
 use apibara_core::node::v1alpha2::{Cursor, DataFinality};
 use apibara_sdk::{ClientBuilder, Configuration, DataMessage, MetadataMap, Uri};
+use apibara_transformer::{Transformer, TransformerError};
 use async_trait::async_trait;
 use exponential_backoff::Backoff;
-use jrsonnet_evaluator::{apply_tla, val::ArrValue, val::StrValue, ObjValue, State, Val};
 use prost::Message;
 use serde::ser::Serialize;
 use serde_json::{json, Value};
@@ -47,22 +47,19 @@ pub enum SinkConnectorError {
     #[error("Failed to send configuration")]
     SendConfiguration,
     #[error("Stream error: {0}")]
-    Stream(#[from] Box<dyn std::error::Error>),
+    Stream(#[from] Box<dyn std::error::Error + Send + Sync + 'static>),
     #[error("Transform error: {0}")]
-    Transform(#[from] jrsonnet_evaluator::Error),
+    Transform(#[from] TransformerError),
     #[error("Persistence error: {0}")]
     Persistence(#[from] PersistenceError),
     #[error("CtrlC handler error: {0}")]
     CtrlC(#[from] ctrlc::Error),
+    #[error("JSON conversion error: {0}")]
+    Json(#[from] serde_json::Error),
     #[error("Sink error: {0}")]
-    Sink(Box<dyn std::error::Error>),
+    Sink(Box<dyn std::error::Error + Send + Sync + 'static>),
     #[error("Maximum number of retries exceeded")]
     MaximumRetriesExceeded,
-}
-
-pub struct Transformer {
-    state: State,
-    expr: Val,
 }
 
 pub struct SinkConnector<F, B>
@@ -242,8 +239,9 @@ where
                 batch,
             } => {
                 trace!(cursor = ?cursor, end_cursor = ?end_cursor, "received data");
-                let data = if let Some(transformer) = &self.transformer {
-                    let result = transformer.apply_tla(batch)?;
+                let data = if let Some(transformer) = &mut self.transformer {
+                    let json_batch = serde_json::to_value(&batch)?;
+                    let result = transformer.transform(&json_batch).await?;
                     json!(result)
                 } else {
                     json!(batch)
@@ -308,58 +306,5 @@ where
                 .map_err(Into::into)
                 .map_err(SinkConnectorError::Sink),
         }
-    }
-}
-
-trait ToVal {
-    fn to_val(&self) -> Result<Val, SinkConnectorError>;
-}
-
-impl ToVal for Value {
-    fn to_val(&self) -> Result<Val, SinkConnectorError> {
-        match self {
-            Value::Null => Ok(Val::Null),
-            Value::Bool(b) => Ok(Val::Bool(*b)),
-            Value::Number(n) => {
-                if let Some(n) = n.as_i64() {
-                    Ok(Val::Num(n as f64))
-                } else if let Some(n) = n.as_u64() {
-                    Ok(Val::Num(n as f64))
-                } else if let Some(n) = n.as_f64() {
-                    Ok(Val::Num(n))
-                } else {
-                    panic!("invalid number")
-                }
-            }
-            Value::String(s) => Ok(Val::Str(StrValue::Flat(s.into()))),
-            Value::Array(a) => {
-                let inner: ArrValue = a
-                    .iter()
-                    .map(|v| v.to_val())
-                    .collect::<Result<Vec<_>, _>>()?
-                    .into();
-                Ok(Val::Arr(inner))
-            }
-            Value::Object(o) => {
-                let mut builder = ObjValue::builder();
-                for (k, v) in o.iter() {
-                    let value = v.to_val()?;
-                    builder.member(k.into()).value(value)?;
-                }
-                Ok(Val::Obj(builder.build()))
-            }
-        }
-    }
-}
-
-impl Transformer {
-    pub fn new(state: State, expr: Val) -> Self {
-        Self { state, expr }
-    }
-
-    pub fn apply_tla<D: Serialize>(&self, data: D) -> Result<Val, SinkConnectorError> {
-        let data = json!(data).to_val()?;
-        let result = apply_tla(self.state.clone(), &vec![data], self.expr.clone())?;
-        Ok(result)
     }
 }
