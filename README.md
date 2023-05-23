@@ -51,34 +51,22 @@ For example, the following Starknet filter matches all `Transfer` events (key =
 
 ### Transform
 
-Data is transformed evaluating a [jsonnet program](https://jsonnet.org/) on
+Data is transformed evaluating a Javascript or Typescrip function on
 each batch of data. The input of the program is a list of network-specific data
 (usually, blocks) and the output can be anything. The resulting output is sent
 to the integration.
 
 This example flattens blocks into a list of all events and their data:
 
-```jsonnet
-function(batch)
-  std.flatMap(
-    function(block)
-      local number = std.get(block.header, "blockNumber", 0);
-      local hash = std.get(block.header, "blockHash");
-      local events = std.get(block, "events", []);
-      std.map(
-        function(ev)
-          local txHash = ev.transaction.meta.hash;
-          local event = ev.event;
-          {
-            blockNumber: number,
-            blockHash: hash,
-            txHash: txHash,
-            eventKey: event.keys[0],
-            data: event.data,
-            contract: event.fromAddress
-          },
-      events),
-  batch)
+```js
+export default function flatten(batch) {
+  return batch.flatMap(flattenBlock);
+}
+
+function flattenBlock(block) {
+  const { header, events } = block;
+  return (events ?? []).map(event => ({ ...event, ...header }));
+}
 ```
 
 

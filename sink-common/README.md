@@ -57,34 +57,22 @@ true`).
 ### Transform
 
 Data can be transformed before it's sent to the downstream integration. This is achieved
-evaluating a [jsonnet program](https://jsonnet.org/) on each batch of data.
+evaluating a Javascript or Typescript function on each batch of data.
 The input of the program is a list of network-specific data (usually, blocks) and the
-output can be anything. The resulting output is sent to the integration.
+output can be a list of anything. The resulting output is sent to the integration.
 
-**Example**: The following jsonnet program "flattens" blocks into a list of all
+**Example**: The following Javascript program "flattens" blocks into a list of all
 their events.
 
-```jsonnet
-function(batch)
-  std.flatMap(
-    function(block)
-      local number = std.get(block.header, "block_number", 0);
-      local hash = std.get(block.header, "block_hash");
-      local events = std.get(block, "events", []);
-      std.map(
-        function(ev)
-          local txHash = ev.transaction.meta.hash;
-          local event = ev.event;
-          {
-            blockNumber: number,
-            blockHash: hash,
-            txHash: txHash,
-            eventKey: event.keys[0],
-            data: event.data,
-            contract: event.from_address
-          },
-      events),
-  batch)
+```js
+export default function flatten(batch) {
+  return batch.flatMap(flattenBlock);
+}
+
+function flattenBlock(block) {
+  const { header, events } = block;
+  return (events ?? []).map(event => ({ ...event, ...header }));
+}
 ```
 
 A batch that looks like the following:
