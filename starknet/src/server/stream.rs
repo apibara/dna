@@ -6,14 +6,17 @@ use std::{
     task::{self, Poll},
 };
 
-use apibara_core::node::v1alpha2::{stream_server, StreamDataRequest, StreamDataResponse};
+use apibara_core::node::v1alpha2::{
+    stream_server, IngestionStatus, StatusRequest, StatusResponse, StreamDataRequest,
+    StreamDataResponse,
+};
 use apibara_node::{
     server::RequestObserver,
     stream::{new_data_stream, ResponseStream, StreamConfigurationStream, StreamError},
 };
 use futures::Stream;
 use pin_project::pin_project;
-use tonic::{metadata::MetadataMap, Request, Response, Streaming};
+use tonic::{metadata::MetadataMap, Request, Response, Streaming, IntoRequest};
 use tracing_futures::Instrument;
 
 use crate::{
@@ -74,6 +77,14 @@ where
 
         ResponseStream::new(data_stream).instrument(stream_span)
     }
+
+    async fn sync_status(self) -> StatusResponse {
+        StatusResponse {
+            finalized: None,
+            latest: None,
+            status: IngestionStatus::Unknown.into(),
+        }
+    }
 }
 
 #[tonic::async_trait]
@@ -87,6 +98,9 @@ where
 
     type StreamDataImmutableStream =
         Pin<Box<dyn Stream<Item = Result<StreamDataResponse, tonic::Status>> + Send + 'static>>;
+
+    type SyncStatusStream =
+        Pin<Box<dyn Stream<Item = Result<StatusResponse, tonic::Status>> + Send + 'static>>;
 
     async fn stream_data(
         &self,
@@ -110,6 +124,14 @@ where
         let response = self
             .stream_data_with_configuration(metadata, configuration_stream)
             .await;
+        Ok(Response::new(Box::pin(response)))
+    }
+
+    async fn sync_status(
+        &self,
+        request: Request<Streaming<StatusRequest>>,
+    ) -> Result<Response<Self::SyncStatusStream>, tonic::Status>{
+        let response = self.sync_status(request).await;
         Ok(Response::new(Box::pin(response)))
     }
 }
