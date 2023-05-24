@@ -9,7 +9,7 @@ service Stream {
   // Stream data from the node.
   rpc StreamDataImmutable(StreamDataRequest) returns (stream StreamDataResponse);
   // returns the block syncing status, together with the cursors of the current finalized and accepted blocks.
-  rpc SyncStatus(stream StatusRequest) returns (stream StatusResponse);
+  rpc SyncStatus(StatusRequest) returns (StatusResponse);
 }
 
 // Request data to be streamed.

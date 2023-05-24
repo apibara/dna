@@ -16,7 +16,7 @@ use apibara_node::{
 };
 use futures::Stream;
 use pin_project::pin_project;
-use tonic::{metadata::MetadataMap, Request, Response, Streaming, IntoRequest};
+use tonic::{metadata::MetadataMap, Request, Response, Streaming, IntoRequest, Status};
 use tracing_futures::Instrument;
 
 use crate::{
@@ -99,9 +99,6 @@ where
     type StreamDataImmutableStream =
         Pin<Box<dyn Stream<Item = Result<StreamDataResponse, tonic::Status>> + Send + 'static>>;
 
-    type SyncStatusStream =
-        Pin<Box<dyn Stream<Item = Result<StatusResponse, tonic::Status>> + Send + 'static>>;
-
     async fn stream_data(
         &self,
         request: Request<Streaming<StreamDataRequest>>,
@@ -111,6 +108,11 @@ where
             .stream_data_with_configuration(metadata, request.into_inner())
             .await;
         Ok(Response::new(Box::pin(response)))
+    }
+
+    async fn sync_status(&self, request: Request<StatusRequest>,) -> Result<Response<StatusResponse>, Status>{
+        let response = self.sync_status(request).await;
+        response
     }
 
     async fn stream_data_immutable(
@@ -127,13 +129,6 @@ where
         Ok(Response::new(Box::pin(response)))
     }
 
-    async fn sync_status(
-        &self,
-        request: Request<Streaming<StatusRequest>>,
-    ) -> Result<Response<Self::SyncStatusStream>, tonic::Status>{
-        let response = self.sync_status(request).await;
-        Ok(Response::new(Box::pin(response)))
-    }
 }
 
 /// A stream that yields the configuration once, and is pending forever after that.
