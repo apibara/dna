@@ -16,7 +16,7 @@ use apibara_node::{
 };
 use futures::Stream;
 use pin_project::pin_project;
-use tonic::{metadata::MetadataMap, Request, Response, Streaming, IntoRequest, Status};
+use tonic::{metadata::MetadataMap, Request, Response, Status, Streaming};
 use tracing_futures::Instrument;
 
 use crate::{
@@ -110,7 +110,10 @@ where
         Ok(Response::new(Box::pin(response)))
     }
 
-    async fn sync_status(&self, request: Request<StatusRequest>,) -> Result<Response<StatusResponse>, Status>{
+    async fn sync_status(
+        &self,
+        request: Request<StatusRequest>,
+    ) -> Result<Response<StatusResponse>, Status> {
         let response = self.sync_status(request).await;
         response
     }
@@ -128,7 +131,6 @@ where
             .await;
         Ok(Response::new(Box::pin(response)))
     }
-
 }
 
 /// A stream that yields the configuration once, and is pending forever after that.
