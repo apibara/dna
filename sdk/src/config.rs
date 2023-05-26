@@ -1,8 +1,9 @@
 use apibara_core::node::v1alpha2::{Cursor, DataFinality};
 use prost::Message;
+use serde::Serialize;
 
 /// Data stream configuration.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Configuration<F: Message + Default> {
     /// Number of blocks per batch.
     pub batch_size: u64,

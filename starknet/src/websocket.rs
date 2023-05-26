@@ -2,17 +2,21 @@ use crate::db::StorageReader;
 use crate::ingestion::IngestionStreamClient;
 use crate::server::stream::IngestionStream;
 use crate::stream::{DbBatchProducer, SequentialCursorProducer};
+use apibara_core::starknet::v1alpha2::Block;
 use apibara_core::{
     node::v1alpha2::{Cursor, DataFinality, StreamDataRequest},
     starknet::v1alpha2::Filter,
 };
-use apibara_node::stream::{new_data_stream, StreamConfigurationStream, StreamError};
+use apibara_node::stream::{new_data_stream, StreamConfigurationStream, StreamError, ResponseStream};
+use apibara_sdk::DataMessage;
+// use apibara_sdk::DataMessage;
 use futures::{SinkExt, StreamExt, TryStreamExt};
-use tracing::info;
+use prost::Message as ProstMessage;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::UnboundedReceiverStream;
+use tracing::info;
 use warp::ws::{Message, WebSocket};
 use warp::Filter as WarpFilter;
 
@@ -29,12 +33,17 @@ pub struct ConfigurationRequest {
 
 impl ConfigurationRequest {
     pub fn to_stream_data_request(self) -> StreamDataRequest {
+        let mut filter: Vec<u8> = vec![];
+
+        // TODO: don't use unwrap
+        self.filter.encode(&mut filter).unwrap();
+
         StreamDataRequest {
             stream_id: Some(self.stream_id),
             batch_size: self.batch_size,
             starting_cursor: self.starting_cursor,
             finality: self.finality.map(Into::into),
-            filter: serde_json::to_vec(&self.filter).unwrap(),
+            filter: filter,
         }
     }
 }
@@ -85,10 +94,11 @@ impl<R: StorageReader + Send + Sync + 'static> WebsocketStreamServer<R> {
         // TODO: use channel instead of unbounded_channel
         let (configuration_tx, configuration_rx) = mpsc::unbounded_channel();
         let configuration_rx =
-            StreamConfigurationStream::new(UnboundedReceiverStream::new(configuration_rx)).map(|m| {
-                info!("ws: received in configuration stream: {:#?}", m);
-                m
-            });
+            StreamConfigurationStream::new(UnboundedReceiverStream::new(configuration_rx));
+        let configuration_rx = configuration_rx.map(|m| {
+            info!("ws: received in configuration stream: {:#?}", m);
+            m
+        });
 
         let meter = apibara_node::server::SimpleMeter::default();
         // let stream_span = self.request_observer.stream_data_span(&metadata);
@@ -107,11 +117,14 @@ impl<R: StorageReader + Send + Sync + 'static> WebsocketStreamServer<R> {
             meter,
         );
 
+        // let response_stream = ResponseStream::new(data_stream);
+
         // TODO: don't use unwrap
         tokio::spawn(
             data_stream
                 .map_ok(|m| {
-                    let m = serde_json::to_string(&m.stream_id)
+                    let m = DataMessage::<Block>::from_stream_data_response(m).unwrap();
+                    let m = serde_json::to_string(&m)
                         .map(Message::text)
                         .unwrap();
                     info!("ws: sending m={:#?}", m);
@@ -124,9 +137,15 @@ impl<R: StorageReader + Send + Sync + 'static> WebsocketStreamServer<R> {
             info!("ws: received result={:#?}", result);
             match result {
                 Ok(message) => {
+                    if message.is_binary() {
+                    }
+
                     let message =
                         serde_json::from_slice::<ConfigurationRequest>(message.as_bytes());
+                    info!("ws: created ConfigurationRequest message={:#?}", message);
+
                     let message = message.map(ConfigurationRequest::to_stream_data_request);
+                    info!("ws: converted message to StreamDataRequest message={:#?}", message);
 
                     match configuration_tx.send(message) {
                         Ok(()) => {}
