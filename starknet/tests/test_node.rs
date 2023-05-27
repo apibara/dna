@@ -19,7 +19,7 @@ use tracing::info;
 use common::{Devnet, DevnetClient};
 
 #[tokio::test]
-// #[ignore]
+#[ignore]
 async fn test_starknet_reorgs() {
     init_opentelemetry().unwrap();
 

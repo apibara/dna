@@ -3,27 +3,24 @@ mod common;
 use std::time::Duration;
 
 use apibara_core::{
-    node::v1alpha2::{DataFinality, StreamDataResponse, stream_data_response::Message as StreamDataResponseMessage},
+    node::v1alpha2::DataFinality,
     starknet::v1alpha2::{Block, Filter, HeaderFilter},
 };
 use apibara_node::o11y::init_opentelemetry;
-use apibara_sdk::{ClientBuilder, Configuration, DataMessage};
+use apibara_sdk::{Configuration, DataMessage};
 use apibara_starknet::{start_node, StartArgs};
 use futures::FutureExt;
 use futures_util::{SinkExt, TryStreamExt};
 use testcontainers::clients;
-// use tokio_stream::StreamExt;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
 use common::{Devnet, DevnetClient};
 
-use std::env;
-
-use futures_util::{future, pin_mut, StreamExt as FutureUtilStreamExt};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use futures_util::{StreamExt as FutureUtilStreamExt};
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 
+// Same as test_reorg_from_client_pov but using websockets
 #[tokio::test]
 // #[ignore]
 async fn test_reorg_from_client_pov_websockets() {
@@ -63,30 +60,18 @@ async fn test_reorg_from_client_pov_websockets() {
                 filter
             });
 
-        let uri = "http://localhost:7171".parse().unwrap();
-        let (mut data_stream, data_client) = ClientBuilder::<Filter, Block>::default()
-            .connect(uri)
-            .await
-            .unwrap();
-
-        let connect_addr = "ws://localhost:8080/ws";
-        let url = url::Url::parse(&connect_addr).unwrap();
+        let url = url::Url::parse("ws://localhost:8080/ws").unwrap();
         let (ws_stream, _) = connect_async(url).await.expect("Failed to connect");
-        println!("WebSocket handshake has been successfully completed");
+        info!("WebSocket handshake has been successfully completed");
+
         let (write, mut read) = ws_stream.split();
         let (mut tx, rx) = futures_channel::mpsc::unbounded();
-        let rx_to_ws = tokio::spawn(rx.map(Ok).forward(write));
+        let _ = tokio::spawn(rx.map(Ok).forward(write));
 
-        // TODO: send the same configuration sent to the gRPC server
-        let configuration_json = r#"{"stream_id": 2, "batch_size": 10,"data_finality": "finalized","filter": {"header":{}}}"#;
-        // stream_id is missing from the configuration object and it's mandatory
-        // for the websockets server for some reason, why's that ? and why it's
-        // not mandatory for the gRPC server ?
-        // let configuration_json = serde_json::to_string(&configuration).unwrap();
+        let configuration_json = serde_json::to_string(&configuration).unwrap();
 
         tx.send(Message::text(configuration_json)).await.unwrap();
 
-        data_client.send(configuration).await.unwrap();
         info!("connected. tests starting");
         let devnet_client = DevnetClient::new(format!("http://localhost:{}", rpc_port));
 
@@ -95,53 +80,17 @@ async fn test_reorg_from_client_pov_websockets() {
             devnet_client.mint().await.unwrap();
         }
 
-        // let ws_to_stdout = {
-        //     read.for_each(|message| async {
-        //         let data = message.unwrap().into_data();
-        //         info!("ws: test: received data={:#?}", data);
-        //         tokio::io::stdout().write_all(&data).await.unwrap();
-        //     })
-        // };
-
         info!("read data messages");
         // stream data. should receive 11 blocks.
         let mut block_hash = None;
         for i in 0..11 {
             let message = read.try_next().await.unwrap().unwrap();
             info!("ws: client: received message={:#?}", message);
-            // TODO: don't use unwrap
-            // let message_: StreamDataResponse = serde_json::from_slice(&message.into_data()).unwrap();
-            // info!("ws: client: convert to StreamDataResponse message={:#?}", message_);
             let message: DataMessage<Block> = serde_json::from_slice(&message.into_data()).unwrap();
-            info!("ws: client: convert to DataMessage<Block> message={:#?}", message);
-            match message {
-                DataMessage::Data {
-                    cursor,
-                    end_cursor,
-                    finality: _finality,
-                    mut batch,
-                } => {
-                    if let Some(cursor) = cursor {
-                        assert_eq!(cursor.order_key, i - 1);
-                        assert!(!cursor.unique_key.is_empty());
-                    } else {
-                        assert_eq!(i, 0);
-                    }
-                    assert_eq!(end_cursor.order_key, i);
-                    assert!(!end_cursor.unique_key.is_empty());
-                    assert_eq!(batch.len(), 1);
-                    let block = batch.remove(0);
-                    if i == 5 {
-                        block_hash =
-                            Some(block.header.clone().unwrap().block_hash.unwrap().to_hex());
-                    }
-                    assert_eq!(block.header.unwrap().block_number, i);
-                }
-                _ => unreachable!(),
-            }
-
-
-            let message = data_stream.try_next().await.unwrap().unwrap();
+            info!(
+                "ws: client: convert to DataMessage<Block> message={:#?}",
+                message
+            );
             match message {
                 DataMessage::Data {
                     cursor,
@@ -171,13 +120,17 @@ async fn test_reorg_from_client_pov_websockets() {
 
         info!("check stream finished");
         // reached the top of the stream. no next block.
-        let next_message = data_stream.try_next().now_or_never();
+        let next_message = read.try_next().now_or_never();
         assert!(next_message.is_none());
 
         // generate new block, expect new message
         info!("check new message. save cursor");
         devnet_client.mint().await.unwrap();
-        let starting_cursor = match data_stream.try_next().await.unwrap().unwrap() {
+
+        let message = read.try_next().await.unwrap().unwrap();
+        let message: DataMessage<Block> = serde_json::from_slice(&message.into_data()).unwrap();
+
+        let starting_cursor = match message {
             DataMessage::Data {
                 cursor: _cursor,
                 end_cursor,
@@ -195,8 +148,13 @@ async fn test_reorg_from_client_pov_websockets() {
             .abort_blocks(&block_hash.unwrap())
             .await
             .unwrap();
+
         devnet_client.mint().await.unwrap();
-        match data_stream.try_next().await.unwrap().unwrap() {
+
+        let message = read.try_next().await.unwrap().unwrap();
+        let message: DataMessage<Block> = serde_json::from_slice(&message.into_data()).unwrap();
+
+        match message {
             DataMessage::Invalidate { cursor } => {
                 // block 5 is reorged too
                 assert_eq!(cursor.unwrap().order_key, 4);
@@ -204,7 +162,10 @@ async fn test_reorg_from_client_pov_websockets() {
             _ => unreachable!(),
         }
 
-        match data_stream.try_next().await.unwrap().unwrap() {
+        let message = read.try_next().await.unwrap().unwrap();
+        let message: DataMessage<Block> = serde_json::from_slice(&message.into_data()).unwrap();
+
+        match message {
             DataMessage::Data {
                 cursor: _cursor,
                 end_cursor,
@@ -215,9 +176,6 @@ async fn test_reorg_from_client_pov_websockets() {
             }
             _ => unreachable!(),
         }
-
-        // When we active the join!, the test runs forever
-        // let _ = tokio::join!(rx_to_ws, ws_to_stdout);
 
         starting_cursor
     };
@@ -232,15 +190,27 @@ async fn test_reorg_from_client_pov_websockets() {
                 filter
             });
 
-        let uri = "http://localhost:7171".parse().unwrap();
-        let (mut data_stream, data_client) = ClientBuilder::<Filter, Block>::default()
-            .connect(uri)
-            .await
-            .unwrap();
-        data_client.send(configuration).await.unwrap();
+        let url = url::Url::parse("ws://localhost:8080/ws").unwrap();
+        let (ws_stream, _) = connect_async(url).await.expect("Failed to connect");
+        info!("WebSocket handshake has been successfully completed");
+
+        let (write, mut read) = ws_stream.split();
+        let (mut tx, rx) = futures_channel::mpsc::unbounded();
+        let _ = tokio::spawn(rx.map(Ok).forward(write));
+
+        let configuration_json = serde_json::to_string(&configuration).unwrap();
+        // TODO: If we don't send the configuration_json here or send a wrong value, the test runs forever
+        // is it because read.try_next() blocks until it receives a message which won't happen cause the
+        // configuration stream in the websocket server is down ?
+        tx.send(Message::text(configuration_json)).await.unwrap();
+
         info!("re-connected. tests starting");
         // first message should be warning of reorg
-        match data_stream.try_next().await.unwrap().unwrap() {
+
+        let message = read.try_next().await.unwrap().unwrap();
+        let message: DataMessage<Block> = serde_json::from_slice(&message.into_data()).unwrap();
+
+        match message {
             DataMessage::Invalidate { cursor } => {
                 // block 5 is reorged too
                 assert_eq!(cursor.unwrap().order_key, 4);
@@ -252,42 +222,4 @@ async fn test_reorg_from_client_pov_websockets() {
     info!("all done");
     cts.cancel();
     let _ = tokio::join!(node_handle);
-}
-
-async fn main() {
-    let connect_addr = "http://localhost:8080";
-    let url = url::Url::parse(&connect_addr).unwrap();
-    let (ws_stream, _) = connect_async(url).await.expect("Failed to connect");
-    println!("WebSocket handshake has been successfully completed");
-
-    let (stdin_tx, stdin_rx) = futures_channel::mpsc::unbounded();
-    tokio::spawn(read_stdin(stdin_tx));
-
-    let (write, read) = ws_stream.split();
-
-    let stdin_to_ws = stdin_rx.map(Ok).forward(write);
-    let ws_to_stdout = {
-        read.for_each(|message| async {
-            let data = message.unwrap().into_data();
-            tokio::io::stdout().write_all(&data).await.unwrap();
-        })
-    };
-
-    pin_mut!(stdin_to_ws, ws_to_stdout);
-    future::select(stdin_to_ws, ws_to_stdout).await;
-}
-
-// Our helper method which will read data from stdin and send it along the
-// sender provided.
-async fn read_stdin(tx: futures_channel::mpsc::UnboundedSender<Message>) {
-    let mut stdin = tokio::io::stdin();
-    loop {
-        let mut buf = vec![0; 1024];
-        let n = match stdin.read(&mut buf).await {
-            Err(_) | Ok(0) => break,
-            Ok(n) => n,
-        };
-        buf.truncate(n);
-        tx.unbounded_send(Message::binary(buf)).unwrap();
-    }
 }
