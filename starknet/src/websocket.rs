@@ -17,23 +17,23 @@ use warp::Filter as WarpFilter;
 
 #[derive(Clone)]
 pub struct WebsocketStreamServer<R: StorageReader + Send + Sync + 'static> {
+    address: String,
     ingestion: Arc<IngestionStreamClient>,
     storage: Arc<R>,
 }
 
 impl<R: StorageReader + Send + Sync + 'static> WebsocketStreamServer<R> {
-    pub fn new(db: Arc<R>, ingestion: IngestionStreamClient) -> WebsocketStreamServer<R> {
+    pub fn new(address: String, db: Arc<R>, ingestion: IngestionStreamClient) -> WebsocketStreamServer<R> {
         let ingestion = Arc::new(ingestion);
         WebsocketStreamServer {
+            address,
             ingestion,
             storage: db,
         }
     }
 
     pub async fn start(self: Arc<Self>) {
-        // TODO: use --websocket-address param here
-        let addr = "127.0.0.1:8080";
-        let socket_address: SocketAddr = addr.parse().expect("valid socket Address");
+        let socket_address: SocketAddr = self.address.parse().expect("valid socket Address");
 
         let ws = warp::path("ws")
             .and(warp::ws())
@@ -44,7 +44,7 @@ impl<R: StorageReader + Send + Sync + 'static> WebsocketStreamServer<R> {
 
         let server = warp::serve(ws).try_bind(socket_address);
 
-        info!("Running websocket server at {}!", addr);
+        info!("Running websocket server at {}!", socket_address);
 
         server.await
     }
