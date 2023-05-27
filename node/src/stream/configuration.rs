@@ -17,7 +17,7 @@ const MIN_BATCH_SIZE: usize = 1;
 const MAX_BATCH_SIZE: usize = 50;
 const DEFAULT_BATCH_SIZE: usize = 20;
 
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Debug)]
 pub struct StreamConfiguration<C, F>
 where
     C: Cursor,
