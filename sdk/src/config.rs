@@ -1,4 +1,4 @@
-use apibara_core::node::v1alpha2::{Cursor, DataFinality};
+use apibara_core::node::v1alpha2::{Cursor, DataFinality, StreamDataRequest};
 use prost::Message;
 use serde::{Serialize, Deserialize};
 
@@ -36,6 +36,20 @@ where
             filter,
         }
     }
+
+    pub fn to_stream_data_request(self) -> StreamDataRequest {
+        let mut filter: Vec<u8> = vec![];
+
+        // TODO: don't use unwrap
+        self.filter.encode(&mut filter).unwrap();
+        StreamDataRequest {
+            stream_id: Some(self.stream_id),
+            batch_size: Some(self.batch_size),
+            starting_cursor: self.starting_cursor,
+            finality: self.finality.map(Into::into),
+            filter: filter,
+        }
+}
 
     /// Set the batch size.
     pub fn with_batch_size(mut self, batch_size: u64) -> Self {

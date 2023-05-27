@@ -23,20 +23,6 @@ use warp::Filter as WarpFilter;
 
 static NEXT_USERID: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(1);
 
-pub fn to_stream_data_request(configuration: Configuration<Filter>) -> StreamDataRequest {
-    let mut filter: Vec<u8> = vec![];
-
-    // TODO: don't use unwrap
-    configuration.filter.encode(&mut filter).unwrap();
-
-    StreamDataRequest {
-        stream_id: Some(configuration.stream_id),
-        batch_size: Some(configuration.batch_size),
-        starting_cursor: configuration.starting_cursor,
-        finality: configuration.finality.map(Into::into),
-        filter: filter,
-    }
-}
 #[derive(Clone)]
 pub struct WebsocketStreamServer<R: StorageReader + Send + Sync + 'static> {
     ingestion: Arc<IngestionStreamClient>,
@@ -117,7 +103,7 @@ impl<R: StorageReader + Send + Sync + 'static> WebsocketStreamServer<R> {
                     let message =
                         serde_json::from_slice::<Configuration<Filter>>(message.as_bytes());
 
-                    let message = message.map(to_stream_data_request);
+                    let message = message.map(Configuration::<Filter>::to_stream_data_request);
 
                     match configuration_tx.send(message) {
                         Ok(()) => {}
