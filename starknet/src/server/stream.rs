@@ -14,17 +14,19 @@ use apibara_node::{
     server::RequestObserver,
     stream::{new_data_stream, ResponseStream, StreamConfigurationStream, StreamError},
 };
-use futures::Stream;
-use pin_project::pin_project;
-use tonic::{metadata::MetadataMap, Request, Response, Status, Streaming};
-use tracing_futures::Instrument;
 
+use crate::provider::{HttpProvider, Provider};
 use crate::{
     core::IngestionMessage,
     db::StorageReader,
     ingestion::IngestionStreamClient,
     stream::{DbBatchProducer, SequentialCursorProducer},
 };
+use futures::Stream;
+use pin_project::pin_project;
+use tonic::{metadata::MetadataMap, Request, Response, Status, Streaming};
+use tracing_futures::Instrument;
+use url::Url;
 
 pub struct StreamService<R: StorageReader, O: RequestObserver> {
     ingestion: Arc<IngestionStreamClient>,
@@ -78,11 +80,28 @@ where
         ResponseStream::new(data_stream).instrument(stream_span)
     }
 
-    async fn sync_status(self) -> StatusResponse {
-        StatusResponse {
-            finalized: None,
-            latest: None,
-            status: IngestionStatus::Unknown.into(),
+    async fn sync_status(self, rpc_url: Url) -> StatusResponse {
+        let provider = HttpProvider::new(rpc_url);
+        let latest_apibara_block = self.storage.highest_accepted_block().unwrap().unwrap();
+        let latest_starknet_block = provider.get_head().await.unwrap();
+        if latest_apibara_block.eq(&latest_starknet_block) {
+            StatusResponse {
+                finalized: None,
+                latest: None,
+                status: IngestionStatus::Synced.into(),
+            }
+        } else if latest_apibara_block.ne(&latest_starknet_block) {
+            StatusResponse {
+                finalized: None,
+                latest: None,
+                status: IngestionStatus::Syncing.into(),
+            }
+        } else {
+            StatusResponse {
+                finalized: None,
+                latest: None,
+                status: IngestionStatus::Unknown.into(),
+            }
         }
     }
 }
