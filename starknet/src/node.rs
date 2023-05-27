@@ -19,11 +19,11 @@ use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
 use crate::{
-    db::tables,
+    db::{tables, DatabaseStorage},
     ingestion::{BlockIngestion, BlockIngestionConfig, BlockIngestionError},
     provider::{HttpProviderError, Provider},
     server::{Server, ServerError},
-    HttpProvider,
+    HttpProvider, websocket::WebsocketStreamServer,
 };
 
 pub struct StarkNetNode<G, O, E>
@@ -104,7 +104,7 @@ where
 
         // TODO: configure from command line
         let server_addr: SocketAddr = "0.0.0.0:7171".parse()?;
-        let server = Server::<E, O>::new(self.db.clone(), block_ingestion_client)
+        let server = Server::<E, O>::new(self.db.clone(), block_ingestion_client.clone())
             .with_request_observer(self.request_span);
         let mut server_handle = tokio::spawn({
             let ct = ct.clone();
@@ -116,6 +116,18 @@ where
             }
         });
 
+
+        let storage = Arc::new(DatabaseStorage::new(self.db.clone()));
+
+        let websocket_server = WebsocketStreamServer::new(
+            storage,
+            block_ingestion_client.clone(),
+        );
+
+        info!("Starting websocket server");
+        // TODO: add the cancellation token
+        let mut websocket_handle = tokio::spawn(Arc::new(websocket_server).start());
+
         // TODO: based on which handles terminates first, it needs to wait
         // for the other handle to terminate too.
         tokio::select! {
@@ -124,6 +136,9 @@ where
             }
             ret = &mut server_handle => {
                 warn!(result = ?ret, "server terminated");
+            }
+            ret = &mut websocket_handle => {
+                warn!(resul = ?ret, "websocket server terminated");
             }
         }
 
@@ -166,6 +181,7 @@ pub struct StarkNetNodeBuilder<O: RequestObserver, E: EnvironmentKind> {
     provider: HttpProvider,
     poll_interval: Duration,
     request_observer: O,
+    websocket_address: Option<String>,
     _phantom: PhantomData<E>,
 }
 
@@ -201,6 +217,7 @@ where
             provider: sequencer,
             poll_interval,
             request_observer,
+            websocket_address: None,
             _phantom: Default::default(),
         };
         Ok(builder)
@@ -223,6 +240,7 @@ where
             provider: self.provider,
             poll_interval: self.poll_interval,
             request_observer,
+            websocket_address: self.websocket_address,
             _phantom: self._phantom,
         }
     }
@@ -237,5 +255,9 @@ where
             .map_err(StarkNetNodeBuilderError::DatabaseOpen)?;
 
         Ok(StarkNetNode::new(db, self.provider, self.request_observer))
+    }
+
+    pub(crate) fn with_websocket_address(&mut self, websocket_address: String) {
+        self.websocket_address = Some(websocket_address)
     }
 }

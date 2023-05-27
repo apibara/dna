@@ -1,5 +1,5 @@
 mod health;
-mod stream;
+pub mod stream;
 
 use std::{net::SocketAddr, sync::Arc};
 

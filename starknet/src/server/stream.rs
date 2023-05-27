@@ -64,6 +64,7 @@ where
         let ingestion_stream = IngestionStream::new(ingestion_stream);
         let batch_producer = DbBatchProducer::new(self.storage.clone());
         let cursor_producer = SequentialCursorProducer::new(self.storage.clone());
+
         let data_stream = new_data_stream(
             configuration_stream,
             ingestion_stream,
@@ -135,7 +136,7 @@ impl Stream for ImmutableRequestStream {
 
 /// A simple adapter from a generic ingestion stream to the one used by the server/stream module.
 #[pin_project]
-struct IngestionStream<L, E>
+pub struct IngestionStream<L, E>
 where
     L: Stream<Item = Result<IngestionMessage, E>>,
     E: std::error::Error + Send + Sync + 'static,

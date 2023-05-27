@@ -6,6 +6,7 @@ pub mod node;
 pub mod provider;
 pub mod server;
 pub mod stream;
+pub mod websocket;
 
 pub use crate::node::StarkNetNode;
 pub use crate::provider::HttpProvider;
@@ -44,6 +45,9 @@ pub struct StartArgs {
     /// Use the specified metadata key for tracing and metering.
     #[arg(long, env)]
     pub use_metadata: Vec<String>,
+    // Websocket address
+    #[arg(long, env)]
+    pub websocket_address: Option<String>
 }
 
 /// Connect the cancellation token to the ctrl-c handler.
@@ -74,6 +78,10 @@ pub async fn start_node(args: StartArgs, cts: CancellationToken) -> Result<()> {
             .map(|p| p.join(name))
             .expect("no datadir");
         node.with_datadir(datadir);
+    }
+
+    if let Some(websocket_address) = args.websocket_address {
+        node.with_websocket_address(websocket_address);
     }
 
     node.build()?.start(cts.clone(), args.wait_for_rpc).await?;
