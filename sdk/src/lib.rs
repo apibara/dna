@@ -13,11 +13,11 @@ use apibara_core::node::v1alpha2::{
 use futures::Stream;
 use pin_project::pin_project;
 use prost::Message;
+use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{metadata::KeyAndValueRef, transport::Channel, Streaming};
 use tracing::debug;
-use serde::{Serialize, Deserialize};
 
 // Re-export tonic Uri
 pub use http::uri::InvalidUri;

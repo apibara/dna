@@ -17,7 +17,7 @@ use tracing::info;
 
 use common::{Devnet, DevnetClient};
 
-use futures_util::{StreamExt as FutureUtilStreamExt};
+use futures_util::StreamExt as FutureUtilStreamExt;
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 
 // Same as test_reorg_from_client_pov but using websockets
