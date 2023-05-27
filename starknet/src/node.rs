@@ -23,7 +23,8 @@ use crate::{
     ingestion::{BlockIngestion, BlockIngestionConfig, BlockIngestionError},
     provider::{HttpProviderError, Provider},
     server::{Server, ServerError},
-    HttpProvider, websocket::WebsocketStreamServer,
+    websocket::WebsocketStreamServer,
+    HttpProvider,
 };
 
 pub struct StarkNetNode<G, O, E>
@@ -116,13 +117,9 @@ where
             }
         });
 
-
         let storage = Arc::new(DatabaseStorage::new(self.db.clone()));
 
-        let websocket_server = WebsocketStreamServer::new(
-            storage,
-            block_ingestion_client.clone(),
-        );
+        let websocket_server = WebsocketStreamServer::new(storage, block_ingestion_client.clone());
 
         info!("Starting websocket server");
         // TODO: add the cancellation token

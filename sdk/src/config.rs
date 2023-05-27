@@ -1,6 +1,6 @@
 use apibara_core::node::v1alpha2::{Cursor, DataFinality, StreamDataRequest};
 use prost::Message;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 /// Data stream configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -49,7 +49,7 @@ where
             finality: self.finality.map(Into::into),
             filter: filter,
         }
-}
+    }
 
     /// Set the batch size.
     pub fn with_batch_size(mut self, batch_size: u64) -> Self {

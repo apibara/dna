@@ -47,7 +47,7 @@ pub struct StartArgs {
     pub use_metadata: Vec<String>,
     // Websocket address
     #[arg(long, env)]
-    pub websocket_address: Option<String>
+    pub websocket_address: Option<String>,
 }
 
 /// Connect the cancellation token to the ctrl-c handler.
