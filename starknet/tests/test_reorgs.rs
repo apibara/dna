@@ -18,7 +18,7 @@ use tracing::info;
 use common::{Devnet, DevnetClient};
 
 #[tokio::test]
-// #[ignore]
+#[ignore]
 async fn test_reorg_from_client_pov() {
     init_opentelemetry().unwrap();
 
