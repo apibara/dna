@@ -36,6 +36,7 @@ where
     db: Arc<Environment<E>>,
     sequencer_provider: Arc<G>,
     request_span: O,
+    websocket_address: Option<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -63,13 +64,19 @@ where
         StarkNetNodeBuilder::<SimpleRequestObserver, E>::new(url)
     }
 
-    pub(crate) fn new(db: Environment<E>, sequencer_provider: G, request_span: O) -> Self {
+    pub(crate) fn new(
+        db: Environment<E>,
+        sequencer_provider: G,
+        request_span: O,
+        websocket_address: Option<String>,
+    ) -> Self {
         let db = Arc::new(db);
         let sequencer_provider = Arc::new(sequencer_provider);
         StarkNetNode {
             db,
             sequencer_provider,
             request_span,
+            websocket_address,
         }
     }
 
@@ -119,11 +126,18 @@ where
 
         let storage = Arc::new(DatabaseStorage::new(self.db.clone()));
 
-        let websocket_server = WebsocketStreamServer::new(storage, block_ingestion_client.clone());
-
         info!("Starting websocket server");
-        // TODO: add the cancellation token
-        let mut websocket_handle = tokio::spawn(Arc::new(websocket_server).start());
+        let mut websocket_handle = match self.websocket_address {
+            Some(websocket_address) => {
+                let websocket_server = WebsocketStreamServer::new(
+                    websocket_address,
+                    storage,
+                    block_ingestion_client.clone(),
+                );
+                tokio::spawn(Arc::new(websocket_server).start())
+            }
+            None => tokio::spawn(async { () }),
+        };
 
         // TODO: based on which handles terminates first, it needs to wait
         // for the other handle to terminate too.
@@ -251,7 +265,12 @@ where
             .open(&self.datadir)
             .map_err(StarkNetNodeBuilderError::DatabaseOpen)?;
 
-        Ok(StarkNetNode::new(db, self.provider, self.request_observer))
+        Ok(StarkNetNode::new(
+            db,
+            self.provider,
+            self.request_observer,
+            self.websocket_address,
+        ))
     }
 
     pub(crate) fn with_websocket_address(&mut self, websocket_address: String) {
