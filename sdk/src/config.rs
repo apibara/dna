@@ -1,10 +1,11 @@
 use apibara_core::node::v1alpha2::{Cursor, DataFinality};
 use prost::Message;
-use serde::Serialize;
+use serde::{Serialize, Deserialize};
 
 /// Data stream configuration.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Configuration<F: Message + Default> {
+    pub stream_id: u64,
     /// Number of blocks per batch.
     pub batch_size: u64,
     /// Starting cursor.
@@ -26,7 +27,9 @@ where
         finality: Option<DataFinality>,
         filter: F,
     ) -> Self {
+        let stream_id = 0;
         Self {
+            stream_id,
             batch_size,
             starting_cursor,
             finality,
@@ -77,6 +80,7 @@ where
 {
     fn default() -> Self {
         Self {
+            stream_id: 0,
             batch_size: 1,
             starting_cursor: None,
             finality: None,
