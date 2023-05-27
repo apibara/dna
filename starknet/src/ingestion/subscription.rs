@@ -16,6 +16,7 @@ pub struct IngestionStreamPublisher {
     _rx: Arc<broadcast::Receiver<IngestionMessage>>,
 }
 
+#[derive(Clone)]
 pub struct IngestionStreamClient {
     tx: Arc<broadcast::Sender<IngestionMessage>>,
 }

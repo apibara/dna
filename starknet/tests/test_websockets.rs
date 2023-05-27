@@ -10,16 +10,24 @@ use apibara_node::o11y::init_opentelemetry;
 use apibara_sdk::{ClientBuilder, Configuration, DataMessage};
 use apibara_starknet::{start_node, StartArgs};
 use futures::FutureExt;
+use futures_util::{TryStreamExt, SinkExt};
 use testcontainers::clients;
-use tokio_stream::StreamExt;
+// use tokio_stream::StreamExt;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
 use common::{Devnet, DevnetClient};
 
+use std::env;
+
+use futures_util::{future, pin_mut, StreamExt as FutureUtilStreamExt};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
+
+
 #[tokio::test]
 // #[ignore]
-async fn test_reorg_from_client_pov() {
+async fn test_reorg_from_client_pov_websockets() {
     init_opentelemetry().unwrap();
 
     let docker = clients::Cli::default();
@@ -61,6 +69,19 @@ async fn test_reorg_from_client_pov() {
             .connect(uri)
             .await
             .unwrap();
+
+        let connect_addr = "ws://localhost:8080/ws";
+        let url = url::Url::parse(&connect_addr).unwrap();
+        let (ws_stream, _) = connect_async(url).await.expect("Failed to connect");
+        println!("WebSocket handshake has been successfully completed");
+        let (write, read) = ws_stream.split();
+        let (mut tx, rx) = futures_channel::mpsc::unbounded();
+        let rx_to_ws = tokio::spawn(rx.map(Ok).forward(write));
+
+        let configuration_json = r#"{"stream_id": 2, "batch_size": 10,"data_finality": "finalized","filter": {"header":{}}}"#;
+
+        tx.send(Message::text(configuration_json)).await.unwrap();
+
         data_client.send(configuration).await.unwrap();
         info!("connected. tests starting");
         let devnet_client = DevnetClient::new(format!("http://localhost:{}", rpc_port));
@@ -182,4 +203,43 @@ async fn test_reorg_from_client_pov() {
     info!("all done");
     cts.cancel();
     let _ = tokio::join!(node_handle);
+}
+
+async fn main() {
+    let connect_addr = "http://localhost:8080";
+    let url = url::Url::parse(&connect_addr).unwrap();
+    let (ws_stream, _) = connect_async(url).await.expect("Failed to connect");
+    println!("WebSocket handshake has been successfully completed");
+
+
+    let (stdin_tx, stdin_rx) = futures_channel::mpsc::unbounded();
+    tokio::spawn(read_stdin(stdin_tx));
+
+    let (write, read) = ws_stream.split();
+
+    let stdin_to_ws = stdin_rx.map(Ok).forward(write);
+    let ws_to_stdout = {
+        read.for_each(|message| async {
+            let data = message.unwrap().into_data();
+            tokio::io::stdout().write_all(&data).await.unwrap();
+        })
+    };
+
+    pin_mut!(stdin_to_ws, ws_to_stdout);
+    future::select(stdin_to_ws, ws_to_stdout).await;
+}
+
+// Our helper method which will read data from stdin and send it along the
+// sender provided.
+async fn read_stdin(tx: futures_channel::mpsc::UnboundedSender<Message>) {
+    let mut stdin = tokio::io::stdin();
+    loop {
+        let mut buf = vec![0; 1024];
+        let n = match stdin.read(&mut buf).await {
+            Err(_) | Ok(0) => break,
+            Ok(n) => n,
+        };
+        buf.truncate(n);
+        tx.unbounded_send(Message::binary(buf)).unwrap();
+    }
 }

@@ -19,7 +19,7 @@ use tracing::info;
 use common::{Devnet, DevnetClient};
 
 #[tokio::test]
-#[ignore]
+// #[ignore]
 async fn test_starknet_reorgs() {
     init_opentelemetry().unwrap();
 
@@ -45,6 +45,7 @@ async fn test_starknet_reorgs() {
         wait_for_rpc: true,
         devnet: false,
         use_metadata: Vec::default(),
+        websocket_address: None,
     };
 
     let configuration = Configuration::<Filter>::default()
