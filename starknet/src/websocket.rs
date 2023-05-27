@@ -3,16 +3,10 @@ use crate::ingestion::IngestionStreamClient;
 use crate::server::stream::IngestionStream;
 use crate::stream::{DbBatchProducer, SequentialCursorProducer};
 use apibara_core::starknet::v1alpha2::Block;
-use apibara_core::{
-    node::v1alpha2::{StreamDataRequest},
-    starknet::v1alpha2::Filter,
-};
-use apibara_node::stream::{
-    new_data_stream, StreamConfigurationStream, StreamError,
-};
+use apibara_core::starknet::v1alpha2::Filter;
+use apibara_node::stream::{new_data_stream, StreamConfigurationStream, StreamError};
 use apibara_sdk::{Configuration, DataMessage};
 use futures::{SinkExt, StreamExt, TryStreamExt};
-use prost::Message as ProstMessage;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -20,8 +14,6 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::info;
 use warp::ws::{Message, WebSocket};
 use warp::Filter as WarpFilter;
-
-static NEXT_USERID: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(1);
 
 #[derive(Clone)]
 pub struct WebsocketStreamServer<R: StorageReader + Send + Sync + 'static> {
@@ -58,9 +50,6 @@ impl<R: StorageReader + Send + Sync + 'static> WebsocketStreamServer<R> {
     }
 
     async fn connect(self: Arc<Self>, ws: WebSocket) {
-        let id = NEXT_USERID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        info!("Welcome User {}", id);
-
         // Establishing a connection
         let (user_tx, mut user_rx) = ws.split();
 
@@ -117,12 +106,5 @@ impl<R: StorageReader + Send + Sync + 'static> WebsocketStreamServer<R> {
                 }
             }
         }
-
-        // Disconnect
-        disconnect(id).await;
     }
-}
-
-async fn disconnect(id: usize) {
-    info!("Good bye user {}", id);
 }
