@@ -84,7 +84,7 @@ where
         let provider = HttpProvider::new(rpc_url);
         let node_accepted_block = self.storage.highest_accepted_block()?;
         let node_finalized_block = self.storage.highest_finalized_block()?;
-        let latest_starknet_block = provider.get_head().await.unwrap();
+        let latest_starknet_block = provider.get_head().await.map_err(|_| tonic::Status::internal("internal server error"))?;
         if latest_apibara_block.eq(&latest_starknet_block) {
             StatusResponse {
                 finalized: None,
