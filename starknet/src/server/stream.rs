@@ -85,24 +85,24 @@ where
         let node_accepted_block = self.storage.highest_accepted_block()?;
         let node_finalized_block = self.storage.highest_finalized_block()?;
         let latest_starknet_block = provider.get_head().await.map_err(|_| tonic::Status::internal("internal server error"))?;
-        if latest_apibara_block.eq(&latest_starknet_block) {
-            StatusResponse {
-                finalized: None,
-                latest: None,
-                status: IngestionStatus::Synced.into(),
-            }
-        } else if latest_apibara_block.ne(&latest_starknet_block) {
-            StatusResponse {
-                finalized: None,
-                latest: None,
-                status: IngestionStatus::Syncing.into(),
-            }
+        let finalized = node_finalized_block.map(|id| id.to_cursor());
+        if let Some(accepted_block) = node_accepted_block {
+        let latest = Some(accepted_block.to_cursor());
+        let status = if node_accepted_block.eq(&latest_starknet_block) {
+            IngestionStatus::Synced
         } else {
-            StatusResponse {
-                finalized: None,
-                latest: None,
-                status: IngestionStatus::Unknown.into(),
-            }
+            IngestionStatus::Syncing
+        };
+        SatusResponse {
+          finalized,
+          latest,
+          status: status.into(),
+        }
+    } else {
+       SatusResponse {
+          finalized,
+          latest: None,
+          status: IngestionStauts::Syncing.into(),
         }
     }
 }
