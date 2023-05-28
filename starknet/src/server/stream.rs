@@ -81,7 +81,7 @@ where
         ResponseStream::new(data_stream).instrument(stream_span)
     }
 
-    async fn sync_status(self, rpc_url: Url) -> StatusResponse {
+    async fn sync_status(self, rpc_url: Url) -> Result<StatusResponse, tonic::Status> {
         let provider = HttpProvider::new(rpc_url);
         let latest_apibara_block = self.storage.highest_accepted_block().unwrap().unwrap();
         let latest_starknet_block = provider.get_head().await.unwrap();
