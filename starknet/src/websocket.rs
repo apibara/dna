@@ -6,11 +6,10 @@ use apibara_core::starknet::v1alpha2::Block;
 use apibara_core::starknet::v1alpha2::Filter;
 use apibara_node::stream::{new_data_stream, StreamConfigurationStream, StreamError};
 use apibara_sdk::{Configuration, DataMessage};
+use futures::future;
 use futures::{SinkExt, StreamExt, TryStreamExt};
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tokio::sync::mpsc;
-use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::info;
 use warp::ws::{Message, WebSocket};
 use warp::Filter as WarpFilter;
@@ -23,7 +22,11 @@ pub struct WebsocketStreamServer<R: StorageReader + Send + Sync + 'static> {
 }
 
 impl<R: StorageReader + Send + Sync + 'static> WebsocketStreamServer<R> {
-    pub fn new(address: String, db: Arc<R>, ingestion: IngestionStreamClient) -> WebsocketStreamServer<R> {
+    pub fn new(
+        address: String,
+        db: Arc<R>,
+        ingestion: IngestionStreamClient,
+    ) -> WebsocketStreamServer<R> {
         let ingestion = Arc::new(ingestion);
         WebsocketStreamServer {
             address,
@@ -51,12 +54,26 @@ impl<R: StorageReader + Send + Sync + 'static> WebsocketStreamServer<R> {
 
     async fn connect(self: Arc<Self>, ws: WebSocket) {
         // Establishing a connection
-        let (user_tx, mut user_rx) = ws.split();
+        let (user_tx, user_rx) = ws.split();
 
-        // TODO: use channel instead of unbounded_channel
-        let (configuration_tx, configuration_rx) = mpsc::unbounded_channel();
-        let configuration_rx =
-            StreamConfigurationStream::new(UnboundedReceiverStream::new(configuration_rx));
+        let configuration_stream = Box::pin(
+            user_rx
+                .map_err(Into::into)
+                .map_err(StreamError::Internal)
+                .and_then(|message| async move {
+                    serde_json::from_slice::<Configuration<Filter>>(message.as_bytes())
+                        .map_err(Into::into)
+                        .map_err(StreamError::Internal)
+                        .and_then(|message| {
+                            message
+                                .to_stream_data_request()
+                                .map_err(Into::into)
+                                .map_err(StreamError::Internal)
+                        })
+                }),
+        );
+
+        let configuration_stream = StreamConfigurationStream::new(configuration_stream);
 
         let meter = apibara_node::server::SimpleMeter::default();
         // let stream_span = self.request_observer.stream_data_span(&metadata);
@@ -68,43 +85,27 @@ impl<R: StorageReader + Send + Sync + 'static> WebsocketStreamServer<R> {
         let cursor_producer = SequentialCursorProducer::new(self.storage.clone());
 
         let data_stream = new_data_stream(
-            configuration_rx,
+            configuration_stream,
             ingestion_stream,
             cursor_producer,
             batch_producer,
             meter,
         );
 
-        // TODO: don't use unwrap
-        tokio::spawn(
-            data_stream
-                .map_ok(|m| {
-                    let message = DataMessage::<Block>::from_stream_data_response(m).unwrap();
-                    serde_json::to_string(&message).map(Message::text).unwrap()
-                })
-                .forward(user_tx.sink_map_err(StreamError::internal)),
-        );
-
-        while let Some(result) = user_rx.next().await {
-            match result {
-                Ok(message) => {
-                    // TODO: handle result=Ok(Close(None,),)
-                    let message =
-                        serde_json::from_slice::<Configuration<Filter>>(message.as_bytes());
-
-                    let message = message.map(Configuration::<Filter>::to_stream_data_request);
-
-                    match configuration_tx.send(message) {
-                        Ok(()) => {}
-                        Err(err) => {
-                            eprintln!("{}", err)
-                        }
-                    }
-                }
-                Err(err) => {
-                    eprintln!("{}", err);
-                }
-            }
-        }
+        // TODO: send the first decoding error downstream
+        data_stream
+            .and_then(|message| async {
+                let message = DataMessage::<Block>::from_stream_data_response(message).ok_or(
+                    StreamError::internal("Cannot convert StreamDataResponse to DataMessage"),
+                )?;
+                serde_json::to_string(&message)
+                    .map(Message::text)
+                    .map_err(Into::into)
+                    .map_err(StreamError::Internal)
+            })
+            .take_while(|result| future::ready(result.is_ok()))
+            .forward(user_tx.sink_map_err(StreamError::internal))
+            .await
+            .unwrap(); // we have to unwrap here since ws.on_upgrade expects ()
     }
 }
