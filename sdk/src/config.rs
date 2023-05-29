@@ -1,5 +1,5 @@
 use apibara_core::node::v1alpha2::{Cursor, DataFinality, StreamDataRequest};
-use prost::Message;
+use prost::{EncodeError, Message};
 use serde::{Deserialize, Serialize};
 
 /// Data stream configuration.
@@ -37,18 +37,18 @@ where
         }
     }
 
-    pub fn to_stream_data_request(self) -> StreamDataRequest {
+    pub fn to_stream_data_request(self) -> Result<StreamDataRequest, EncodeError> {
         let mut filter: Vec<u8> = vec![];
 
-        // TODO: don't use unwrap
-        self.filter.encode(&mut filter).unwrap();
-        StreamDataRequest {
+        self.filter.encode(&mut filter)?;
+
+        Ok(StreamDataRequest {
             stream_id: Some(self.stream_id),
             batch_size: Some(self.batch_size),
             starting_cursor: self.starting_cursor,
             finality: self.finality.map(Into::into),
             filter: filter,
-        }
+        })
     }
 
     /// Set the batch size.

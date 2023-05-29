@@ -199,9 +199,6 @@ async fn test_reorg_from_client_pov_websockets() {
         let _ = tokio::spawn(rx.map(Ok).forward(write));
 
         let configuration_json = serde_json::to_string(&configuration).unwrap();
-        // TODO: If we don't send the configuration_json here or send a wrong value, the test runs forever
-        // is it because read.try_next() blocks until it receives a message which won't happen cause the
-        // configuration stream in the websocket server is down ?
         tx.send(Message::text(configuration_json)).await.unwrap();
 
         info!("re-connected. tests starting");
