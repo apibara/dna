@@ -1,14 +1,15 @@
 use apibara_core::node::v1alpha2::{Cursor, DataFinality};
 use apibara_sink_common::Sink;
 use async_trait::async_trait;
-use mongodb::bson::doc;
+use mongodb::bson::{doc, to_bson, Document};
+
 use mongodb::{error::Error, options::ClientOptions, Client, Collection};
 
-use serde_json::{json, Value};
+use serde_json::{Value};
 use tracing::{info, warn};
 
 pub struct MongoSink {
-    collection: Collection<Value>,
+    collection: Collection<Document>,
 }
 
 impl MongoSink {
@@ -22,7 +23,7 @@ impl MongoSink {
 
         let client = Client::with_options(client_options)?;
         let db = client.database(&db_name);
-        let collection = db.collection::<Value>(&collection_name);
+        let collection = db.collection::<Document>(&collection_name);
 
         Ok(Self { collection })
     }
@@ -46,17 +47,27 @@ impl Sink for MongoSink {
             batch = ?batch,
             "inserting data to mongo"
         );
+
+        // convert to i64 because that's the maximum bson can handle
+        let block_number = i64::try_from(end_cursor.order_key).unwrap_or(-1);
+
         match batch {
             Value::Array(array) => {
-                let documents: Vec<Value> = array
+                let documents: Vec<Document> = array
                     .iter()
-                    .map(|element| json!({"data": element, "_cursor": end_cursor.order_key.to_string()}))
+                    .map(
+                        // Use unwrap because if the data couldn't be converted to bson
+                        // we can't write it to Mongo and thus there is point to continue
+                        |element| doc! {"data": to_bson(element).unwrap(), "_cursor": block_number},
+                    )
                     .collect();
                 self.collection.insert_many(documents, None).await?;
             }
             value => {
                 warn!(value = ?value, "batch value is not an array");
-                let document = json!({"data": value, "_cursor": end_cursor.order_key.to_string()});
+                // Use unwrap because if the data couldn't be converted to bson
+                // we can't write it to Mongo and thus there is point to continue
+                let document = doc! {"data": to_bson(value).unwrap(), "_cursor": block_number};
                 self.collection.insert_one(document, None).await?;
             }
         }
@@ -65,12 +76,11 @@ impl Sink for MongoSink {
 
     async fn handle_invalidate(&mut self, cursor: &Option<Cursor>) -> Result<(), Self::Error> {
         info!(cursor = ?cursor, "invalidating data from mongo");
+
         if let Some(cursor) = cursor {
-            let query = doc! {
-                "_cursor": {
-                    "$gte": cursor.order_key.to_string(),
-                },
-            };
+            // convert to i64 because that's the maximum bson can handle
+            let block_number = i64::try_from(cursor.order_key).unwrap_or(-1);
+            let query = doc! { "_cursor": { "$gte": block_number } };
             self.collection.delete_many(query, None).await?;
         }
         Ok(())
