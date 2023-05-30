@@ -32,6 +32,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let starknet_description_set = std::fs::read(out_dir.join(STARKNET_DESCRIPTOR_FILE))?;
     pbjson_build::Builder::new()
         .register_descriptors(&starknet_description_set)?
+        .preserve_proto_field_names()
         .exclude([".apibara.starknet.v1alpha2.FieldElement"])
         .build(&[".apibara"])?;
     Ok(())
