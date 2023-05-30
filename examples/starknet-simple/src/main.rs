@@ -51,12 +51,15 @@ async fn main() -> Result<()> {
         .with_batch_size(10)
         .with_filter(build_filter);
 
+    // Lookup for the authenticaiton key in `DNA_KEY`, if any.
+    let client_builder = if let Ok(token) = std::env::var("DNA_KEY") {
+        ClientBuilder::<Filter, Block>::default().with_bearer_token(token)
+    } else {
+        ClientBuilder::<Filter, Block>::default()
+    };
     // connnect to the mainnet stream
     let uri = "https://mainnet.starknet.a5a.ch".parse()?;
-    let (mut data_stream, data_client) = ClientBuilder::<Filter, Block>::default()
-        .connect(uri)
-        .await
-        .unwrap();
+    let (mut data_stream, data_client) = client_builder.connect(uri).await.unwrap();
 
     // send starting stream configuration to server
     data_client.send(configuration).await.unwrap();
