@@ -5,7 +5,7 @@ use mongodb::bson::{doc, to_bson, Document};
 
 use mongodb::{error::Error, options::ClientOptions, Client, Collection};
 
-use serde_json::{Value};
+use serde_json::Value;
 use tracing::{info, warn};
 
 pub struct MongoSink {
@@ -48,8 +48,8 @@ impl Sink for MongoSink {
             "inserting data to mongo"
         );
 
-        // convert to i64 because that's the maximum bson can handle
-        let block_number = i64::try_from(end_cursor.order_key).unwrap_or(-1);
+        // convert to u32 because that's the maximum bson can handle
+        let block_number = u32::try_from(end_cursor.order_key).unwrap();
 
         match batch {
             Value::Array(array) => {
@@ -77,12 +77,16 @@ impl Sink for MongoSink {
     async fn handle_invalidate(&mut self, cursor: &Option<Cursor>) -> Result<(), Self::Error> {
         info!(cursor = ?cursor, "invalidating data from mongo");
 
-        if let Some(cursor) = cursor {
-            // convert to i64 because that's the maximum bson can handle
-            let block_number = i64::try_from(cursor.order_key).unwrap_or(-1);
-            let query = doc! { "_cursor": { "$gte": block_number } };
-            self.collection.delete_many(query, None).await?;
-        }
+        let query = if let Some(cursor) = cursor {
+            // convert to u32 because that's the maximum bson can handle
+            let block_number = u32::try_from(cursor.order_key).unwrap();
+            doc! { "_cursor": { "$gt": block_number } }
+        } else {
+            doc! {}
+        };
+
+        self.collection.delete_many(query, None).await?;
+
         Ok(())
     }
 }
