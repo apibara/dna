@@ -4,7 +4,7 @@ use std::{
     net::{AddrParseError, SocketAddr},
     path::PathBuf,
     sync::Arc,
-    time::Duration,
+    time::Duration, future,
 };
 
 use apibara_node::{
@@ -136,7 +136,7 @@ where
                 );
                 tokio::spawn(Arc::new(websocket_server).start())
             }
-            None => tokio::spawn(async { () }),
+            None => tokio::spawn(future::pending()),
         };
 
         // TODO: based on which handles terminates first, it needs to wait
