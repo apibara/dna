@@ -1,10 +1,10 @@
 use std::{
-    fs,
+    fs, future,
     marker::PhantomData,
     net::{AddrParseError, SocketAddr},
     path::PathBuf,
     sync::Arc,
-    time::Duration, future,
+    time::Duration,
 };
 
 use apibara_node::{
