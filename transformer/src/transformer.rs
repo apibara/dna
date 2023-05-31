@@ -1,18 +1,27 @@
 use std::{borrow::Cow, path::Path, rc::Rc, time::Duration};
 
-use deno_core::{
-    op, Extension, FastString, FsModuleLoader, JsRuntime, ModuleSpecifier, OpState, RuntimeOptions,
-    ZeroCopyBuf,
+use deno_core::{op, FastString, ModuleSpecifier, OpState, ZeroCopyBuf};
+use deno_runtime::{
+    permissions::PermissionsContainer,
+    worker::{MainWorker, WorkerOptions},
 };
-use tokio::time::timeout;
+
+deno_core::extension!(
+    apibara_transform,
+    ops = [op_transform_return],
+    esm_entry_point = "ext:apibara_transform/env.js",
+    esm = ["env.js"],
+    customizer = |ext: &mut deno_core::ExtensionBuilder| {
+        ext.force_op_registration();
+    },
+);
 
 pub use serde_json::Value;
 
 pub struct Transformer {
-    runtime: JsRuntime,
+    worker: MainWorker,
     module: ModuleSpecifier,
     timeout: Duration,
-    resource_id: u32,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -21,6 +30,8 @@ pub enum TransformerError {
     ModuleResolution(#[from] deno_core::ModuleResolutionError),
     #[error(transparent)]
     Deno(#[from] deno_core::anyhow::Error),
+    #[error("Failed to deserialize data: {0}")]
+    V8Deserialization(#[from] serde_v8::Error),
     #[error("Transformer timed out: {0}")]
     Timeout(#[from] tokio::time::error::Elapsed),
 }
@@ -36,33 +47,26 @@ impl Transformer {
 
     /// Creates a [Transformer] from the given module specifier.
     pub fn from_module(module: ModuleSpecifier) -> Result<Self, TransformerError> {
-        let ext = Extension::builder("transformer")
-            .ops(vec![(op_return::decl())])
-            .build();
-        let module_loader = Rc::new(FsModuleLoader);
-        let mut runtime = JsRuntime::new(RuntimeOptions {
-            module_loader: Some(module_loader),
-            extensions: vec![ext],
-            ..RuntimeOptions::default()
-        });
-
-        let module_id =
-            deno_core::futures::executor::block_on(runtime.load_side_module(&module, None))?;
-        let module_result = runtime.mod_evaluate(module_id);
-        deno_core::futures::executor::block_on(runtime.run_event_loop(false))?;
-        deno_core::futures::executor::block_on(module_result).unwrap()?;
+        let worker = MainWorker::bootstrap_from_options(
+            module.clone(),
+            PermissionsContainer::allow_all(),
+            WorkerOptions {
+                startup_snapshot: None,
+                extensions: vec![apibara_transform::init_ops_and_esm()],
+                ..WorkerOptions::default()
+            },
+        );
 
         Ok(Transformer {
-            runtime,
+            worker,
             module,
             timeout: Duration::from_secs(5),
-            resource_id: 0,
         })
     }
 
     pub async fn transform(&mut self, data: &Value) -> Result<Value, TransformerError> {
         let code: FastString = format!(
-            r#"(async () => {{
+            r#"(async (globalThis) => {{
             const module = await import("{0}");
             const t = module.default;
             const data = {1};
@@ -72,25 +76,22 @@ impl Transformer {
             if (typeof __transform_result === 'undefined') {{
               __transform_result = null;
             }}
-            Deno.core.ops.op_return(__transform_result);
-        }})()"#,
+            globalThis.Transform.return_value(__transform_result);
+        }})(globalThis)"#,
             self.module, data,
         )
         .into();
 
-        self.runtime.execute_script("[transform]", code)?;
-        timeout(self.timeout, self.runtime.run_event_loop(false)).await??;
-
-        let state = self.runtime.op_state();
+        self.worker.execute_script("[transform]", code)?;
+        // TODO:
+        //  - limit amount of time
+        //  - limit amount of memory
+        self.worker.run_event_loop(false).await?;
+        let state = self.worker.js_runtime.op_state();
         let mut state = state.borrow_mut();
         let resource_table = &mut state.resource_table;
-
-        let entry: Rc<ReturnValueResource> = resource_table
-            .take(self.resource_id)
-            .expect("resource entry");
+        let entry: Rc<ReturnValueResource> = resource_table.take(0).expect("resource entry");
         let value = Rc::try_unwrap(entry).expect("value");
-        self.resource_id += 1;
-
         Ok(value.value)
     }
 }
@@ -107,12 +108,17 @@ impl deno_core::Resource for ReturnValueResource {
 }
 
 #[op]
-fn op_return(
+fn op_transform_return(
     state: &mut OpState,
     args: Value,
     _buf: Option<ZeroCopyBuf>,
 ) -> Result<Value, deno_core::anyhow::Error> {
     let value = ReturnValueResource { value: args };
-    let _rid = state.resource_table.add(value);
+    if state.resource_table.has(0) {
+        state.resource_table.replace(0, value);
+    } else {
+        state.resource_table.add(value);
+    }
+
     Ok(Value::Null)
 }
