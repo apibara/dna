@@ -103,6 +103,7 @@ async fn test_import_library_over_http() {
     }]);
     assert_eq!(result, expected);
 }
+*/
 
 #[tokio::test]
 async fn test_typescript() {
@@ -127,4 +128,3 @@ async fn test_typescript() {
     let result = transformer.transform(&input).await.unwrap();
     assert_eq!(result, input);
 }
-*/
