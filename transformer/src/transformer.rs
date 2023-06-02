@@ -18,6 +18,8 @@ deno_core::extension!(
 
 pub use serde_json::Value;
 
+use crate::module_loader::WorkerModuleLoader;
+
 pub struct Transformer {
     worker: MainWorker,
     module: ModuleSpecifier,
@@ -47,10 +49,12 @@ impl Transformer {
 
     /// Creates a [Transformer] from the given module specifier.
     pub fn from_module(module: ModuleSpecifier) -> Result<Self, TransformerError> {
+        let module_loader = WorkerModuleLoader::new();
         let worker = MainWorker::bootstrap_from_options(
             module.clone(),
             PermissionsContainer::allow_all(),
             WorkerOptions {
+                module_loader: Rc::new(module_loader),
                 startup_snapshot: None,
                 extensions: vec![apibara_transform::init_ops_and_esm()],
                 ..WorkerOptions::default()
