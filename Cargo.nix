@@ -564,9 +564,11 @@ in
     registry = "unknown";
     src = fetchCrateLocal (workspaceSrc + "/transformer");
     dependencies = {
+      data_url = rustPackages."registry+https://github.com/rust-lang/crates.io-index".data-url."0.2.0" { inherit profileName; };
       deno_ast = rustPackages."registry+https://github.com/rust-lang/crates.io-index".deno_ast."0.26.0" { inherit profileName; };
       deno_core = rustPackages."registry+https://github.com/rust-lang/crates.io-index".deno_core."0.189.0" { inherit profileName; };
       deno_runtime = rustPackages."registry+https://github.com/rust-lang/crates.io-index".deno_runtime."0.115.0" { inherit profileName; };
+      reqwest = rustPackages."registry+https://github.com/rust-lang/crates.io-index".reqwest."0.11.18" { inherit profileName; };
       serde_json = rustPackages."registry+https://github.com/rust-lang/crates.io-index".serde_json."1.0.96" { inherit profileName; };
       serde_v8 = rustPackages."registry+https://github.com/rust-lang/crates.io-index".serde_v8."0.100.0" { inherit profileName; };
       thiserror = rustPackages."registry+https://github.com/rust-lang/crates.io-index".thiserror."1.0.40" { inherit profileName; };

@@ -438,9 +438,11 @@ dependencies = [
 name = "apibara-transformer"
 version = "0.1.0"
 dependencies = [
+ "data-url",
  "deno_ast",
  "deno_core",
  "deno_runtime",
+ "reqwest",
  "serde_json",
  "serde_v8",
  "tempfile",
