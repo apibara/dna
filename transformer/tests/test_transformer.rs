@@ -1,3 +1,7 @@
+// TODO:
+// - [ ] starknet.js import
+// - [x] import from local file
+// - [x] import json
 use std::fs;
 
 use apibara_transformer::Transformer;
@@ -72,7 +76,6 @@ async fn test_return_data_is_different() {
     assert_eq!(result, expected);
 }
 
-/*
 #[tokio::test]
 async fn test_import_library_over_http() {
     let (_file, mut transformer) = new_transformer_with_code(
@@ -103,7 +106,6 @@ async fn test_import_library_over_http() {
     }]);
     assert_eq!(result, expected);
 }
-*/
 
 #[tokio::test]
 async fn test_typescript() {
@@ -127,4 +129,63 @@ async fn test_typescript() {
     });
     let result = transformer.transform(&input).await.unwrap();
     assert_eq!(result, input);
+}
+
+#[tokio::test]
+async fn test_import_data() {
+    let json_file = write_source(
+        "json",
+        r#"{
+      "is_json": true
+    }"#,
+    );
+
+    let code = r#"
+        import data from "<JSON_FILE>" assert { type: "json" };
+
+        export default function (event: Event): Data {
+          return data;
+        }
+        "#
+    .replace("<JSON_FILE>", json_file.path().to_str().unwrap());
+
+    let (_file, mut transformer) = new_transformer_with_code("ts", &code).await;
+    let input = json!({
+        "key": vec!["0x99cd8bde557814842a3121e8ddfd433a539b8c9f14bf31ebf108d12e6196e9"],
+        "data": vec![
+            "0x4391e7c963a1dced0d206278464778711f2ad480b34f22e1d658fb3f6ac81f3",
+            "0x1176a1bd84444c89232ec27754698e5d2e7e1a7f1539f12027f28b23ec9f3d8",
+            "0x1df635bc07855",
+            "0x0"
+        ],
+    });
+    let result = transformer.transform(&input).await.unwrap();
+    let expected = json!({
+        "is_json": true
+    });
+    assert_eq!(result, expected);
+}
+
+#[tokio::test]
+async fn test_use_starknet_js() {
+    let (_file, mut transformer) = new_transformer_with_code(
+        "js",
+        r#"
+        import { hash } from 'https://esm.sh/starknet';
+
+        export default function (data) {
+          const result = hash.getSelectorFromName(data.key);
+          return { result };
+        }
+        "#,
+    )
+    .await;
+    let input = json!([{
+        "key": "Transfer",
+    }]);
+    let result = transformer.transform(&input).await.unwrap();
+    let expected = json!({
+        "result": "0x1d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
+    });
+    assert_eq!(result, expected);
 }
