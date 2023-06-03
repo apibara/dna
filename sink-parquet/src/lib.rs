@@ -45,7 +45,8 @@ impl ParquetSink {
             data_pagesize_limit: None,
         };
 
-        let arrays = self.buffer
+        let arrays = self
+            .buffer
             .iter()
             .map(|batch| serialize_into_arrays(&schema.fields, batch).unwrap())
             .collect::<Vec<_>>();
