@@ -8,5 +8,6 @@ members = [
     "sink-common",
     "sink-webhook",
     "sink-mongo",
+    "sink-parquet",
     "examples/starknet-simple",
 ]
