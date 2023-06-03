@@ -30,6 +30,10 @@ pub trait Sink {
     ) -> Result<(), Self::Error>;
 
     async fn handle_invalidate(&mut self, cursor: &Option<Cursor>) -> Result<(), Self::Error>;
+
+    async fn cleanup(&mut self) -> Result<(), Self::Error> {
+        Ok(())
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -110,7 +114,7 @@ where
         ct: CancellationToken,
     ) -> Result<(), SinkConnectorError>
     where
-        S: Sink,
+        S: Sink + Sync + Send,
     {
         // correctly handling Ctrl-C is very important when using persistence
         // otherwise the lock will be released after the lease expires.
@@ -202,6 +206,11 @@ where
                 }
             }
         }
+
+        sink.cleanup()
+            .await
+            .map_err(Into::into)
+            .map_err(SinkConnectorError::Sink)?;
 
         // unlock the lock, if any.
         if let Some(mut persistence) = persistence {

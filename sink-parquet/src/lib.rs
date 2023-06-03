@@ -153,4 +153,8 @@ impl Sink for ParquetSink {
         info!(cursor = ?cursor, "writing to parquet with invalidate");
         Ok(())
     }
+
+    async fn cleanup(&mut self) -> Result<()> {
+        self.flush_buffer()
+    }
 }
