@@ -84,6 +84,36 @@ pub struct ConfigurationArgs {
     pub persistence: PersistenceArgs,
 }
 
+/// Stream configuration without finality
+#[derive(Args, Debug)]
+pub struct ConfigurationArgsWithoutFinality {
+    /// Set the response preferred batch size.
+    #[arg(long, env)]
+    pub batch_size: Option<u64>,
+    /// The json-encoded filter to use. If it starts with `@`, it is interpreted as a path to a file.
+    #[arg(long, env)]
+    pub filter: String,
+    /// Jsonnet transformation to apply to data. If it starts with `@`, it is interpreted as a path to a file.
+    #[arg(long, env)]
+    pub transform: Option<String>,
+    /// Limits the maximum size of a decoded message. Accept message size in human readable form,
+    /// e.g. 1kb, 1MB, 1GB. If not set the default is 1MB.
+    #[arg(long, env)]
+    pub max_message_size: Option<String>,
+    /// Add metadata to the stream, in the `key: value` format. Can be specified multiple times.
+    #[arg(long, short = 'M', env)]
+    pub metadata: Vec<String>,
+    /// DNA stream url. If starting with `https://`, use a secure connection.
+    #[arg(long, env)]
+    pub stream_url: String,
+    #[command(flatten)]
+    pub starting_cursor: StartingCursorArgs,
+    #[command(flatten)]
+    pub network: NetworkTypeArgs,
+    #[command(flatten)]
+    pub persistence: PersistenceArgs,
+}
+
 #[derive(Args, Debug)]
 #[group(required = false, multiple = false)]
 pub struct StartingCursorArgs {
@@ -240,6 +270,27 @@ impl FinalityArgs {
             DataFinality::DataStatusFinalized
         } else {
             DataFinality::DataStatusAccepted
+        }
+    }
+}
+
+impl From<ConfigurationArgsWithoutFinality> for ConfigurationArgs {
+    fn from(value: ConfigurationArgsWithoutFinality) -> Self {
+        Self {
+            batch_size: value.batch_size,
+            filter: value.filter,
+            transform: value.transform,
+            max_message_size: value.max_message_size,
+            metadata: value.metadata,
+            stream_url: value.stream_url,
+            finality: Some(FinalityArgs {
+                finalized: true,
+                accepted: false,
+                pending: false,
+            }),
+            starting_cursor: value.starting_cursor,
+            network: value.network,
+            persistence: value.persistence,
         }
     }
 }

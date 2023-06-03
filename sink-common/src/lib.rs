@@ -9,7 +9,8 @@ use prost::Message;
 use serde::{de, ser};
 
 pub use self::configuration::{
-    ConfigurationArgs, ConfigurationError, FilterError, FinalityArgs, StartingCursorArgs,
+    ConfigurationArgs, ConfigurationArgsWithoutFinality, ConfigurationError, FilterError,
+    FinalityArgs, StartingCursorArgs,
 };
 pub use self::connector::{Sink, SinkConnector, SinkConnectorError};
 

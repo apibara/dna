@@ -47,7 +47,7 @@ where
             batch_size: Some(self.batch_size),
             starting_cursor: self.starting_cursor,
             finality: self.finality.map(Into::into),
-            filter: filter,
+            filter,
         })
     }
 
@@ -123,7 +123,7 @@ mod tests {
     #[test]
     fn test_config_from() {
         let config = Configuration::<Filter>::default();
-        let new_config = Configuration::<Filter>::from(config);
+        let new_config = config;
         assert_eq!(1, new_config.batch_size);
     }
 

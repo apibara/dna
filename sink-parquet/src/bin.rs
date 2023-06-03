@@ -1,15 +1,9 @@
 use apibara_core::starknet::v1alpha2::{Block, Filter};
 use apibara_observability::init_opentelemetry;
-use apibara_sink_common::{ConfigurationArgs, SinkConnector, SinkConnectorExt};
+use apibara_sink_common::{ConfigurationArgsWithoutFinality, SinkConnector, SinkConnectorExt};
 use apibara_sink_parquet::ParquetSink;
 use clap::Parser;
 use tokio_util::sync::CancellationToken;
-
-
-
-
-
-
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -17,13 +11,13 @@ struct Cli {
     /// The target url to send the request to.
     #[arg(long, env)]
     output_dir: String,
-    #[arg(long, env)]
+    #[arg(long, env, default_value = "1000")]
     parquet_batch_size: Option<usize>,
     /// Additional headers to send with the request.
     #[arg(long, short = 'H', env)]
     header: Vec<String>,
     #[command(flatten)]
-    configuration: ConfigurationArgs,
+    configuration: ConfigurationArgsWithoutFinality,
 }
 
 #[tokio::main]
@@ -33,7 +27,8 @@ async fn main() -> anyhow::Result<()> {
 
     let sink = ParquetSink::new(args.output_dir, args.parquet_batch_size.unwrap_or(100))?;
     let ct = CancellationToken::new();
-    let connector = SinkConnector::<Filter, Block>::from_configuration_args(args.configuration)?;
+    let connector =
+        SinkConnector::<Filter, Block>::from_configuration_args(args.configuration.into())?;
 
     // // jsonnet error cannot be shared between threads
     // // so unwrap for now.
