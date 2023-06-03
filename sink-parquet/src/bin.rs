@@ -17,6 +17,8 @@ struct Cli {
     /// The target url to send the request to.
     #[arg(long, env)]
     output_dir: String,
+    #[arg(long, env)]
+    parquet_batch_size: Option<usize>,
     /// Additional headers to send with the request.
     #[arg(long, short = 'H', env)]
     header: Vec<String>,
@@ -29,7 +31,7 @@ async fn main() -> anyhow::Result<()> {
     init_opentelemetry()?;
     let args = Cli::parse();
 
-    let sink = ParquetSink::new(args.output_dir)?;
+    let sink = ParquetSink::new(args.output_dir, args.parquet_batch_size.unwrap_or(100))?;
     let ct = CancellationToken::new();
     let connector = SinkConnector::<Filter, Block>::from_configuration_args(args.configuration)?;
 
