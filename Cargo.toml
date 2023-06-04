@@ -9,5 +9,6 @@ members = [
     "sink-webhook",
     "sink-mongo",
     "sink-parquet",
+    "sink-postgres",
     "examples/starknet-simple",
 ]
