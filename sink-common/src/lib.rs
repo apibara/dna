@@ -7,6 +7,7 @@ use bytesize::ByteSize;
 use configuration::{MetadataError, TransformError};
 use prost::Message;
 use serde::{de, ser};
+use serde_json::Value;
 
 pub use self::configuration::{
     ConfigurationArgs, ConfigurationArgsWithoutFinality, ConfigurationError, FilterError,
@@ -63,5 +64,19 @@ where
             max_message_size.as_u64() as usize,
         );
         Ok(connector)
+    }
+}
+
+pub fn is_array_of_objects(value: &Value) -> bool {
+    match value {
+        Value::Array(array) => {
+            for v in array {
+                if !v.is_object() {
+                    return false;
+                }
+            }
+            true
+        }
+        _ => false,
     }
 }

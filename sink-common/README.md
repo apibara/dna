@@ -85,7 +85,6 @@ function(batch)
           },
       events),
   batch)
-
 ```
 
 A batch that looks like the following:
@@ -139,4 +138,3 @@ When persistence is enabled, the sink will acquire a lock on start to avoid
 running multiple instances of the same indexer in parallel.
 This behaviour is needed in case your scheduler (e.g. Kubernetes) accidentally
 schedules two instances of the same indexer.
-
