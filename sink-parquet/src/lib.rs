@@ -140,15 +140,19 @@ impl Sink for ParquetSink {
         finality: &DataFinality,
         batch: &Value,
     ) -> Result<()> {
-        let starting_block = cursor.as_ref().map(|c| c.order_key);
+        let cursor_str = cursor
+            .clone()
+            .map(|c| c.to_string())
+            .unwrap_or("genesis".into());
 
         info!(
-            starting_block = ?starting_block,
-            end_block = ?end_cursor.order_key,
+            cursor = %cursor_str,
+            end_cursor = %end_cursor,
             finality = ?finality,
             "parquet: handling data"
         );
 
+        let starting_block = cursor.as_ref().map(|c| c.order_key);
         if self.starting_block.is_none() {
             self.starting_block = starting_block;
         }
@@ -168,7 +172,12 @@ impl Sink for ParquetSink {
     }
 
     async fn handle_invalidate(&mut self, cursor: &Option<Cursor>) -> Result<()> {
-        info!(cursor = ?cursor, "parquet: handling invalidate");
+        let cursor_str = cursor
+            .clone()
+            .map(|c| c.to_string())
+            .unwrap_or("genesis".into());
+
+        info!(cursor = %cursor_str, "parquet: handling invalidate");
         Ok(())
     }
 

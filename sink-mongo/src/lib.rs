@@ -40,12 +40,16 @@ impl Sink for MongoSink {
         finality: &DataFinality,
         batch: &Value,
     ) -> Result<(), Self::Error> {
+        let cursor_str = cursor
+            .clone()
+            .map(|c| c.to_string())
+            .unwrap_or("genesis".into());
+
         info!(
-            cursor = ?cursor,
-            end_cursor = ?end_cursor,
+            cursor = %cursor_str,
+            end_cursor = %end_cursor,
             finality = ?finality,
-            batch = ?batch,
-            "inserting data to mongo"
+            "mongo: inserting data"
         );
 
         // convert to u32 because that's the maximum bson can handle
@@ -75,7 +79,12 @@ impl Sink for MongoSink {
     }
 
     async fn handle_invalidate(&mut self, cursor: &Option<Cursor>) -> Result<(), Self::Error> {
-        info!(cursor = ?cursor, "invalidating data from mongo");
+        let cursor_str = cursor
+            .clone()
+            .map(|c| c.to_string())
+            .unwrap_or("genesis".into());
+
+        info!(cursor = %cursor_str, "mongo: deleting data");
 
         let query = if let Some(cursor) = cursor {
             // convert to u32 because that's the maximum bson can handle

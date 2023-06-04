@@ -96,13 +96,18 @@ impl Sink for WebhookSink {
         finality: &DataFinality,
         batch: &Value,
     ) -> Result<(), Self::Error> {
+        let cursor_str = cursor
+            .clone()
+            .map(|c| c.to_string())
+            .unwrap_or("genesis".into());
+
         info!(
-            cursor = ?cursor,
-            end_cursor = ?end_cursor,
+            cursor = %cursor_str,
+            end_block = %end_cursor,
             finality = ?finality,
-            batch = ?batch,
-            "calling web hook with data"
+            "webhook: calling with data"
         );
+
         let body = json!({
             "data": {
                 "cursor": cursor,
@@ -116,7 +121,12 @@ impl Sink for WebhookSink {
     }
 
     async fn handle_invalidate(&mut self, cursor: &Option<Cursor>) -> Result<(), Self::Error> {
-        info!(cursor = ?cursor, "calling web hook with invalidate");
+        let cursor_str = cursor
+            .clone()
+            .map(|c| c.to_string())
+            .unwrap_or("genesis".into());
+
+        info!(cursor = %cursor_str, "webhook: calling with invalidate");
         let body = json!({
             "invalidate": {
                 "cursor": cursor,
