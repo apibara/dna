@@ -3,8 +3,11 @@ use apibara_sink_common::Sink;
 use async_trait::async_trait;
 
 use serde_json::Value;
-use std::fs::File;
-use tracing::info;
+use std::{
+    fs::{remove_file, File},
+    path::PathBuf,
+};
+use tracing::{info, warn};
 
 use arrow2::{
     chunk::Chunk,
@@ -17,9 +20,12 @@ use arrow2::{
 };
 use serde_arrow::arrow2::{serialize_into_arrays, serialize_into_fields};
 
+const INCOMPLETE_FILENAME: &str = "incomplete.parquet";
+
 pub struct ParquetSink {
-    output_dir: String,
+    output_dir: PathBuf,
     batch_size: usize,
+    schema: Option<Schema>,
     // Keep track of the current buffer starting and end blocks
     starting_block: Option<u64>,
     end_block: Option<u64>,
@@ -29,15 +35,24 @@ pub struct ParquetSink {
 impl ParquetSink {
     pub fn new(output_dir: String, batch_size: usize) -> Result<Self> {
         Ok(Self {
-            output_dir,
+            output_dir: PathBuf::from(&output_dir),
             batch_size,
             buffer: Vec::with_capacity(batch_size),
             starting_block: None,
             end_block: None,
+            schema: None,
         })
     }
 
-    fn write_buffer(&self, schema: Schema) -> Result<()> {
+    fn write_buffer(&mut self, path: PathBuf) -> Result<()> {
+        // If the schema is not provided, infer it using the first batch of data
+        if self.schema.is_none() {
+            let fields = serialize_into_fields(&self.buffer[0], Default::default()).unwrap();
+            self.schema = Some(Schema::from(fields));
+        }
+
+        let schema = self.schema.clone().unwrap();
+
         let options = WriteOptions {
             write_statistics: true,
             compression: CompressionOptions::Uncompressed,
@@ -63,13 +78,6 @@ impl ParquetSink {
 
         let row_groups = RowGroupIterator::try_new(iter, &schema, options, encodings)?;
 
-        // TODO: use path
-        let path = format!(
-            "{}/{}_{}.parquet",
-            self.output_dir,
-            self.starting_block.unwrap_or(0),
-            self.end_block.unwrap()
-        );
         let file = File::create(path)?;
 
         let mut writer = FileWriter::try_new(file, schema, options)?;
@@ -85,28 +93,37 @@ impl ParquetSink {
     fn flush_buffer(&mut self) -> Result<()> {
         let buffer_size = self.buffer.len();
 
-        if !self.buffer.is_empty() {
-            // TODO: don't use the first element of the buffer, use it all
-            let fields = serialize_into_fields(&self.buffer[0], Default::default()).unwrap();
-            let schema = Schema::from(fields);
+        info!(
+            buffer_size = ?buffer_size,
+            start_block = ?self.starting_block,
+            end_block = ?self.end_block,
+            "parquet: flushing buffer: write data to parquet file"
+        );
 
-            // TODO: save the schema and don't pass it here
-            self.write_buffer(schema)?;
+        if !self.buffer.is_empty() {
+            let filename = format!(
+                "{}_{}.parquet",
+                self.starting_block.unwrap_or(0),
+                self.end_block.unwrap()
+            );
+
+            let path = self.output_dir.join(filename);
+
+            self.write_buffer(path)?;
 
             self.buffer.clear();
             self.starting_block = None;
             self.end_block = None;
         }
 
-        // TODO: If there were an accepted file, delete it
+        let incomplete_path = self.output_dir.join(INCOMPLETE_FILENAME);
 
-        info!("Flushed buffer");
-        info!(
-            buffer_size = ? buffer_size,
-            start_block = ?self.starting_block,
-            end_block = ?self.end_block,
-            "data written to parquet file"
-        );
+        if incomplete_path.is_file() {
+            match remove_file(incomplete_path) {
+                Err(err) => warn!(err = ?err, "cannot remove incomplete file"),
+                Ok(()) => info!("incomplete file removed successfully"),
+            }
+        }
 
         Ok(())
     }
@@ -123,17 +140,17 @@ impl Sink for ParquetSink {
         finality: &DataFinality,
         batch: &Value,
     ) -> Result<()> {
+        let starting_block = cursor.as_ref().map(|c| c.order_key);
+
         info!(
-            cursor = ?cursor,
-            end_cursor = ?end_cursor,
+            starting_block = ?starting_block,
+            end_block = ?end_cursor.order_key,
             finality = ?finality,
-            "handle data"
+            "parquet: handling data"
         );
 
-        if let Some(staring_cursor) = cursor {
-            if self.starting_block.is_none() {
-                self.starting_block = Some(staring_cursor.order_key);
-            }
+        if self.starting_block.is_none() {
+            self.starting_block = starting_block;
         }
 
         self.end_block = Some(end_cursor.order_key);
@@ -151,7 +168,15 @@ impl Sink for ParquetSink {
     }
 
     async fn handle_invalidate(&mut self, cursor: &Option<Cursor>) -> Result<()> {
-        info!(cursor = ?cursor, "writing to parquet with invalidate");
+        info!(cursor = ?cursor, "parquet: handling invalidate");
+        Ok(())
+    }
+
+    async fn handle_heartbeat(&mut self) -> Result<()> {
+        info!("parquet: handling heartbeat: writing the buffer as is to {INCOMPLETE_FILENAME}");
+        if !self.buffer.is_empty() {
+            self.write_buffer(self.output_dir.join(INCOMPLETE_FILENAME))?
+        }
         Ok(())
     }
 

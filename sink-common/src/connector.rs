@@ -34,6 +34,10 @@ pub trait Sink {
     async fn cleanup(&mut self) -> Result<(), Self::Error> {
         Ok(())
     }
+
+    async fn handle_heartbeat(&mut self) -> Result<(), Self::Error> {
+        Ok(())
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -228,7 +232,7 @@ where
         ct: CancellationToken,
     ) -> Result<(), SinkConnectorError>
     where
-        S: Sink,
+        S: Sink + Sync + Send,
     {
         match message {
             DataMessage::Data {
@@ -298,6 +302,11 @@ where
                 }
                 Err(SinkConnectorError::MaximumRetriesExceeded)
             }
+            DataMessage::Heartbeat => sink
+                .handle_heartbeat()
+                .await
+                .map_err(Into::into)
+                .map_err(SinkConnectorError::Sink),
         }
     }
 }

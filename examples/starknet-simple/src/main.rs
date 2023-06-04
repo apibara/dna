@@ -122,6 +122,9 @@ async fn main() -> Result<()> {
             DataMessage::Invalidate { cursor } => {
                 println!("Chain reorganization detected: {cursor:?}");
             }
+            DataMessage::Heartbeat => {
+                println!("Heartbeat received");
+            }
         }
     }
 
