@@ -70,13 +70,14 @@ pub enum DataMessage<D: Message + Default> {
         /// The cursor.
         cursor: Option<Cursor>,
     },
+    Heartbeat,
 }
 
 impl<D: Message + Default> DataMessage<D> {
     pub fn from_stream_data_response(response: StreamDataResponse) -> Option<Self> {
         match response.message {
             None => None,
-            Some(stream_data_response::Message::Heartbeat(_)) => None,
+            Some(stream_data_response::Message::Heartbeat(_)) => Some(DataMessage::Heartbeat),
             Some(stream_data_response::Message::Data(data)) => {
                 let batch = data
                     .data
