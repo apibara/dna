@@ -28,6 +28,17 @@ pub mod v1alpha2 {
         }
     }
 
+    impl fmt::Display for Cursor {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(
+                f,
+                "Cursor({}, 0x{})",
+                self.order_key,
+                hex::encode(&self.unique_key)
+            )
+        }
+    }
+
     impl Serialize for DataFinality {
         fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where
