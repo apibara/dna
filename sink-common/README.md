@@ -68,8 +68,8 @@ their events.
 function(batch)
   std.flatMap(
     function(block)
-      local number = std.get(block.header, "blockNumber", 0);
-      local hash = std.get(block.header, "blockHash");
+      local number = std.get(block.header, "block_number", 0);
+      local hash = std.get(block.header, "block_hash");
       local events = std.get(block, "events", []);
       std.map(
         function(ev)
@@ -81,10 +81,11 @@ function(batch)
             txHash: txHash,
             eventKey: event.keys[0],
             data: event.data,
-            contract: event.fromAddress
+            contract: event.from_address
           },
       events),
   batch)
+
 ```
 
 A batch that looks like the following:
