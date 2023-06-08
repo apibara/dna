@@ -11,15 +11,15 @@ let
 in
 stdenv.mkDerivation rec {
   pname = "librusty_v8";
-  version = "0.71.2";
+  version = "0.73.0";
 
   src = fetch_librusty_v8 {
-    version = "0.71.2";
+    inherit version;
     shas = {
-      x86_64-linux = "sha256-QCqCJdNaOLXggIGQhLOV/NvbMebfA3g1iyiBtkPDS9A=";
-      aarch64-linux = "sha256-r9/1086GQolGfc3iqIxZzTmoC7G/1vK4QG4Qvm0zUOo=";
-      x86_64-darwin = "sha256-kMpB9F2sTxjqnplOznvv20fa7AhdnEeIb3yb4qa72e0=";
-      aarch64-darwin = "sha256-jWjPJa3bWynoMUmccASggvu25NaHpn/AsTnC/JMyr8o=";
+      x86_64-linux = "sha256-rDthrqAs4yUl9BpFm8yJ2sKbUImydMMZegUBhcu6vdk=";
+      aarch64-linux = "sha256-fM7yteYrPxCLNIUKvUpH6XTdD2aYsK4SEyrkknZgzLk=";
+      x86_64-darwin = "sha256-3c3oNq6WJkFR7E/EeJ7CnN+JO7X5x+wSlqo39TbEDQk=";
+      aarch64-darwin = "sha256-fO1R99XWfgAGcZXJX8nHbfnPZOlz28kXO7fkkeEF43A=";
     };
   };
 
@@ -39,8 +39,8 @@ stdenv.mkDerivation rec {
   '';
 
   meta = with lib; {
-    description = "";
-    homepage = "";
+    description = "Rust bindings for the V8 JavaScript engine";
+    homepage = "https://crates.io/crates/v8";
     license = licenses.mit;
     platforms = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
   };

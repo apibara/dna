@@ -26,19 +26,10 @@ jobs:
       run: nix flake check
 
   run_tests:
-    name: run tests, crate=${{ matrix.crate }}
+    name: run tests
     runs-on: ubuntu-22.04
     needs:
     - run_checks
-    strategy:
-      matrix:
-        crate:
-        - core-lib
-        - node-lib
-        - sdk-lib
-        - sink-common-lib
-        - apibara-starknet
-        - apibara-sink-webhook
     steps:
     - name: checkout sources
       uses: actions/checkout@v2
@@ -51,26 +42,16 @@ jobs:
         authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
 
     - name: run build
-      run: nix build .#${{ matrix.crate }}-test
+      run: nix build .#tests --accept-flake-config
     - name: run unit tests
       run: |
-        for testBin in ./result-bin/bin/*; do
-          if [ ${testBin} == ./result-bin/bin/${{ matrix.crate }} ]; then
-            echo "skip binary ${testBin}"
-          else
-            echo "run unit test ${testBin}"
-            ./${testBin}
-          fi
+        for testBin in ./result/bin/*; do
+          ./${testBin}
         done
     - name: run e2e tests
       run: |
-        for testBin in ./result-bin/bin/*; do
-          if [ ${testBin} == ./result-bin/bin/${{ matrix.crate }} ]; then
-            echo "skip binary ${testBin}"
-          else
-            echo "run e2e2 test ${testBin}"
-            ./${testBin} --ignored
-          fi
+        for testBin in ./result/bin/*; do
+          ./${testBin} --ignored
         done
 
   build_binaries:
@@ -81,8 +62,11 @@ jobs:
     strategy:
       matrix:
         binary:
-        - apibara-starknet
-        - apibara-sink-webhook
+        - starknet
+        - sink-webhook
+        - sink-mongo
+        - sink-postgres
+        - sink-parquet
         job:
         - os: ubuntu-22.04
           target: x86_64-unknown-linux-gnu
@@ -102,29 +86,30 @@ jobs:
     - name: build binary ${{ matrix.binary }}
       run: |
         if [[ $RUNNER_OS == Linux ]]; then
-          nix build .#${{ matrix.binary }}
+          nix build .#${{ matrix.binary }} --accept-flake-config
         else
-          nix build .#${{ matrix.binary }} --override-input nixpkgs github:nixos/nixpkgs/nixpkgs-22.11-darwin
+          nix build .#${{ matrix.binary }} --override-input nixpkgs github:nixos/nixpkgs/nixpkgs-22.11-darwin --accept-flake-config
         fi
     - name: upload artifacts ${{ matrix.binary }}-${{ matrix.job.target }}
       uses: actions/upload-artifact@v3
       with:
         name: ${{ matrix.binary }}-${{ matrix.job.target }}
-        path: result-bin/bin/${{ matrix.binary }}
+        path: result/bin/${{ matrix.binary }}
         retention-days: 1
 
   build_images:
-    name: build docker image ${{ matrix.image.name }}
+    name: build docker image ${{ matrix.image }}
     runs-on: ubuntu-22.04
     needs:
     - build_binaries
     strategy:
       matrix:
         image:
-        - binary: apibara-starknet
-          name: starknet
-        - binary: apibara-sink-webhook
-          name: sink-webhook
+        - starknet
+        - sink-webhook
+        - sink-mongo
+        - sink-postgres
+        - sink-parquet
     steps:
     - name: checkout sources
       uses: actions/checkout@v2
@@ -136,15 +121,15 @@ jobs:
         name: apibara-public
         authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
 
-    - name: build image ${{ matrix.image.name }}
-      run: nix build .#${{ matrix.image.binary }}-image
-    - name: rename image ${{ matrix.image.name }}
-      run: mv result ${{ matrix.image.name }}.tar.gz
-    - name: upload artifacts ${{ matrix.image.name }}
+    - name: build image ${{ matrix.image }}
+      run: nix build .#${{ matrix.image }}-image --accept-flake-config
+    - name: rename image ${{ matrix.image }}
+      run: mv result ${{ matrix.image }}.tar.gz
+    - name: upload artifacts ${{ matrix.image }}
       uses: actions/upload-artifact@v3
       with:
-        name: ${{ matrix.image.name }}.tar.gz
-        path: ${{ matrix.image.name }}.tar.gz
+        name: ${{ matrix.image }}.tar.gz
+        path: ${{ matrix.image }}.tar.gz
         retention-days: 1
 
   publish_images:
@@ -157,6 +142,9 @@ jobs:
         image:
         - starknet
         - sink-webhook
+        - sink-mongo
+        - sink-postgres
+        - sink-parquet
     steps:
     - name: login into registry
       uses: redhat-actions/podman-login@v1
@@ -216,8 +204,11 @@ jobs:
     strategy:
       matrix:
         binary:
-        - apibara-starknet
-        - apibara-sink-webhook
+        - starknet
+        - sink-webhook
+        - sink-mongo
+        - sink-postgres
+        - sink-parquet
         target:
         - x86_64-unknown-linux-gnu
         - x86_64-apple-darwin

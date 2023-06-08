@@ -64,16 +64,6 @@ your PR, ensure all the projects build with Nix. For example:
 nix build .#apibara-starknet
 ```
 
-**Adding dependencies**
-
-This project uses [cargo2nix](https://github.com/cargo2nix/cargo2nix) to build
-and cache the dependencies. If you add a new dependency to a project, you must
-regenerate the `Cargo.nix` file. From the project root, run:
-
-```
-nix run GitHub:cargo2nix/cargo2nix
-```
-
 **Committing changes**
 
 This project prefixes changes with the subproject it changed and then a short

@@ -19,7 +19,7 @@ async fn test_apibara_high_level_api() -> Result<(), Box<dyn std::error::Error>>
         .await?;
 
     let mut stream = stream.take(2);
-    while let Some(response) = stream.try_next().await? {
+    while let Some(response) = stream.try_next().await.unwrap() {
         println!("Response: {:?}", response);
     }
 
