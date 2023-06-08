@@ -3583,7 +3583,7 @@ dependencies = [
 [[package]]
 name = "libffi-sys"
 version = "2.3.0"
-source = "git+https://github.com/fracek/libffi-rs.git?rev=f46945885ae65ee0ec9b6675764cdbe0fb1f2616#f46945885ae65ee0ec9b6675764cdbe0fb1f2616"
+source = "git+https://github.com/fracek/libffi-rs.git?rev=653781aa9b7a7ac1682e7f8cb405a2e90afc341d#653781aa9b7a7ac1682e7f8cb405a2e90afc341d"
 dependencies = [
  "cc",
 ]

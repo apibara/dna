@@ -19,4 +19,5 @@ members = [
 # https://github.com/denoland/rusty_v8/pull/1244
 v8 = { git = "https://github.com/fracek/rusty_v8.git", rev = "8140a1a6d7a8296d68dfcf7efb6f30b9f1ae04a" }
 # https://github.com/tov/libffi-rs/pull/80
-libffi-sys = { git = "https://github.com/fracek/libffi-rs.git", rev = "f46945885ae65ee0ec9b6675764cdbe0fb1f2616" }
+libffi-sys = { git = "https://github.com/fracek/libffi-rs.git", rev = "653781aa9b7a7ac1682e7f8cb405a2e90afc341d" }
+
