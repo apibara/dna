@@ -94,7 +94,7 @@ jobs:
       uses: actions/upload-artifact@v3
       with:
         name: ${{ matrix.binary }}-${{ matrix.job.target }}
-        path: result/bin/${{ matrix.binary }}
+        path: result/bin/apibara-${{ matrix.binary }}
         retention-days: 1
 
   build_images:
@@ -226,5 +226,5 @@ jobs:
       run: |
         ls -la
         echo ${{ matrix.target }} > .target
-        zip ${{ matrix.binary }}-${{ matrix.target }}.zip ${{ matrix.binary }} .target
+        zip ${{ matrix.binary }}-${{ matrix.target }}.zip apibara-${{ matrix.binary }} .target
         gh release upload --repo apibara/apibara --clobber preview ${{ matrix.binary }}-${{ matrix.target }}.zip
