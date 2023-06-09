@@ -72,16 +72,16 @@ function flattenBlock(block) {
 
 ### Integrate
 
-We are developing a collection of integrations that send data directly where
+We provide a collection of integrations that send data directly where
 it's needed. Our integrations support all data from genesis block to the
 current pending block and they ensure data is kept up-to-date.
 
- - [x] Webhook: call an HTTP endpoint for each batch of data.
- - [ ] PostgreSQL: stream data into a specific table, keeping it up-to-date on
+ - **Webhook**: call an HTTP endpoint for each batch of data.
+ - **PostgreSQL**: stream data into a specific table, keeping it up-to-date on
    new blocks and chain reorganizations.
- - [ ] MongoDB: store data into a specific collection, keeping it up-to-date on
+ - **MongoDB**: store data into a specific collection, keeping it up-to-date on
    new blocks and chain reorganizations.
- - [ ] Parquet: generate Parquet files to be used for data analysis.
+ - **Parquet**: generate Parquet files to be used for data analysis.
 
 
 ## Getting started
@@ -99,22 +99,15 @@ We publish docker images on quay.io:
  - [Starknet DNA](https://quay.io/repository/apibara/starknet?tab=tags)
 
 
-## Running locally
+## Development
 
-You can run the DNA servers locally using one of the provided docker images.
+Apibara DNA is developed against stable Rust. We provide a
+[nix](https://nixos.org/) environment to simplify installing all dependencies
+required by DNA.
 
-### StarkNet
-
-**Requirements**
-
- - Pathfinder node, fully synced.
- - Alternatively, a starknet-devnet image with the RPC port exposed.
-
-Run the docker image, pointing it to the node RPC address:
-
-```
-docker run quay.io/apibara/starknet:<commit-sha> start --rpc http://my.node.addr:port
-```
+ - if you have nix installed, simply run `nix develop`.
+ - otherwise, you can launch a devcontainer which installs and configures nix
+   for you.
 
 
 ## Project Structure
@@ -126,6 +119,7 @@ more about each one of them.
  - `node`: used to build and run Apibara nodes.
  - `starknet`: StarkNet source node.
  - `sdk`: connect to streams using Rust.
+ - `sink-common`: base crate to develop custom sinks.
 
 
 ## License

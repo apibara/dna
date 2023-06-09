@@ -25,6 +25,8 @@ contribution.
 Apibara DNA is built in Rust. We use [Nix](https://nixos.org/) to create
 reproducible builds. While Nix is terrific, we understand it's also a complex
 tool, and this section will help you start with it.
+For an easier setup, you can **use the provided devcontainer** that installs and
+configures Nix for you.
 
 **Installing Nix**
 
