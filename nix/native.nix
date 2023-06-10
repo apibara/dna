@@ -31,6 +31,8 @@ in
     inherit workspaceFmt workspaceClippy;
   };
 
+  shell = pkgs.mkShell (buildLib.buildArgs // { });
+
   packages = (built.packages // {
     tests = workspaceTest;
   });

@@ -50,23 +50,45 @@
           workspaceDir = ./.;
         };
 
-        # cross = pkgs.callPackage ./nix/cross.nix {
-        # inherit crane;
-        # workspaceDir = ./.;
-        # };
+        aarch64Linux =
+          let
+            crossSystem = "aarch64-linux";
+            crossPkgs = import nixpkgs {
+              inherit overlays crossSystem;
+              localSystem = system;
+            };
+          in
+          pkgs.callPackage ./nix/cross.nix {
+            inherit crane crates crossSystem;
+            pkgs = crossPkgs;
+            workspaceDir = ./.;
+          };
+
+        crosses = {
+          "x86_64-linux" = aarch64Linux;
+          "x86_64-darwin" = aarch64Linux;
+          "aarch64-linux" = { packages = { }; };
+          "aarch64-darwin" = { packages = { }; };
+        };
+
+        cross = crosses.${system};
       in
       {
         # format with `nix fmt`
         formatter = pkgs.nixpkgs-fmt;
 
         # development shells. start with `nix develop`.
-        # devShells.default = pkgs.mkShell (buildArgs // { });
+        devShells.default = native.shell;
 
+        # checks. run with `nix flake check`.
         checks = {
           inherit (native.checks) workspaceFmt workspaceClippy;
         };
 
-        packages = (native.packages // { });
+        # all packages.
+        # show them with `nix flake show`.
+        # build with `nix build .#<name>`.
+        packages = (native.packages // cross.packages // { });
       }
     );
 
