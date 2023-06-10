@@ -1,7 +1,7 @@
 { pkgs, crane, workspaceDir, crates }:
 let
   rustToolchain = pkgs.rust-bin.stable.latest.default.override {
-    extensions = [ "rust-src" ];
+    extensions = [ "rust-src" "rust-analyzer" ];
   };
 
   buildLib = import ./build.nix { inherit pkgs crane rustToolchain workspaceDir; };
