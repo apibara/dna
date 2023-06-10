@@ -74,10 +74,6 @@ impl Sink for MongoSink {
             }
             value => {
                 warn!(value = ?value, "batch value is not an array");
-                // Use unwrap because if the data couldn't be converted to bson
-                // we can't write it to Mongo and thus there is point to continue
-                let document = doc! {"data": to_bson(value).unwrap(), "_cursor": block_number};
-                self.collection.insert_one(document, None).await?;
             }
         }
         Ok(())
