@@ -1,4 +1,4 @@
-{ pkgs, crane, rustToolchain, workspaceDir }:
+{ pkgs, crane, rustToolchain, workspaceDir, extraBuildArgs ? { } }:
 let
   # script needed to install tests from cargo build log
   installTestsFromCargoBuildLogHook = pkgs.makeSetupHook
@@ -16,25 +16,29 @@ rec {
       || (craneLib.filterCargoSources path type); # include rust/cargo
   };
 
-  buildArgs = {
-    nativeBuildInputs = with pkgs; [
+  buildArgs = ({
+    nativeBuildInputs = with pkgs.pkgsBuildHost; [
       clang
+      llvmPackages.libclang.lib
       pkg-config
       protobuf
+      rustToolchain
     ] ++ pkgs.lib.optional stdenv.isDarwin (with pkgs.darwin.apple_sdk.frameworks; [
       CoreFoundation
       CoreServices
       Security
     ]);
 
-    buildInputs = with pkgs; [
-      rustToolchain
+    buildInputs = with pkgs.pkgsHostHost; [
       librusty_v8
     ];
 
-    RUSTY_V8_ARCHIVE = "${pkgs.librusty_v8}/lib/librusty_v8.a";
-    LIBCLANG_PATH = pkgs.lib.makeLibraryPath [ pkgs.llvmPackages.libclang.lib ];
-  };
+    RUSTY_V8_ARCHIVE = "${pkgs.pkgsHostHost.librusty_v8}/lib/librusty_v8.a";
+    # used by bindgen
+    LIBCLANG_PATH = pkgs.lib.makeLibraryPath [
+      pkgs.pkgsBuildHost.llvmPackages.libclang.lib
+    ];
+  } // extraBuildArgs);
 
   commonArgs = (buildArgs // {
     inherit src;
