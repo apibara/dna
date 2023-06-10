@@ -263,7 +263,12 @@ where
                             if ct.is_cancelled() {
                                 return Err(SinkConnectorError::Sink(err.into()));
                             }
-                            tokio::time::sleep(duration).await;
+                            tokio::select! {
+                                _ = tokio::time::sleep(duration) => {},
+                                _ = ct.cancelled() => {
+                                    return Ok(())
+                                }
+                            };
                         }
                     }
                 }
@@ -294,7 +299,12 @@ where
                             if ct.is_cancelled() {
                                 return Err(SinkConnectorError::Sink(err.into()));
                             }
-                            tokio::time::sleep(duration).await;
+                            tokio::select! {
+                                _ = tokio::time::sleep(duration) => {},
+                                _ = ct.cancelled() => {
+                                    return Ok(())
+                                }
+                            };
                         }
                     }
                 }
