@@ -112,4 +112,39 @@ rec {
         ExposedPorts = ports;
       };
     };
+
+  buildAndDockerize = { path, docker ? true, ports ? null }:
+    let
+      crate = buildCrate { crate = path; };
+      image = if docker then dockerizeCrateBin { crate = crate; ports = ports; } else null;
+    in
+    {
+      inherit crate image;
+    };
+
+  /* Build all crates and dockerize them (if requested).
+
+     Example:
+     buildCrates [
+       { path = ./my-crate; }
+       { path = ./my-service; ports = { "8000/tcp" = { }; }; }
+       { path = ./my-other-crate; docker = false; }
+     ];
+  */
+  buildCrates = crates:
+    let
+      built = builtins.mapAttrs (_: crate: buildAndDockerize crate) crates;
+      binaryPackages = builtins.mapAttrs (_: { crate, ... }: crate.bin) built;
+      images =
+        let
+          crateNames = builtins.attrNames crates;
+          maybeImages = map (name: { name = "${name}-image"; value = built.${name}.image; }) crateNames;
+          images = builtins.filter (image: image.value != null) maybeImages;
+        in
+        (builtins.listToAttrs images);
+      packages = binaryPackages // images;
+    in
+    {
+      inherit binaryPackages images packages;
+    };
 }

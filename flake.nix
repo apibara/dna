@@ -19,25 +19,41 @@
   outputs = { self, nixpkgs, rust-overlay, flake-utils, crane, ... }:
     flake-utils.lib.eachDefaultSystem (system:
       let
-        # setup overlay with stable rust.
         overlays = [
           (import rust-overlay)
           (import ./nix/overlay.nix)
         ];
 
-        # update packages to use the current system and overlay.
         pkgs = import nixpkgs {
           inherit system overlays;
         };
 
-        rustToolchain = pkgs.rust-bin.stable.latest.default.override {
-          extensions = [ "rust-src" ];
+        crates = {
+          sdk = {
+            path = ./sdk;
+            docker = false;
+          };
+          starknet = {
+            path = ./starknet;
+            ports = {
+              "7171/tcp" = { };
+            };
+          };
+          sink-webhook = { path = ./sink-webhook; };
+          sink-mongo = { path = ./sink-mongo; };
+          sink-postgres = { path = ./sink-postgres; };
+          sink-parquet = { path = ./sink-parquet; };
         };
 
         native = pkgs.callPackage ./nix/native.nix {
-          inherit rustToolchain crane;
+          inherit crane crates;
           workspaceDir = ./.;
         };
+
+        # cross = pkgs.callPackage ./nix/cross.nix {
+        # inherit crane;
+        # workspaceDir = ./.;
+        # };
       in
       {
         # format with `nix fmt`
