@@ -57,6 +57,11 @@ impl Sink for MongoSink {
 
         match batch {
             Value::Array(array) => {
+                // don't store anything since the driver doesn't support empty arrays
+                if array.is_empty() {
+                    return Ok(());
+                }
+
                 let documents: Vec<Document> = array
                     .iter()
                     .map(
