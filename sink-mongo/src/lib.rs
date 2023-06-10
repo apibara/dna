@@ -1,7 +1,7 @@
 use apibara_core::node::v1alpha2::{Cursor, DataFinality};
 use apibara_sink_common::Sink;
 use async_trait::async_trait;
-use mongodb::bson::{doc, to_bson, Document};
+use mongodb::bson::{doc, to_bson, Document, Bson};
 
 use mongodb::{error::Error, options::ClientOptions, Client, Collection};
 
@@ -65,11 +65,21 @@ impl Sink for MongoSink {
                 let documents: Vec<Document> = array
                     .iter()
                     .map(
-                        // Use unwrap because if the data couldn't be converted to bson
-                        // we can't write it to Mongo and thus there is point to continue
-                        |element| doc! {"data": to_bson(element).unwrap(), "_cursor": block_number},
+                        |document| {
+                            match to_bson(document)? {
+                                Bson::Document(mut doc) => {
+                                    doc.insert("_cursor", block_number);
+                                    Ok(Some(doc))
+                                }
+                                value => {
+                                    warn!(value = ?value, "batch value is not an object");
+                                    Ok(None)
+                                }
+                            }
+                        }
                     )
-                    .collect();
+                    .flat_map(|item: Result<Option<Document>, Self::Error>| item.transpose())
+                    .collect::<Result<Vec<_>, _>>()?;
                 self.collection.insert_many(documents, None).await?;
             }
             value => {
