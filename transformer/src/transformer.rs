@@ -6,6 +6,8 @@ use deno_runtime::{
     worker::{MainWorker, WorkerOptions},
 };
 
+use crate::module_loader::WorkerModuleLoader;
+
 deno_core::extension!(
     apibara_transform,
     ops = [op_transform_return],
@@ -18,12 +20,10 @@ deno_core::extension!(
 
 pub use serde_json::Value;
 
-use crate::module_loader::WorkerModuleLoader;
-
 pub struct Transformer {
     worker: MainWorker,
     module: ModuleSpecifier,
-    timeout: Duration,
+    _timeout: Duration,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -64,7 +64,7 @@ impl Transformer {
         Ok(Transformer {
             worker,
             module,
-            timeout: Duration::from_secs(5),
+            _timeout: Duration::from_secs(5),
         })
     }
 
@@ -94,9 +94,15 @@ impl Transformer {
         let state = self.worker.js_runtime.op_state();
         let mut state = state.borrow_mut();
         let resource_table = &mut state.resource_table;
-        let entry: Rc<ReturnValueResource> = resource_table.take(0).expect("resource entry");
-        let value = Rc::try_unwrap(entry).expect("value");
-        Ok(value.value)
+        let resource_id = resource_table.names().find(|(_, name)| name == "__rust_ReturnValue");
+        match resource_id {
+            None => Ok(Value::Null),
+            Some((rid, _)) => {
+                let entry: Rc<ReturnValueResource> = resource_table.take(rid).expect("resource entry");
+                let value = Rc::try_unwrap(entry).expect("value");
+                Ok(value.value)
+            }
+        }
     }
 }
 
@@ -118,11 +124,7 @@ fn op_transform_return(
     _buf: Option<ZeroCopyBuf>,
 ) -> Result<Value, deno_core::anyhow::Error> {
     let value = ReturnValueResource { value: args };
-    if state.resource_table.has(0) {
-        state.resource_table.replace(0, value);
-    } else {
-        state.resource_table.add(value);
-    }
+    state.resource_table.add(value);
 
     Ok(Value::Null)
 }
