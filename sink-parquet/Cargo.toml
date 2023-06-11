@@ -16,13 +16,16 @@ anyhow = "1.0.66"
 apibara-core = { path = "../core" }
 apibara-observability = { path = "../observability" }
 apibara-sink-common = { path = "../sink-common" }
-arrow2 = { version = "0.17.2", features = ["io_parquet"] }
+arrow = { version = "41.0.0", default-features = false, features = ["arrow-json", "json"] }
 async-trait = "0.1.68"
 clap = { version = "4.0.32", features = ["env", "unicode", "cargo", "derive"] }
+parquet = { version = "41.0.0", default-features = false, features = ["arrow", "arrow-array", "arrow-schema"] }
 serde = "1.0.160"
-serde_arrow = { version = "0.7.1", features = ["arrow2-0-17"] }
 serde_json = "1.0.96"
 thiserror = "1.0.40"
 tokio = { version = "1.20.1", features = ["full"] }
 tokio-util = "0.7.8"
 tracing = "0.1.36"
+
+[dev-dependencies]
+tempdir = "0.3.7"
