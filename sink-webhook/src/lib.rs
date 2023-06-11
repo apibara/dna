@@ -89,6 +89,7 @@ impl WebhookSink {
 impl Sink for WebhookSink {
     type Error = WebhookError;
 
+    #[instrument(skip(self, batch), err(Debug))]
     async fn handle_data(
         &mut self,
         cursor: &Option<Cursor>,
@@ -120,6 +121,7 @@ impl Sink for WebhookSink {
         self.send(&body).await
     }
 
+    #[instrument(skip(self), err(Debug))]
     async fn handle_invalidate(&mut self, cursor: &Option<Cursor>) -> Result<(), Self::Error> {
         let cursor_str = cursor
             .clone()
