@@ -203,7 +203,7 @@ mod tests {
         let mut batch = Vec::new();
         for i in 0..size {
             batch.push(json!({
-                "batchNum": i.to_string(),
+                "batchNum": i,
                 "batchStr": format!("batch_{}", i),
             }));
         }
