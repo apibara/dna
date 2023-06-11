@@ -19,7 +19,7 @@ pub struct PostgresSink {
 
 impl PostgresSink {
     pub async fn new(connection_string: String, table_name: String) -> Result<Self> {
-        info!("postgres: connecting to {}", connection_string);
+        info!("postgres: connecting to database");
         let config = Config::from_str(&connection_string)?;
         let (client, connection) = config.connect(NoTls).await?;
         tokio::spawn(connection);
