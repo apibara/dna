@@ -2,6 +2,9 @@ mod configuration;
 mod connector;
 mod persistence;
 
+use std::fmt::{self, Display};
+
+use apibara_core::node::v1alpha2::Cursor;
 use apibara_sdk::InvalidUri;
 use bytesize::ByteSize;
 use configuration::MetadataError;
@@ -79,5 +82,17 @@ pub fn is_array_of_objects(value: &Value) -> bool {
             true
         }
         _ => false,
+    }
+}
+
+/// A newtype to display a cursor that may be `None` as "genesis".
+pub struct DisplayCursor<'a>(pub &'a Option<Cursor>);
+
+impl<'a> Display for DisplayCursor<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.0 {
+            Some(cursor) => write!(f, "{}", cursor),
+            None => write!(f, "Cursor(genesis)"),
+        }
     }
 }
