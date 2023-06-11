@@ -94,11 +94,14 @@ impl Transformer {
         let state = self.worker.js_runtime.op_state();
         let mut state = state.borrow_mut();
         let resource_table = &mut state.resource_table;
-        let resource_id = resource_table.names().find(|(_, name)| name == "__rust_ReturnValue");
+        let resource_id = resource_table
+            .names()
+            .find(|(_, name)| name == "__rust_ReturnValue");
         match resource_id {
             None => Ok(Value::Null),
             Some((rid, _)) => {
-                let entry: Rc<ReturnValueResource> = resource_table.take(rid).expect("resource entry");
+                let entry: Rc<ReturnValueResource> =
+                    resource_table.take(rid).expect("resource entry");
                 let value = Rc::try_unwrap(entry).expect("value");
                 Ok(value.value)
             }

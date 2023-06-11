@@ -12,7 +12,7 @@ function toAmount(low, high) {
   const amount = BigNumber(
     BigInt(low) + (BigInt(high) << 128n)
   );
-  return amount.div(DENOMINATOR).toFixed();
+  return amount.div(DENOMINATOR);
 }
 
 export default function decodeEvents(batch) {
@@ -34,11 +34,11 @@ function decodeEvent(header, { event, transaction, receipt }, event_idx) {
   return {
     id: `${meta.hash}-${event_idx}`,
     blockHash: header.blockHash,
-    blockNumber: header.blockNumber,
-    blockTimestamp: header.timestamp,
+    blockNumber: +header.blockNumber,
+    blockTimestamp: new Date(header.timestamp).getTime(),
     transactionHash: meta.hash,
     transferFrom,
     transferTo,
-    transferAmount: transferAmount.toString(),
+    transferAmount: transferAmount.toNumber(),
   }
 }
