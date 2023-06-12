@@ -1,13 +1,14 @@
 mod configuration;
 mod connector;
 mod persistence;
+mod status;
 
 use std::fmt::{self, Display};
 
 use apibara_core::node::v1alpha2::Cursor;
 use apibara_sdk::InvalidUri;
 use bytesize::ByteSize;
-use configuration::MetadataError;
+use configuration::{MetadataError, StatusServerError};
 use prost::Message;
 use serde::{de, ser};
 use serde_json::Value;
@@ -17,6 +18,7 @@ pub use self::configuration::{
     FinalityArgs, StartingCursorArgs,
 };
 pub use self::connector::{Sink, SinkConnector, SinkConnectorError};
+pub use self::status::start_status_server;
 pub use apibara_transformer::TransformerError;
 
 #[derive(Debug, thiserror::Error)]
@@ -25,6 +27,8 @@ pub enum SinkConnectorFromConfigurationError {
     Configuration(#[from] ConfigurationError),
     #[error(transparent)]
     Metadata(#[from] MetadataError),
+    #[error(transparent)]
+    StatusServer(#[from] StatusServerError),
     #[error("Failed to parse stream URL: {0}")]
     Uri(#[from] InvalidUri),
     #[error("Failed to parse transform: {0}")]
@@ -59,6 +63,8 @@ where
         let transformer = args.to_transformer()?;
         let persistence = args.to_persistence();
         let metadata = args.to_metadata()?;
+        let status_server_address = args.to_status_server_address()?;
+
         let connector = SinkConnector::new(
             stream_url,
             configuration,
@@ -66,6 +72,7 @@ where
             metadata,
             persistence,
             max_message_size.as_u64() as usize,
+            status_server_address,
         );
         Ok(connector)
     }
