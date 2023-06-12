@@ -91,10 +91,11 @@ where
         persistence: Option<Persistence>,
         max_message_size: usize,
     ) -> Self {
-        let retries = 10;
-        let min_delay = Duration::from_secs(1);
-        let max_delay = Duration::from_secs(60);
-        let backoff = Backoff::new(retries, min_delay, Some(max_delay));
+        let retries = 8;
+        let min_delay = Duration::from_secs(10);
+        let max_delay = Duration::from_secs(60 * 60);
+        let mut backoff = Backoff::new(retries, min_delay, Some(max_delay));
+        backoff.set_factor(5);
 
         Self {
             stream_url,
