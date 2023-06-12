@@ -12,7 +12,7 @@ use async_trait::async_trait;
 use parquet::arrow::ArrowWriter;
 use serde_json::Value;
 use tokio::sync::Mutex;
-use tracing::{info, instrument, warn, debug};
+use tracing::{debug, info, instrument, warn};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ParquetError {
@@ -61,7 +61,11 @@ impl ParquetSink {
 
     /// Write a record batch to a parquet file.
     fn write_batch(&mut self, batch: RecordBatch, filename: String) -> Result<(), ParquetError> {
-        debug!(size = batch.num_rows(), filename = filename, "writing batch to file");
+        debug!(
+            size = batch.num_rows(),
+            filename = filename,
+            "writing batch to file"
+        );
         let mut file = File::create(self.output_dir.join(filename))?;
         let mut writer = ArrowWriter::try_new(&mut file, batch.schema(), None)?;
         writer.write(&batch)?;
