@@ -1,48 +1,48 @@
 [package]
 name = "apibara-node"
 version = "0.1.0"
-edition = "2021"
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
 
 [lib]
 name = "apibara_node"
 path = "src/lib.rs"
 
 [dependencies]
-anyhow = "1.0.66"
+anyhow.workspace = true
 apibara-core = { path = "../core" }
 apibara-observability = { path = "../observability" }
-arrayvec = "0.7.2"
-async-stream = "0.3.5"
-async-trait = "0.1.57"
-byte-unit = "4.0.14"
-byteorder = "1.4.3"
-clap = { version = "3.2.17", features = ["env", "unicode"] }
-dirs = "4.0.0"
-env_logger = "0.9.0"
-futures = "0.3.23"
-hyper = "0.14.20"
-lazy_static = "1.4.0"
+arrayvec.workspace = true
+async-stream.workspace = true
+async-trait.workspace = true
+byte-unit.workspace = true
+byteorder.workspace = true
+clap.workspace = true
+dirs.workspace = true
+futures.workspace = true
+hyper.workspace = true
+lazy_static.workspace = true
 libmdbx = "0.1.7"
-opentelemetry = { version = "0.18.0", features = ["trace", "metrics", "rt-tokio"] }
-opentelemetry-otlp = { version = "0.11.0", features = ["trace", "metrics", "grpc-tonic"] }
-pin-project = "1.0.12"
-prost = "0.11.0"
-prost-types = "0.11.1"
-thiserror = "1.0.32"
-tokio = { version = "1.20.1", features = ["full"] }
-tokio-stream = { version = "0.1.10", features = ["sync"] }
-tokio-util = "0.7.4"
-tonic = { version = "0.9.0", features = ["tls", "tls-roots"] }
-tonic-health = "0.9.0"
-tonic-reflection = "0.9.0"
-tower = "0.4.13"
-tower-http = { version = "0.3.4", features = ["trace"] }
-tracing = "0.1.36"
-tracing-opentelemetry = "0.18.0"
-tracing-subscriber = { version = "0.3.15", features = ["std", "env-filter"] }
-tracing-tree = "0.2.2"
+opentelemetry.workspace = true
+opentelemetry-otlp.workspace = true
+pin-project.workspace = true
+prost.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true
+tokio-util.workspace = true
+tonic.workspace = true
+tonic-health.workspace = true
+tonic-reflection.workspace = true
+tower.workspace = true
+tower-http.workspace = true
+tracing.workspace = true
+tracing-opentelemetry.workspace = true
+tracing-subscriber.workspace = true
+tracing-tree.workspace = true
 
 [dev-dependencies]
-assert_matches = "1.5.0"
-env_logger = "0.9.0"
-tempfile = "3.3.0"
+assert_matches.workspace = true
+tempfile.workspace = true

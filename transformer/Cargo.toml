@@ -1,18 +1,21 @@
 [package]
 name = "apibara-transformer"
 version = "0.1.0"
-edition = "2021"
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
 
 [dependencies]
 data-url = "0.2.0"
 deno_ast = { version = "0.26.0", features = ["cjs", "transpiling"] }
 deno_core = "0.189.0"
 deno_runtime = "0.115.0"
-reqwest = { version = "0.11.16", default-features = false, features = ["rustls-tls"] }
-serde_json = "1.0.96"
+reqwest.workspace = true
+serde_json.workspace = true
 serde_v8 = "0.100.0"
-thiserror = "1.0.32"
-tokio = { version = "1.20.1", features = ["full"] }
+thiserror.workspace = true
+tokio.workspace = true
 
 [dev-dependencies]
-tempfile = "3.3.0"
+tempfile.workspace = true

@@ -1,7 +1,10 @@
 [package]
 name = "apibara-starknet"
 version = "0.1.0"
-edition = "2021"
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
 
 [lib]
 name = "apibara_starknet"
@@ -12,57 +15,56 @@ name = "apibara-starknet"
 path = "src/bin.rs"
 
 [dependencies]
-anyhow = "1.0.66"
+anyhow.workspace = true
 apibara-core = { path = "../core" }
 apibara-node = { path = "../node" }
+apibara-sdk = { path = "../sdk" }
 backoff = { version = "0.4.0", features = ["tokio"] }
 bloomfilter = "1.0.9"
-byte-unit = "4.0.14"
-byteorder = "1.4.3"
+byte-unit.workspace = true
+byteorder.workspace = true
 chrono = "0.4.22"
-clap = { version = "4.0.32", features = ["env", "unicode", "cargo", "derive"] }
-ctrlc = { version = "3.2.3", features = ["termination"] }
-futures = "0.3.24"
-hex = "0.4.3"
-hyper = "0.14.20"
-lazy_static = "1.4.0"
-mockall = "0.11.4"
-pbjson-types = "0.5.1"
-pin-project = "1.0.12"
-prost = "0.11.0"
-serde = "1.0.163"
-serde_json = "1.0.96"
-starknet = { git = "https://github.com/fracek/starknet-rs", rev = "51ae3c8b560" }
-tempdir = "0.3.7"
-thiserror = "1.0.32"
-tokio = { version = "1.20.1", features = ["full"] }
-tokio-stream = { version = "0.1.10", features = ["sync"] }
-tokio-util = "0.7.3"
-tonic = "0.9.0"
-tonic-health = "0.9.0"
-tonic-reflection = "0.9.0"
-tower = "0.4.13"
-tower-http = { version = "0.3.4", features = ["trace"] }
-tracing = { version = "0.1.36", features = ["max_level_trace", "release_max_level_debug"] }
-tracing-futures = { version = "0.2.5", features = ["tokio", "futures-03"] }
+clap.workspace = true
+ctrlc.workspace = true
+futures.workspace = true
+hex.workspace = true
+hyper.workspace = true
+lazy_static.workspace = true
+mockall.workspace = true
+pbjson-types.workspace = true
+pin-project.workspace = true
+prost.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+starknet.workspace = true
+tempdir.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true
+tokio-util.workspace = true
+tonic.workspace = true
+tonic-health.workspace = true
+tonic-reflection.workspace = true
+tower.workspace = true
+tower-http.workspace = true
+tracing.workspace = true
+tracing-futures.workspace = true
 url = "2.2.2"
-warp = "0.3.5"
-apibara-sdk = { path = "../sdk" }
+warp.workspace = true
 
 [dev-dependencies]
 apibara-core = { path = "../core" }
 apibara-sdk = { path = "../sdk" }
-assert_matches = "1.5.0"
-env_logger = "0.9.0"
+assert_matches.workspace = true
 futures-channel = "0.3.28"
-futures-util = "0.3.28"
-quickcheck = "1.0.3"
-quickcheck_macros = "1.0.0"
-reqwest = { version = "0.11.16", default-features = false, features = ["serde_json", "rustls-tls"] }
-serde_json = "1.0.96"
-tempfile = "3.3.0"
-testcontainers = "0.14.0"
+futures-util.workspace = true
+quickcheck.workspace = true
+quickcheck_macros.workspace = true
+reqwest.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true
+testcontainers.workspace = true
 tokio-tungstenite = "0.19.0"
 
 [build-dependencies]
-tonic-build = "0.9.0"
+tonic-build.workspace = true
