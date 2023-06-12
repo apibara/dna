@@ -61,7 +61,6 @@ tonic-build = "0.9.0"
 tonic-health = "0.9.0"
 tonic-reflection = "0.9.0"
 tower = "0.4.13"
-tower-http = { version = "0.3.4", features = ["trace"] }
 tracing = { version = "0.1.36", features = ["max_level_trace", "release_max_level_debug"] }
 tracing-futures = { version = "0.2.5", features = ["tokio", "futures-03"] }
 tracing-opentelemetry = "0.18.0"

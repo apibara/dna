@@ -6,6 +6,12 @@ let
 
   buildLib = import ./build.nix { inherit pkgs crane rustToolchain workspaceDir; };
 
+  nightlyRustToolchain = pkgs.rust-bin.nightly.latest.default;
+  nightlyBuildLib = import ./build.nix {
+    inherit pkgs crane workspaceDir;
+    rustToolchain = nightlyRustToolchain;
+  };
+
   workspaceFmt = buildLib.cargoFmt (buildLib.commonArgs // {
     inherit (buildLib) cargoArtifacts;
     pname = "apibara-fmt";
@@ -32,10 +38,12 @@ in
   };
 
   shell = {
-    default = pkgs.mkShell (buildLib.buildArgs // {
-      nativeBuildInputs = buildLib.buildArgs.nativeBuildInputs ++ [
-        pkgs.cargo-udeps
-      ];
+    default = pkgs.mkShell (buildLib.buildArgs // { });
+
+    nightly = pkgs.mkShell (nightlyBuildLib.buildArgs // {
+      nativeBuildInputs = with pkgs; [
+        cargo-udeps
+      ] ++ nightlyBuildLib.buildArgs.nativeBuildInputs;
     });
 
     jupyter = pkgs.mkShell {

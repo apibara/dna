@@ -7,7 +7,6 @@ repository.workspace = true
 license.workspace = true
 
 [dependencies]
-anyhow.workspace = true
 hex.workspace = true
 pbjson.workspace = true
 pbjson-types.workspace = true

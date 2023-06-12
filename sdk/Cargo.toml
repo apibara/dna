@@ -7,9 +7,7 @@ repository.workspace = true
 license.workspace = true
 
 [dependencies]
-anyhow.workspace = true
 apibara-core = { path = "../core" }
-async-stream.workspace = true
 async-trait.workspace = true
 futures.workspace = true
 futures-util.workspace = true
