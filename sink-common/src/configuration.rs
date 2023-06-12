@@ -1,4 +1,9 @@
-use std::{fs::File, io::BufReader, path::Path};
+use std::{
+    fs::File,
+    io::BufReader,
+    net::{AddrParseError, SocketAddr},
+    path::Path,
+};
 
 use apibara_core::node::v1alpha2::DataFinality;
 use apibara_sdk::{
@@ -36,6 +41,12 @@ pub enum MetadataError {
     InvalidFormat,
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum StatusServerError {
+    #[error("Failed to parse status server address: {0}")]
+    Address(#[from] AddrParseError),
+}
+
 /// Stream configuration command line flags.
 #[derive(Args, Debug)]
 pub struct ConfigurationArgs {
@@ -66,6 +77,8 @@ pub struct ConfigurationArgs {
     pub network: NetworkTypeArgs,
     #[command(flatten)]
     pub persistence: PersistenceArgs,
+    #[command(flatten)]
+    pub status_server: StatusServerArgs,
 }
 
 /// Stream configuration without finality
@@ -96,6 +109,8 @@ pub struct ConfigurationArgsWithoutFinality {
     pub network: NetworkTypeArgs,
     #[command(flatten)]
     pub persistence: PersistenceArgs,
+    #[command(flatten)]
+    pub status_server: StatusServerArgs,
 }
 
 #[derive(Args, Debug)]
@@ -138,6 +153,14 @@ pub struct PersistenceArgs {
     #[arg(long, env)]
     /// Unique identifier for this sink.
     pub sink_id: Option<String>,
+}
+
+/// Flags related to the status server.
+#[derive(Args, Debug)]
+pub struct StatusServerArgs {
+    /// Address to bind the status server to.
+    #[arg(long, env, default_value = "0.0.0.0:8118")]
+    pub status_server_address: String,
 }
 
 impl ConfigurationArgs {
@@ -210,6 +233,11 @@ impl ConfigurationArgs {
         Ok(metadata)
     }
 
+    pub fn to_status_server_address(&self) -> Result<SocketAddr, StatusServerError> {
+        let address: SocketAddr = self.status_server.status_server_address.parse()?;
+        Ok(address)
+    }
+
     fn new_filter<F>(&self) -> Result<F, FilterError>
     where
         F: Message + Default + Clone + de::DeserializeOwned,
@@ -258,6 +286,7 @@ impl From<ConfigurationArgsWithoutFinality> for ConfigurationArgs {
             starting_cursor: value.starting_cursor,
             network: value.network,
             persistence: value.persistence,
+            status_server: value.status_server,
         }
     }
 }

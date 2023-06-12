@@ -1,5 +1,6 @@
 use std::{
     marker::PhantomData,
+    net::SocketAddr,
     time::{Duration, Instant},
 };
 
@@ -15,7 +16,10 @@ use tokio_stream::StreamExt;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, trace, warn};
 
-use crate::persistence::{Persistence, PersistenceClient, PersistenceError};
+use crate::{
+    persistence::{Persistence, PersistenceClient, PersistenceError},
+    start_status_server,
+};
 
 #[async_trait]
 pub trait Sink {
@@ -74,6 +78,7 @@ where
     metadata: MetadataMap,
     persistence: Option<Persistence>,
     max_message_size: usize,
+    status_server_address: SocketAddr,
     _phantom: PhantomData<B>,
 }
 
@@ -90,6 +95,7 @@ where
         metadata: MetadataMap,
         persistence: Option<Persistence>,
         max_message_size: usize,
+        status_server_address: SocketAddr,
     ) -> Self {
         let retries = 8;
         let min_delay = Duration::from_secs(10);
@@ -105,6 +111,7 @@ where
             metadata,
             persistence,
             max_message_size,
+            status_server_address,
             _phantom: PhantomData::default(),
         }
     }
@@ -181,9 +188,17 @@ where
         let mut last_lock_renewal = Instant::now();
         let min_lock_refresh = Duration::from_secs(30);
 
+        // Only start status server at this moment.
+        // We want to avoid tricking k8s into believing the server is running fine when it's stuck
+        // waiting for the lock.
+        let mut status_server = Box::pin(start_status_server(self.status_server_address));
+
         loop {
             tokio::select! {
                 _ = ct.cancelled() => {
+                    break;
+                }
+                _ = &mut status_server => {
                     break;
                 }
                 maybe_message = data_stream.try_next() => {
