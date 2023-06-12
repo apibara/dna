@@ -25,7 +25,7 @@ async fn main() -> anyhow::Result<()> {
     init_opentelemetry()?;
     let args = Cli::parse();
 
-    let sink = ParquetSink::new(args.output_dir, args.parquet_batch_size.unwrap_or(100))?;
+    let sink = ParquetSink::new(args.output_dir, args.parquet_batch_size.unwrap_or(1000))?;
     let ct = CancellationToken::new();
     let connector =
         SinkConnector::<Filter, Block>::from_configuration_args(args.configuration.into())?;
