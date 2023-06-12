@@ -78,7 +78,7 @@
         formatter = pkgs.nixpkgs-fmt;
 
         # development shells. start with `nix develop`.
-        devShells.default = native.shell;
+        devShells = native.shell;
 
         # checks. run with `nix flake check`.
         checks = {

@@ -31,7 +31,18 @@ in
     inherit workspaceFmt workspaceClippy;
   };
 
-  shell = pkgs.mkShell (buildLib.buildArgs // { });
+  shell = {
+    default = pkgs.mkShell (buildLib.buildArgs // { });
+    jupyter = pkgs.mkShell {
+      nativeBuildInputs = with pkgs; [
+        jupyter
+        python310Packages.seaborn
+        python310Packages.matplotlib
+        python310Packages.pandas
+        python310Packages.pyarrow
+      ];
+    };
+  };
 
   packages = (built.packages // {
     tests = workspaceTest;
