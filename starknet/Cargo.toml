@@ -19,7 +19,6 @@ anyhow.workspace = true
 apibara-core = { path = "../core" }
 apibara-node = { path = "../node" }
 apibara-sdk = { path = "../sdk" }
-backoff = { version = "0.4.0", features = ["tokio"] }
 bloomfilter = "1.0.9"
 byte-unit.workspace = true
 byteorder.workspace = true
@@ -46,7 +45,6 @@ tonic.workspace = true
 tonic-health.workspace = true
 tonic-reflection.workspace = true
 tower.workspace = true
-tower-http.workspace = true
 tracing.workspace = true
 tracing-futures.workspace = true
 url = "2.2.2"
