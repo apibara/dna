@@ -1,13 +1,16 @@
 [package]
 name = "apibara-observability"
 version = "0.1.0"
-edition = "2021"
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
 
 [dependencies]
-opentelemetry = { version = "0.18.0", features = ["trace", "metrics", "rt-tokio"] }
-opentelemetry-otlp = { version = "0.11.0", features = ["trace", "metrics", "grpc-tonic"] }
-thiserror = "1.0.32"
-tracing = "0.1.36"
-tracing-opentelemetry = "0.18.0"
-tracing-subscriber = { version = "0.3.15", features = ["std", "env-filter"] }
-tracing-tree = "0.2.2"
+opentelemetry.workspace = true
+opentelemetry-otlp.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tracing-opentelemetry.workspace = true
+tracing-subscriber.workspace = true
+tracing-tree.workspace = true

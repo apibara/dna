@@ -1,7 +1,10 @@
 [package]
 name = "apibara-sink-postgres"
 version = "0.1.0"
-edition = "2021"
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
 
 [lib]
 name = "apibara_sink_postgres"
@@ -12,16 +15,17 @@ name = "apibara-sink-postgres"
 path = "src/bin.rs"
 
 [dependencies]
-anyhow = "1.0.66"
+anyhow.workspace = true
 apibara-core = { path = "../core" }
 apibara-observability = { path = "../observability" }
 apibara-sink-common = { path = "../sink-common" }
-async-trait = "0.1.68"
-clap = { version = "4.0.32", features = ["env", "unicode", "cargo", "derive"] }
-serde = "1.0.160"
-serde_json = "1.0.96"
-thiserror = "1.0.40"
-tokio = { version = "1.20.1", features = ["full"] }
+async-trait.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
 tokio-postgres = { version = "0.7.8", features = ["with-serde_json-1"] }
-tokio-util = "0.7.8"
-tracing = "0.1.36"
+tokio-util.workspace = true
+tracing.workspace = true
+

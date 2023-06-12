@@ -32,7 +32,12 @@ in
   };
 
   shell = {
-    default = pkgs.mkShell (buildLib.buildArgs // { });
+    default = pkgs.mkShell (buildLib.buildArgs // {
+      nativeBuildInputs = buildLib.buildArgs.nativeBuildInputs ++ [
+        pkgs.cargo-udeps
+      ];
+    });
+
     jupyter = pkgs.mkShell {
       nativeBuildInputs = with pkgs; [
         jupyter
