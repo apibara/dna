@@ -25,9 +25,7 @@ async fn main() -> anyhow::Result<()> {
     let ct = CancellationToken::new();
     let connector = SinkConnector::<Filter, Block>::from_configuration_args(args.configuration)?;
 
-    // jsonnet error cannot be shared between threads
-    // so unwrap for now.
-    connector.consume_stream(sink, ct).await.unwrap();
+    connector.consume_stream(sink, ct).await?;
 
     Ok(())
 }
