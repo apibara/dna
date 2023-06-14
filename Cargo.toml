@@ -30,6 +30,7 @@ byte-unit = "4.0.14"
 clap = { version = "4.3.3", features = ["derive", "env", "cargo", "unicode"] }
 ctrlc = { version = "3.2.3", features = ["termination"] }
 dirs = "4.0.0"
+dotenvy = "0.15.7"
 futures = "0.3.23"
 futures-util = "0.3.26"
 hex = { version = "0.4.3", features = ["serde"] }
@@ -56,7 +57,7 @@ testcontainers = "0.14.0"
 tokio = { version = "1.20.1", features = ["full"] }
 tokio-stream = { version = "0.1.10", features = ["sync"] }
 tokio-util = "0.7.4"
-tonic = "0.9.0"
+tonic = { version = "0.9.0", features = ["tls", "tls-roots", "prost" ] }
 tonic-build = "0.9.0"
 tonic-health = "0.9.0"
 tonic-reflection = "0.9.0"
