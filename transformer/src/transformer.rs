@@ -2,7 +2,7 @@ use std::{borrow::Cow, path::Path, rc::Rc, time::Duration};
 
 use deno_core::{op, FastString, ModuleSpecifier, OpState, ZeroCopyBuf};
 use deno_runtime::{
-    permissions::PermissionsContainer,
+    permissions::{Permissions, PermissionsContainer, PermissionsOptions},
     worker::{MainWorker, WorkerOptions},
 };
 
@@ -50,9 +50,10 @@ impl Transformer {
     /// Creates a [Transformer] from the given module specifier.
     pub fn from_module(module: ModuleSpecifier) -> Result<Self, TransformerError> {
         let module_loader = WorkerModuleLoader::new();
+        let permissions = Self::default_permissions()?;
         let worker = MainWorker::bootstrap_from_options(
             module.clone(),
-            PermissionsContainer::allow_all(),
+            permissions,
             WorkerOptions {
                 module_loader: Rc::new(module_loader),
                 startup_snapshot: None,
@@ -106,6 +107,15 @@ impl Transformer {
                 Ok(value.value)
             }
         }
+    }
+
+    fn default_permissions() -> Result<PermissionsContainer, TransformerError> {
+        let permissions = Permissions::from_options(&PermissionsOptions {
+            allow_hrtime: true,
+            prompt: false,
+            ..PermissionsOptions::default()
+        })?;
+        Ok(PermissionsContainer::new(permissions))
     }
 }
 

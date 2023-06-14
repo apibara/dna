@@ -428,6 +428,7 @@ dependencies = [
 name = "apibara-transformer"
 version = "0.1.0"
 dependencies = [
+ "assert_matches",
  "data-url",
  "deno_ast",
  "deno_core",

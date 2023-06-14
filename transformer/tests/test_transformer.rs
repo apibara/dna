@@ -4,8 +4,8 @@
 // - [x] import json
 use std::fs;
 
-use apibara_transformer::Transformer;
-
+use apibara_transformer::{Transformer, TransformerError};
+use assert_matches::assert_matches;
 use serde_json::json;
 use tempfile::NamedTempFile;
 
@@ -188,4 +188,89 @@ async fn test_use_starknet_js() {
         "result": "0x1d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
     });
     assert_eq!(result, expected);
+}
+
+#[tokio::test]
+async fn test_net_is_denied() {
+    let (_file, mut transformer) = new_transformer_with_code(
+        "js",
+        r#"
+        export default function (data) {
+          const result = fetch('https://httpbin.org/get');
+          return { result };
+        }
+        "#,
+    )
+    .await;
+    let input = json!({});
+    let result = transformer.transform(&input).await;
+    assert_matches!(result, Err(TransformerError::Deno(_)));
+}
+
+#[tokio::test]
+async fn test_read_is_denied() {
+    let (_file, mut transformer) = new_transformer_with_code(
+        "js",
+        r#"
+        export default function (data) {
+          const result = Deno.readDir('.');
+          return { result };
+        }
+        "#,
+    )
+    .await;
+    let input = json!({});
+    let result = transformer.transform(&input).await;
+    assert_matches!(result, Err(TransformerError::Deno(_)));
+}
+
+#[tokio::test]
+async fn test_write_is_denied() {
+    let (_file, mut transformer) = new_transformer_with_code(
+        "js",
+        r#"
+        export default function (data) {
+          const result = Deno.writeTextFile('test.txt', 'test failed');
+          return { result };
+        }
+        "#,
+    )
+    .await;
+    let input = json!({});
+    let result = transformer.transform(&input).await;
+    assert_matches!(result, Err(TransformerError::Deno(_)));
+}
+
+#[tokio::test]
+async fn test_run_is_denied() {
+    let (_file, mut transformer) = new_transformer_with_code(
+        "js",
+        r#"
+        export default function (data) {
+          const result = Deno.run({ cmd: ['ls'] });
+          return { result };
+        }
+        "#,
+    )
+    .await;
+    let input = json!({});
+    let result = transformer.transform(&input).await;
+    assert_matches!(result, Err(TransformerError::Deno(_)));
+}
+
+#[tokio::test]
+async fn test_sys_is_denied() {
+    let (_file, mut transformer) = new_transformer_with_code(
+        "js",
+        r#"
+        export default function (data) {
+          const result = Deno.osRelease();
+          return { result };
+        }
+        "#,
+    )
+    .await;
+    let input = json!({});
+    let result = transformer.transform(&input).await;
+    assert_matches!(result, Err(TransformerError::Deno(_)));
 }
