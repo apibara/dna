@@ -38,19 +38,34 @@ pub enum TransformerError {
     Timeout(#[from] tokio::time::error::Elapsed),
 }
 
+#[derive(Debug, Default)]
+pub struct TransformerOptions {
+    /// Environment variables the transformer has access to.
+    ///
+    /// An empty list gives access to _ALL_ environment variables.
+    pub allow_env: Option<Vec<String>>,
+}
+
 impl Transformer {
     /// Creates a [Transformer] from the given file.
     ///
     /// A relative file path is considered relative to the given current directory.
-    pub fn from_file(path: &str, current_dir: impl AsRef<Path>) -> Result<Self, TransformerError> {
+    pub fn from_file(
+        path: &str,
+        current_dir: impl AsRef<Path>,
+        options: TransformerOptions,
+    ) -> Result<Self, TransformerError> {
         let module = deno_core::resolve_path(path, current_dir.as_ref())?;
-        Self::from_module(module)
+        Self::from_module(module, options)
     }
 
     /// Creates a [Transformer] from the given module specifier.
-    pub fn from_module(module: ModuleSpecifier) -> Result<Self, TransformerError> {
+    pub fn from_module(
+        module: ModuleSpecifier,
+        options: TransformerOptions,
+    ) -> Result<Self, TransformerError> {
         let module_loader = WorkerModuleLoader::new();
-        let permissions = Self::default_permissions()?;
+        let permissions = Self::default_permissions(options)?;
         let worker = MainWorker::bootstrap_from_options(
             module.clone(),
             permissions,
@@ -109,8 +124,11 @@ impl Transformer {
         }
     }
 
-    fn default_permissions() -> Result<PermissionsContainer, TransformerError> {
+    fn default_permissions(
+        options: TransformerOptions,
+    ) -> Result<PermissionsContainer, TransformerError> {
         let permissions = Permissions::from_options(&PermissionsOptions {
+            allow_env: options.allow_env,
             allow_hrtime: true,
             prompt: false,
             ..PermissionsOptions::default()

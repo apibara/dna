@@ -10,7 +10,7 @@ use apibara_sdk::{
     Configuration, InvalidMetadataKey, InvalidMetadataValue, MetadataKey, MetadataMap,
     MetadataValue,
 };
-use apibara_transformer::{Transformer, TransformerError};
+use apibara_transformer::{Transformer, TransformerError, TransformerOptions};
 use clap::Args;
 use prost::Message;
 use serde::de;
@@ -196,7 +196,8 @@ impl ConfigurationArgs {
     pub fn to_transformer(&self) -> Result<Option<Transformer>, TransformerError> {
         if let Some(transform) = &self.transform {
             let current_dir = std::env::current_dir().expect("current directory");
-            let transformer = Transformer::from_file(transform, current_dir)?;
+            let transformer =
+                Transformer::from_file(transform, current_dir, TransformerOptions::default())?;
             Ok(Some(transformer))
         } else {
             Ok(None)

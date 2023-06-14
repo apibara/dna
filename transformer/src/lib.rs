@@ -1,4 +1,4 @@
 mod module_loader;
 mod transformer;
 
-pub use self::transformer::{Transformer, TransformerError, Value};
+pub use self::transformer::{Transformer, TransformerError, TransformerOptions, Value};
