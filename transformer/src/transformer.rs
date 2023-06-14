@@ -36,6 +36,8 @@ pub enum TransformerError {
     V8Deserialization(#[from] serde_v8::Error),
     #[error("Transformer timed out: {0}")]
     Timeout(#[from] tokio::time::error::Elapsed),
+    #[error("Failed to load environment file: {0}")]
+    EnvironmentFile(#[from] dotenvy::Error),
 }
 
 #[derive(Debug, Default)]
