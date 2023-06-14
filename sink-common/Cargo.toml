@@ -14,6 +14,7 @@ async-trait.workspace = true
 bytesize = {version = "1.1.0", features = ["serde"]}
 clap.workspace = true
 ctrlc.workspace = true
+dotenvy.workspace = true
 etcd-client = { version = "0.11.1" }
 exponential-backoff = "1.2.0"
 prost.workspace = true

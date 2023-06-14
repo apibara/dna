@@ -59,6 +59,9 @@ pub struct ConfigurationArgs {
     /// Path to a Javascript/Typescript transformation file to apply to data.
     #[arg(long, env)]
     pub transform: Option<String>,
+    /// Load environment variables from this file.
+    #[arg(long, env)]
+    pub env_file: Option<String>,
     /// Limits the maximum size of a decoded message. Accept message size in human readable form,
     /// e.g. 1kb, 1MB, 1GB. If not set the default is 1MB.
     #[arg(long, env)]
@@ -93,6 +96,9 @@ pub struct ConfigurationArgsWithoutFinality {
     /// Jsonnet transformation to apply to data. If it starts with `@`, it is interpreted as a path to a file.
     #[arg(long, env)]
     pub transform: Option<String>,
+    /// Load environment variables from this file.
+    #[arg(long, env)]
+    pub env_file: Option<String>,
     /// Limits the maximum size of a decoded message. Accept message size in human readable form,
     /// e.g. 1kb, 1MB, 1GB. If not set the default is 1MB.
     #[arg(long, env)]
@@ -194,10 +200,23 @@ impl ConfigurationArgs {
 
     /// Returns the Deno transformation to apply to data.
     pub fn to_transformer(&self) -> Result<Option<Transformer>, TransformerError> {
+        // only forward variables from env file to transformer.
+        let allow_env = if let Some(env_file) = &self.env_file {
+            let mut variables = Vec::default();
+            for item in dotenvy::from_path_iter(env_file)? {
+                let (key, value) = item?;
+                std::env::set_var(&key, value);
+                variables.push(key);
+            }
+            Some(variables)
+        } else {
+            None
+        };
+
         if let Some(transform) = &self.transform {
             let current_dir = std::env::current_dir().expect("current directory");
-            let transformer =
-                Transformer::from_file(transform, current_dir, TransformerOptions::default())?;
+            let transformer_options = TransformerOptions { allow_env };
+            let transformer = Transformer::from_file(transform, current_dir, transformer_options)?;
             Ok(Some(transformer))
         } else {
             Ok(None)
@@ -279,6 +298,7 @@ impl From<ConfigurationArgsWithoutFinality> for ConfigurationArgs {
             max_message_size: value.max_message_size,
             metadata: value.metadata,
             stream_url: value.stream_url,
+            env_file: value.env_file,
             finality: Some(FinalityArgs {
                 finalized: true,
                 accepted: false,
