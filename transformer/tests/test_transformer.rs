@@ -4,7 +4,7 @@
 // - [x] import json
 use std::fs;
 
-use apibara_transformer::{Transformer, TransformerError};
+use apibara_transformer::{Transformer, TransformerError, TransformerOptions};
 use assert_matches::assert_matches;
 use serde_json::json;
 use tempfile::NamedTempFile;
@@ -18,14 +18,23 @@ fn write_source(ext: &str, code: &str) -> NamedTempFile {
     tempfile
 }
 
-async fn new_transformer_with_code(ext: &str, code: &str) -> (NamedTempFile, Transformer) {
+async fn new_transformer_with_code_and_options(
+    ext: &str,
+    code: &str,
+    options: TransformerOptions,
+) -> (NamedTempFile, Transformer) {
     let file = write_source(ext, code);
     let transformer = Transformer::from_file(
         file.path().to_str().unwrap(),
         std::env::current_dir().unwrap(),
+        options,
     )
     .unwrap();
     (file, transformer)
+}
+
+async fn new_transformer_with_code(ext: &str, code: &str) -> (NamedTempFile, Transformer) {
+    new_transformer_with_code_and_options(ext, code, Default::default()).await
 }
 
 #[tokio::test]
@@ -273,4 +282,41 @@ async fn test_sys_is_denied() {
     let input = json!({});
     let result = transformer.transform(&input).await;
     assert_matches!(result, Err(TransformerError::Deno(_)));
+}
+
+#[tokio::test]
+async fn test_env_is_denied_by_default() {
+    let (_file, mut transformer) = new_transformer_with_code(
+        "js",
+        r#"
+        export default function (data) {
+          const result = Deno.env.toObject();
+          return { result };
+        }
+        "#,
+    )
+    .await;
+    let input = json!({});
+    let result = transformer.transform(&input).await;
+    assert_matches!(result, Err(TransformerError::Deno(_)));
+}
+
+#[tokio::test]
+async fn test_env_can_access_some_variables() {
+    let (_file, mut transformer) = new_transformer_with_code_and_options(
+        "js",
+        r#"
+        export default function (data) {
+          const result = Deno.env.get('CARGO');
+          return { result };
+        }
+        "#,
+        TransformerOptions {
+            allow_env: Some(vec!["CARGO".to_string()]),
+            ..Default::default()
+        },
+    )
+    .await;
+    let input = json!({});
+    transformer.transform(&input).await.unwrap();
 }
