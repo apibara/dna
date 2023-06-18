@@ -13,7 +13,10 @@ use tokio_util::sync::CancellationToken;
 use tonic::{transport::Server as TonicServer, Status};
 use tracing::{debug_span, error, info};
 
-use crate::{db::DatabaseStorage, db::StorageReader,ingestion::IngestionStreamClient, server::stream::StreamService};
+use crate::{
+    db::DatabaseStorage, db::StorageReader, ingestion::IngestionStreamClient,
+    server::stream::StreamService,
+};
 
 use self::health::HealthReporter;
 
@@ -53,7 +56,10 @@ where
     }
 
     /// Creates a new Server with the given request observer.
-    pub fn with_request_observer<S: RequestObserver>(self, request_observer: S) -> Server<E, S,  R: StorageReader> {
+    pub fn with_request_observer<S: RequestObserver>(
+        self,
+        request_observer: S,
+    ) -> Server<E, S, R: StorageReader> {
         Server {
             db: self.db,
             ingestion: self.ingestion,
