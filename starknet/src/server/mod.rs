@@ -53,7 +53,7 @@ where
     }
 
     /// Creates a new Server with the given request observer.
-    pub fn with_request_observer<S: RequestObserver>(self, request_observer: S) -> Server<E, S,  R: db::storage::StorageReader> {
+    pub fn with_request_observer<S: RequestObserver>(self, request_observer: S) -> Server<E, S,  R: StorageReader> {
         Server {
             db: self.db,
             ingestion: self.ingestion,
