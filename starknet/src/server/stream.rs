@@ -38,6 +38,7 @@ impl<R, O> StreamService<R, O>
 where
     R: StorageReader + Send + Sync + 'static,
     O: RequestObserver,
+    Status: From<<R as StorageReader>::Error>,
 {
     pub fn new(ingestion: Arc<IngestionStreamClient>, storage: R, request_observer: O) -> Self {
         let storage = Arc::new(storage);
@@ -85,25 +86,29 @@ where
         let provider = HttpProvider::new(rpc_url);
         let node_accepted_block = self.storage.highest_accepted_block()?;
         let node_finalized_block = self.storage.highest_finalized_block()?;
-        let latest_starknet_block = provider.get_head().await.map_err(|_| tonic::Status::internal("internal server error"))?;
+        let latest_starknet_block = provider
+            .get_head()
+            .await
+            .map_err(|_| tonic::Status::internal("internal server error"))?;
         let finalized = node_finalized_block.map(|id| id.to_cursor());
         if let Some(accepted_block) = node_accepted_block {
-        let latest = Some(accepted_block.to_cursor());
-        let status = if node_accepted_block.eq(&latest_starknet_block) {
-            IngestionStatus::Synced
+            let latest = Some(accepted_block.to_cursor());
+            let status = if node_accepted_block.eq(&Some(latest_starknet_block)) {
+                IngestionStatus::Synced
+            } else {
+                IngestionStatus::Syncing
+            };
+            Ok(StatusResponse {
+                finalized,
+                latest,
+                status: status.into(),
+            })
         } else {
-            IngestionStatus::Syncing
-        };
-        SatusResponse {
-          finalized,
-          latest,
-          status: status.into(),
-        }
-    } else {
-       SatusResponse {
-          finalized,
-          latest: None,
-          status: IngestionStauts::Syncing.into(),
+            Ok(StatusResponse {
+                finalized,
+                latest: None,
+                status: IngestionStatus::Syncing.into(),
+            })
         }
     }
 }
@@ -113,6 +118,7 @@ impl<R, O> stream_server::Stream for StreamService<R, O>
 where
     R: StorageReader + Send + Sync + 'static,
     O: RequestObserver,
+    Status: From<<R as StorageReader>::Error>,
 {
     type StreamDataStream =
         Pin<Box<dyn Stream<Item = Result<StreamDataResponse, tonic::Status>> + Send + 'static>>;

@@ -10,14 +10,14 @@ use apibara_node::{
 };
 use tokio::task::JoinError;
 use tokio_util::sync::CancellationToken;
-use tonic::transport::Server as TonicServer;
+use tonic::{transport::Server as TonicServer, Status};
 use tracing::{debug_span, error, info};
 
-use crate::{db::DatabaseStorage, ingestion::IngestionStreamClient, server::stream::StreamService};
+use crate::{db::DatabaseStorage, db::StorageReader,ingestion::IngestionStreamClient, server::stream::StreamService};
 
 use self::health::HealthReporter;
 
-pub struct Server<E: EnvironmentKind, O: RequestObserver> {
+pub struct Server<E: EnvironmentKind, O: RequestObserver, R: StorageReader> {
     db: Arc<Environment<E>>,
     ingestion: Arc<IngestionStreamClient>,
     request_observer: O,
@@ -33,15 +33,16 @@ pub enum ServerError {
     ReflectionServer(#[from] tonic_reflection::server::Error),
 }
 
-impl<E, O> Server<E, O>
+impl<E, O, R> Server<E, O, R>
 where
     E: EnvironmentKind,
     O: RequestObserver,
+    Status: From<<R as StorageReader>::Error>,
 {
     pub fn new(
         db: Arc<Environment<E>>,
         ingestion: IngestionStreamClient,
-    ) -> Server<E, SimpleRequestObserver> {
+    ) -> Server<E, SimpleRequestObserver, Status> {
         let ingestion = Arc::new(ingestion);
         let request_observer = SimpleRequestObserver::default();
         Server {
@@ -52,7 +53,7 @@ where
     }
 
     /// Creates a new Server with the given request observer.
-    pub fn with_request_observer<S: RequestObserver>(self, request_observer: S) -> Server<E, S> {
+    pub fn with_request_observer<S: RequestObserver>(self, request_observer: S) -> Server<E, S,  R: db::storage::StorageReader> {
         Server {
             db: self.db,
             ingestion: self.ingestion,
