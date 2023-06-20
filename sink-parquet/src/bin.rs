@@ -8,14 +8,12 @@ use tokio_util::sync::CancellationToken;
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
-    /// The target url to send the request to.
+    /// The directory where to write Parquet files.
     #[arg(long, env)]
     output_dir: String,
+    /// Each Parquet file contains data for the specified number of blocks.
     #[arg(long, env, default_value = "1000")]
     parquet_batch_size: Option<usize>,
-    /// Additional headers to send with the request.
-    #[arg(long, short = 'H', env)]
-    header: Vec<String>,
     #[command(flatten)]
     configuration: ConfigurationArgsWithoutFinality,
 }

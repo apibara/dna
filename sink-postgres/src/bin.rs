@@ -8,8 +8,13 @@ use tokio_util::sync::CancellationToken;
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
+    /// Connection string to the PostgreSQL server.
     #[arg(long, env)]
     connection_string: String,
+    /// Target table name.
+    ///
+    /// The table must exist and have a schema compatible with the data returned by the
+    /// transformation step.
     #[arg(long, env)]
     table_name: String,
     #[command(flatten)]
