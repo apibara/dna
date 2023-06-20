@@ -8,10 +8,13 @@ use tokio_util::sync::CancellationToken;
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
+    /// Connection string for the MongoDB instance.
     #[arg(long, env)]
     mongo_url: String,
+    /// Target database name.
     #[arg(long, env)]
     db_name: String,
+    /// Target collection name.
     #[arg(long, env)]
     collection_name: String,
     #[command(flatten)]
