@@ -1,0 +1,28 @@
+---
+title: Webhooks & Serverless Functions Integrations
+priority: 800
+updatedAt: 2023-06-20 21:00
+---
+
+# Webhooks & Serverless Functions Integrations
+
+The webhook integration provides a way to call a predefined HTTP endpoint for
+each new batch of data produced by a DNA stream.
+
+This integration is well suited for the following tasks:
+
+ - **build an indexer** using serverless technologies. You can invoke serverless
+   functions such as, but not limited to, AWS Lambda, Supabase Functions,
+   Cloudflare Functions, and Vercel Functions.
+ - **send notifications** using the Discord or Telegram APIs.
+
+
+## Configuration
+
+Additionally to the [common configuration
+options](/docs/integrations/configuration), the webhook integration provides
+the following:
+
+ - `--target-url`: URL where the stream data will be posted to.
+ - `--header`: additional headers to send with the request. This flag can be
+  repeated to specify multiple headers.

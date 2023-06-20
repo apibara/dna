@@ -1,0 +1,35 @@
+---
+title: MongoDB Integration
+priority: 699
+updatedAt: 2023-06-20 21:00
+---
+
+# MongoDB Integration
+
+The MongoDB integration provides a way to mirror on-chain data to a MongoDB
+collection of your choice. Data is automatically inserted as it's produced by
+the chain, and it's invalidated in case of chain reorganizations.
+
+ - The integration can be used to **populate a collection with data from one or
+   more networks or smart contracts**.
+ - Create powerful analytics with MongoDB pipelines.
+ - Change how collections are queried without re-indexing.
+
+
+## Configuration
+
+Additionally to the [common configuration
+options](/docs/integrations/configuration), the MongoDB integration provides
+the following:
+
+ - `--mongo-url`: the Mongo connection URL of your database.
+ - `--db-name`: the target database name.
+ - `--collection-name`: the target collection name.
+
+## Collection schema
+
+The transformation step is required to return an array of objects. Data is
+converted to BSON and then written to the collection. The MongoDB integration
+adds a `_cursor` column to each record so that data can be invalidated in case
+of chain reorganizations.
+
