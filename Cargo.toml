@@ -16,6 +16,7 @@ members = [
     "sink-mongo",
     "sink-parquet",
     "sink-postgres",
+    "operator",
     "examples/starknet-simple",
 ]
 
