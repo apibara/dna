@@ -13,6 +13,7 @@ use crate::core::GlobalBlockId;
 
 use super::{
     block::{BlockBody, BlockReceipts, HasherKeys, RawBloom},
+    state::StorageDiffKey,
     tables,
 };
 
@@ -60,6 +61,19 @@ pub trait StorageReader {
         &self,
         id: &GlobalBlockId,
     ) -> Result<Option<v1alpha2::StateUpdate>, Self::Error>;
+
+    /// Returns the storage changes for the given block and contract address.
+    fn read_storage_diff(
+        &self,
+        id: &GlobalBlockId,
+        contract_address: &v1alpha2::FieldElement,
+    ) -> Result<Option<v1alpha2::StorageDiff>, Self::Error>;
+
+    /// Returns all storage changes for the given block.
+    fn read_all_storage_diff(
+        &self,
+        id: &GlobalBlockId,
+    ) -> Result<Vec<v1alpha2::StorageDiff>, Self::Error>;
 }
 
 /// An object to write chain data to storage in a single transaction.
@@ -119,6 +133,7 @@ pub struct DatabaseStorageWriter<'env, 'txn, E: EnvironmentKind> {
     body_cursor: TableCursor<'txn, tables::BlockBodyTable, RW>,
     receipts_cursor: TableCursor<'txn, tables::BlockReceiptsTable, RW>,
     state_update_cursor: TableCursor<'txn, tables::StateUpdateTable, RW>,
+    storage_diff_cursor: TableCursor<'txn, tables::StorageDiffTable, RW>,
     canonical_chain_cursor: TableCursor<'txn, tables::CanonicalChainTable, RW>,
 }
 
@@ -134,6 +149,7 @@ impl<E: EnvironmentKind> DatabaseStorage<E> {
         let body_cursor = txn.open_cursor::<tables::BlockBodyTable>()?;
         let receipts_cursor = txn.open_cursor::<tables::BlockReceiptsTable>()?;
         let state_update_cursor = txn.open_cursor::<tables::StateUpdateTable>()?;
+        let storage_diff_cursor = txn.open_cursor::<tables::StorageDiffTable>()?;
         let canonical_chain_cursor = txn.open_cursor::<tables::CanonicalChainTable>()?;
         let writer = DatabaseStorageWriter {
             txn,
@@ -142,6 +158,7 @@ impl<E: EnvironmentKind> DatabaseStorage<E> {
             body_cursor,
             receipts_cursor,
             state_update_cursor,
+            storage_diff_cursor,
             canonical_chain_cursor,
         };
         Ok(writer)
@@ -273,6 +290,47 @@ impl<E: EnvironmentKind> StorageReader for DatabaseStorage<E> {
         txn.commit()?;
         Ok(state_update)
     }
+
+    #[tracing::instrument(level = "trace", skip(self))]
+    fn read_storage_diff(
+        &self,
+        id: &GlobalBlockId,
+        contract_address: &v1alpha2::FieldElement,
+    ) -> Result<Option<v1alpha2::StorageDiff>, Self::Error> {
+        let txn = self.db.begin_ro_txn()?;
+        let mut cursor = txn.open_cursor::<tables::StorageDiffTable>()?;
+        let key = StorageDiffKey {
+            block_id: *id,
+            contract_address: contract_address.clone(),
+        };
+        let storage_diff = cursor.seek_exact(&key)?.map(|t| t.1);
+        txn.commit()?;
+        Ok(storage_diff)
+    }
+
+    #[tracing::instrument(level = "trace", skip(self))]
+    fn read_all_storage_diff(
+        &self,
+        id: &GlobalBlockId,
+    ) -> Result<Vec<v1alpha2::StorageDiff>, Self::Error> {
+        let txn = self.db.begin_ro_txn()?;
+        let mut cursor = txn.open_cursor::<tables::StorageDiffTable>()?;
+        let key = StorageDiffKey {
+            block_id: *id,
+            contract_address: v1alpha2::FieldElement::from_u64(0),
+        };
+        let mut diffs = Vec::new();
+        let mut storage_diff = cursor.seek_range(&key)?;
+        while let Some((key, diff)) = storage_diff {
+            if key.block_id != *id {
+                break;
+            }
+            diffs.push(diff);
+            storage_diff = cursor.next()?;
+        }
+        txn.commit()?;
+        Ok(diffs)
+    }
 }
 
 impl<'env, 'txn, E: EnvironmentKind> StorageWriter for DatabaseStorageWriter<'env, 'txn, E> {
@@ -374,8 +432,22 @@ impl<'env, 'txn, E: EnvironmentKind> StorageWriter for DatabaseStorageWriter<'en
     fn write_state_update(
         &mut self,
         id: &GlobalBlockId,
-        state_update: v1alpha2::StateUpdate,
+        mut state_update: v1alpha2::StateUpdate,
     ) -> Result<(), Self::Error> {
+        if let Some(mut state_diff) = state_update.state_diff.as_mut() {
+            for storage_diff in &state_diff.storage_diffs {
+                let key = StorageDiffKey {
+                    block_id: *id,
+                    contract_address: storage_diff.contract_address.clone().unwrap_or_default(),
+                };
+                self.storage_diff_cursor.seek_exact(&key)?;
+                self.storage_diff_cursor.put(&key, storage_diff)?;
+            }
+
+            // avoid writing storage diffs again, as they are already written in the
+            // storage diff table.
+            state_diff.storage_diffs = Vec::new();
+        }
         self.state_update_cursor.seek_exact(id)?;
         self.state_update_cursor.put(id, &state_update)?;
         Ok(())
