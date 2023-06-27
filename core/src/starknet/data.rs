@@ -69,6 +69,18 @@ impl FieldElement {
         }
     }
 
+    /// Returns a new field element from the raw byte representation.
+    pub fn from_slice(bytes: &[u8]) -> Result<Self, FieldElementDecodeError> {
+        // number is too big
+        let size = bytes.len();
+        if size > 32 {
+            return Err(FieldElementDecodeError::InvalidSize);
+        }
+        let mut bytes_array = [0u8; 32];
+        bytes_array[32 - size..].copy_from_slice(bytes);
+        Ok(FieldElement::from_bytes(&bytes_array))
+    }
+
     pub fn from_hex(s: &str) -> Result<Self, FieldElementDecodeError> {
         // must be at least 0x
         if !s.starts_with("0x") {
@@ -84,14 +96,7 @@ impl FieldElement {
             hex::decode(&s[2..])?
         };
 
-        // number is too big
-        let size = bytes.len();
-        if size > 32 {
-            return Err(FieldElementDecodeError::InvalidSize);
-        }
-        let mut bytes_array = [0u8; 32];
-        bytes_array[32 - size..].copy_from_slice(&bytes);
-        Ok(FieldElement::from_bytes(&bytes_array))
+        Self::from_slice(&bytes)
     }
 
     pub fn to_bytes(&self) -> [u8; 32] {

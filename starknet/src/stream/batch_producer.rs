@@ -295,11 +295,7 @@ where
 
         let mut has_value = false;
 
-        let storage_diffs: Vec<_> = state_diff
-            .storage_diffs
-            .into_iter()
-            .filter(|diff| self.filter_storage_diff(diff, filter))
-            .collect();
+        let storage_diffs = self.storage_diffs(block_id, filter)?;
         has_value |= !storage_diffs.is_empty();
         meter.storage_diff = storage_diffs.len();
 
@@ -357,12 +353,36 @@ where
         self.filter.messages.iter().any(|f| f.matches(message))
     }
 
-    fn filter_storage_diff(
+    fn storage_diffs(
         &self,
-        diff: &v1alpha2::StorageDiff,
+        block_id: &GlobalBlockId,
         filter: &v1alpha2::StateUpdateFilter,
-    ) -> bool {
-        filter.storage_diffs.iter().any(|f| f.matches(diff))
+    ) -> Result<Vec<v1alpha2::StorageDiff>, R::Error> {
+        if filter.storage_diffs.is_empty() {
+            return Ok(Vec::default());
+        }
+
+        let all_storage_diffs_requested = filter
+            .storage_diffs
+            .iter()
+            .any(|f| f.contract_address.is_none());
+
+        if all_storage_diffs_requested {
+            let diffs = self.storage.read_all_storage_diff(block_id)?;
+            Ok(diffs)
+        } else {
+            let mut diffs = Vec::default();
+            for storage_filter in &filter.storage_diffs {
+                if let Some(contract_address) = &storage_filter.contract_address {
+                    if let Some(diff) =
+                        self.storage.read_storage_diff(block_id, contract_address)?
+                    {
+                        diffs.push(diff);
+                    }
+                }
+            }
+            Ok(diffs)
+        }
     }
 
     fn filter_declared_contracts(
