@@ -211,7 +211,6 @@ jobs:
         - sink-parquet
         target:
         - x86_64-unknown-linux-gnu
-        - x86_64-apple-darwin
     steps:
     - name: login gh
       run: gh auth login --with-token < <(echo ${{ secrets.GITHUB_TOKEN }})
