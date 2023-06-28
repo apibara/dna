@@ -12,13 +12,9 @@ use mockall::automock;
 use crate::core::GlobalBlockId;
 
 use super::{
-    block::{BlockBody, BlockReceipts, HasherKeys, RawBloom},
-    state::StorageDiffKey,
+    block::{BlockBody, BlockReceipts, ContractAtBlockId},
     tables,
 };
-
-/// Bloom filter over field elements.
-pub type Bloom = bloomfilter::Bloom<v1alpha2::FieldElement>;
 
 /// An empty error type. Use by [MockStorageReader].
 #[derive(Debug, thiserror::Error)]
@@ -50,11 +46,21 @@ pub trait StorageReader {
     /// Returns all transactions in the given block.
     fn read_body(&self, id: &GlobalBlockId) -> Result<Vec<v1alpha2::Transaction>, Self::Error>;
 
-    /// Returns all receipts in the given block together with its bloom filter.
+    /// Returns all receipts in the given block.
     fn read_receipts(
         &self,
         id: &GlobalBlockId,
-    ) -> Result<(Vec<v1alpha2::TransactionReceipt>, Option<Bloom>), Self::Error>;
+    ) -> Result<Vec<v1alpha2::TransactionReceipt>, Self::Error>;
+
+    /// Returns events for the given block and contract address.
+    fn read_events(
+        &self,
+        id: &GlobalBlockId,
+        contract_address: &v1alpha2::FieldElement,
+    ) -> Result<Vec<v1alpha2::Event>, Self::Error>;
+
+    /// Returns all events in the given block.
+    fn read_all_events(&self, id: &GlobalBlockId) -> Result<Vec<v1alpha2::Event>, Self::Error>;
 
     /// Returns the state update for the given block.
     fn read_state_update(
@@ -168,7 +174,7 @@ impl<E: EnvironmentKind> DatabaseStorage<E> {
 impl<E: EnvironmentKind> StorageReader for DatabaseStorage<E> {
     type Error = libmdbx::Error;
 
-    #[tracing::instrument(level = "trace", skip(self))]
+    #[tracing::instrument(level = "debug", skip(self))]
     fn highest_accepted_block(&self) -> Result<Option<GlobalBlockId>, Self::Error> {
         let txn = self.db.begin_ro_txn()?;
         let mut cursor = txn.open_cursor::<tables::CanonicalChainTable>()?;
@@ -183,7 +189,7 @@ impl<E: EnvironmentKind> StorageReader for DatabaseStorage<E> {
         Ok(block_id)
     }
 
-    #[tracing::instrument(level = "trace", skip(self))]
+    #[tracing::instrument(level = "debug", skip(self))]
     fn highest_finalized_block(&self) -> Result<Option<GlobalBlockId>, Self::Error> {
         let txn = self.db.begin_ro_txn()?;
         let mut canon_cursor = txn.open_cursor::<tables::CanonicalChainTable>()?;
@@ -209,7 +215,7 @@ impl<E: EnvironmentKind> StorageReader for DatabaseStorage<E> {
         Ok(None)
     }
 
-    #[tracing::instrument(level = "trace", skip(self))]
+    #[tracing::instrument(level = "debug", skip(self))]
     fn canonical_block_id(&self, number: u64) -> Result<Option<GlobalBlockId>, Self::Error> {
         let txn = self.db.begin_ro_txn()?;
         let mut cursor = txn.open_cursor::<tables::CanonicalChainTable>()?;
@@ -229,7 +235,7 @@ impl<E: EnvironmentKind> StorageReader for DatabaseStorage<E> {
         }
     }
 
-    #[tracing::instrument(level = "trace", skip(self))]
+    #[tracing::instrument(level = "debug", skip(self))]
     fn read_status(
         &self,
         id: &GlobalBlockId,
@@ -241,7 +247,7 @@ impl<E: EnvironmentKind> StorageReader for DatabaseStorage<E> {
         Ok(status)
     }
 
-    #[tracing::instrument(level = "trace", skip(self))]
+    #[tracing::instrument(level = "debug", skip(self))]
     fn read_header(
         &self,
         id: &GlobalBlockId,
@@ -253,7 +259,7 @@ impl<E: EnvironmentKind> StorageReader for DatabaseStorage<E> {
         Ok(header)
     }
 
-    #[tracing::instrument(level = "trace", skip(self))]
+    #[tracing::instrument(level = "debug", skip(self))]
     fn read_body(&self, id: &GlobalBlockId) -> Result<Vec<v1alpha2::Transaction>, Self::Error> {
         let txn = self.db.begin_ro_txn()?;
         let mut cursor = txn.open_cursor::<tables::BlockBodyTable>()?;
@@ -265,21 +271,34 @@ impl<E: EnvironmentKind> StorageReader for DatabaseStorage<E> {
         Ok(transactions)
     }
 
-    #[tracing::instrument(level = "trace", skip(self))]
+    #[tracing::instrument(level = "debug", skip(self))]
     fn read_receipts(
         &self,
         id: &GlobalBlockId,
-    ) -> Result<(Vec<v1alpha2::TransactionReceipt>, Option<Bloom>), Self::Error> {
+    ) -> Result<Vec<v1alpha2::TransactionReceipt>, Self::Error> {
         let txn = self.db.begin_ro_txn()?;
         let mut cursor = txn.open_cursor::<tables::BlockReceiptsTable>()?;
         let block_receipts_data = cursor.seek_exact(id)?.map(|t| t.1).unwrap_or_default();
         let receipts = block_receipts_data.receipts;
-        let bloom = block_receipts_data.bloom.and_then(|b| b.into());
         txn.commit()?;
-        Ok((receipts, bloom))
+        Ok(receipts)
     }
 
-    #[tracing::instrument(level = "trace", skip(self))]
+    #[tracing::instrument(level = "debug", skip(self))]
+    fn read_events(
+        &self,
+        id: &GlobalBlockId,
+        contract_address: &v1alpha2::FieldElement,
+    ) -> Result<Vec<v1alpha2::Event>, Self::Error> {
+        todo!()
+    }
+
+    #[tracing::instrument(level = "debug", skip(self))]
+    fn read_all_events(&self, id: &GlobalBlockId) -> Result<Vec<v1alpha2::Event>, Self::Error> {
+        todo!()
+    }
+
+    #[tracing::instrument(level = "debug", skip(self))]
     fn read_state_update(
         &self,
         id: &GlobalBlockId,
@@ -291,7 +310,7 @@ impl<E: EnvironmentKind> StorageReader for DatabaseStorage<E> {
         Ok(state_update)
     }
 
-    #[tracing::instrument(level = "trace", skip(self))]
+    #[tracing::instrument(level = "debug", skip(self))]
     fn read_storage_diff(
         &self,
         id: &GlobalBlockId,
@@ -299,7 +318,7 @@ impl<E: EnvironmentKind> StorageReader for DatabaseStorage<E> {
     ) -> Result<Option<v1alpha2::StorageDiff>, Self::Error> {
         let txn = self.db.begin_ro_txn()?;
         let mut cursor = txn.open_cursor::<tables::StorageDiffTable>()?;
-        let key = StorageDiffKey {
+        let key = ContractAtBlockId {
             block_id: *id,
             contract_address: contract_address.clone(),
         };
@@ -308,14 +327,14 @@ impl<E: EnvironmentKind> StorageReader for DatabaseStorage<E> {
         Ok(storage_diff)
     }
 
-    #[tracing::instrument(level = "trace", skip(self))]
+    #[tracing::instrument(level = "debug", skip(self))]
     fn read_all_storage_diff(
         &self,
         id: &GlobalBlockId,
     ) -> Result<Vec<v1alpha2::StorageDiff>, Self::Error> {
         let txn = self.db.begin_ro_txn()?;
         let mut cursor = txn.open_cursor::<tables::StorageDiffTable>()?;
-        let key = StorageDiffKey {
+        let key = ContractAtBlockId {
             block_id: *id,
             contract_address: v1alpha2::FieldElement::from_u64(0),
         };
@@ -336,13 +355,13 @@ impl<E: EnvironmentKind> StorageReader for DatabaseStorage<E> {
 impl<'env, 'txn, E: EnvironmentKind> StorageWriter for DatabaseStorageWriter<'env, 'txn, E> {
     type Error = libmdbx::Error;
 
-    #[tracing::instrument(level = "trace", skip(self))]
+    #[tracing::instrument(level = "debug", skip(self))]
     fn commit(self) -> Result<(), Self::Error> {
         self.txn.commit()?;
         Ok(())
     }
 
-    #[tracing::instrument(level = "trace", skip(self))]
+    #[tracing::instrument(level = "debug", skip(self))]
     fn extend_canonical_chain(&mut self, id: &GlobalBlockId) -> Result<(), Self::Error> {
         let number = id.number();
         let hash = id.hash().into();
@@ -351,7 +370,7 @@ impl<'env, 'txn, E: EnvironmentKind> StorageWriter for DatabaseStorageWriter<'en
         Ok(())
     }
 
-    #[tracing::instrument(level = "trace", skip(self))]
+    #[tracing::instrument(level = "debug", skip(self))]
     fn reject_block_from_canonical_chain(&mut self, id: &GlobalBlockId) -> Result<(), Self::Error> {
         let number = id.number();
         let target_hash = id.hash().into();
@@ -364,7 +383,7 @@ impl<'env, 'txn, E: EnvironmentKind> StorageWriter for DatabaseStorageWriter<'en
         Ok(())
     }
 
-    #[tracing::instrument(level = "trace", skip(self, status))]
+    #[tracing::instrument(level = "debug", skip(self, status))]
     fn write_status(
         &mut self,
         id: &GlobalBlockId,
@@ -378,7 +397,7 @@ impl<'env, 'txn, E: EnvironmentKind> StorageWriter for DatabaseStorageWriter<'en
         Ok(())
     }
 
-    #[tracing::instrument(level = "trace", skip(self, header))]
+    #[tracing::instrument(level = "debug", skip(self, header))]
     fn write_header(
         &mut self,
         id: &GlobalBlockId,
@@ -389,46 +408,26 @@ impl<'env, 'txn, E: EnvironmentKind> StorageWriter for DatabaseStorageWriter<'en
         Ok(())
     }
 
-    #[tracing::instrument(level = "trace", skip(self, body))]
+    #[tracing::instrument(level = "debug", skip(self, body))]
     fn write_body(&mut self, id: &GlobalBlockId, body: BlockBody) -> Result<(), Self::Error> {
         self.body_cursor.seek_exact(id)?;
         self.body_cursor.put(id, &body)?;
         Ok(())
     }
 
-    #[tracing::instrument(level = "trace", skip(self, receipts))]
+    #[tracing::instrument(level = "debug", skip(self, receipts))]
     fn write_receipts(
         &mut self,
         id: &GlobalBlockId,
         receipts: Vec<v1alpha2::TransactionReceipt>,
     ) -> Result<(), Self::Error> {
-        // compute bloom filter for receipts
-        // the bloomfilter crate expects a positive bitmapsize and items count.
-        // add 1 to the receipts count to avoid a panic.
-        let estimate_items = receipts.len() * 2 + 1;
-        let mut bloom = Bloom::new(256, estimate_items);
-
-        for receipt in receipts.iter() {
-            for event in &receipt.events {
-                if let Some(addr) = &event.from_address {
-                    bloom.set(addr);
-                }
-                for key in event.keys.iter() {
-                    bloom.set(key);
-                }
-            }
-        }
-
-        let body = BlockReceipts {
-            receipts,
-            bloom: Some(bloom.into()),
-        };
+        let body = BlockReceipts { receipts };
         self.receipts_cursor.seek_exact(id)?;
         self.receipts_cursor.put(id, &body)?;
         Ok(())
     }
 
-    #[tracing::instrument(level = "trace", skip(self, state_update))]
+    #[tracing::instrument(level = "debug", skip(self, state_update))]
     fn write_state_update(
         &mut self,
         id: &GlobalBlockId,
@@ -436,7 +435,7 @@ impl<'env, 'txn, E: EnvironmentKind> StorageWriter for DatabaseStorageWriter<'en
     ) -> Result<(), Self::Error> {
         if let Some(mut state_diff) = state_update.state_diff.as_mut() {
             for storage_diff in &state_diff.storage_diffs {
-                let key = StorageDiffKey {
+                let key = ContractAtBlockId {
                     block_id: *id,
                     contract_address: storage_diff.contract_address.clone().unwrap_or_default(),
                 };
@@ -451,48 +450,5 @@ impl<'env, 'txn, E: EnvironmentKind> StorageWriter for DatabaseStorageWriter<'en
         self.state_update_cursor.seek_exact(id)?;
         self.state_update_cursor.put(id, &state_update)?;
         Ok(())
-    }
-}
-
-impl From<RawBloom> for Option<Bloom> {
-    fn from(raw: RawBloom) -> Self {
-        if raw.bytes.is_empty() {
-            return None;
-        }
-        let hasher_keys = raw.hasher_keys?;
-        let sip_keys = [
-            (hasher_keys.hash0_0, hasher_keys.hash0_1),
-            (hasher_keys.hash1_0, hasher_keys.hash1_1),
-        ];
-        let bloom = Bloom::from_existing(
-            &raw.bytes,
-            raw.bitmap_bits,
-            raw.number_of_hash_functions,
-            sip_keys,
-        );
-        Some(bloom)
-    }
-}
-
-impl From<Bloom> for RawBloom {
-    fn from(bloom: Bloom) -> Self {
-        let bytes = bloom.bitmap();
-        let bitmap_bits = bloom.number_of_bits();
-        let number_of_hash_functions = bloom.number_of_hash_functions();
-        let sip_keys = bloom.sip_keys();
-
-        let hasher_keys = HasherKeys {
-            hash0_0: sip_keys[0].0,
-            hash0_1: sip_keys[0].1,
-            hash1_0: sip_keys[1].0,
-            hash1_1: sip_keys[1].1,
-        };
-
-        RawBloom {
-            bytes,
-            bitmap_bits,
-            number_of_hash_functions,
-            hasher_keys: Some(hasher_keys),
-        }
     }
 }

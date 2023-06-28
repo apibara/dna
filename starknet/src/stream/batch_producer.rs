@@ -6,7 +6,7 @@ use apibara_node::{
     server::RequestMeter,
     stream::{BatchProducer, StreamConfiguration, StreamError},
 };
-use tracing::trace;
+use tracing::debug_span;
 
 use crate::{core::GlobalBlockId, db::StorageReader};
 
@@ -54,6 +54,7 @@ impl<R> InnerProducer<R>
 where
     R: StorageReader + Send + Sync + 'static,
 {
+    #[tracing::instrument(skip(self, meter), level = "debug")]
     fn block_data<M: RequestMeter>(
         &self,
         block_id: &GlobalBlockId,
@@ -100,6 +101,7 @@ where
         }
     }
 
+    #[tracing::instrument(skip(self), level = "debug")]
     fn status(&self, block_id: &GlobalBlockId) -> Result<v1alpha2::BlockStatus, R::Error> {
         let status = self
             .storage
@@ -113,6 +115,7 @@ where
         self.filter.header.as_ref().map(|h| h.weak).unwrap_or(true)
     }
 
+    #[tracing::instrument(skip(self, meter), level = "debug")]
     fn header(
         &self,
         block_id: &GlobalBlockId,
@@ -126,6 +129,7 @@ where
         }
     }
 
+    #[tracing::instrument(skip(self, meter), level = "debug")]
     fn transactions(
         &self,
         block_id: &GlobalBlockId,
@@ -136,7 +140,7 @@ where
         }
 
         let transactions = self.storage.read_body(block_id)?;
-        let (mut receipts, _) = self.storage.read_receipts(block_id)?;
+        let mut receipts = self.storage.read_receipts(block_id)?;
 
         assert!(transactions.len() == receipts.len());
         receipts.sort_by(|a, b| a.transaction_index.cmp(&b.transaction_index));
@@ -161,6 +165,7 @@ where
         Ok(transactions_with_receipts)
     }
 
+    #[tracing::instrument(skip(self, meter), level = "debug")]
     fn events(
         &self,
         block_id: &GlobalBlockId,
@@ -171,66 +176,43 @@ where
         }
 
         let transactions = self.storage.read_body(block_id)?;
-        let (mut receipts, bloom) = self.storage.read_receipts(block_id)?;
-
-        // quickly check if any event would match using bloom filter
-        if let Some(bloom) = bloom {
-            let mut has_match = false;
-            for filter in &self.filter.events {
-                match &filter.from_address {
-                    None => {
-                        // an empty filter matches any address
-                        has_match = true;
-                        break;
-                    }
-                    Some(address) => {
-                        if bloom.check(address) {
-                            has_match = true;
-                            break;
-                        }
-                    }
-                }
-                for key in &filter.keys {
-                    if bloom.check(key) {
-                        has_match = true;
-                        break;
-                    }
-                }
-            }
-
-            // bail out early
-            if !has_match {
-                trace!("bloom did not match any event.");
-                return Ok(Vec::default());
-            }
-        }
+        let mut receipts = self.storage.read_receipts(block_id)?;
 
         assert!(transactions.len() == receipts.len());
         receipts.sort_by(|a, b| a.transaction_index.cmp(&b.transaction_index));
 
-        let mut events = Vec::default();
-        for receipt in &receipts {
-            let transaction = &transactions[receipt.transaction_index as usize];
-            for event in &receipt.events {
-                if self.filter_event(event) {
-                    let transaction = transaction.clone();
-                    let receipt = receipt.clone();
-                    let event = event.clone();
+        let filter_events_span = debug_span!(
+            "filter_events",
+            block_id = %block_id,
+            event_filters = %self.filter.events.len()
+        );
+        let events = filter_events_span.in_scope(|| {
+            let mut events = Vec::default();
+            for receipt in &receipts {
+                let transaction = &transactions[receipt.transaction_index as usize];
+                for event in &receipt.events {
+                    if self.filter_event(event) {
+                        let transaction = transaction.clone();
+                        let receipt = receipt.clone();
+                        let event = event.clone();
 
-                    events.push(v1alpha2::EventWithTransaction {
-                        transaction: Some(transaction),
-                        receipt: Some(receipt),
-                        event: Some(event),
-                    });
+                        events.push(v1alpha2::EventWithTransaction {
+                            transaction: Some(transaction),
+                            receipt: Some(receipt),
+                            event: Some(event),
+                        });
+                    }
                 }
             }
-        }
+            events
+        });
 
         meter.event = events.len();
 
         Ok(events)
     }
 
+    #[tracing::instrument(skip(self, meter), level = "debug")]
     fn l2_to_l1_messages(
         &self,
         block_id: &GlobalBlockId,
@@ -241,7 +223,7 @@ where
         }
 
         let transactions = self.storage.read_body(block_id)?;
-        let (mut receipts, _) = self.storage.read_receipts(block_id)?;
+        let mut receipts = self.storage.read_receipts(block_id)?;
 
         assert!(transactions.len() == receipts.len());
         receipts.sort_by(|a, b| a.transaction_index.cmp(&b.transaction_index));
@@ -269,6 +251,7 @@ where
         Ok(messages)
     }
 
+    #[tracing::instrument(skip(self, meter), level = "debug")]
     fn state_update(
         &self,
         block_id: &GlobalBlockId,

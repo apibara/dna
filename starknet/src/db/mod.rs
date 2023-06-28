@@ -16,7 +16,7 @@ pub mod tables {
     pub use super::block::{BlockHeaderTable, BlockStatusTable};
     pub use super::chain::CanonicalChainTable;
     pub use super::state::{StateUpdateTable, StorageDiffTable};
-    pub use super::transaction::{BlockBodyTable, BlockReceiptsTable};
+    pub use super::transaction::{BlockBodyTable, BlockEventsTable, BlockReceiptsTable};
 
     /// Ensures all tables exist.
     pub fn ensure<E: EnvironmentKind>(txn: &Transaction<RW, E>) -> Result<(), MdbxError> {
@@ -25,6 +25,7 @@ pub mod tables {
         txn.ensure_table::<self::BlockStatusTable>(None)?;
         txn.ensure_table::<self::CanonicalChainTable>(None)?;
         txn.ensure_table::<self::BlockReceiptsTable>(None)?;
+        txn.ensure_table::<self::BlockEventsTable>(None)?;
         txn.ensure_table::<self::StateUpdateTable>(None)?;
         txn.ensure_table::<self::StorageDiffTable>(None)?;
         Ok(())
