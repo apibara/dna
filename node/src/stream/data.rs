@@ -32,6 +32,7 @@ where
     // try_stream! doesn't work with tokio::select! so we have to use stream! and helper functions.
     Box::pin(stream! {
         let mut stream_id = 0;
+        let mut has_configuration = false;
         loop {
             tokio::select! {
                 // check streams in order.
@@ -43,6 +44,7 @@ where
                 biased;
 
                 configuration_message = configuration_stream.select_next_some() => {
+                    has_configuration = true;
                     match handle_configuration_message(&mut cursor_producer, &mut batch_producer, configuration_message).await {
                         Ok((new_stream_id, configure_response)) => {
                             stream_id = new_stream_id;
@@ -98,7 +100,7 @@ where
                     }
                 },
 
-                batch_cursor = cursor_producer.select_next_some() => {
+                batch_cursor = cursor_producer.select_next_some(), if has_configuration => {
                     use stream_data_response::Message;
 
                     match handle_batch_cursor(&mut cursor_producer, &mut batch_producer, batch_cursor, &meter).await {
