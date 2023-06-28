@@ -2,7 +2,7 @@
 
 use apibara_node::db::Table;
 
-use super::block::{BlockBody, BlockReceipts};
+use super::block::{BlockBody, BlockEvents, BlockReceipts, ContractAtBlockId};
 use crate::core::GlobalBlockId;
 
 /// Store block body.
@@ -12,6 +12,10 @@ pub struct BlockBodyTable {}
 /// Store block receipts.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct BlockReceiptsTable {}
+
+/// Store block events.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct BlockEventsTable {}
 
 impl Table for BlockBodyTable {
     type Key = GlobalBlockId;
@@ -28,5 +32,14 @@ impl Table for BlockReceiptsTable {
 
     fn db_name() -> &'static str {
         "BlockReceipts"
+    }
+}
+
+impl Table for BlockEventsTable {
+    type Key = ContractAtBlockId;
+    type Value = BlockEvents;
+
+    fn db_name() -> &'static str {
+        "BlockEvents"
     }
 }

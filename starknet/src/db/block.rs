@@ -9,6 +9,11 @@ use prost::Message;
 
 use crate::core::{BlockHash, GlobalBlockId};
 
+pub struct ContractAtBlockId {
+    pub block_id: GlobalBlockId,
+    pub contract_address: v1alpha2::FieldElement,
+}
+
 #[derive(Clone, PartialEq, Message)]
 pub struct BlockBody {
     #[prost(message, repeated, tag = "1")]
@@ -16,35 +21,15 @@ pub struct BlockBody {
 }
 
 #[derive(Clone, PartialEq, Message)]
-pub struct HasherKeys {
-    #[prost(fixed64, tag = "1")]
-    pub hash0_0: u64,
-    #[prost(fixed64, tag = "2")]
-    pub hash0_1: u64,
-    #[prost(fixed64, tag = "3")]
-    pub hash1_0: u64,
-    #[prost(fixed64, tag = "4")]
-    pub hash1_1: u64,
-}
-
-#[derive(Clone, PartialEq, Message)]
-pub struct RawBloom {
-    #[prost(bytes, tag = "1")]
-    pub bytes: prost::alloc::vec::Vec<u8>,
-    #[prost(fixed64, tag = "2")]
-    pub bitmap_bits: u64,
-    #[prost(fixed32, tag = "3")]
-    pub number_of_hash_functions: u32,
-    #[prost(message, tag = "4")]
-    pub hasher_keys: Option<HasherKeys>,
-}
-
-#[derive(Clone, PartialEq, Message)]
 pub struct BlockReceipts {
     #[prost(message, repeated, tag = "1")]
     pub receipts: prost::alloc::vec::Vec<v1alpha2::TransactionReceipt>,
-    #[prost(message, tag = "2")]
-    pub bloom: Option<RawBloom>,
+}
+
+#[derive(Clone, PartialEq, Message)]
+pub struct BlockEvents {
+    #[prost(message, repeated, tag = "1")]
+    pub events: prost::alloc::vec::Vec<v1alpha2::Event>,
 }
 
 /// Store block status.
@@ -118,5 +103,32 @@ impl Table for BlockHeaderTable {
 
     fn db_name() -> &'static str {
         "BlockHeader"
+    }
+}
+
+impl TableKey for ContractAtBlockId {
+    type Encoded = [u8; 72];
+
+    fn encode(&self) -> Self::Encoded {
+        let mut out = [0; 72];
+        out[..40].copy_from_slice(&self.block_id.encode());
+        out[40..].copy_from_slice(&self.contract_address.to_bytes());
+        out
+    }
+
+    fn decode(b: &[u8]) -> Result<Self, apibara_node::db::KeyDecodeError> {
+        let block_id = GlobalBlockId::decode(&b[..40])?;
+
+        let contract_address = v1alpha2::FieldElement::from_slice(&b[40..]).map_err(|_| {
+            KeyDecodeError::InvalidByteSize {
+                expected: 72,
+                actual: b.len(),
+            }
+        })?;
+
+        Ok(ContractAtBlockId {
+            block_id,
+            contract_address,
+        })
     }
 }

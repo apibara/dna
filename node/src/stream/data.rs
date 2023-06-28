@@ -4,6 +4,7 @@ use apibara_core::node::v1alpha2::{
 use async_stream::stream;
 use futures::{stream::FusedStream, Stream, StreamExt};
 use prost::Message;
+use tracing::{debug_span, Instrument};
 
 use crate::{core::Cursor, server::RequestMeter, stream::BatchCursor};
 
@@ -184,17 +185,42 @@ where
             DataFinality::DataStatusPending,
         ),
     };
-    let batch = batch_producer
-        .next_batch(cursors.into_iter(), meter)
-        .await?;
 
-    Ok(Data {
-        cursor: start_cursor.map(|cursor| cursor.to_proto()),
-        end_cursor: end_cursor.map(|cursor| cursor.to_proto()),
-        finality: finality as i32,
-        data: batch
-            .into_iter()
-            .map(|block| block.encode_to_vec())
-            .collect(),
-    })
+    let handle_batch_span = debug_span!(
+        "handle_batch",
+        start_cursor = ?start_cursor,
+        end_cursor = ?end_cursor,
+    );
+    async move {
+        let next_batch_span = debug_span!(
+            "next_batch",
+            start_cursor = ?start_cursor,
+            end_cursor = ?end_cursor,
+        );
+        let batch = batch_producer
+            .next_batch(cursors.into_iter(), meter)
+            .instrument(next_batch_span)
+            .await?;
+
+        let serialize_batch_span = debug_span!(
+            "serialize_batch",
+            start_cursor = ?start_cursor,
+            end_cursor = ?end_cursor,
+        );
+        let data = serialize_batch_span.in_scope(|| {
+            batch
+                .iter()
+                .map(|block| block.encode_to_vec())
+                .collect::<Vec<_>>()
+        });
+
+        Ok(Data {
+            cursor: start_cursor.map(|cursor| cursor.to_proto()),
+            end_cursor: end_cursor.map(|cursor| cursor.to_proto()),
+            finality: finality as i32,
+            data,
+        })
+    }
+    .instrument(handle_batch_span)
+    .await
 }

@@ -42,7 +42,7 @@ pub fn init_opentelemetry() -> Result<(), OpenTelemetryInitError> {
     // so we manually implement it to disable otel exports.
     // we diverge from the spec by defaulting to disabled.
     let sdk_disabled = env::var(OTEL_SDK_DISABLED)
-        .map(|v| v == "false")
+        .map(|v| v == "true")
         .unwrap_or(true);
 
     if std::env::var("RUST_LOG").is_err() {
