@@ -13,7 +13,7 @@ use apibara_node::{
     },
 };
 use futures::{stream::FusedStream, Stream};
-use tracing::debug;
+use tracing::{debug, instrument};
 
 use crate::{core::GlobalBlockId, db::StorageReader};
 
@@ -52,6 +52,7 @@ where
         }
     }
 
+    #[instrument(skip_all, level = "debug")]
     pub fn next_cursor(&mut self) -> Result<Option<BatchCursor<GlobalBlockId>>, R::Error> {
         if self.configuration.is_some() {
             self.next_cursor_with_configuration()
@@ -60,6 +61,7 @@ where
         }
     }
 
+    #[instrument(skip_all, level = "debug")]
     fn next_cursor_with_configuration(
         &mut self,
     ) -> Result<Option<BatchCursor<GlobalBlockId>>, R::Error> {

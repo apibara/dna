@@ -4,7 +4,7 @@ use apibara_core::node::v1alpha2::{
 use async_stream::stream;
 use futures::{stream::FusedStream, Stream, StreamExt};
 use prost::Message;
-use tracing::{debug_span, Instrument};
+use tracing::{debug_span, instrument, Instrument};
 
 use crate::{core::Cursor, server::RequestMeter, stream::BatchCursor};
 
@@ -119,6 +119,7 @@ where
     })
 }
 
+#[instrument(skip_all, level = "debug")]
 async fn handle_configuration_message<C, F, B>(
     cursor_producer: &mut impl CursorProducer<Cursor = C, Filter = F>,
     batch_producer: &mut impl BatchProducer<Cursor = C, Filter = F, Block = B>,
@@ -130,11 +131,26 @@ where
     B: Message + Default + Clone,
 {
     let configuration_message = configuration_message?;
-    let ingestion_response = cursor_producer.reconfigure(&configuration_message).await?;
-    batch_producer.reconfigure(&configuration_message)?;
+
+    let cursor_producer_span = debug_span!(
+        "reconfigure_cursor_producer",
+        stream_id = configuration_message.stream_id
+    );
+    let ingestion_response = cursor_producer
+        .reconfigure(&configuration_message)
+        .instrument(cursor_producer_span)
+        .await?;
+
+    let batch_producer_span = debug_span!(
+        "reconfigure_batch_producer",
+        stream_id = configuration_message.stream_id
+    );
+    batch_producer_span.in_scope(|| batch_producer.reconfigure(&configuration_message))?;
+
     Ok((configuration_message.stream_id, ingestion_response))
 }
 
+#[instrument(skip_all, level = "debug")]
 async fn handle_ingestion_message<C, F>(
     cursor_producer: &mut impl CursorProducer<Cursor = C, Filter = F>,
     ingestion_message: Result<IngestionMessage<C>, StreamError>,
