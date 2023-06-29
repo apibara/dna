@@ -174,18 +174,18 @@ where
 
         let (configuration_client, configuration_stream) = configuration::channel(128);
 
+        debug!(configuration = ?self.configuration, "sending configuration");
+        configuration_client
+            .send(configuration)
+            .await
+            .map_err(|_| SinkConnectorError::SendConfiguration)?;
+
         debug!("start consume stream");
         let mut data_stream = ClientBuilder::<F, B>::default()
             .with_max_message_size(self.max_message_size)
             .with_metadata(self.metadata.clone())
             .connect(self.stream_url.clone(), configuration_stream)
             .await?;
-
-        debug!(configuration = ?self.configuration, "sending configuration");
-        configuration_client
-            .send(configuration)
-            .await
-            .map_err(|_| SinkConnectorError::SendConfiguration)?;
 
         let mut last_lock_renewal = Instant::now();
         let min_lock_refresh = Duration::from_secs(30);
