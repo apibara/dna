@@ -1,5 +1,5 @@
 use apibara_core::node::v1alpha2::{
-    stream_data_response, Data, DataFinality, Invalidate, StreamDataResponse,
+    stream_data_response, Data, DataFinality, Heartbeat, Invalidate, StreamDataResponse,
 };
 use async_stream::stream;
 use futures::{stream::FusedStream, Stream, StreamExt};
@@ -33,6 +33,20 @@ where
     Box::pin(stream! {
         let mut stream_id = 0;
         let mut has_configuration = false;
+
+        {
+            // Some clients (notably tonic) wait for the first message before
+            // returning the response stream. Since this stream won't produce
+            // any data until a configuration is sent, it will result in the
+            // client waiting for the first heartbeat message.
+            // To avoid this, we send a heartbeat message as soon as possible.
+            use stream_data_response::Message;
+            yield Ok(StreamDataResponse {
+                stream_id,
+                message: Some(Message::Heartbeat(Heartbeat::default())),
+            });
+        }
+
         loop {
             tokio::select! {
                 // check streams in order.
