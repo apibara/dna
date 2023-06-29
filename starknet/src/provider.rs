@@ -559,7 +559,8 @@ impl ToProto<v1alpha2::TransactionReceipt> for jsonrpc::models::PendingInvokeTra
             .iter()
             .map(|msg| msg.to_proto())
             .collect();
-        let events = self.events.iter().map(|ev| ev.to_proto()).collect();
+
+        let events = events_to_proto(&self.events);
 
         v1alpha2::TransactionReceipt {
             transaction_index: 0,
@@ -581,7 +582,7 @@ impl ToProto<v1alpha2::TransactionReceipt> for jsonrpc::models::PendingL1Handler
             .iter()
             .map(|msg| msg.to_proto())
             .collect();
-        let events = self.events.iter().map(|ev| ev.to_proto()).collect();
+        let events = events_to_proto(&self.events);
 
         v1alpha2::TransactionReceipt {
             transaction_index: 0,
@@ -603,7 +604,7 @@ impl ToProto<v1alpha2::TransactionReceipt> for jsonrpc::models::PendingDeclareTr
             .iter()
             .map(|msg| msg.to_proto())
             .collect();
-        let events = self.events.iter().map(|ev| ev.to_proto()).collect();
+        let events = events_to_proto(&self.events);
 
         v1alpha2::TransactionReceipt {
             transaction_index: 0,
@@ -625,7 +626,7 @@ impl ToProto<v1alpha2::TransactionReceipt> for jsonrpc::models::PendingDeployTra
             .iter()
             .map(|msg| msg.to_proto())
             .collect();
-        let events = self.events.iter().map(|ev| ev.to_proto()).collect();
+        let events = events_to_proto(&self.events);
         let contract_address = self.contract_address.into();
 
         v1alpha2::TransactionReceipt {
@@ -650,7 +651,7 @@ impl ToProto<v1alpha2::TransactionReceipt>
             .iter()
             .map(|msg| msg.to_proto())
             .collect();
-        let events = self.events.iter().map(|ev| ev.to_proto()).collect();
+        let events = events_to_proto(&self.events);
 
         v1alpha2::TransactionReceipt {
             transaction_index: 0,
@@ -686,7 +687,7 @@ impl ToProto<v1alpha2::TransactionReceipt> for jsonrpc::models::InvokeTransactio
             .iter()
             .map(|msg| msg.to_proto())
             .collect();
-        let events = self.events.iter().map(|ev| ev.to_proto()).collect();
+        let events = events_to_proto(&self.events);
 
         v1alpha2::TransactionReceipt {
             transaction_index: 0,
@@ -708,7 +709,7 @@ impl ToProto<v1alpha2::TransactionReceipt> for jsonrpc::models::L1HandlerTransac
             .iter()
             .map(|msg| msg.to_proto())
             .collect();
-        let events = self.events.iter().map(|ev| ev.to_proto()).collect();
+        let events = events_to_proto(&self.events);
 
         v1alpha2::TransactionReceipt {
             transaction_index: 0,
@@ -730,7 +731,7 @@ impl ToProto<v1alpha2::TransactionReceipt> for jsonrpc::models::DeclareTransacti
             .iter()
             .map(|msg| msg.to_proto())
             .collect();
-        let events = self.events.iter().map(|ev| ev.to_proto()).collect();
+        let events = events_to_proto(&self.events);
 
         v1alpha2::TransactionReceipt {
             transaction_index: 0,
@@ -752,7 +753,7 @@ impl ToProto<v1alpha2::TransactionReceipt> for jsonrpc::models::DeployTransactio
             .iter()
             .map(|msg| msg.to_proto())
             .collect();
-        let events = self.events.iter().map(|ev| ev.to_proto()).collect();
+        let events = events_to_proto(&self.events);
         let contract_address = self.contract_address.into();
 
         v1alpha2::TransactionReceipt {
@@ -775,7 +776,7 @@ impl ToProto<v1alpha2::TransactionReceipt> for jsonrpc::models::DeployAccountTra
             .iter()
             .map(|msg| msg.to_proto())
             .collect();
-        let events = self.events.iter().map(|ev| ev.to_proto()).collect();
+        let events = events_to_proto(&self.events);
         let contract_address = self.contract_address.into();
 
         v1alpha2::TransactionReceipt {
@@ -811,6 +812,7 @@ impl ToProto<v1alpha2::Event> for jsonrpc::models::Event {
             from_address: Some(from_address),
             keys,
             data,
+            event_index: 0,
         }
     }
 }
@@ -916,4 +918,17 @@ impl ToProto<v1alpha2::NonceUpdate> for jsonrpc::models::NonceUpdate {
             nonce: Some(nonce),
         }
     }
+}
+
+/// Converts a jsonrpc event to a protobuf event.
+fn events_to_proto(events: &[jsonrpc::models::Event]) -> Vec<v1alpha2::Event> {
+    events
+        .iter()
+        .enumerate()
+        .map(|(i, e)| {
+            let mut event = e.to_proto();
+            event.event_index = i as u64;
+            event
+        })
+        .collect()
 }

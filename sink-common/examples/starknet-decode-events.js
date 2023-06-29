@@ -21,18 +21,18 @@ export default function decodeEvents(batch) {
 
 function decodeBlock(block) {
   const { header } = block;
-  return (block?.events ?? []).map((evt, idx) => decodeEvent(header, evt, idx));
+  return (block?.events ?? []).map((evt) => decodeEvent(header, evt));
 }
 
 // Transform a single event by extracting the relevant data.
-function decodeEvent(header, { event, transaction, receipt }, event_idx) {
+function decodeEvent(header, { event, transaction, receipt }) {
   const { meta } = transaction;
   const transferFrom = event.data[0];
   const transferTo = event.data[1];
   const transferAmount = toAmount(event.data[2], event.data[3]);
 
   return {
-    id: `${meta.hash}-${event_idx}`,
+    id: `${meta.hash}_${event.eventIndex ?? 0}`,
     blockHash: header.blockHash,
     blockNumber: +header.blockNumber,
     blockTimestamp: new Date(header.timestamp).getTime(),

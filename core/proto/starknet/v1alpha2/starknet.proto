@@ -151,7 +151,7 @@ message DeployAccountTransaction {
 }
 
 // Result of the execution of a transaction.
-// 
+//
 // This message only contains the receipt data, if you also need the
 // transaction, request a `Transaction`.
 message TransactionReceipt {
@@ -205,6 +205,8 @@ message Event {
   repeated FieldElement keys = 2;
   // Event data.
   repeated FieldElement data = 3;
+  // Event index in the transaction.
+  uint64 event_index = 4;
 }
 
 // State update.
