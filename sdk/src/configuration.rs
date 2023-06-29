@@ -1,6 +1,8 @@
 use apibara_core::node::v1alpha2::{Cursor, DataFinality, StreamDataRequest};
 use prost::{EncodeError, Message};
 use serde::{Deserialize, Serialize};
+use tokio::sync::mpsc;
+use tokio_stream::wrappers::ReceiverStream;
 
 /// Data stream configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -14,6 +16,18 @@ pub struct Configuration<F: Message + Default> {
     pub finality: Option<DataFinality>,
     /// The data filter.
     pub filter: F,
+}
+
+pub type ConfigurationClient<F> = mpsc::Sender<Configuration<F>>;
+pub type ConfigurationStream<F> = ReceiverStream<Configuration<F>>;
+
+pub fn channel<F>(buffer: usize) -> (ConfigurationClient<F>, ConfigurationStream<F>)
+where
+    F: Message + Default,
+{
+    let (tx, rx) = mpsc::channel::<Configuration<F>>(buffer);
+    let stream = ReceiverStream::new(rx);
+    (tx, stream)
 }
 
 impl<F> Configuration<F>
