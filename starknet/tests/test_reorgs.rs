@@ -7,7 +7,7 @@ use apibara_core::{
     starknet::v1alpha2::{Block, Filter, HeaderFilter},
 };
 use apibara_node::o11y::init_opentelemetry;
-use apibara_sdk::{ClientBuilder, Configuration, DataMessage};
+use apibara_sdk::{configuration, ClientBuilder, Configuration, DataMessage};
 use apibara_starknet::{start_node, StartArgs};
 use futures::FutureExt;
 use testcontainers::clients;
@@ -56,12 +56,13 @@ async fn test_reorg_from_client_pov() {
                 filter
             });
 
+        let (config_client, config_stream) = configuration::channel(128);
+        config_client.send(configuration).await.unwrap();
         let uri = "http://localhost:7171".parse().unwrap();
-        let (mut data_stream, data_client) = ClientBuilder::<Filter, Block>::default()
-            .connect(uri)
+        let mut data_stream = ClientBuilder::<Filter, Block>::default()
+            .connect(uri, config_stream)
             .await
             .unwrap();
-        data_client.send(configuration).await.unwrap();
         info!("connected. tests starting");
         let devnet_client = DevnetClient::new(format!("http://localhost:{}", rpc_port));
 
@@ -162,12 +163,13 @@ async fn test_reorg_from_client_pov() {
                 filter
             });
 
+        let (config_client, config_stream) = configuration::channel(128);
+        config_client.send(configuration).await.unwrap();
         let uri = "http://localhost:7171".parse().unwrap();
-        let (mut data_stream, data_client) = ClientBuilder::<Filter, Block>::default()
-            .connect(uri)
+        let mut data_stream = ClientBuilder::<Filter, Block>::default()
+            .connect(uri, config_stream)
             .await
             .unwrap();
-        data_client.send(configuration).await.unwrap();
         info!("re-connected. tests starting");
         // first message should be warning of reorg
         match data_stream.try_next().await.unwrap().unwrap() {

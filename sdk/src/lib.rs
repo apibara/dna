@@ -1,4 +1,4 @@
-pub mod config;
+pub mod configuration;
 
 use std::{
     marker::PhantomData,
@@ -14,7 +14,7 @@ use futures::Stream;
 use pin_project::pin_project;
 use prost::Message;
 use serde::{Deserialize, Serialize};
-use tokio::sync::mpsc::{self, Receiver, Sender};
+use tokio::sync::mpsc::{self, Sender};
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{metadata::KeyAndValueRef, transport::Channel, Streaming};
 use tracing::debug;
@@ -32,7 +32,7 @@ pub use tonic::{
 pub type MetadataKey = tonic::metadata::MetadataKey<tonic::metadata::Ascii>;
 pub type MetadataValue = tonic::metadata::MetadataValue<tonic::metadata::Ascii>;
 
-pub use crate::config::Configuration;
+pub use crate::configuration::Configuration;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ClientBuilderError {
@@ -73,36 +73,6 @@ pub enum DataMessage<D: Message + Default> {
     Heartbeat,
 }
 
-impl<D: Message + Default> DataMessage<D> {
-    pub fn from_stream_data_response(response: StreamDataResponse) -> Option<Self> {
-        match response.message {
-            None => None,
-            Some(stream_data_response::Message::Heartbeat(_)) => Some(DataMessage::Heartbeat),
-            Some(stream_data_response::Message::Data(data)) => {
-                let batch = data
-                    .data
-                    .into_iter()
-                    .map(|b| D::decode(b.as_slice()))
-                    .filter_map(|b| b.ok())
-                    .collect::<Vec<D>>();
-                let message = DataMessage::Data {
-                    cursor: data.cursor,
-                    end_cursor: data.end_cursor.unwrap_or_default(),
-                    finality: DataFinality::from_i32(data.finality).unwrap_or_default(),
-                    batch,
-                };
-                Some(message)
-            }
-            Some(stream_data_response::Message::Invalidate(invalidate)) => {
-                let message = DataMessage::Invalidate {
-                    cursor: invalidate.cursor,
-                };
-                Some(message)
-            }
-        }
-    }
-}
-
 /// Data stream builder.
 ///
 /// This struct is used to configure and connect to an Apibara data stream.
@@ -113,30 +83,29 @@ where
     D: Message + Default,
 {
     token: Option<String>,
-    configuration: Option<Configuration<F>>,
     max_message_size: Option<usize>,
     metadata: MetadataMap,
     _data: PhantomData<D>,
+    _filter: PhantomData<F>,
 }
 
 /// A stream of on-chain data.
 #[derive(Debug)]
 #[pin_project]
-pub struct DataStream<F, D>
+pub struct DataStream<F, D, C>
 where
     F: Message + Default,
     D: Message + Default,
+    C: Stream<Item = Configuration<F>> + Send + Sync + 'static,
 {
     stream_id: u64,
-    configuration_rx: Receiver<Configuration<F>>,
+    #[pin]
+    configuration_stream: C,
     #[pin]
     inner: Streaming<StreamDataResponse>,
     inner_tx: Sender<StreamDataRequest>,
     _data: PhantomData<D>,
 }
-
-/// A client used to control a data stream.
-pub type DataStreamClient<F> = Sender<Configuration<F>>;
 
 impl<F, D> ClientBuilder<F, D>
 where
@@ -157,12 +126,6 @@ where
         self
     }
 
-    /// Send the given configuration upon connect.
-    pub fn with_configuration(mut self, configuration: Configuration<F>) -> Self {
-        self.configuration = Some(configuration);
-        self
-    }
-
     pub fn with_max_message_size(mut self, message_size: usize) -> Self {
         self.max_message_size = Some(message_size);
         self
@@ -172,10 +135,14 @@ where
     ///
     /// If a configuration was provided, the client will immediately send it to the server upon
     /// connecting.
-    pub async fn connect(
+    pub async fn connect<C>(
         self,
         url: Uri,
-    ) -> Result<(DataStream<F, D>, DataStreamClient<F>), ClientBuilderError> {
+        configuration: C,
+    ) -> Result<DataStream<F, D, C>, ClientBuilderError>
+    where
+        C: Stream<Item = Configuration<F>> + Send + Sync + 'static,
+    {
         let channel = Channel::builder(url).connect().await?;
 
         // parse authorization token outside of the interceptor
@@ -214,15 +181,7 @@ where
             default_client
         };
 
-        let (configuration_tx, configuration_rx) = mpsc::channel(128);
         let (inner_tx, inner_rx) = mpsc::channel(128);
-
-        if let Some(configuration) = self.configuration {
-            configuration_tx
-                .send(configuration)
-                .await
-                .map_err(|_| ClientBuilderError::FailedToConfigureStream)?;
-        }
 
         let inner_stream = default_client
             .stream_data(ReceiverStream::new(inner_rx))
@@ -231,49 +190,51 @@ where
 
         let stream = DataStream {
             stream_id: 0,
-            configuration_rx,
+            configuration_stream: configuration,
             inner: inner_stream,
             inner_tx,
             _data: PhantomData::default(),
         };
 
-        Ok((stream, configuration_tx))
+        Ok(stream)
     }
 }
 
-impl<F, D> Stream for DataStream<F, D>
+impl<F, D, C> Stream for DataStream<F, D, C>
 where
     F: Message + Default,
     D: Message + Default,
+    C: Stream<Item = Configuration<F>> + Send + Sync + 'static,
 {
     type Item = Result<DataMessage<D>, Box<dyn std::error::Error + Send + Sync + 'static>>;
 
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        match self.configuration_rx.poll_recv(cx) {
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let this = self.project();
+        match this.configuration_stream.poll_next(cx) {
             Poll::Ready(None) => return Poll::Ready(None),
             Poll::Ready(Some(configuration)) => {
-                self.stream_id += 1;
+                (*this.stream_id) += 1;
                 let request = StreamDataRequest {
-                    stream_id: Some(self.stream_id),
+                    stream_id: Some(*this.stream_id),
                     batch_size: Some(configuration.batch_size),
                     starting_cursor: configuration.starting_cursor,
                     finality: configuration.finality.map(|f| f as i32),
                     filter: configuration.filter.encode_to_vec(),
                 };
 
-                self.inner_tx.try_send(request)?;
+                this.inner_tx.try_send(request)?;
                 cx.waker().wake_by_ref();
                 return Poll::Pending;
             }
             Poll::Pending => {}
         }
 
-        match Pin::new(&mut self.inner).poll_next(cx) {
+        match this.inner.poll_next(cx) {
             Poll::Ready(None) => Poll::Ready(None),
             Poll::Pending => Poll::Pending,
             Poll::Ready(Some(Err(e))) => Poll::Ready(Some(Err(Box::new(e)))),
             Poll::Ready(Some(Ok(response))) => {
-                if response.stream_id != self.stream_id {
+                if response.stream_id != *this.stream_id {
                     cx.waker().wake_by_ref();
                     return Poll::Pending;
                 }
@@ -310,6 +271,36 @@ where
                         Poll::Pending
                     }
                 }
+            }
+        }
+    }
+}
+
+impl<D: Message + Default> DataMessage<D> {
+    pub fn from_stream_data_response(response: StreamDataResponse) -> Option<Self> {
+        match response.message {
+            None => None,
+            Some(stream_data_response::Message::Heartbeat(_)) => Some(DataMessage::Heartbeat),
+            Some(stream_data_response::Message::Data(data)) => {
+                let batch = data
+                    .data
+                    .into_iter()
+                    .map(|b| D::decode(b.as_slice()))
+                    .filter_map(|b| b.ok())
+                    .collect::<Vec<D>>();
+                let message = DataMessage::Data {
+                    cursor: data.cursor,
+                    end_cursor: data.end_cursor.unwrap_or_default(),
+                    finality: DataFinality::from_i32(data.finality).unwrap_or_default(),
+                    batch,
+                };
+                Some(message)
+            }
+            Some(stream_data_response::Message::Invalidate(invalidate)) => {
+                let message = DataMessage::Invalidate {
+                    cursor: invalidate.cursor,
+                };
+                Some(message)
             }
         }
     }

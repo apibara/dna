@@ -3,7 +3,7 @@ use apibara_core::{
     node::v1alpha2::DataFinality,
     starknet::v1alpha2::{Block, FieldElement, Filter, HeaderFilter},
 };
-use apibara_sdk::{ClientBuilder, Configuration, DataMessage};
+use apibara_sdk::{configuration, ClientBuilder, Configuration, DataMessage};
 use chrono::{DateTime, Utc};
 use tokio_stream::StreamExt;
 
@@ -57,12 +57,14 @@ async fn main() -> Result<()> {
     } else {
         ClientBuilder::<Filter, Block>::default()
     };
+
+    let (config_client, config_stream) = configuration::channel(128);
     // connnect to the mainnet stream
     let uri = "https://mainnet.starknet.a5a.ch".parse()?;
-    let (mut data_stream, data_client) = client_builder.connect(uri).await.unwrap();
+    let mut data_stream = client_builder.connect(uri, config_stream).await?;
 
     // send starting stream configuration to server
-    data_client.send(configuration).await.unwrap();
+    config_client.send(configuration).await?;
 
     // stream data from server
     while let Some(message) = data_stream.try_next().await.unwrap() {

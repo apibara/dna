@@ -7,7 +7,7 @@ use apibara_core::{
     starknet::v1alpha2::{Block, Filter, HeaderFilter},
 };
 use apibara_node::o11y::init_opentelemetry;
-use apibara_sdk::{ClientBuilder, Configuration, DataMessage};
+use apibara_sdk::{configuration, ClientBuilder, Configuration, DataMessage};
 use apibara_starknet::{start_node, StartArgs};
 use futures::FutureExt;
 use tempdir::TempDir;
@@ -18,7 +18,7 @@ use tracing::info;
 
 use common::{Devnet, DevnetClient};
 
-// #[tokio::test]
+#[tokio::test]
 #[ignore]
 async fn test_starknet_reorgs() {
     init_opentelemetry().unwrap();
@@ -76,11 +76,12 @@ async fn test_starknet_reorgs() {
 
         // check chain is 11 blocks long
         let uri = "http://localhost:7171".parse().unwrap();
-        let (mut data_stream, data_client) = ClientBuilder::<Filter, Block>::default()
-            .connect(uri)
+        let (config_client, config_stream) = configuration::channel(128);
+        config_client.send(configuration.clone()).await.unwrap();
+        let mut data_stream = ClientBuilder::<Filter, Block>::default()
+            .connect(uri, config_stream)
             .await
             .unwrap();
-        data_client.send(configuration.clone()).await.unwrap();
         info!("connected. tests starting");
         let mut block_hash = None;
         for i in 0..11 {
@@ -135,12 +136,13 @@ async fn test_starknet_reorgs() {
         info!("reconnecting...");
 
         // now stream is shorter
+        let (config_client, config_stream) = configuration::channel(128);
+        config_client.send(configuration).await.unwrap();
         let uri = "http://localhost:7171".parse().unwrap();
-        let (mut data_stream, data_client) = ClientBuilder::<Filter, Block>::default()
-            .connect(uri)
+        let mut data_stream = ClientBuilder::<Filter, Block>::default()
+            .connect(uri, config_stream)
             .await
             .unwrap();
-        data_client.send(configuration).await.unwrap();
         info!("reconnected. tests starting");
         for _ in 0..5 {
             data_stream.try_next().await.unwrap().unwrap();
