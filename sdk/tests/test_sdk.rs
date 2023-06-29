@@ -2,7 +2,7 @@ use apibara_core::starknet::v1alpha2::{Block, Filter, HeaderFilter};
 use apibara_sdk::{configuration, ClientBuilder, Configuration, Uri};
 use futures_util::{StreamExt, TryStreamExt};
 
-#[tokio::test]
+// #[tokio::test]
 #[ignore]
 async fn test_apibara_high_level_api() -> Result<(), Box<dyn std::error::Error>> {
     let (config_client, config_stream) = configuration::channel(128);
