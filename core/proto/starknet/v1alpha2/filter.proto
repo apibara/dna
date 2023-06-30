@@ -122,6 +122,10 @@ message StateUpdateFilter {
   repeated DeployedContractFilter deployed_contracts = 3;
   // Filter nonces updates.
   repeated NonceUpdateFilter nonces = 4;
+  // Filter declared classes.
+  repeated DeclaredClassFilter declared_classes = 5;
+  // Filter replaced classes.
+  repeated ReplacedClassFilter replaced_classes = 6;
 }
 
 // Filter storage changes.
@@ -134,6 +138,22 @@ message StorageDiffFilter {
 message DeclaredContractFilter {
   // Filter by class hash.
   FieldElement class_hash = 1;
+}
+
+// Filter declared classes.
+message DeclaredClassFilter {
+  // Filter by class hash.
+  FieldElement class_hash = 1;
+  // Filter by compiled class hash.
+  FieldElement compiled_class_hash = 2;
+}
+
+// Filter replaced classes.
+message ReplacedClassFilter {
+  // Filter by contract address.
+  FieldElement contract_address = 1;
+  // Filter by class hash.
+  FieldElement class_hash = 2;
 }
 
 // Filter deployed contracts.

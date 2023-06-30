@@ -539,6 +539,23 @@ impl DeployedContractFilter {
     }
 }
 
+impl DeclaredClassFilter {
+    pub fn matches(&self, declared_class: &DeclaredClass) -> bool {
+        self.class_hash.matches(&declared_class.class_hash)
+            && self
+                .compiled_class_hash
+                .matches(&declared_class.compiled_class_hash)
+    }
+}
+
+impl ReplacedClassFilter {
+    pub fn matches(&self, replaced_class: &ReplacedClass) -> bool {
+        self.contract_address
+            .matches(&replaced_class.contract_address)
+            && self.class_hash.matches(&replaced_class.class_hash)
+    }
+}
+
 impl NonceUpdateFilter {
     pub fn matches(&self, nonce: &NonceUpdate) -> bool {
         self.contract_address.matches(&nonce.contract_address) && self.nonce.matches(&nonce.nonce)

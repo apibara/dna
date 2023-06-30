@@ -290,6 +290,14 @@ where
         has_value |= !declared_contracts.is_empty();
         meter.declared_contract = declared_contracts.len();
 
+        let declared_classes: Vec<_> = state_diff
+            .declared_classes
+            .into_iter()
+            .filter(|d| self.filter_declared_classes(d, filter))
+            .collect();
+        has_value |= !declared_classes.is_empty();
+        meter.declared_class = declared_classes.len();
+
         let deployed_contracts: Vec<_> = state_diff
             .deployed_contracts
             .into_iter()
@@ -297,6 +305,14 @@ where
             .collect();
         has_value |= !deployed_contracts.is_empty();
         meter.deployed_contract = deployed_contracts.len();
+
+        let replaced_classes: Vec<_> = state_diff
+            .replaced_classes
+            .into_iter()
+            .filter(|d| self.filter_replaced_classes(d, filter))
+            .collect();
+        has_value |= !replaced_classes.is_empty();
+        meter.replaced_class = replaced_classes.len();
 
         let nonces: Vec<_> = state_diff
             .nonces
@@ -310,7 +326,9 @@ where
             let diff = v1alpha2::StateDiff {
                 storage_diffs,
                 declared_contracts,
+                declared_classes,
                 deployed_contracts,
+                replaced_classes,
                 nonces,
             };
             let state_update = v1alpha2::StateUpdate {
@@ -379,6 +397,17 @@ where
             .any(|f| f.matches(declared_contract))
     }
 
+    fn filter_declared_classes(
+        &self,
+        declared_class: &v1alpha2::DeclaredClass,
+        filter: &v1alpha2::StateUpdateFilter,
+    ) -> bool {
+        filter
+            .declared_classes
+            .iter()
+            .any(|f| f.matches(declared_class))
+    }
+
     fn filter_deployed_contracts(
         &self,
         deployed_contract: &v1alpha2::DeployedContract,
@@ -388,6 +417,17 @@ where
             .deployed_contracts
             .iter()
             .any(|f| f.matches(deployed_contract))
+    }
+
+    fn filter_replaced_classes(
+        &self,
+        replaced_class: &v1alpha2::ReplacedClass,
+        filter: &v1alpha2::StateUpdateFilter,
+    ) -> bool {
+        filter
+            .replaced_classes
+            .iter()
+            .any(|f| f.matches(replaced_class))
     }
 
     fn filter_nonces(
@@ -407,7 +447,9 @@ struct DataCounter {
     pub message: usize,
     pub storage_diff: usize,
     pub declared_contract: usize,
+    pub declared_class: usize,
     pub deployed_contract: usize,
+    pub replaced_class: usize,
     pub nonce_update: usize,
 }
 
@@ -419,7 +461,9 @@ impl DataCounter {
         meter.increment_counter("message", self.message as u64);
         meter.increment_counter("storage_diff", self.storage_diff as u64);
         meter.increment_counter("declared_contract", self.declared_contract as u64);
+        meter.increment_counter("declared_class", self.declared_class as u64);
         meter.increment_counter("deployed_contract", self.deployed_contract as u64);
+        meter.increment_counter("replaced_class", self.replaced_class as u64);
         meter.increment_counter("nonce_update", self.nonce_update as u64);
     }
 }
