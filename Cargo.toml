@@ -49,8 +49,9 @@ reqwest = { version = "0.11.16", default-features = false, features = ["serde_js
 serde = "1.0.155"
 serde_json = "1.0.94"
 # starknet = { git = "https://github.com/xJonathanLEI/starknet-rs", rev = "c5cf1967d44dd" }
-# relax flate2 dependency
-starknet = { git = "https://github.com/fracek/starknet-rs", rev = "549c23dc79ea" }
+# - relax flate2 dependency
+# - fix declare txn v0 deserialization
+starknet = { git = "https://github.com/fracek/starknet-rs", rev = "e1c33fc277" }
 thiserror = "1.0.32"
 tempfile = "3.3.0"
 tempdir = "0.3.7"
