@@ -16,7 +16,7 @@ impl Image for Devnet {
     }
 
     fn tag(&self) -> String {
-        "e0c5aa285b3f90f7f452008f41e0e780e4a5958f-seed0".to_string()
+        "90e05410dfa18452199c8ee2ffba465e9d2642d6-seed0".to_string()
     }
 
     fn ready_conditions(&self) -> Vec<WaitFor> {
