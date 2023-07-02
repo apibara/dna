@@ -26,7 +26,7 @@ let
 
   workspaceTest = buildLib.buildCrateTests (buildLib.commonArgs // {
     inherit (buildLib) cargoArtifacts;
-    pname = "apibara-clippy";
+    pname = "apibara-test";
     version = "0.0.0";
   });
 
