@@ -88,7 +88,7 @@
         # all packages.
         # show them with `nix flake show`.
         # build with `nix build .#<name>`.
-        packages = (native.packages // cross.packages // { });
+        packages = (native.packages // { });
       }
     );
 
