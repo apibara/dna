@@ -46,13 +46,19 @@ in
       ] ++ nightlyBuildLib.buildArgs.nativeBuildInputs;
     });
 
-    jupyter = pkgs.mkShell {
+    # demo used to quickly demo dna and integrations
+    demo = pkgs.mkShell {
       nativeBuildInputs = with pkgs; [
         jupyter
         python310Packages.seaborn
         python310Packages.matplotlib
         python310Packages.pandas
         python310Packages.pyarrow
+
+        built.packages.sink-webhook
+        built.packages.sink-mongo
+        built.packages.sink-postgres
+        built.packages.sink-parquet
       ];
     };
   };
