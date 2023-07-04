@@ -91,6 +91,11 @@ impl Sink for ParquetSink {
             return Ok(())
         };
 
+        if batch.is_empty() {
+            debug!("skip empty batch");
+            return Ok(());
+        }
+
         info!(
             cursor = %DisplayCursor(cursor),
             end_cursor = %end_cursor,
@@ -142,6 +147,7 @@ impl State {
         batch: &[Value],
     ) -> Result<Self, ParquetError> {
         let schema = infer_json_schema_from_iterator(batch.iter().map(Result::Ok))?;
+        debug!(schema = ?schema, "inferred schema from batch");
         let decoder = ReaderBuilder::new(Arc::new(schema)).build_decoder()?;
         let starting_block_number = cursor.as_ref().map(|c| c.order_key + 1).unwrap_or(0);
         let end_block_number = end_cursor.order_key + 1;
