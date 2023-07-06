@@ -76,10 +76,25 @@ where
     backoff: Backoff,
     transformer: Option<Transformer>,
     metadata: MetadataMap,
+    bearer_token: Option<String>,
     persistence: Option<Persistence>,
     max_message_size: usize,
     status_server_address: SocketAddr,
     _phantom: PhantomData<B>,
+}
+
+pub struct SinkConnectorOptions<F>
+where
+    F: Message + Default + Clone,
+{
+    pub stream_url: Uri,
+    pub configuration: Configuration<F>,
+    pub transformer: Option<Transformer>,
+    pub metadata: MetadataMap,
+    pub bearer_token: Option<String>,
+    pub persistence: Option<Persistence>,
+    pub max_message_size: usize,
+    pub status_server_address: SocketAddr,
 }
 
 impl<F, B> SinkConnector<F, B>
@@ -88,15 +103,7 @@ where
     B: Message + Default + Serialize,
 {
     /// Creates a new connector with the given stream URL.
-    pub fn new(
-        stream_url: Uri,
-        configuration: Configuration<F>,
-        transformer: Option<Transformer>,
-        metadata: MetadataMap,
-        persistence: Option<Persistence>,
-        max_message_size: usize,
-        status_server_address: SocketAddr,
-    ) -> Self {
+    pub fn new(options: SinkConnectorOptions<F>) -> Self {
         let retries = 8;
         let min_delay = Duration::from_secs(10);
         let max_delay = Duration::from_secs(60 * 60);
@@ -104,14 +111,15 @@ where
         backoff.set_factor(5);
 
         Self {
-            stream_url,
-            configuration,
+            stream_url: options.stream_url,
+            configuration: options.configuration,
             backoff,
-            transformer,
-            metadata,
-            persistence,
-            max_message_size,
-            status_server_address,
+            transformer: options.transformer,
+            metadata: options.metadata,
+            bearer_token: options.bearer_token,
+            persistence: options.persistence,
+            max_message_size: options.max_message_size,
+            status_server_address: options.status_server_address,
             _phantom: PhantomData::default(),
         }
     }
@@ -181,9 +189,17 @@ where
             .map_err(|_| SinkConnectorError::SendConfiguration)?;
 
         debug!("start consume stream");
-        let mut data_stream = ClientBuilder::<F, B>::default()
+        let mut stream_builder = ClientBuilder::<F, B>::default()
             .with_max_message_size(self.max_message_size)
-            .with_metadata(self.metadata.clone())
+            .with_metadata(self.metadata.clone());
+
+        stream_builder = if let Some(bearer_token) = self.bearer_token.take() {
+            stream_builder.with_bearer_token(bearer_token)
+        } else {
+            stream_builder
+        };
+
+        let mut data_stream = stream_builder
             .connect(self.stream_url.clone(), configuration_stream)
             .await?;
 
