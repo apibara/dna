@@ -19,8 +19,8 @@ These options are related to the DNA stream the integration uses as its data sou
  - `--stream-url`: the DNA stream URL.
  - `--batch-size`: override the default batch size used to stream historical data.
  - `--max-message-size`: change the maximum message size allowed by gRPC.
- - `--metadata`: add metadata to the DNA connection request. For example,
-   authorize with the server using the `authorization: Bearer <TOKEN>` value.
+ - `--auth-token`: authenticate using the provided token.
+ - `--metadata`: add metadata to the DNA connection request.
  - `--starting-block`: start streaming from the block following the specified
    block number. If not specified, will start streaming from the genesis block.
  - `--starknet`: interpret the stream data as Starknet data.

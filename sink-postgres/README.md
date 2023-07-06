@@ -46,7 +46,7 @@ CREATE TABLE "public"."apibara" (
 
 ```bash
 cargo run --bin apibara-sink-postgres -- \
-    --metadata 'Authorization: Bearer <YOUR API KEY HERE>' \
+    --auth-token '<YOUR API KEY HERE>' \
     --stream-url https://mainnet.starknet.a5a.ch \
     --connection-string postgresql://postgres:postgres@localhost:5432/postgres \
     --table-name apibara \

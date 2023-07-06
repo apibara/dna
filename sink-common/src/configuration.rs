@@ -7,15 +7,16 @@ use std::{
 
 use apibara_core::node::v1alpha2::DataFinality;
 use apibara_sdk::{
-    Configuration, InvalidMetadataKey, InvalidMetadataValue, MetadataKey, MetadataMap,
+    Configuration, InvalidMetadataKey, InvalidMetadataValue, InvalidUri, MetadataKey, MetadataMap,
     MetadataValue,
 };
 use apibara_transformer::{Transformer, TransformerError, TransformerOptions};
+use bytesize::ByteSize;
 use clap::Args;
 use prost::Message;
 use serde::de;
 
-use crate::persistence::Persistence;
+use crate::{connector::SinkConnectorOptions, persistence::Persistence};
 
 #[derive(Debug, thiserror::Error)]
 pub enum FilterError {
@@ -47,6 +48,22 @@ pub enum StatusServerError {
     Address(#[from] AddrParseError),
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum SinkConnectorFromConfigurationError {
+    #[error(transparent)]
+    Configuration(#[from] ConfigurationError),
+    #[error(transparent)]
+    Metadata(#[from] MetadataError),
+    #[error(transparent)]
+    StatusServer(#[from] StatusServerError),
+    #[error("Failed to parse stream URL: {0}")]
+    Uri(#[from] InvalidUri),
+    #[error("Failed to parse transform: {0}")]
+    Transform(#[from] TransformerError),
+    #[error("Failed to message size: {0}")]
+    SizeConversion(String),
+}
+
 /// Stream configuration command line flags.
 #[derive(Args, Debug)]
 pub struct ConfigurationArgs {
@@ -69,6 +86,9 @@ pub struct ConfigurationArgs {
     /// Add metadata to the stream, in the `key: value` format. Can be specified multiple times.
     #[arg(long, short = 'M', env)]
     pub metadata: Vec<String>,
+    /// Use the authorization together when connecting to the stream.
+    #[arg(long, short = 'A', env)]
+    pub auth_token: Option<String>,
     /// DNA stream url. If starting with `https://`, use a secure connection.
     #[arg(long, env)]
     pub stream_url: String,
@@ -106,6 +126,9 @@ pub struct ConfigurationArgsWithoutFinality {
     /// Add metadata to the stream, in the `key: value` format. Can be specified multiple times.
     #[arg(long, short = 'M', env)]
     pub metadata: Vec<String>,
+    /// Use the authorization together when connecting to the stream.
+    #[arg(long, short = 'A', env)]
+    pub auth_token: Option<String>,
     /// DNA stream url. If starting with `https://`, use a secure connection.
     #[arg(long, env)]
     pub stream_url: String,
@@ -170,6 +193,38 @@ pub struct StatusServerArgs {
 }
 
 impl ConfigurationArgs {
+    pub fn to_sink_connector_options<F>(
+        &self,
+    ) -> Result<SinkConnectorOptions<F>, SinkConnectorFromConfigurationError>
+    where
+        F: Message + Default + Clone + de::DeserializeOwned,
+    {
+        let max_message_size: ByteSize = self
+            .max_message_size
+            .as_ref()
+            .map(|s| s.parse())
+            .transpose()
+            .map_err(SinkConnectorFromConfigurationError::SizeConversion)?
+            .unwrap_or(ByteSize::mb(1));
+        let configuration = self.to_configuration::<F>()?;
+        let stream_url = self.stream_url.parse()?;
+        let transformer = self.to_transformer()?;
+        let persistence = self.to_persistence();
+        let metadata = self.to_metadata()?;
+        let bearer_token = self.to_bearer_token();
+        let status_server_address = self.to_status_server_address()?;
+        Ok(SinkConnectorOptions {
+            stream_url,
+            configuration,
+            transformer,
+            metadata,
+            bearer_token,
+            persistence,
+            max_message_size: max_message_size.as_u64() as usize,
+            status_server_address,
+        })
+    }
+
     pub fn to_configuration<F>(&self) -> Result<Configuration<F>, ConfigurationError>
     where
         F: Message + Default + Clone + de::DeserializeOwned,
@@ -253,6 +308,10 @@ impl ConfigurationArgs {
         Ok(metadata)
     }
 
+    pub fn to_bearer_token(&self) -> Option<String> {
+        self.auth_token.clone()
+    }
+
     pub fn to_status_server_address(&self) -> Result<SocketAddr, StatusServerError> {
         let address: SocketAddr = self.status_server.status_server_address.parse()?;
         Ok(address)
@@ -297,6 +356,7 @@ impl From<ConfigurationArgsWithoutFinality> for ConfigurationArgs {
             transform: value.transform,
             max_message_size: value.max_message_size,
             metadata: value.metadata,
+            auth_token: value.auth_token,
             stream_url: value.stream_url,
             env_file: value.env_file,
             finality: Some(FinalityArgs {
