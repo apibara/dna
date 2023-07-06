@@ -97,7 +97,7 @@ rec {
       '';
     });
 
-  dockerizeCrateBin = { crate, volumes ? null, ports ? null }:
+  dockerizeCrateBin = { crate, volumes ? null, ports ? null, description ? null }:
     pkgs.dockerTools.buildImage {
       name = crate.pname;
       # we're publishing images, so make it less confusing
@@ -114,13 +114,25 @@ rec {
         ];
         Volumes = volumes;
         ExposedPorts = ports;
+        Labels = ({
+          "org.opencontainers.image.source" = "https://github.com/apibara/dna";
+          "org.opencontainers.image.licenses" = "Apache-2.0";
+        } // (if description != null then { "org.opencontainers.image.description" = description; } else { }));
       };
     };
 
-  buildAndDockerize = { path, docker ? true, ports ? null }:
+  buildAndDockerize = { path, docker ? true, ports ? null, volumes ? null, description ? null }:
     let
       crate = buildCrate { crate = path; };
-      image = if docker then dockerizeCrateBin { crate = crate; ports = ports; } else null;
+      image =
+        if docker then
+          dockerizeCrateBin
+            {
+              crate = crate;
+              ports = ports;
+              volumes = volumes;
+              description = description;
+            } else null;
     in
     {
       inherit crate image;
@@ -129,12 +141,13 @@ rec {
   /* Build all crates and dockerize them (if requested).
 
      Example:
-     buildCrates [
-       { path = ./my-crate; }
-       { path = ./my-service; ports = { "8000/tcp" = { }; }; }
-       { path = ./my-other-crate; docker = false; }
-     ];
-  */
+       buildCrates [
+        { path = ./my-crate; }
+        { path = ./my-service; ports = { "8000/tcp" = { }; }; }
+        { path = ./my-service; volumes = { "/data" = { }; }; }
+        { path = ./my-other-crate; docker = false; }
+       ];
+   */
   buildCrates = crates:
     let
       built = builtins.mapAttrs (_: crate: buildAndDockerize crate) crates;
