@@ -34,15 +34,40 @@
             docker = false;
           };
           starknet = {
+            description = "The Starknet DNA server";
             path = ./starknet;
             ports = {
               "7171/tcp" = { };
             };
           };
-          sink-webhook = { path = ./sink-webhook; };
-          sink-mongo = { path = ./sink-mongo; };
-          sink-postgres = { path = ./sink-postgres; };
-          sink-parquet = { path = ./sink-parquet; };
+          sink-webhook = {
+            description = "Integration to connect onchain data to HTTP endpoints";
+            path = ./sink-webhook;
+            volumes = {
+              "/data" = { };
+            };
+          };
+          sink-mongo = {
+            description = "Integration to populate a MongoDB collection with onchain data";
+            path = ./sink-mongo;
+            volumes = {
+              "/data" = { };
+            };
+          };
+          sink-postgres = {
+            description = "Integration to populate a PostgreSQL table with onchain data";
+            path = ./sink-postgres;
+            volumes = {
+              "/data" = { };
+            };
+          };
+          sink-parquet = {
+            description = "Integration to generate a Parquet dataset from onchain data";
+            path = ./sink-parquet;
+            volumes = {
+              "/data" = { };
+            };
+          };
         };
 
         native = pkgs.callPackage ./nix/native.nix {
