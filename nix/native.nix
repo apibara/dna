@@ -1,4 +1,4 @@
-{ pkgs, crane, workspaceDir, crates }:
+{ pkgs, crane, pre-commit-hooks, workspaceDir, crates }:
 let
   rustToolchain = pkgs.rust-bin.stable.latest.default.override {
     extensions = [ "rust-src" "rust-analyzer" ];
@@ -12,18 +12,6 @@ let
     rustToolchain = nightlyRustToolchain;
   };
 
-  workspaceFmt = buildLib.cargoFmt (buildLib.commonArgs // {
-    inherit (buildLib) cargoArtifacts;
-    pname = "apibara-fmt";
-    version = "0.0.0";
-  });
-
-  workspaceClippy = buildLib.cargoClippy (buildLib.commonArgs // {
-    inherit (buildLib) cargoArtifacts;
-    pname = "apibara-clippy";
-    version = "0.0.0";
-  });
-
   workspaceTest = buildLib.buildCrateTests (buildLib.commonArgs // {
     inherit (buildLib) cargoArtifacts;
     pname = "apibara-test";
@@ -32,13 +20,28 @@ let
 
   built = buildLib.buildCrates crates;
 in
-{
+rec {
   checks = {
-    inherit workspaceFmt workspaceClippy;
+    pre-commit-check = pre-commit-hooks.run {
+      src = ./.;
+      hooks = {
+        nixpkgs-fmt.enable = true;
+        rustfmt.enable = true;
+        clippy.enable = true;
+        cargo-check.enable = true;
+      };
+      tools = {
+        rustfmt = rustToolchain;
+        clippy = rustToolchain;
+        cargo = rustToolchain;
+      };
+    };
   };
 
-  shell = {
-    default = pkgs.mkShell (buildLib.buildArgs // { });
+  shell = rec {
+    default = pkgs.mkShell (buildLib.buildArgs // {
+      inherit (checks.pre-commit-check) shellHook;
+    });
 
     nightly = pkgs.mkShell (nightlyBuildLib.buildArgs // {
       nativeBuildInputs = with pkgs; [

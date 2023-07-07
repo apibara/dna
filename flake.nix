@@ -14,9 +14,12 @@
       url = "github:ipetkov/crane";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    pre-commit-hooks = {
+      url = "github:cachix/pre-commit-hooks.nix";
+    };
   };
 
-  outputs = { self, nixpkgs, rust-overlay, flake-utils, crane, ... }:
+  outputs = { self, nixpkgs, rust-overlay, flake-utils, crane, pre-commit-hooks, ... }:
     flake-utils.lib.eachDefaultSystem (system:
       let
         overlays = [
@@ -72,6 +75,7 @@
 
         native = pkgs.callPackage ./nix/native.nix {
           inherit crane crates;
+          pre-commit-hooks = pre-commit-hooks.lib.${system};
           workspaceDir = ./.;
         };
 
@@ -102,13 +106,11 @@
         # format with `nix fmt`
         formatter = pkgs.nixpkgs-fmt;
 
+        # checks. run with `nix flake check`.
+        checks = native.checks;
+
         # development shells. start with `nix develop`.
         devShells = native.shell;
-
-        # checks. run with `nix flake check`.
-        checks = {
-          inherit (native.checks) workspaceFmt workspaceClippy;
-        };
 
         # all packages.
         # show them with `nix flake show`.
