@@ -3,3 +3,4 @@
 /result
 /result-bin
 /.devcontainer/.profile
+.pre-commit-config.yaml
