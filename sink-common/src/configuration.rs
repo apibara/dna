@@ -70,7 +70,7 @@ pub struct ConfigurationArgs {
     /// Set the response preferred batch size.
     #[arg(long, env)]
     pub batch_size: Option<u64>,
-    /// The json-encoded filter to use. If it starts with `@`, it is interpreted as a path to a file.
+    /// Path to the json-encoded filter to use.
     #[arg(long, env)]
     pub filter: String,
     /// Path to a Javascript/Typescript transformation file to apply to data.
@@ -84,7 +84,7 @@ pub struct ConfigurationArgs {
     #[arg(long, env)]
     pub max_message_size: Option<String>,
     /// Add metadata to the stream, in the `key: value` format. Can be specified multiple times.
-    #[arg(long, short = 'M', env)]
+    #[arg(long, short = 'M', env, value_delimiter = ',')]
     pub metadata: Vec<String>,
     /// Use the authorization together when connecting to the stream.
     #[arg(long, short = 'A', env)]
@@ -110,10 +110,10 @@ pub struct ConfigurationArgsWithoutFinality {
     /// Set the response preferred batch size.
     #[arg(long, env)]
     pub batch_size: Option<u64>,
-    /// The json-encoded filter to use. If it starts with `@`, it is interpreted as a path to a file.
+    /// Path to the json-encoded filter to use.
     #[arg(long, env)]
     pub filter: String,
-    /// Jsonnet transformation to apply to data. If it starts with `@`, it is interpreted as a path to a file.
+    /// Path to a Javascript/Typescript transformation file to apply to data.
     #[arg(long, env)]
     pub transform: Option<String>,
     /// Load environment variables from this file.
@@ -163,13 +163,13 @@ pub struct NetworkTypeArgs {
 #[group(required = false, multiple = false)]
 pub struct FinalityArgs {
     /// Request finalized blocks.
-    #[arg(long, env)]
+    #[arg(long, env("FINALITY_FINALIZED"))]
     pub finalized: bool,
     /// Request accepted blocks.
-    #[arg(long, env)]
+    #[arg(long, env("FINALITY_ACCEPTED"))]
     pub accepted: bool,
     /// Request pending blocks.
-    #[arg(long, env)]
+    #[arg(long, env("FINALITY_PENDING"))]
     pub pending: bool,
 }
 
@@ -321,16 +321,11 @@ impl ConfigurationArgs {
     where
         F: Message + Default + Clone + de::DeserializeOwned,
     {
-        if self.filter.starts_with('@') {
-            let filter_path = Path::new(&self.filter[1..]);
-            let filter_file = File::open(filter_path)?;
-            let filter_reader = BufReader::new(filter_file);
-            let filter = serde_json::from_reader(filter_reader)?;
-            Ok(filter)
-        } else {
-            let filter = serde_json::from_str(&self.filter)?;
-            Ok(filter)
-        }
+        let filter_path = Path::new(&self.filter);
+        let filter_file = File::open(filter_path)?;
+        let filter_reader = BufReader::new(filter_file);
+        let filter = serde_json::from_reader(filter_reader)?;
+        Ok(filter)
     }
 }
 
