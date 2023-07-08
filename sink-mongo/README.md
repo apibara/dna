@@ -43,14 +43,14 @@ Run the binary with `cargo`
 cargo run --bin apibara-sink-mongo \
     --stream-url https://mainnet.starknet.a5a.ch \
     --mongo-url "mongodb://root:example@localhost:27017/" \
-    --filter @/path/to/filter.json \
-    --transform @/path/to/transform.json \
+    --filter /path/to/filter.json \
+    --transform /path/to/transform.js \
     --starting-block 30000 \
     --db-name apibara \
     --collection-name apibara \
     --starknet
 ```
-You can get a working `filter.json` and `transform.json` from the `sink-common` README
+You can get a working `filter.json` and `transform.js` from the `sink-common` README
 
 For a complete description of the CLI arguments, run `apibara-sink-mongo --help`.
 To read more about the `--filter` and `--transform` flags, look at the

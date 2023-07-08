@@ -1,0 +1,28 @@
+apiVersion: apibara.com/v1alpha1
+kind: SinkWebhook
+metadata:
+  namespace: default
+  name: webhook-example
+spec:
+  targetUrl: https://devnull-as-a-service.com/dev/null
+  headers:
+  - name: x-my-header
+    value: "test value"
+  stream:
+    filter:
+      configMapKeyRef:
+        key: filter.json
+        name: avnu-swaps
+    streamUrl: https://goerli.starknet.a5a.ch
+    authToken:
+      valueFrom:
+        secretKeyRef:
+          name: apibara-api-key
+          key: production
+    network: starknet
+    finality: accepted
+    startingBlock: 781300
+  inheritedMetadata:
+    annotations:
+      "sidecar.opentelemetry.io/inject": true
+

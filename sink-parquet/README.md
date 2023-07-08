@@ -11,8 +11,8 @@ Run the binary:
 cargo run --bin apibara-sink-parquet -- \
     --stream-url https://mainnet.starknet.a5a.ch \
     --output-dir /tmp/apibara_parquet \
-    --filter @/path/to/filter.json \
-    --transform @/path/to/transform.json \
+    --filter /path/to/filter.json \
+    --transform /path/to/transform.js \
     --starting-block 30000 \
     --starknet
 ```

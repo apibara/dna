@@ -255,6 +255,7 @@ dependencies = [
  "anyhow",
  "apibara-observability",
  "clap",
+ "futures 0.3.28",
  "k8s-openapi",
  "kube",
  "schemars",
