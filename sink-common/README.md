@@ -20,8 +20,6 @@ If you're developing an integration in this repository:
 ## Command Line Arguments
 
 This section describes the two most important command line arguments: `--filter` and `--transform`.
-Both flags support receiving their argument directly as string or, if the
-argument starts with `@`, as a path to a file.
 
 
 ### Filter
