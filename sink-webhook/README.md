@@ -16,8 +16,8 @@ Run the binary (usually in `target/build`):
 apibara-sink-webhook \
     --stream-url https://mainnet.starknet.a5a.ch \
     --target-url http://localhost:8080/ \
-    --filter @/path/to/filter.json \
-    --transform @/path/to/transform.json \
+    --filter /path/to/filter.json \
+    --transform /path/to/transform.js \
     --starting-block 30000 \
     --starknet
 ```

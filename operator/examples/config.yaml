@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  namespace: default
+  name: avnu-swaps
+data:
+  # AVNU exchange swap events, on Starknet Goerli testnet.
+  filter.json: |
+    {
+      "header": { "weak": true },
+      "events": [
+        {
+          "fromAddress": "0x06d8cd321dcbbf54512eab67c8a6849faf920077a3996f40bb4761adc4f021d2",
+          "keys": ["0xe316f0d9d2a3affa97de1d99bb2aac0538e2666d0d8545545ead241ef0ccab"]
+        }
+      ]
+    }
+
+  transform.js: |
+    // Return the batch as is
+    export default function transform(batch) {
+      return batch;
+    }

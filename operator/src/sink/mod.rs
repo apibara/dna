@@ -1,4 +1,4 @@
 mod common;
-mod webhook;
+pub mod webhook;
 
 pub use webhook::{SinkWebhook, SinkWebhookSpec, SinkWebhookStatus};

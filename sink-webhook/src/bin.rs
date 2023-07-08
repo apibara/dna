@@ -12,7 +12,7 @@ struct Cli {
     #[arg(long, env)]
     target_url: String,
     /// Additional headers to send with the request.
-    #[arg(long, short = 'H', env)]
+    #[arg(long, short = 'H', env, value_delimiter = ',')]
     header: Vec<String>,
     #[command(flatten)]
     configuration: ConfigurationArgs,

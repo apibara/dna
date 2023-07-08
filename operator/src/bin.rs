@@ -1,7 +1,11 @@
 use apibara_observability::init_opentelemetry;
-use apibara_operator::sink::SinkWebhook;
+use apibara_operator::{
+    configuration::{Configuration, SinkWebhookConfiguration},
+    controller,
+    sink::SinkWebhook,
+};
 use clap::{Args, Parser, Subcommand};
-use kube::CustomResourceExt;
+use kube::{Client, CustomResourceExt};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -22,7 +26,11 @@ enum Command {
 struct GenerateCrdArgs {}
 
 #[derive(Args, Debug)]
-struct StartArgs {}
+struct StartArgs {
+    /// The default image to use for the webhook sink.
+    #[arg(long, env)]
+    pub sink_webhook_image: Option<String>,
+}
 
 fn generate_crds(_args: GenerateCrdArgs) -> anyhow::Result<()> {
     let crds = [SinkWebhook::crd()]
@@ -34,7 +42,10 @@ fn generate_crds(_args: GenerateCrdArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn start(_args: StartArgs) -> anyhow::Result<()> {
+async fn start(args: StartArgs) -> anyhow::Result<()> {
+    let client = Client::try_default().await?;
+    let configuration = args.to_configuration();
+    controller::start(client, configuration).await?;
     Ok(())
 }
 
@@ -49,4 +60,17 @@ async fn main() -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+impl StartArgs {
+    pub fn to_configuration(&self) -> Configuration {
+        let webhook = SinkWebhookConfiguration {
+            image: self
+                .sink_webhook_image
+                .clone()
+                .unwrap_or_else(|| "quay.io/apibara/sink-webhook:latest".to_string()),
+        };
+
+        Configuration { webhook }
+    }
 }

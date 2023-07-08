@@ -50,8 +50,8 @@ cargo run --bin apibara-sink-postgres -- \
     --stream-url https://mainnet.starknet.a5a.ch \
     --connection-string postgresql://postgres:postgres@localhost:5432/postgres \
     --table-name apibara \
-    --filter @filter.json \
-    --transform @transform.json \
+    --filter /path/to/filter.json \
+    --transform /path/to/transform.js \
     --starting-block 30000 \
     --starknet
 ```
