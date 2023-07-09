@@ -3,7 +3,7 @@ use std::{sync::Arc, time::Duration};
 
 use apibara_node::db::libmdbx::EnvironmentKind;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, info, warn};
+use tracing::{debug, info, trace, warn};
 
 use crate::{
     core::GlobalBlockId,
@@ -28,7 +28,7 @@ struct AcceptedBlockIngestionImpl<G: Provider + Send, E: EnvironmentKind> {
     finalized: Option<GlobalBlockId>,
     previous: GlobalBlockId,
     current_head: GlobalBlockId,
-    pending_ingested: bool,
+    previous_pending_body_size: usize,
     config: BlockIngestionConfig,
     provider: Arc<G>,
     downloader: Downloader<G>,
@@ -89,7 +89,7 @@ where
             current_head,
             finalized,
             previous: latest_indexed,
-            pending_ingested: false,
+            previous_pending_body_size: 0,
             config: self.config,
             provider: self.provider,
             storage: self.storage,
@@ -168,12 +168,7 @@ where
             "check head"
         );
 
-        // synced and pending block ingested. nothing to do until next block.
-        if is_synced && self.pending_ingested {
-            return Ok(TickResult::FullySynced);
-        }
-
-        // synced but no pending block yet. try to ingest pending.
+        // synced, so now keep polling pending block.
         if is_synced {
             self.ingest_pending().await?;
             return Ok(TickResult::FullySynced);
@@ -183,7 +178,6 @@ where
         // this is to avoid fetching the same block too often.
         self.advance_finalized().await?;
 
-        self.pending_ingested = false;
         self.current_head = new_head;
         Ok(TickResult::MoreToSync)
     }
@@ -272,19 +266,31 @@ where
                     return Ok(());
                 }
 
-                // block number is not set, so do it here.
-                header.block_number = self.current_head.number() + 1;
+                let num_txs = body.transactions.len();
+                // Use number of transactions as quick way to check if the pending block
+                // changed.
+                // Only re-fetch pending block data if it changed.
+                trace!(
+                    current_size = %num_txs,
+                    previous_size = %self.previous_pending_body_size,
+                    "check if new pending block"
+                );
 
-                // finish ingesting data.
-                let new_block_id = GlobalBlockId::from_block_header(&header)?;
-                let mut txn = self.storage.begin_txn()?;
-                self.downloader
-                    .finish_ingesting_block(&new_block_id, status, header, body, &mut txn)
-                    .await?;
-                txn.commit()?;
+                if num_txs > self.previous_pending_body_size {
+                    // block number is not set, so do it here.
+                    header.block_number = self.current_head.number() + 1;
 
-                self.pending_ingested = true;
-                self.publisher.publish_pending(new_block_id)?;
+                    // finish ingesting data.
+                    let new_block_id = GlobalBlockId::from_block_header(&header)?;
+                    let mut txn = self.storage.begin_txn()?;
+                    self.downloader
+                        .finish_ingesting_block(&new_block_id, status, header, body, &mut txn)
+                        .await?;
+                    txn.commit()?;
+
+                    self.previous_pending_body_size = num_txs;
+                    self.publisher.publish_pending(new_block_id)?;
+                }
 
                 Ok(())
             }
