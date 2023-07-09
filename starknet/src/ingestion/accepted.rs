@@ -178,6 +178,8 @@ where
         // this is to avoid fetching the same block too often.
         self.advance_finalized().await?;
 
+        // Reset the pending body size to 0, since we are now fetching a new block.
+        self.previous_pending_body_size = 0;
         self.current_head = new_head;
         Ok(TickResult::MoreToSync)
     }
