@@ -332,7 +332,6 @@ where
                 IngestionResponse::Ok
             }
             IngestionMessage::Accepted(cursor) => {
-                state.finalized = None;
                 state.accepted = Some(*cursor);
                 IngestionResponse::Ok
             }
