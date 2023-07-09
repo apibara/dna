@@ -1,10 +1,12 @@
+use std::time::{Duration, Instant};
+
 use apibara_core::node::v1alpha2::{
     stream_data_response, Data, DataFinality, Heartbeat, Invalidate, StreamDataResponse,
 };
 use async_stream::stream;
 use futures::{stream::FusedStream, Stream, StreamExt};
 use prost::Message;
-use tracing::{debug_span, instrument, Instrument};
+use tracing::{debug_span, instrument, trace, Instrument};
 
 use crate::{core::Cursor, server::RequestMeter, stream::BatchCursor};
 
@@ -33,6 +35,9 @@ where
     Box::pin(stream! {
         let mut stream_id = 0;
         let mut has_configuration = false;
+        let mut last_batch_sent = Instant::now();
+        // Send a batch (no matter if empty or not) at least once every this interval.
+        let max_batch_interval = Duration::from_secs(10);
 
         {
             // Some clients (notably tonic) wait for the first message before
@@ -118,7 +123,20 @@ where
                     use stream_data_response::Message;
 
                     match handle_batch_cursor(&mut cursor_producer, &mut batch_producer, batch_cursor, &meter).await {
-                        Ok(data) => {
+                        Ok((data, finality)) => {
+                            let should_send_data =
+                                if !data.data.is_empty() || finality == DataFinality::DataStatusAccepted {
+                                    true
+                                } else {
+                                    last_batch_sent.elapsed() > max_batch_interval
+                                };
+
+                            if !should_send_data {
+                                trace!("skip empty batch");
+                                continue
+                            }
+
+                            last_batch_sent = Instant::now();
                             yield Ok(StreamDataResponse {
                                 stream_id,
                                 message: Some(Message::Data(data)),
@@ -186,7 +204,7 @@ async fn handle_batch_cursor<C, F, B, M>(
     batch_producer: &mut impl BatchProducer<Cursor = C, Filter = F, Block = B>,
     batch_cursor: Result<BatchCursor<C>, StreamError>,
     meter: &M,
-) -> Result<Data, StreamError>
+) -> Result<(Data, DataFinality), StreamError>
 where
     C: Cursor + Send + Sync,
     F: Message + Default + Clone,
@@ -246,12 +264,13 @@ where
                 .collect::<Vec<_>>()
         });
 
-        Ok(Data {
+        let data = Data {
             cursor: start_cursor.map(|cursor| cursor.to_proto()),
             end_cursor: end_cursor.map(|cursor| cursor.to_proto()),
             finality: finality as i32,
             data,
-        })
+        };
+        Ok((data, finality))
     }
     .instrument(handle_batch_span)
     .await
