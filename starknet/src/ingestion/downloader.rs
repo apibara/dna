@@ -81,17 +81,20 @@ where
             .into_iter()
             .collect::<Result<Vec<_>, BlockIngestionError>>()?;
 
-        // pathfinder doesn't support state update for pending data.
-        let state_update = if !global_id.hash().is_zero() {
-            let block_id = BlockId::Hash(*global_id.hash());
-            let state_update = self
-                .provider
-                .get_state_update(&block_id)
-                .await
-                .map_err(BlockIngestionError::provider)?;
-            Some(state_update)
-        } else {
-            None
+        // Not all nodes support state updates for pending blocks.
+        let state_update = {
+            let block_id = {
+                // By convention, the global id of a pending block is all zeros.
+                if global_id.hash().is_zero() {
+                    BlockId::Pending
+                } else {
+                    BlockId::Hash(*global_id.hash())
+                }
+            };
+            match self.provider.get_state_update(&block_id).await {
+                Ok(state_update) => Some(state_update),
+                Err(_) => None,
+            }
         };
 
         // write block status, header, body, receipts and state update to storage

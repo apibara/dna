@@ -64,6 +64,10 @@ impl GlobalBlockId {
         GlobalBlockId(number, hash)
     }
 
+    pub fn from_u64(number: u64) -> Self {
+        Self::new(number, BlockHash::zero())
+    }
+
     pub fn from_cursor(cursor: &Cursor) -> Result<Self, InvalidBlockHashSize> {
         let hash = if cursor.unique_key.is_empty() {
             BlockHash::zero()

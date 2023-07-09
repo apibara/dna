@@ -13,7 +13,7 @@ use apibara_node::{
     },
 };
 use futures::{stream::FusedStream, Stream};
-use tracing::{debug, instrument};
+use tracing::{debug, instrument, trace};
 
 use crate::{core::GlobalBlockId, db::StorageReader};
 
@@ -77,6 +77,14 @@ where
 
         let next_block_number = configuration.current.map(|c| c.number() + 1).unwrap_or(0);
 
+        trace!(
+            next_block_number = %next_block_number,
+            finalized = ?finalized_cursor,
+            accepted = ?accepted_cursor,
+            pending = ?pending_cursor,
+            "deciding which cursor to generate"
+        );
+
         if let Some(finalized) = finalized_cursor {
             if next_block_number <= finalized.number() {
                 return self.next_cursor_finalized(starting_cursor, next_block_number, &finalized);
@@ -98,6 +106,7 @@ where
         Ok(None)
     }
 
+    #[instrument(skip_all, level = "trace")]
     fn next_cursor_finalized(
         &mut self,
         starting_cursor: Option<GlobalBlockId>,
@@ -129,6 +138,7 @@ where
         Ok(Some(batch_cursor))
     }
 
+    #[instrument(skip_all, level = "trace")]
     fn next_cursor_accepted(
         &mut self,
         starting_cursor: Option<GlobalBlockId>,
@@ -151,6 +161,7 @@ where
         }
     }
 
+    #[instrument(skip_all, level = "trace")]
     fn next_cursor_pending(
         &mut self,
         starting_cursor: Option<GlobalBlockId>,
@@ -163,14 +174,14 @@ where
             return Ok(None);
         }
 
-        match self.storage.canonical_block_id(next_block_number)? {
-            Some(cursor) => {
-                let batch_cursor = BatchCursor::new_pending(starting_cursor, cursor);
-                configuration.pending_sent = true;
-                Ok(Some(batch_cursor))
-            }
-            None => Ok(None),
-        }
+        // Cursor won't be part of the canonical chain since it's not accepted yet.
+        // Optimistically send the pending block cursor since if we reached this point it's
+        // already been produced.
+        let cursor = GlobalBlockId::from_u64(next_block_number);
+        let batch_cursor = BatchCursor::new_pending(starting_cursor, cursor);
+        trace!(cursor = ?batch_cursor, "sending pending data");
+        configuration.pending_sent = true;
+        Ok(Some(batch_cursor))
     }
 
     fn get_ingestion_state(&mut self) -> Result<&IngestionState, R::Error> {
