@@ -1,0 +1,114 @@
+version: 2.1
+
+derivations: &derivations
+  derivation:
+    - starknet
+    - sink-webhook
+    - sink-mongo
+    - sink-postgres
+    - sink-parquet
+
+orbs:
+  nix: eld/nix@1.1.1
+
+commands:
+  with-cachix:
+    parameters:
+      command:
+        type: string
+    steps:
+      - nix/with-cachix:
+          cache-name: apibara-public
+          cachix-user: apibara-public
+          nix-command: << parameters.command >>
+  setup:
+    steps:
+      - nix/install:
+          extra-conf: |
+            accept-flake-config = true
+            trusted-users = root $USER
+            sandbox = false
+      - nix/install-cachix
+      - run: nix-store --verify --repair --check-contents
+      - run: nix doctor -v
+      - checkout
+
+executors:
+  linux-x86_64:
+    machine:
+      image: ubuntu-2204:2023.04.2
+    resource_class: medium
+  linux-aarch64:
+    machine:
+      image: ubuntu-2204:2023.04.2
+    resource_class: arm.medium
+
+jobs:
+  run_checks:
+    executor: linux-x86_64
+    steps:
+      - setup
+      - with-cachix:
+          command: nix flake check
+
+  run_tests:
+    executor: linux-x86_64
+    steps:
+      - setup
+      - with-cachix:
+          command: nix build .#tests -L
+      - run:
+          name: unit tests
+          command: |
+            for testBin in ./result/bin/*; do
+              ./${testBin}
+            done
+      - run:
+          name: integration tests
+          command: |
+            for testBin in ./result/bin/*; do
+              # ./${testBin} --ignored
+              # Needs docker installed
+              echo "SKIP ${testBin}"
+            done
+
+  build_artifacts:
+    parameters:
+      ex:
+        type: executor
+      derivation:
+        type: string
+    executor: << parameters.ex >>
+    steps:
+      - setup
+      - with-cachix:
+          command: nix build .#<< parameters.derivation >> -L
+      - store_artifacts:
+          path: ./result/bin/apibara-<< parameters.derivation >>
+          destination: << parameters.derivation >>
+      - with-cachix:
+          command: nix build .#<< parameters.derivation >>-image -L
+      - run: ls -l .
+      - store_artifacts:
+          path: ./result
+          destination: << parameters.derivation >>-image
+
+workflows:
+  check_and_build:
+    jobs:
+      - run_checks:
+          name: Checks
+      - run_tests:
+          name: Tests
+          requires:
+            - Checks
+      - build_artifacts:
+          name: Build derivation=<< matrix.derivation >> target=<< matrix.ex >>
+          requires:
+            - Tests
+          matrix:
+            parameters:
+              <<: *derivations
+              ex:
+                - linux-x86_64
+                - linux-aarch64
