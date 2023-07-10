@@ -2,7 +2,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   namespace: default
-  name: avnu-swaps
+  name: example-config
 data:
   # AVNU exchange swap events, on Starknet Goerli testnet.
   filter.json: |
@@ -20,4 +20,20 @@ data:
     // Return the batch as is
     export default function transform(batch) {
       return batch;
+    }
+
+  # A filter that's not valid and will cause the sink to break.
+  brokenFilter.json: |
+    {
+      "invalidField": {}
+    }
+
+  # An invalid javascript file (syntax error)
+  brokenTransform.js: |
+    export default function transform(batch) {
+
+  # Throw an exception
+  throwingTransform.js: |
+    export default function transform(batch) {
+      throw new Error('Error inside transform');
     }

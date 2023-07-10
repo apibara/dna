@@ -79,6 +79,59 @@ impl SinkWebhook {
         let pods: Api<Pod> = Api::namespaced(ctx.client.clone(), &ns);
         let webhooks: Api<SinkWebhook> = Api::namespaced(ctx.client.clone(), &ns);
 
+        // Check if there is a pod associated with this sink.
+        let existing_pod = if let Some(pod_name) = self
+            .status
+            .as_ref()
+            .and_then(|status| status.common.instance_name.as_ref())
+        {
+            pods.get_opt(pod_name).await?
+        } else {
+            None
+        };
+
+        let mut restart_increment = 0;
+        let mut error_condition = None;
+        if let Some(existing_pod) = existing_pod {
+            // The pod exists. Is it running?
+            let container_status = existing_pod.status.as_ref().and_then(|status| {
+                status
+                    .container_statuses
+                    .as_ref()
+                    .and_then(|statuses| statuses.first())
+            });
+
+            let container_finished_at = container_status
+                .and_then(|cs| cs.state.as_ref())
+                .and_then(|st| st.terminated.clone())
+                .and_then(|ts| ts.finished_at);
+
+            // Delete pod so that the next section will recreate a new one.
+            // For now, delete once every minute.
+            // TODO: should depend on the exit code.
+            if let Some(finished_at) = container_finished_at {
+                let elapsed = (Utc::now().time() - finished_at.0.time())
+                    .to_std()
+                    .unwrap_or_default();
+
+                if elapsed > Duration::from_secs(60) {
+                    info!(pod = %existing_pod.name_any(), "deleting pod");
+                    pods.delete(&existing_pod.name_any(), &DeleteParams::default())
+                        .await?;
+                    restart_increment = 1;
+                } else {
+                    error_condition = Some(Condition {
+                        last_transition_time: finished_at,
+                        type_: "PodTerminated".to_string(),
+                        message: "Pod has been terminated".to_string(),
+                        observed_generation: self.meta().generation,
+                        reason: "PodTerminate".to_string(),
+                        status: "False".to_string(),
+                    });
+                }
+            }
+        }
+
         let metadata = self.object_metadata(&ctx);
         let spec = self.pod_spec(&ctx);
         let pod_manifest = Pod {
@@ -100,7 +153,7 @@ impl SinkWebhook {
                 .meta()
                 .creation_timestamp
                 .clone()
-                .unwrap_or_else(|| meta::v1::Time(DateTime::<Utc>::MIN_UTC)),
+                .unwrap_or(meta::v1::Time(DateTime::<Utc>::MIN_UTC)),
             type_: "PodScheduled".to_string(),
             message: "Pod has been scheduled".to_string(),
             observed_generation: self.meta().generation,
@@ -108,21 +161,30 @@ impl SinkWebhook {
             status: "True".to_string(),
         };
 
-        let sink_restart_count = pod.status.as_ref().and_then(|status| {
-            status
-                .container_statuses
-                .as_ref()
-                .and_then(|statuses| statuses.first().map(|container| container.restart_count))
-        });
+        let phase = if error_condition.is_some() {
+            "Error".to_string()
+        } else {
+            "Running".to_string()
+        };
+
+        let mut conditions = vec![pod_scheduled_condition];
+        if let Some(condition) = error_condition {
+            conditions.push(condition);
+        }
+
+        let restart_count = self
+            .status
+            .as_ref()
+            .map(|status| status.common.restart_count.unwrap_or_default() + restart_increment);
 
         let status = json!({
             "status": SinkWebhookStatus {
                 common: CommonStatus {
                     pod_created: pod.meta().creation_timestamp.clone(),
                     instance_name: pod.meta().name.clone(),
-                    phase: Some("Running".to_string()),
-                    conditions: Some(vec![pod_scheduled_condition]),
-                    restart_count: sink_restart_count,
+                    phase: Some(phase),
+                    conditions: Some(conditions),
+                    restart_count,
                 }
             }
         });
@@ -243,6 +305,7 @@ impl SinkWebhook {
             containers: vec![container],
             volumes: Some(volumes),
             image_pull_secrets,
+            restart_policy: Some("Never".to_string()),
             ..PodSpec::default()
         }
     }
