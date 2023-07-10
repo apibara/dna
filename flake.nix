@@ -43,6 +43,13 @@
               "7171/tcp" = { };
             };
           };
+          operator = {
+            description = "The Apibara Kubernetese Operator";
+            path = ./operator;
+            ports = {
+              "8118/tcp" = { };
+            };
+          };
           sink-webhook = {
             description = "Integration to connect onchain data to HTTP endpoints";
             path = ./sink-webhook;
