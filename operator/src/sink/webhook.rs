@@ -8,7 +8,7 @@ use super::common::{CommonSpec, CommonStatus};
 pub type HeaderValueSource = EnvVarSource;
 
 /// Run a sink that invokes a webhook for each batch of data.
-#[derive(CustomResource, Deserialize, Serialize, Clone, Debug, JsonSchema)]
+#[derive(CustomResource, Deserialize, Serialize, Clone, Debug, Default, JsonSchema)]
 #[kube(
     kind = "SinkWebhook",
     group = "apibara.com",

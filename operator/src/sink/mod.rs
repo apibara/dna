@@ -3,4 +3,5 @@ pub mod webhook;
 #[cfg(feature = "operator")]
 pub mod webhook_controller;
 
-pub use webhook::{SinkWebhook, SinkWebhookSpec, SinkWebhookStatus};
+pub use common::*;
+pub use webhook::*;
