@@ -12,7 +12,7 @@ pub type MetadataValueSource = EnvVarSource;
 pub type AuthTokenValueSource = EnvVarSource;
 
 /// Common configuration between all sinks.
-#[derive(Deserialize, Serialize, Clone, Debug, JsonSchema)]
+#[derive(Deserialize, Serialize, Clone, Debug, Default, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CommonSpec {
     pub stream: StreamSpec,
@@ -23,7 +23,7 @@ pub struct CommonSpec {
 }
 
 /// Configure the image used to run the sink.
-#[derive(Deserialize, Serialize, Clone, Debug, JsonSchema)]
+#[derive(Deserialize, Serialize, Clone, Debug, Default, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ImageSpec {
     /// Name of the container image to run.
@@ -39,7 +39,7 @@ pub struct ImageSpec {
 }
 
 /// Metadata that will be inherited by all resources created by the sink.
-#[derive(Deserialize, Serialize, Clone, Debug, JsonSchema)]
+#[derive(Deserialize, Serialize, Clone, Debug, Default, JsonSchema)]
 pub struct InheritedMetadataSpec {
     /// Annotations to add to the resources.
     pub annotations: Option<serde_json::Map<String, serde_json::Value>>,
@@ -61,7 +61,7 @@ pub struct PersistenceSpec {
 }
 
 /// DNA stream configuration.
-#[derive(Deserialize, Serialize, Clone, Debug, JsonSchema)]
+#[derive(Deserialize, Serialize, Clone, Debug, Default, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct StreamSpec {
     /// URL of the stream. Must start with `http` or `https`.
@@ -89,7 +89,7 @@ pub struct StreamSpec {
 }
 
 /// Use a filter to select which data to stream.
-#[derive(Deserialize, Serialize, Clone, Debug, JsonSchema)]
+#[derive(Deserialize, Serialize, Clone, Debug, Default, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct FilterSource {
     /// Filter from ConfigMap.
@@ -121,10 +121,11 @@ pub enum FinalitySpec {
 }
 
 /// Type of network.
-#[derive(Deserialize, Serialize, Clone, Debug, JsonSchema)]
+#[derive(Deserialize, Serialize, Clone, Debug, Default, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum NetworkTypeSpec {
     /// Starknet L2 and appchains.
+    #[default]
     Starknet,
 }
 
