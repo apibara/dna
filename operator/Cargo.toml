@@ -11,6 +11,10 @@ path = "src/lib.rs"
 name = "apibara-operator"
 path = "src/bin.rs"
 
+[features]
+default = ["operator"]
+operator = []
+
 [dependencies]
 anyhow.workspace = true
 apibara-observability = { path = "../observability" }
