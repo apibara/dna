@@ -14,6 +14,10 @@ struct Cli {
     /// Additional headers to send with the request.
     #[arg(long, short = 'H', env, value_delimiter = ',')]
     header: Vec<String>,
+    #[arg(long, env, action)]
+    /// Send the data received from the transform step as is, this is useful for
+    /// Discord/Telegram/... APIs
+    raw: bool,
     #[command(flatten)]
     configuration: ConfigurationArgs,
 }
@@ -23,7 +27,7 @@ async fn main() -> anyhow::Result<()> {
     init_opentelemetry()?;
     let args = Cli::parse();
 
-    let sink = WebhookSink::new(args.target_url)?.with_headers(&args.header)?;
+    let sink = WebhookSink::new(args.target_url, args.raw)?.with_headers(&args.header)?;
     let ct = CancellationToken::new();
     let connector = SinkConnector::<Filter, Block>::from_configuration_args(args.configuration)?;
 
