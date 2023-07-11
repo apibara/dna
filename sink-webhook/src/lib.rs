@@ -33,15 +33,17 @@ pub struct WebhookSink {
     client: Client,
     target_url: String,
     headers: HeaderMap,
+    raw: bool,
 }
 
 impl WebhookSink {
-    pub fn new(target_url: String) -> Result<Self, InvalidUri> {
+    pub fn new(target_url: String, raw: bool) -> Result<Self, InvalidUri> {
         let _ = Uri::from_str(&target_url)?;
         Ok(Self {
             client: Client::new(),
             target_url,
             headers: HeaderMap::new(),
+            raw: raw,
         })
     }
 
@@ -109,20 +111,27 @@ impl Sink for WebhookSink {
             "webhook: calling with data"
         );
 
-        let body = json!({
-            "data": {
-                "cursor": cursor,
-                "end_cursor": end_cursor,
-                "finality": finality,
-                "batch": batch,
-            },
-        });
-
-        self.send(&body).await
+        if self.raw {
+            self.send(&batch).await
+        } else {
+            let body = &json!({
+                "data": {
+                    "cursor": cursor,
+                    "end_cursor": end_cursor,
+                    "finality": finality,
+                    "batch": batch,
+                },
+            });
+            self.send(&body).await
+        }
     }
 
     #[instrument(skip(self), err(Debug))]
     async fn handle_invalidate(&mut self, cursor: &Option<Cursor>) -> Result<(), Self::Error> {
+        if self.raw {
+            return Ok(());
+        }
+
         let cursor_str = cursor
             .clone()
             .map(|c| c.to_string())
