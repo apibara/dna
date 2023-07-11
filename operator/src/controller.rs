@@ -15,7 +15,7 @@ use tracing::{info, warn};
 use crate::{
     configuration::Configuration,
     reconcile::{Context, Error},
-    sink::webhook,
+    sink::webhook_controller,
 };
 
 pub type ReconcileItem<K> = Result<(ObjectRef<K>, Action), ControllerError<Error, WatcherError>>;
@@ -27,7 +27,7 @@ pub async fn start(client: Client, configuration: Configuration) -> Result<(), E
         client,
         configuration,
     };
-    let webhook_controller = webhook::start_controller(ctx.clone()).await?;
+    let webhook_controller = webhook_controller::start_controller(ctx.clone()).await?;
 
     run_controller_to_end(webhook_controller).await;
 
