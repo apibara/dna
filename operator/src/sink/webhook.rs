@@ -28,6 +28,8 @@ pub struct SinkWebhookSpec {
     pub target_url: String,
     /// Additional headers to send with the request.
     pub headers: Option<Vec<HeaderSpec>>,
+    /// Send raw data to the webhook.
+    pub raw: Option<bool>,
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug, JsonSchema, PartialEq)]

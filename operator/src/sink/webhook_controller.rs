@@ -221,6 +221,14 @@ impl SinkWebhook {
             ..EnvVar::default()
         }];
 
+        if self.spec.raw.unwrap_or(false) {
+            env.push(EnvVar {
+                name: "RAW".to_string(),
+                value: Some("true".to_string()),
+                ..EnvVar::default()
+            });
+        }
+
         // TODO: add headers environment variable, like METADATA
 
         env.extend(self.spec.common.to_env_var());

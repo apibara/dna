@@ -5,6 +5,8 @@ metadata:
   name: webhook-example
 spec:
   targetUrl: https://enytfqs94k13k.x.pipedream.net/
+  # optionally, enable raw mode
+  # raw: true
   headers:
     - name: x-my-header
       value: "test value"
