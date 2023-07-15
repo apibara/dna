@@ -43,7 +43,7 @@ impl WebhookSink {
             client: Client::new(),
             target_url,
             headers: HeaderMap::new(),
-            raw: raw,
+            raw,
         })
     }
 
