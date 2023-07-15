@@ -4,7 +4,7 @@ metadata:
   namespace: default
   name: webhook-example
 spec:
-  targetUrl: https://devnull-as-a-service.com/dev/null
+  targetUrl: https://enytfqs94k13k.x.pipedream.net/
   headers:
     - name: x-my-header
       value: "test value"
