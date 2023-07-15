@@ -7,6 +7,7 @@ pub mod v1alpha2 {
     };
 
     tonic::include_proto!("apibara.node.v1alpha2");
+    tonic::include_proto!("apibara.node.v1alpha2.serde");
 
     pub(crate) const FILE_DESCRIPTOR_SET: &[u8] =
         tonic::include_file_descriptor_set!("node_v1alpha2_descriptor");
@@ -21,9 +22,9 @@ pub mod v1alpha2 {
             S: Serializer,
         {
             let mut state = serializer.serialize_struct("Cursor", 2)?;
-            state.serialize_field("order_key", &self.order_key)?;
+            state.serialize_field("orderKey", &self.order_key)?;
             let hex_key = format!("0x{}", hex::encode(&self.unique_key));
-            state.serialize_field("unique_key", &hex_key)?;
+            state.serialize_field("uniqueKey", &hex_key)?;
             state.end()
         }
     }
@@ -36,21 +37,6 @@ pub mod v1alpha2 {
                 self.order_key,
                 hex::encode(&self.unique_key)
             )
-        }
-    }
-
-    impl Serialize for DataFinality {
-        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where
-            S: Serializer,
-        {
-            let as_str = match self {
-                DataFinality::DataStatusFinalized => "finalized",
-                DataFinality::DataStatusAccepted => "accepted",
-                DataFinality::DataStatusPending => "pending",
-                DataFinality::DataStatusUnknown => "unknown",
-            };
-            serializer.serialize_str(as_str)
         }
     }
 
@@ -78,10 +64,10 @@ pub mod v1alpha2 {
                     let mut unique_key = None;
                     while let Some(key) = map.next_key()? {
                         match key {
-                            "order_key" => {
+                            "orderKey" => {
                                 order_key = Some(map.next_value()?);
                             }
-                            "unique_key" => {
+                            "uniqueKey" => {
                                 let hex_value: &str = map.next_value()?;
                                 if !hex_value.starts_with("0x") {
                                     return Err(de::Error::invalid_value(
@@ -100,15 +86,15 @@ pub mod v1alpha2 {
                             field => {
                                 return Err(de::Error::unknown_field(
                                     field,
-                                    &["order_key", "unique_key"],
+                                    &["orderKey", "uniqueKey"],
                                 ))
                             }
                         }
                     }
                     let order_key =
-                        order_key.ok_or_else(|| de::Error::missing_field("order_key"))?;
+                        order_key.ok_or_else(|| de::Error::missing_field("orderKey"))?;
                     let unique_key =
-                        unique_key.ok_or_else(|| de::Error::missing_field("unique_key"))?;
+                        unique_key.ok_or_else(|| de::Error::missing_field("uniqueKey"))?;
                     Ok(Cursor {
                         order_key,
                         unique_key,
@@ -116,26 +102,8 @@ pub mod v1alpha2 {
                 }
             }
 
-            const FIELDS: &[&str] = &["order_key", "unique_key"];
+            const FIELDS: &[&str] = &["orderKey", "uniqueKey"];
             deserializer.deserialize_struct("Cursor", FIELDS, CursorVisitor)
-        }
-    }
-
-    impl<'de> Deserialize<'de> for DataFinality {
-        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-        where
-            D: Deserializer<'de>,
-        {
-            match Deserialize::deserialize(deserializer)? {
-                "finalized" => Ok(DataFinality::DataStatusFinalized),
-                "accepted" => Ok(DataFinality::DataStatusAccepted),
-                "pending" => Ok(DataFinality::DataStatusPending),
-                "unknown" => Ok(DataFinality::DataStatusUnknown),
-                value => Err(de::Error::unknown_variant(
-                    value,
-                    &["finalized", "accepted", "pending", "unknown"],
-                )),
-            }
         }
     }
 }
@@ -151,7 +119,7 @@ mod tests {
             unique_key: vec![0, 1, 2, 3],
         };
         let serialized = serde_json::to_string(&cursor).unwrap();
-        assert_eq!(serialized, r#"{"order_key":1,"unique_key":"0x00010203"}"#);
+        assert_eq!(serialized, r#"{"orderKey":1,"uniqueKey":"0x00010203"}"#);
         let back: super::v1alpha2::Cursor = serde_json::from_str(&serialized).unwrap();
         assert_eq!(cursor, back);
     }
@@ -159,22 +127,22 @@ mod tests {
     #[test]
     fn test_data_finality_serialization() {
         let serialized = serde_json::to_string(&DataFinality::DataStatusUnknown).unwrap();
-        assert_eq!(serialized, r#""unknown""#);
+        assert_eq!(serialized, r#""DATA_STATUS_UNKNOWN""#);
         let back: DataFinality = serde_json::from_str(&serialized).unwrap();
         assert_eq!(back, DataFinality::DataStatusUnknown);
 
         let serialized = serde_json::to_string(&DataFinality::DataStatusPending).unwrap();
-        assert_eq!(serialized, r#""pending""#);
+        assert_eq!(serialized, r#""DATA_STATUS_PENDING""#);
         let back: DataFinality = serde_json::from_str(&serialized).unwrap();
         assert_eq!(back, DataFinality::DataStatusPending);
 
         let serialized = serde_json::to_string(&DataFinality::DataStatusAccepted).unwrap();
-        assert_eq!(serialized, r#""accepted""#);
+        assert_eq!(serialized, r#""DATA_STATUS_ACCEPTED""#);
         let back: DataFinality = serde_json::from_str(&serialized).unwrap();
         assert_eq!(back, DataFinality::DataStatusAccepted);
 
         let serialized = serde_json::to_string(&DataFinality::DataStatusFinalized).unwrap();
-        assert_eq!(serialized, r#""finalized""#);
+        assert_eq!(serialized, r#""DATA_STATUS_FINALIZED""#);
         let back: DataFinality = serde_json::from_str(&serialized).unwrap();
         assert_eq!(back, DataFinality::DataStatusFinalized);
     }

@@ -5,6 +5,9 @@ static STARKNET_DESCRIPTOR_FILE: &str = "starknet_v1alpha2_descriptor.bin";
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
+    println!("cargo:rerun-if-changed=proto/node/v1alpha2/stream.proto");
+    println!("cargo:rerun-if-changed=proto/starknet/v1alpha2/starknet.proto");
+    println!("cargo:rerun-if-changed=proto/starknet/v1alpha2/filter.proto");
 
     tonic_build::configure()
         .build_client(true)
@@ -28,11 +31,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             &["proto/starknet"],
         )?;
 
+    // only add jsonpb definitions for finality. cursor is implemented manually.
+    let node_description_set = std::fs::read(out_dir.join(NODE_DESCRIPTOR_FILE))?;
+    pbjson_build::Builder::new()
+        .register_descriptors(&node_description_set)?
+        .exclude([".apibara.node.v1alpha2.Cursor"])
+        .build(&[".apibara"])?;
+
     // add jsonpb definitions, but only for the data types
     let starknet_description_set = std::fs::read(out_dir.join(STARKNET_DESCRIPTOR_FILE))?;
     pbjson_build::Builder::new()
         .register_descriptors(&starknet_description_set)?
         .exclude([".apibara.starknet.v1alpha2.FieldElement"])
         .build(&[".apibara"])?;
+
     Ok(())
 }
