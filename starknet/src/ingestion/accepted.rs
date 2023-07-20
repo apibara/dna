@@ -250,53 +250,48 @@ where
         // some node configurations don't support pending data.
         // in that case, simply ignore any error.
 
-        match self.provider.get_block(&BlockId::Pending).await {
-            Err(_) => {
-                // cannot set pending ingested here because pathfinder returns
-                // an error if the pending block is not prepared yet.
-                Ok(())
-            }
-            Ok((status, mut header, body)) => {
-                // pending block is not what was expected. do nothing.
-                let is_next_pending_block = if let Some(hash) = header.parent_block_hash.as_ref() {
-                    *self.current_head.hash() == hash.into()
-                } else {
-                    false
-                };
+        let Some((status, mut header, body)) = self.provider.get_maybe_block(&BlockId::Pending).await else {
+            return Ok(())
+        };
 
-                if !is_next_pending_block {
-                    return Ok(());
-                }
+        // pending block is not what was expected. do nothing.
+        let is_next_pending_block = if let Some(hash) = header.parent_block_hash.as_ref() {
+            *self.current_head.hash() == hash.into()
+        } else {
+            false
+        };
 
-                let num_txs = body.transactions.len();
-                // Use number of transactions as quick way to check if the pending block
-                // changed.
-                // Only re-fetch pending block data if it changed.
-                trace!(
-                    current_size = %num_txs,
-                    previous_size = %self.previous_pending_body_size,
-                    "check if new pending block"
-                );
-
-                if num_txs > self.previous_pending_body_size {
-                    // block number is not set, so do it here.
-                    header.block_number = self.current_head.number() + 1;
-
-                    // finish ingesting data.
-                    let new_block_id = GlobalBlockId::from_block_header(&header)?;
-                    let mut txn = self.storage.begin_txn()?;
-                    self.downloader
-                        .finish_ingesting_block(&new_block_id, status, header, body, &mut txn)
-                        .await?;
-                    txn.commit()?;
-
-                    self.previous_pending_body_size = num_txs;
-                    self.publisher.publish_pending(new_block_id)?;
-                }
-
-                Ok(())
-            }
+        if !is_next_pending_block {
+            return Ok(());
         }
+
+        let num_txs = body.transactions.len();
+        // Use number of transactions as quick way to check if the pending block
+        // changed.
+        // Only re-fetch pending block data if it changed.
+        trace!(
+            current_size = %num_txs,
+            previous_size = %self.previous_pending_body_size,
+            "check if new pending block"
+        );
+
+        if num_txs > self.previous_pending_body_size {
+            // block number is not set, so do it here.
+            header.block_number = self.current_head.number() + 1;
+
+            // finish ingesting data.
+            let new_block_id = GlobalBlockId::from_block_header(&header)?;
+            let mut txn = self.storage.begin_txn()?;
+            self.downloader
+                .finish_ingesting_block(&new_block_id, status, header, body, &mut txn)
+                .await?;
+            txn.commit()?;
+
+            self.previous_pending_body_size = num_txs;
+            self.publisher.publish_pending(new_block_id)?;
+        }
+
+        Ok(())
     }
 
     #[tracing::instrument(skip(self))]
