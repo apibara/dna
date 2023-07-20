@@ -39,6 +39,12 @@ pub trait Provider {
         id: &BlockId,
     ) -> Result<(v1alpha2::BlockStatus, v1alpha2::BlockHeader, BlockBody), Self::Error>;
 
+    /// Get a specific block, return `None` if the block doesn't exist.
+    async fn get_maybe_block(
+        &self,
+        id: &BlockId,
+    ) -> Option<(v1alpha2::BlockStatus, v1alpha2::BlockHeader, BlockBody)>;
+
     /// Get state update for a specific block.
     async fn get_state_update(&self, id: &BlockId) -> Result<v1alpha2::StateUpdate, Self::Error>;
 
@@ -79,6 +85,39 @@ impl HttpProvider {
         let http = HttpTransport::new(rpc_url);
         let provider = JsonRpcClient::new(http);
         HttpProvider { provider }
+    }
+
+    async fn get_block_by_id(
+        &self,
+        id: &BlockId,
+    ) -> Result<(v1alpha2::BlockStatus, v1alpha2::BlockHeader, BlockBody), HttpProviderError> {
+        let block_id: models::BlockId = id.try_into()?;
+        let block = self
+            .provider
+            .get_block_with_txs(block_id)
+            .await
+            .map_err(HttpProviderError::from_provider_error)?;
+
+        match block {
+            models::MaybePendingBlockWithTxs::Block(ref block) => {
+                if id.is_pending() {
+                    return Err(HttpProviderError::UnexpectedPendingBlock);
+                }
+                let status = block.to_proto();
+                let header = block.to_proto();
+                let body = block.to_proto();
+                Ok((status, header, body))
+            }
+            models::MaybePendingBlockWithTxs::PendingBlock(ref block) => {
+                if !id.is_pending() {
+                    return Err(HttpProviderError::ExpectedPendingBlock);
+                }
+                let status = block.to_proto();
+                let header = block.to_proto();
+                let body = block.to_proto();
+                Ok((status, header, body))
+            }
+        }
     }
 }
 
@@ -143,33 +182,15 @@ impl Provider for HttpProvider {
         &self,
         id: &BlockId,
     ) -> Result<(v1alpha2::BlockStatus, v1alpha2::BlockHeader, BlockBody), Self::Error> {
-        let block_id: models::BlockId = id.try_into()?;
-        let block = self
-            .provider
-            .get_block_with_txs(block_id)
-            .await
-            .map_err(HttpProviderError::from_provider_error)?;
+        self.get_block_by_id(id).await
+    }
 
-        match block {
-            models::MaybePendingBlockWithTxs::Block(ref block) => {
-                if id.is_pending() {
-                    return Err(HttpProviderError::UnexpectedPendingBlock);
-                }
-                let status = block.to_proto();
-                let header = block.to_proto();
-                let body = block.to_proto();
-                Ok((status, header, body))
-            }
-            models::MaybePendingBlockWithTxs::PendingBlock(ref block) => {
-                if !id.is_pending() {
-                    return Err(HttpProviderError::ExpectedPendingBlock);
-                }
-                let status = block.to_proto();
-                let header = block.to_proto();
-                let body = block.to_proto();
-                Ok((status, header, body))
-            }
-        }
+    #[tracing::instrument(skip(self))]
+    async fn get_maybe_block(
+        &self,
+        id: &BlockId,
+    ) -> Option<(v1alpha2::BlockStatus, v1alpha2::BlockHeader, BlockBody)> {
+        self.get_block_by_id(id).await.ok()
     }
 
     #[tracing::instrument(skip(self), err(Debug))]
