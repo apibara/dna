@@ -12,16 +12,18 @@ use opentelemetry::{
     trace::TraceError,
 };
 use opentelemetry_otlp::WithExportConfig;
-use tracing::dispatcher::SetGlobalDefaultError;
+use tracing::{dispatcher::SetGlobalDefaultError, Subscriber};
 
 pub use opentelemetry::metrics::{ObservableCounter, ObservableGauge};
 pub use opentelemetry::{Context, Key, KeyValue};
 use tracing_opentelemetry::MetricsLayer;
-use tracing_subscriber::{filter, prelude::*, EnvFilter};
+use tracing_subscriber::{prelude::*, registry::LookupSpan, EnvFilter, Layer};
 
 pub use opentelemetry::metrics::{Counter, Meter};
 
 const OTEL_SDK_DISABLED: &str = "OTEL_SDK_DISABLED";
+
+pub type BoxedLayer<S> = Box<dyn Layer<S> + Send + Sync>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum OpenTelemetryInitError {
@@ -49,29 +51,25 @@ pub fn init_opentelemetry() -> Result<(), OpenTelemetryInitError> {
         std::env::set_var("RUST_LOG", "info");
     }
 
-    if sdk_disabled {
-        init_opentelemetry_no_sdk()
-    } else {
-        init_opentelemetry_with_sdk()
+    let mut layers = vec![stdout()];
+
+    if !sdk_disabled {
+        let otel_layer = otel()?;
+        layers.push(otel_layer);
     }
-}
 
-fn init_opentelemetry_no_sdk() -> Result<(), OpenTelemetryInitError> {
-    let log_env_filter =
-        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("INFO"));
-    let logtree_layer = tracing_tree::HierarchicalLayer::new(2).and_then(log_env_filter);
+    tracing_subscriber::registry().with(layers).init();
 
-    tracing_subscriber::Registry::default()
-        .with(logtree_layer)
-        .init();
     Ok(())
 }
 
-fn init_opentelemetry_with_sdk() -> Result<(), OpenTelemetryInitError> {
+fn otel<S>() -> Result<BoxedLayer<S>, OpenTelemetryInitError>
+where
+    S: Subscriber + Send + Sync,
+    for<'a> S: LookupSpan<'a>,
+{
     // filter traces by crate/level
     let otel_env_filter =
-        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("INFO"));
-    let log_env_filter =
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("INFO"));
 
     // Both tracer and meter are configured with environment variables.
@@ -96,19 +94,35 @@ fn init_opentelemetry_with_sdk() -> Result<(), OpenTelemetryInitError> {
     let otel_metrics_layer = MetricsLayer::new(meter);
     let otel_layer = otel_trace_layer
         .and_then(otel_metrics_layer)
-        .and_then(otel_env_filter);
+        .and_then(otel_env_filter)
+        .boxed();
+    Ok(otel_layer)
+}
 
-    // display traces on stdout
-    let logtree_layer = tracing_tree::HierarchicalLayer::new(2)
-        .and_then(log_env_filter)
-        .with_filter(filter::filter_fn(|metadata| {
-            metadata.fields().field("data.is_metrics").is_none()
-        }));
+fn stdout<S>() -> BoxedLayer<S>
+where
+    S: Subscriber,
+    for<'a> S: LookupSpan<'a>,
+{
+    let log_env_filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("INFO"));
 
-    tracing_subscriber::Registry::default()
-        .with(otel_layer)
-        .with(logtree_layer)
-        .init();
+    let json_fmt = std::env::var("RUST_LOG_FORMAT")
+        .map(|val| val == "json")
+        .unwrap_or(false);
 
-    Ok(())
+    if json_fmt {
+        tracing_subscriber::fmt::layer()
+            .with_ansi(false)
+            .with_target(true)
+            .json()
+            .with_filter(log_env_filter)
+            .boxed()
+    } else {
+        tracing_subscriber::fmt::layer()
+            .with_ansi(true)
+            .with_target(true)
+            .with_filter(log_env_filter)
+            .boxed()
+    }
 }
