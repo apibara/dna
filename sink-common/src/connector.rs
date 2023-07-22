@@ -255,6 +255,103 @@ where
         Ok(())
     }
 
+    async fn handle_invalidate<S>(
+        &mut self,
+        sink: &mut S,
+        cursor: Option<Cursor>,
+        persistence: Option<&mut PersistenceClient>,
+        ct: CancellationToken,
+    ) -> Result<(), SinkConnectorError>
+    where
+        S: Sink + Sync + Send,
+    {
+        debug!(cursor = ?cursor, "received invalidate");
+        for duration in &self.backoff {
+            match sink.handle_invalidate(&cursor).await {
+                Ok(_) => {
+                    if let Some(persistence) = persistence {
+                        // if the sink started streaming from the genesis block
+                        // and if the genesis block has been reorged, delete the
+                        // stored cursor value to restart from genesis.
+                        match cursor {
+                            None => {
+                                persistence.delete_cursor().await?;
+                            }
+                            Some(cursor) => {
+                                persistence.put_cursor(cursor).await?;
+                            }
+                        }
+                    }
+                    return Ok(());
+                }
+                Err(err) => {
+                    warn!(err = ?err, "handle_invalidate error");
+                    if ct.is_cancelled() {
+                        return Err(SinkConnectorError::Sink(err.into()));
+                    }
+                    tokio::select! {
+                        _ = tokio::time::sleep(duration) => {},
+                        _ = ct.cancelled() => {
+                            return Ok(())
+                        }
+                    };
+                }
+            }
+        }
+        Err(SinkConnectorError::MaximumRetriesExceeded)
+    }
+
+    async fn handle_data<S, D>(
+        &mut self,
+        sink: &mut S,
+        cursor: Option<Cursor>,
+        end_cursor: Cursor,
+        finality: DataFinality,
+        batch: Vec<D>,
+        persistence: Option<&mut PersistenceClient>,
+        ct: CancellationToken,
+    ) -> Result<(), SinkConnectorError>
+    where
+        S: Sink + Sync + Send,
+        D: Message + Default + Serialize,
+    {
+        trace!(cursor = ?cursor, end_cursor = ?end_cursor, "received data");
+        let data = if let Some(transformer) = &mut self.transformer {
+            let json_batch = serde_json::to_value(&batch)?;
+            let result = transformer.transform(&json_batch).await?;
+            json!(result)
+        } else {
+            json!(batch)
+        };
+        for duration in &self.backoff {
+            match sink
+                .handle_data(&cursor, &end_cursor, &finality, &data)
+                .await
+            {
+                Ok(_) => {
+                    if let Some(persistence) = persistence {
+                        persistence.put_cursor(end_cursor).await?;
+                    }
+
+                    return Ok(());
+                }
+                Err(err) => {
+                    warn!(err = ?err, "handle_data error");
+                    if ct.is_cancelled() {
+                        return Err(SinkConnectorError::Sink(err.into()));
+                    }
+                    tokio::select! {
+                        _ = tokio::time::sleep(duration) => {},
+                        _ = ct.cancelled() => {
+                            return Ok(())
+                        }
+                    };
+                }
+            }
+        }
+        Err(SinkConnectorError::MaximumRetriesExceeded)
+    }
+
     async fn handle_message<S>(
         &mut self,
         message: DataMessage<B>,
@@ -272,77 +369,11 @@ where
                 finality,
                 batch,
             } => {
-                trace!(cursor = ?cursor, end_cursor = ?end_cursor, "received data");
-                let data = if let Some(transformer) = &mut self.transformer {
-                    let json_batch = serde_json::to_value(&batch)?;
-                    let result = transformer.transform(&json_batch).await?;
-                    json!(result)
-                } else {
-                    json!(batch)
-                };
-                for duration in &self.backoff {
-                    match sink
-                        .handle_data(&cursor, &end_cursor, &finality, &data)
-                        .await
-                    {
-                        Ok(_) => {
-                            if let Some(persistence) = persistence {
-                                persistence.put_cursor(end_cursor).await?;
-                            }
-
-                            return Ok(());
-                        }
-                        Err(err) => {
-                            warn!(err = ?err, "handle_data error");
-                            if ct.is_cancelled() {
-                                return Err(SinkConnectorError::Sink(err.into()));
-                            }
-                            tokio::select! {
-                                _ = tokio::time::sleep(duration) => {},
-                                _ = ct.cancelled() => {
-                                    return Ok(())
-                                }
-                            };
-                        }
-                    }
-                }
-                Err(SinkConnectorError::MaximumRetriesExceeded)
+                self.handle_data(sink, cursor, end_cursor, finality, batch, persistence, ct)
+                    .await
             }
             DataMessage::Invalidate { cursor } => {
-                debug!(cursor = ?cursor, "received invalidate");
-                for duration in &self.backoff {
-                    match sink.handle_invalidate(&cursor).await {
-                        Ok(_) => {
-                            if let Some(persistence) = persistence {
-                                // if the sink started streaming from the genesis block
-                                // and if the genesis block has been reorged, delete the
-                                // stored cursor value to restart from genesis.
-                                match cursor {
-                                    None => {
-                                        persistence.delete_cursor().await?;
-                                    }
-                                    Some(cursor) => {
-                                        persistence.put_cursor(cursor).await?;
-                                    }
-                                }
-                            }
-                            return Ok(());
-                        }
-                        Err(err) => {
-                            warn!(err = ?err, "handle_invalidate error");
-                            if ct.is_cancelled() {
-                                return Err(SinkConnectorError::Sink(err.into()));
-                            }
-                            tokio::select! {
-                                _ = tokio::time::sleep(duration) => {},
-                                _ = ct.cancelled() => {
-                                    return Ok(())
-                                }
-                            };
-                        }
-                    }
-                }
-                Err(SinkConnectorError::MaximumRetriesExceeded)
+                self.handle_invalidate(sink, cursor, persistence, ct).await
             }
             DataMessage::Heartbeat => sink
                 .handle_heartbeat()
