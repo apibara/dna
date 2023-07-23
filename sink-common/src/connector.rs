@@ -80,6 +80,7 @@ where
     persistence: Option<Persistence>,
     max_message_size: usize,
     status_server_address: SocketAddr,
+    needs_invalidation: bool,
     _phantom: PhantomData<B>,
 }
 
@@ -120,6 +121,7 @@ where
             persistence: options.persistence,
             max_message_size: options.max_message_size,
             status_server_address: options.status_server_address,
+            needs_invalidation: false,
             _phantom: PhantomData::default(),
         }
     }
@@ -176,7 +178,15 @@ where
             let starting_cursor = persistence.get_cursor().await?;
             if starting_cursor.is_some() {
                 info!(cursor = ?starting_cursor, "restarting from last cursor");
-                configuration.starting_cursor = starting_cursor;
+                configuration.starting_cursor = starting_cursor.clone();
+
+                self.handle_invalidate(
+                    &mut sink,
+                    starting_cursor.clone(),
+                    Some(persistence),
+                    ct.clone(),
+                )
+                .await?;
             }
         }
 
@@ -211,9 +221,11 @@ where
         // waiting for the lock.
         let mut status_server = Box::pin(start_status_server(self.status_server_address));
 
+        let ct_select = ct.clone();
+
         loop {
             tokio::select! {
-                _ = ct.cancelled() => {
+                _ = ct_select.cancelled() => {
                     break;
                 }
                 _ = &mut status_server => {
@@ -256,7 +268,7 @@ where
     }
 
     async fn handle_invalidate<S>(
-        &mut self,
+        &self,
         sink: &mut S,
         cursor: Option<Cursor>,
         persistence: Option<&mut PersistenceClient>,
@@ -315,6 +327,8 @@ where
         S: Sink + Sync + Send,
         D: Message + Default + Serialize,
     {
+        let mut persistence = persistence;
+
         trace!(cursor = ?cursor, end_cursor = ?end_cursor, "received data");
         let data = if let Some(transformer) = &mut self.transformer {
             let json_batch = serde_json::to_value(&batch)?;
@@ -324,6 +338,14 @@ where
             json!(batch)
         };
         for duration in &self.backoff {
+            if self.needs_invalidation {
+                let mut persistence = persistence.as_mut().map(|persistence| persistence.clone());
+
+                self.handle_invalidate(sink, cursor.clone(), persistence.as_mut(), ct.clone())
+                    .await?;
+                self.needs_invalidation = false;
+            }
+
             match sink
                 .handle_data(&cursor, &end_cursor, &finality, &data)
                 .await
@@ -331,6 +353,10 @@ where
                 Ok(_) => {
                     if let Some(persistence) = persistence {
                         persistence.put_cursor(end_cursor).await?;
+                    }
+
+                    if finality == DataFinality::DataStatusPending {
+                        self.needs_invalidation = true;
                     }
 
                     return Ok(());

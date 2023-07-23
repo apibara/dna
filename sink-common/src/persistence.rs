@@ -20,6 +20,7 @@ pub enum PersistenceError {
     CursorDecode(#[from] prost::DecodeError),
 }
 
+#[derive(Clone)]
 pub struct PersistenceClient {
     client: Client,
     sink_id: String,
