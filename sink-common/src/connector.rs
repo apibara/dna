@@ -351,12 +351,12 @@ where
                 .await
             {
                 Ok(_) => {
-                    if let Some(persistence) = persistence {
-                        persistence.put_cursor(end_cursor).await?;
-                    }
-
                     if finality == DataFinality::DataStatusPending {
                         self.needs_invalidation = true;
+                    } else {
+                        if let Some(persistence) = persistence {
+                            persistence.put_cursor(end_cursor).await?;
+                        }
                     }
 
                     return Ok(());
