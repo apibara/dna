@@ -86,28 +86,9 @@
           workspaceDir = ./.;
         };
 
-        aarch64Linux =
-          let
-            crossSystem = "aarch64-linux";
-            crossPkgs = import nixpkgs {
-              inherit overlays crossSystem;
-              localSystem = system;
-            };
-          in
-          pkgs.callPackage ./nix/cross.nix {
-            inherit crane crates crossSystem;
-            pkgs = crossPkgs;
-            workspaceDir = ./.;
-          };
-
-        crosses = {
-          "x86_64-linux" = aarch64Linux;
-          "x86_64-darwin" = aarch64Linux;
-          "aarch64-linux" = { packages = { }; };
-          "aarch64-darwin" = { packages = { }; };
+        ci = pkgs.callPackage ./nix/ci.nix {
+          tests = native.packages.tests;
         };
-
-        cross = crosses.${system};
       in
       {
         # format with `nix fmt`
@@ -117,7 +98,7 @@
         checks = native.checks;
 
         # development shells. start with `nix develop`.
-        devShells = native.shell;
+        devShells = (native.shell // ci.shell);
 
         # all packages.
         # show them with `nix flake show`.

@@ -49,17 +49,26 @@ rec {
     version = "0.0.0";
   });
 
+  allCrates = craneLib.buildPackage (commonArgs // {
+    pname = "apibara";
+    version = "0.0.0";
+    doCheck = false;
+  });
+
   buildCrate = { crate }:
     let
       manifest = builtins.fromTOML (builtins.readFile (crate + "/Cargo.toml"));
       pname = manifest.package.name;
       version = manifest.package.version;
-      bin = craneLib.buildPackage (commonArgs // {
-        inherit pname version cargoArtifacts;
-
-        cargoExtraArgs = "--package ${pname}";
-        doCheck = false;
-      });
+      bin = pkgs.stdenv.mkDerivation {
+        name = "${pname}-${version}";
+        buildInputs = [ allCrates ];
+        phases = [ "installPhase" ];
+        installPhase = ''
+          mkdir -p $out/bin
+          cp -r ${allCrates}/bin/${pname} $out/bin
+        '';
+      };
     in
     {
       inherit pname version bin;
@@ -159,7 +168,9 @@ rec {
           images = builtins.filter (image: image.value != null) maybeImages;
         in
         (builtins.listToAttrs images);
-      packages = binaryPackages // images;
+      packages = binaryPackages // images // {
+        all-crates = allCrates;
+      };
     in
     {
       inherit binaryPackages images packages;
