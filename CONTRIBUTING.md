@@ -113,3 +113,30 @@ git push --force-with-lease
 After your PR is in good shape, we will merge it into the main branch and ship
 it. Congratulations, the code you wrote is now used by hundreds of developers
 and thousands of end users 🎊
+
+
+## Making a release
+
+Releases are prepared manually to ensure changes are communicated effectively.
+
+**1. Update crate version**
+
+Update crate version, following [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+**2. Update changelog**
+
+Update the `CHANGELOG.md` file in the target crate, following [Common Changelog](https://common-changelog.org/).
+Make sure to include the link to the release that will be created in Step 5.
+
+**3. Open a Pull Request**
+
+Open a Pull Request with the release changes.
+
+**4. Merge & wait for CI**
+
+Nothing much to do here.
+
+**5. Create GitHub Release**
+
+Create a release on GitHub, creating a new tag in the format `<crate>/v<version>` (e.g. `operator/v1.2.3`).
+
