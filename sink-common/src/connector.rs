@@ -180,13 +180,8 @@ where
                 info!(cursor = ?starting_cursor, "restarting from last cursor");
                 configuration.starting_cursor = starting_cursor.clone();
 
-                self.handle_invalidate(
-                    &mut sink,
-                    starting_cursor.clone(),
-                    Some(persistence),
-                    ct.clone(),
-                )
-                .await?;
+                self.handle_invalidate(&mut sink, starting_cursor, Some(persistence), ct.clone())
+                    .await?;
             }
         }
 
@@ -221,11 +216,9 @@ where
         // waiting for the lock.
         let mut status_server = Box::pin(start_status_server(self.status_server_address));
 
-        let ct_select = ct.clone();
-
         loop {
             tokio::select! {
-                _ = ct_select.cancelled() => {
+                _ = ct.cancelled() => {
                     break;
                 }
                 _ = &mut status_server => {
@@ -337,15 +330,16 @@ where
         } else {
             json!(batch)
         };
+
+        if self.needs_invalidation {
+            let mut persistence = persistence.as_mut().map(|persistence| persistence.clone());
+
+            self.handle_invalidate(sink, cursor.clone(), persistence.as_mut(), ct.clone())
+                .await?;
+            self.needs_invalidation = false;
+        }
+
         for duration in &self.backoff {
-            if self.needs_invalidation {
-                let mut persistence = persistence.as_mut().map(|persistence| persistence.clone());
-
-                self.handle_invalidate(sink, cursor.clone(), persistence.as_mut(), ct.clone())
-                    .await?;
-                self.needs_invalidation = false;
-            }
-
             match sink
                 .handle_data(&cursor, &end_cursor, &finality, &data)
                 .await
