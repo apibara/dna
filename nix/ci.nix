@@ -39,7 +39,41 @@ let
     '';
   };
 
-  /* Publish a docker image to the registry.
+  /* Prepares the image to be uploaded to Buildkite.
+
+    Notice that this script expects the image to be in `./result`.
+  */
+  ci-prepare-image = pkgs.writeShellApplication {
+    name = "ci-prepare-image";
+    runtimeInputs = with pkgs; [
+      docker
+    ];
+    text = ''
+      function dry_run() {
+        if [[ "''${DRY_RUN:-false}" == "true" ]]; then
+          echo "[dry-run] $*"
+        else
+          "$@"
+        fi
+      }
+
+      name=$1
+      arch=$2
+
+      echo "--- Loading docker image"
+      docker image load -i ./result
+
+      tagged="''${name}:latest-''${arch}"
+      echo "--- Tagging image ''${tagged}"
+      docker image tag "apibara-''${name}:latest" "''${tagged}"
+
+      filename="''${name}-''${arch}-image.tar.gz"
+      echo "--- Saving image to ''${filename}"
+      docker image save -o "''${filename}" "''${tagged}"
+    '';
+  };
+
+  /* Publish a docker image to the registry, with support for multiple architectures.
 
     If the `BUILDKITE_COMMIT` env variable is set, it will be used to tag the image,
     otherwise the `latest` tag is used.
@@ -58,6 +92,8 @@ let
       BUILDKITE_COMMIT=ffff
 
       The image will be tagged as:
+       - quay.io/apibara/operator:ffff-x86_64
+       - quay.io/apibara/operator:ffff-aarch64
        - quay.io/apibara/operator:ffff
        - quay.io/apibara/operator:1.2.3
        - quay.io/apibara/operator:1.2
@@ -84,17 +120,37 @@ let
         fi
       }
 
-      filename=$1
-      name=$2
+      name=$1
+      shift
+      archs=( "$@" )
+
+      if [ ''${#archs[@]} -eq 0 ]; then
+        echo "No architectures specified"
+        exit 1
+      fi
+
       base="quay.io/apibara/''${name}"
       image="''${base}:''${BUILDKITE_COMMIT:-latest}"
 
-      echo "--- Loading docker image from ''${filename}"
-      docker image load -i "''${filename}"
-      echo "--- Tagging image ''${image}"
-      docker image tag "apibara-''${name}:latest" "''${image}"
-      echo "--- Pushing image ''${image}"
-      dry_run docker push "''${image}"
+      # First, load the images and push them to the registry
+      images=()
+      for arch in "''${archs[@]}"; do
+        echo "--- Loading docker image ''${arch}"
+        filename="''${name}-''${arch}-image.tar.gz"
+        docker image load -i "''${filename}"
+
+        sourceImage="''${name}:latest-''${arch}"
+        destImage="''${image}-''${arch}"
+        echo "--- Pushing image ''${sourceImage} to ''${destImage}"
+        docker image tag "''${sourceImage}" "''${destImage}"
+        dry_run docker push "''${destImage}"
+        images+=("--amend ''${destImage}")
+      done
+
+      # Assemble the manifests
+      echo "--- Combining images into manifest ''${image}'"
+      dry_run docker manifest create "''${image}" "''${images[@]}"
+      dry_run docker manifest push --purge "''${image}"
 
       if [[ "''${BUILDKITE_TAG:-}" == ''${name}/v* ]]; then
         version=''${BUILDKITE_TAG#"''${name}/v"}
@@ -105,34 +161,60 @@ let
 
         # Tag and push image v X.Y.Z
         echo "--- Tagging release ''${base}:''${version}"
-        docker image tag "apibara-''${name}:latest" "''${base}:''${version}"
+        dry_run docker image tag "''${image}" "''${base}:''${version}"
         echo "--- Pushing release ''${base}:''${version}"
         dry_run docker push "''${base}:''${version}"
 
         # Tag and push image v X.Y
         tag="$(semver get major "''${version}").$(semver get minor "''${version}")"
         echo "--- Tagging release ''${base}:''${tag}"
-        docker image tag "apibara-''${name}:latest" "''${base}:''${tag}"
+        dry_run docker image tag "''${image}" "''${base}:''${tag}"
         echo "--- Pushing release ''${base}:''${tag}"
         dry_run docker push "''${base}:''${tag}"
 
         # Tag and push image v X
         tag="$(semver get major "''${version}")"
         echo "--- Tagging release ''${base}:''${tag}"
-        docker image tag "apibara-''${name}:latest" "''${base}:''${tag}"
+        dry_run docker image tag "''${image}" "''${base}:''${tag}"
         echo "--- Pushing release ''${base}:''${tag}"
         dry_run docker push "''${base}:''${tag}"
 
         # Tag and push image latest
         tag="latest"
         echo "--- Tagging release ''${base}:''${tag}"
-        docker image tag "apibara-''${name}:latest" "''${base}:''${tag}"
+        dry_run docker image tag "''${image}" "''${base}:''${tag}"
         echo "--- Pushing release ''${base}:''${tag}"
         dry_run docker push "''${base}:''${tag}"
       fi
     '';
   };
 
+  /* Buildkite agents tags.
+
+    The agents are tagged based on the OS and architecture they run on.
+    If a steps doesn't have an `agents` attribute, it will run on the default agent (which could have any architecture).
+  */
+  agents = {
+    x86_64-linux = {
+      os = "linux";
+      arch = "x86_64";
+    };
+    aarch64-linux = {
+      os = "linux";
+      arch = "aarch64";
+      queue = "aarch64-linux";
+    };
+  };
+
+  onAllAgents = f:
+    pkgs.lib.mapAttrsToList
+      (name: agent: f { inherit name agent; })
+      agents;
+
+  /* Buildkite pipelines
+
+    Instantiate a pipeline by running `nix eval --json .#pipeline.<name> | buildkite-agent pipeline upload`.
+  */
   pipeline = {
     default = {
       steps = [
@@ -160,15 +242,19 @@ let
         {
           wait = { };
         }
+      ] ++ (onAllAgents ({ name, agent }:
         {
-          label = ":rust: Build crate";
+          label = ":rust: Build crate ${name}";
           command = "nix build .#all-crates";
-        }
+          agents = agent;
+        })
+      ) ++ [
         {
           wait = { };
         }
+      ] ++ (onAllAgents ({ name, agent }:
         {
-          group = ":rust: Build binaries";
+          group = ":rust: Build binaries ${name}";
           steps = [
             {
               label = ":rust: Build binary {{ matrix.binary }}";
@@ -178,30 +264,35 @@ let
                   binary = binaries;
                 };
               };
+              agents = agent;
             }
           ];
-        }
+        })
+      ) ++ [
         {
           wait = { };
         }
+      ] ++ (onAllAgents ({ name, agent }:
         {
-          group = ":rust: Build images";
+          group = ":rust: Build images ${name}";
           steps = [
             {
               label = ":rust: Build image {{ matrix.binary }}";
               commands = [
                 "nix build .#{{ matrix.binary }}-image"
-                "cp result {{ matrix.binary }}-image-amd64.tar.gz"
-                "buildkite-agent artifact upload {{ matrix.binary }}-image-amd64.tar.gz"
+                "nix develop .#ci -c ci-prepare-image {{ matrix.binary }} ${agent.arch}"
+                "buildkite-agent artifact upload {{ matrix.binary }}-${agent.arch}-image.tar.gz"
               ];
               matrix = {
                 setup = {
                   binary = binaries;
                 };
               };
+              agents = agent;
             }
           ];
-        }
+        })
+      ) ++ [
         {
           wait = { };
         }
@@ -224,9 +315,15 @@ let
           steps = [
             {
               label = ":quay: Publish image {{ matrix.binary }}";
-              commands = [
-                "buildkite-agent artifact download {{ matrix.binary }}-image-amd64.tar.gz ."
-                "nix develop .#ci -c ci-publish-image {{ matrix.binary }}-image-amd64.tar.gz {{ matrix.binary }}"
+              commands = (onAllAgents ({ agent, ... }:
+                "buildkite-agent artifact download {{ matrix.binary }}-${agent.arch}-image.tar.gz ."
+              )) ++ [
+                (
+                  let
+                    archs = builtins.concatStringsSep " " (onAllAgents ({ agent, ... }: agent.arch));
+                  in
+                  "nix develop .#ci -c ci-publish-image {{ matrix.binary }} ${archs}"
+                )
               ];
               matrix = {
                 setup = {
@@ -256,6 +353,7 @@ in
     buildInputs = [
       ci-test
       ci-e2e-test
+      ci-prepare-image
       ci-publish-image
     ];
   };
