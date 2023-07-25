@@ -161,30 +161,30 @@ let
 
         # Tag and push image v X.Y.Z
         echo "--- Tagging release ''${base}:''${version}"
-        dry_run docker image tag "''${image}" "''${base}:''${version}"
+        dry_run docker manifest create "''${base}:''${version}" "''${images[@]}"
         echo "--- Pushing release ''${base}:''${version}"
-        dry_run docker push "''${base}:''${version}"
+        dry_run docker manifest push --purge "''${base}:''${version}"
 
         # Tag and push image v X.Y
         tag="$(semver get major "''${version}").$(semver get minor "''${version}")"
         echo "--- Tagging release ''${base}:''${tag}"
-        dry_run docker image tag "''${image}" "''${base}:''${tag}"
+        dry_run docker manifest create "''${base}:''${tag}" "''${images[@]}"
         echo "--- Pushing release ''${base}:''${tag}"
-        dry_run docker push "''${base}:''${tag}"
+        dry_run docker manifest push --purge "''${base}:''${tag}"
 
         # Tag and push image v X
         tag="$(semver get major "''${version}")"
         echo "--- Tagging release ''${base}:''${tag}"
-        dry_run docker image tag "''${image}" "''${base}:''${tag}"
+        dry_run docker manifest create "''${base}:''${tag}" "''${images[@]}"
         echo "--- Pushing release ''${base}:''${tag}"
-        dry_run docker push "''${base}:''${tag}"
+        dry_run docker manifest push --purge "''${base}:''${tag}"
 
         # Tag and push image latest
         tag="latest"
         echo "--- Tagging release ''${base}:''${tag}"
-        dry_run docker image tag "''${image}" "''${base}:''${tag}"
+        dry_run docker manifest create "''${base}:''${tag}" "''${images[@]}"
         echo "--- Pushing release ''${base}:''${tag}"
-        dry_run docker push "''${base}:''${tag}"
+        dry_run docker manifest push --purge "''${base}:''${tag}"
       fi
     '';
   };
