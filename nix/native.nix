@@ -50,6 +50,8 @@ rec {
     });
   };
 
+  binaries = builtins.attrNames built.binaryPackages;
+
   packages = (built.packages // {
     tests = workspaceTest;
   });

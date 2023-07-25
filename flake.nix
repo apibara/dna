@@ -32,10 +32,6 @@
         };
 
         crates = {
-          sdk = {
-            path = ./sdk;
-            docker = false;
-          };
           starknet = {
             description = "The Starknet DNA server";
             path = ./starknet;
@@ -88,9 +84,12 @@
 
         ci = pkgs.callPackage ./nix/ci.nix {
           tests = native.packages.tests;
+          binaries = native.binaries;
         };
       in
       {
+        inherit (ci) pipeline;
+
         # format with `nix fmt`
         formatter = pkgs.nixpkgs-fmt;
 
