@@ -50,6 +50,7 @@ rec {
   });
 
   allCrates = craneLib.buildPackage (commonArgs // {
+    inherit cargoArtifacts;
     pname = "apibara";
     version = "0.0.0";
     doCheck = false;
