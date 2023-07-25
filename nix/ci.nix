@@ -298,7 +298,7 @@ let
         }
         {
           label = ":pipeline:";
-          "if" = "build.branch == 'main'";
+          "if" = "build.branch == 'main' || build.tag != ''";
           command = "nix eval --json .#pipeline.x86_64-linux.release | buildkite-agent pipeline upload --no-interpolation";
         }
       ];
