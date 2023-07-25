@@ -144,7 +144,7 @@ let
         echo "--- Pushing image ''${sourceImage} to ''${destImage}"
         docker image tag "''${sourceImage}" "''${destImage}"
         dry_run docker push "''${destImage}"
-        images+=("--amend ''${destImage}")
+        images+=("''${destImage}")
       done
 
       # Assemble the manifests
