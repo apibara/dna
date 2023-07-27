@@ -325,7 +325,7 @@ where
         &self,
         number: u64,
     ) -> Result<IngestBlockResult, BlockIngestionError> {
-        debug!(
+        info!(
             block_number = %number,
             "ingest block by number"
         );
@@ -361,6 +361,11 @@ where
             .finish_ingesting_block(&new_block_id, status, header, body, &mut txn)
             .await?;
         txn.commit()?;
+
+        info!(
+            block_id = %new_block_id,
+            "ingested accepted block"
+        );
 
         Ok(IngestBlockResult {
             new_block_id,

@@ -163,7 +163,7 @@ trait TryToProto<T> {
 impl Provider for HttpProvider {
     type Error = HttpProviderError;
 
-    #[tracing::instrument(skip(self), err(Debug))]
+    #[tracing::instrument(skip(self), err(Debug), level = "DEBUG")]
     async fn get_head(&self) -> Result<GlobalBlockId, Self::Error> {
         let hash_and_number = self
             .provider
@@ -177,7 +177,7 @@ impl Provider for HttpProvider {
         ))
     }
 
-    #[tracing::instrument(skip(self), err(Debug))]
+    #[tracing::instrument(skip(self), err(Debug), level = "DEBUG")]
     async fn get_block(
         &self,
         id: &BlockId,
@@ -185,7 +185,7 @@ impl Provider for HttpProvider {
         self.get_block_by_id(id).await
     }
 
-    #[tracing::instrument(skip(self))]
+    #[tracing::instrument(skip(self), level = "DEBUG")]
     async fn get_maybe_block(
         &self,
         id: &BlockId,
@@ -193,7 +193,7 @@ impl Provider for HttpProvider {
         self.get_block_by_id(id).await.ok()
     }
 
-    #[tracing::instrument(skip(self), err(Debug))]
+    #[tracing::instrument(skip(self), err(Debug), level = "DEBUG")]
     async fn get_state_update(&self, id: &BlockId) -> Result<v1alpha2::StateUpdate, Self::Error> {
         let block_id: models::BlockId = id.try_into()?;
         let state_update = self
@@ -205,7 +205,7 @@ impl Provider for HttpProvider {
         Ok(state_update)
     }
 
-    #[tracing::instrument(skip(self), fields(hash = %hash), err(Debug))]
+    #[tracing::instrument(skip(self), fields(hash = %hash), err(Debug), level = "DEBUG")]
     async fn get_transaction_receipt(
         &self,
         hash: &v1alpha2::FieldElement,
