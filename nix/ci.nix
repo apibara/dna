@@ -298,8 +298,11 @@ let
         }
         {
           label = ":pipeline:";
-          "if" = "build.branch == 'main' || build.tag != ''";
-          command = "nix eval --json .#pipeline.x86_64-linux.release | buildkite-agent pipeline upload --no-interpolation";
+          command = ''
+            if [[ "''${BUILDKITE_BRANCH}" = "main" || -n "''${BUILDKITE_TAG}" ]]; then
+              nix eval --json .#pipeline.x86_64-linux.release | buildkite-agent pipeline upload --no-interpolation;
+            fi
+          '';
         }
       ];
     };
