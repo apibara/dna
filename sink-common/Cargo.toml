@@ -7,9 +7,12 @@ repository.workspace = true
 license.workspace = true
 
 [dependencies]
+anstyle.workspace = true
+anyhow.workspace = true
 apibara-core = { path = "../core" }
 apibara-sdk = { path = "../sdk" }
-apibara-transformer = { path = "../transformer" }
+apibara-script = { path = "../script" }
+apibara-sink-options-derive = { path = "../sink-options-derive" }
 async-trait.workspace = true
 bytesize = {version = "1.1.0", features = ["serde"]}
 clap.workspace = true
@@ -17,7 +20,9 @@ ctrlc.workspace = true
 dotenvy.workspace = true
 etcd-client = { version = "0.11.1" }
 exponential-backoff = "1.2.0"
+lazy_static.workspace = true
 prost.workspace = true
+regex.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
@@ -25,4 +30,8 @@ tokio = { version = "1.20.1", features = ["full"] }
 tokio-stream.workspace = true
 tokio-util.workspace = true
 tracing.workspace = true
+validator.workspace = true
 warp.workspace = true
+
+[dev-dependencies]
+assert_matches.workspace = true

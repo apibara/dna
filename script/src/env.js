@@ -2,7 +2,7 @@ const core = globalThis.Deno.core;
 const ops = core.ops;
 
 function return_value(value) {
-  ops.op_transform_return(value);
+  ops.op_script_return(value);
 }
 
-globalThis.Transform = { return_value }
+globalThis.Script = { return_value }

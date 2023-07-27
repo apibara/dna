@@ -1,25 +1,29 @@
-use apibara_core::starknet::v1alpha2::{Block, Filter};
 use apibara_observability::init_opentelemetry;
-use apibara_sink_common::{ConfigurationArgs, SinkConnector, SinkConnectorExt};
-use apibara_sink_webhook::WebhookSink;
-use clap::Parser;
+use apibara_sink_common::{run_sink_connector, set_ctrlc_handler, OptionsFromCli};
+use apibara_sink_webhook::{SinkWebhookOptions, WebhookSink};
+use clap::{Args, Parser, Subcommand};
 use tokio_util::sync::CancellationToken;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
-    /// The target url to send the request to.
-    #[arg(long, env)]
-    target_url: String,
-    /// Additional headers to send with the request.
-    #[arg(long, short = 'H', env, value_delimiter = ',')]
-    header: Vec<String>,
-    #[arg(long, env, action)]
-    /// Send the data received from the transform step as is, this is useful for
-    /// Discord/Telegram/... APIs
-    raw: bool,
+    #[command(subcommand)]
+    subcommand: Command,
+}
+
+#[derive(Subcommand, Debug)]
+enum Command {
+    Run(RunArgs),
+}
+
+#[derive(Args, Debug)]
+struct RunArgs {
+    /// The path to the indexer script.
+    script: String,
     #[command(flatten)]
-    configuration: ConfigurationArgs,
+    webhook: SinkWebhookOptions,
+    #[command(flatten)]
+    common: OptionsFromCli,
 }
 
 #[tokio::main]
@@ -27,11 +31,14 @@ async fn main() -> anyhow::Result<()> {
     init_opentelemetry()?;
     let args = Cli::parse();
 
-    let sink = WebhookSink::new(args.target_url, args.raw)?.with_headers(&args.header)?;
     let ct = CancellationToken::new();
-    let connector = SinkConnector::<Filter, Block>::from_configuration_args(args.configuration)?;
+    set_ctrlc_handler(ct.clone())?;
 
-    connector.consume_stream(sink, ct).await?;
+    match args.subcommand {
+        Command::Run(args) => {
+            run_sink_connector::<WebhookSink>(&args.script, args.common, args.webhook, ct).await?;
+        }
+    }
 
     Ok(())
 }

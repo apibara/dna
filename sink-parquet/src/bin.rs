@@ -1,21 +1,29 @@
-use apibara_core::starknet::v1alpha2::{Block, Filter};
 use apibara_observability::init_opentelemetry;
-use apibara_sink_common::{ConfigurationArgsWithoutFinality, SinkConnector, SinkConnectorExt};
-use apibara_sink_parquet::ParquetSink;
-use clap::Parser;
+use apibara_sink_common::{run_sink_connector, set_ctrlc_handler, OptionsFromCli};
+use apibara_sink_parquet::{ParquetSink, SinkParquetOptions};
+use clap::{Args, Parser, Subcommand};
 use tokio_util::sync::CancellationToken;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
-    /// The directory where to write Parquet files.
-    #[arg(long, env)]
-    output_dir: String,
-    /// Each Parquet file contains data for the specified number of blocks.
-    #[arg(long, env, default_value = "1000")]
-    parquet_batch_size: Option<usize>,
+    #[command(subcommand)]
+    subcommand: Command,
+}
+
+#[derive(Subcommand, Debug)]
+enum Command {
+    Run(RunArgs),
+}
+
+#[derive(Args, Debug)]
+struct RunArgs {
+    /// The path to the indexer script.
+    script: String,
     #[command(flatten)]
-    configuration: ConfigurationArgsWithoutFinality,
+    parquet: SinkParquetOptions,
+    #[command(flatten)]
+    common: OptionsFromCli,
 }
 
 #[tokio::main]
@@ -23,12 +31,14 @@ async fn main() -> anyhow::Result<()> {
     init_opentelemetry()?;
     let args = Cli::parse();
 
-    let sink = ParquetSink::new(args.output_dir, args.parquet_batch_size.unwrap_or(1000))?;
     let ct = CancellationToken::new();
-    let connector =
-        SinkConnector::<Filter, Block>::from_configuration_args(args.configuration.into())?;
+    set_ctrlc_handler(ct.clone())?;
 
-    connector.consume_stream(sink, ct).await?;
+    match args.subcommand {
+        Command::Run(args) => {
+            run_sink_connector::<ParquetSink>(&args.script, args.common, args.parquet, ct).await?;
+        }
+    }
 
     Ok(())
 }

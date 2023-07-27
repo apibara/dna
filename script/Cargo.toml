@@ -1,5 +1,5 @@
 [package]
-name = "apibara-transformer"
+name = "apibara-script"
 version = "0.1.0"
 edition.workspace = true
 authors.workspace = true
@@ -13,6 +13,7 @@ deno_core = "0.189.0"
 deno_runtime = "0.115.0"
 dotenvy.workspace = true
 reqwest.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 serde_v8 = "0.100.0"
 thiserror.workspace = true

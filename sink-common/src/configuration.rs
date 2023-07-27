@@ -1,181 +1,32 @@
-use std::{
-    fs::File,
-    io::BufReader,
-    net::{AddrParseError, SocketAddr},
-    path::Path,
-};
+use std::net::AddrParseError;
 
-use apibara_core::node::v1alpha2::DataFinality;
-use apibara_sdk::{
-    Configuration, InvalidMetadataKey, InvalidMetadataValue, InvalidUri, MetadataKey, MetadataMap,
-    MetadataValue,
-};
-use apibara_transformer::{Transformer, TransformerError, TransformerOptions};
+use apibara_core::{node::v1alpha2::DataFinality, starknet::v1alpha2};
+use apibara_sdk::{Configuration, InvalidUri, MetadataKey, MetadataMap, MetadataValue, Uri};
 use bytesize::ByteSize;
 use clap::Args;
-use prost::Message;
-use serde::de;
+use serde::Deserialize;
 
-use crate::{connector::SinkConnectorOptions, persistence::Persistence};
+use crate::{connector::StreamConfiguration, persistence::Persistence, status::StatusServer};
 
-#[derive(Debug, thiserror::Error)]
-pub enum FilterError {
-    #[error("IO error: {0}")]
-    Io(#[from] std::io::Error),
-    #[error("Serde error: {0}")]
-    Serde(#[from] serde_json::Error),
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum ConfigurationError {
-    #[error("Failed to build filter: {0}")]
-    Filter(#[from] FilterError),
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum MetadataError {
-    #[error("Failed to parse key: {0}")]
-    ParseKey(#[from] InvalidMetadataKey),
-    #[error("Failed to parse value: {0}")]
-    ParseValue(#[from] InvalidMetadataValue),
-    #[error("Invalid metadata format")]
-    InvalidFormat,
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum StatusServerError {
-    #[error("Failed to parse status server address: {0}")]
-    Address(#[from] AddrParseError),
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum SinkConnectorFromConfigurationError {
-    #[error(transparent)]
-    Configuration(#[from] ConfigurationError),
-    #[error(transparent)]
-    Metadata(#[from] MetadataError),
-    #[error(transparent)]
-    StatusServer(#[from] StatusServerError),
-    #[error("Failed to parse stream URL: {0}")]
-    Uri(#[from] InvalidUri),
-    #[error("Failed to parse transform: {0}")]
-    Transform(#[from] TransformerError),
-    #[error("Failed to message size: {0}")]
-    SizeConversion(String),
-}
-
-/// Stream configuration command line flags.
-#[derive(Args, Debug)]
-pub struct ConfigurationArgs {
-    /// Set the response preferred batch size.
-    #[arg(long, env)]
-    pub batch_size: Option<u64>,
-    /// Path to the json-encoded filter to use.
-    #[arg(long, env)]
-    pub filter: String,
-    /// Path to a Javascript/Typescript transformation file to apply to data.
-    #[arg(long, env)]
-    pub transform: Option<String>,
-    /// Load environment variables from this file.
-    #[arg(long, env)]
-    pub env_file: Option<String>,
-    /// Limits the maximum size of a decoded message. Accept message size in human readable form,
-    /// e.g. 1kb, 1MB, 1GB. If not set the default is 1MB.
-    #[arg(long, env)]
-    pub max_message_size: Option<String>,
-    /// Add metadata to the stream, in the `key: value` format. Can be specified multiple times.
-    #[arg(long, short = 'M', env, value_delimiter = ',')]
-    pub metadata: Vec<String>,
-    /// Use the authorization together when connecting to the stream.
-    #[arg(long, short = 'A', env)]
-    pub auth_token: Option<String>,
-    /// DNA stream url. If starting with `https://`, use a secure connection.
-    #[arg(long, env)]
-    pub stream_url: String,
-    #[command(flatten)]
-    pub finality: Option<FinalityArgs>,
-    #[command(flatten)]
-    pub starting_cursor: StartingCursorArgs,
-    #[command(flatten)]
-    pub network: NetworkTypeArgs,
-    #[command(flatten)]
-    pub persistence: PersistenceArgs,
-    #[command(flatten)]
-    pub status_server: StatusServerArgs,
-}
-
-/// Stream configuration without finality
-#[derive(Args, Debug)]
-pub struct ConfigurationArgsWithoutFinality {
-    /// Set the response preferred batch size.
-    #[arg(long, env)]
-    pub batch_size: Option<u64>,
-    /// Path to the json-encoded filter to use.
-    #[arg(long, env)]
-    pub filter: String,
-    /// Path to a Javascript/Typescript transformation file to apply to data.
-    #[arg(long, env)]
-    pub transform: Option<String>,
-    /// Load environment variables from this file.
-    #[arg(long, env)]
-    pub env_file: Option<String>,
-    /// Limits the maximum size of a decoded message. Accept message size in human readable form,
-    /// e.g. 1kb, 1MB, 1GB. If not set the default is 1MB.
-    #[arg(long, env)]
-    pub max_message_size: Option<String>,
-    /// Add metadata to the stream, in the `key: value` format. Can be specified multiple times.
-    #[arg(long, short = 'M', env)]
-    pub metadata: Vec<String>,
-    /// Use the authorization together when connecting to the stream.
-    #[arg(long, short = 'A', env)]
-    pub auth_token: Option<String>,
-    /// DNA stream url. If starting with `https://`, use a secure connection.
-    #[arg(long, env)]
-    pub stream_url: String,
-    #[command(flatten)]
-    pub starting_cursor: StartingCursorArgs,
-    #[command(flatten)]
-    pub network: NetworkTypeArgs,
-    #[command(flatten)]
-    pub persistence: PersistenceArgs,
-    #[command(flatten)]
-    pub status_server: StatusServerArgs,
+#[derive(Debug, Deserialize)]
+pub struct OptionsFromScript {
+    #[serde(flatten)]
+    pub stream: StreamOptions,
+    #[serde(flatten)]
+    pub stream_configuration: StreamConfigurationOptions,
 }
 
 #[derive(Args, Debug)]
-#[group(required = false, multiple = false)]
-pub struct StartingCursorArgs {
-    /// Start streaming data from this block.
-    #[arg(long, env)]
-    pub starting_block: Option<u64>,
+pub struct OptionsFromCli {
+    #[clap(flatten)]
+    pub connector: ConnectorOptions,
+    #[clap(flatten)]
+    pub stream: StreamOptions,
 }
 
-#[derive(Args, Debug)]
-#[group(required = true, multiple = false)]
-pub struct NetworkTypeArgs {
-    /// Stream Starknet network data.
-    #[arg(long, env("NETWORK_STARKNET"))]
-    pub starknet: bool,
-}
-
-/// Data finality flags.
-#[derive(Args, Debug)]
-#[group(required = false, multiple = false)]
-pub struct FinalityArgs {
-    /// Request finalized blocks.
-    #[arg(long, env("FINALITY_FINALIZED"))]
-    pub finalized: bool,
-    /// Request accepted blocks.
-    #[arg(long, env("FINALITY_ACCEPTED"))]
-    pub accepted: bool,
-    /// Request pending blocks.
-    #[arg(long, env("FINALITY_PENDING"))]
-    pub pending: bool,
-}
-
-/// Flags related to state persistence.
-#[derive(Args, Debug)]
-pub struct PersistenceArgs {
+/// Options for the connector persistence.
+#[derive(Args, Debug, Default, Deserialize)]
+pub struct PersistenceOptions {
     #[arg(long, env, requires = "sink_id")]
     /// URL to the etcd server used to persist data.
     pub persist_to_etcd: Option<String>,
@@ -184,59 +35,162 @@ pub struct PersistenceArgs {
     pub sink_id: Option<String>,
 }
 
-/// Flags related to the status server.
-#[derive(Args, Debug)]
-pub struct StatusServerArgs {
+/// Status server options.
+#[derive(Args, Debug, Default)]
+pub struct StatusServerOptions {
     /// Address to bind the status server to.
-    #[arg(long, env, default_value = "0.0.0.0:8118")]
-    pub status_server_address: String,
+    #[arg(long, env)]
+    pub status_server_address: Option<String>,
 }
 
-impl ConfigurationArgs {
-    pub fn to_sink_connector_options<F>(
-        &self,
-    ) -> Result<SinkConnectorOptions<F>, SinkConnectorFromConfigurationError>
-    where
-        F: Message + Default + Clone + de::DeserializeOwned,
-    {
-        let max_message_size: ByteSize = self
-            .max_message_size
-            .as_ref()
-            .map(|s| s.parse())
-            .transpose()
-            .map_err(SinkConnectorFromConfigurationError::SizeConversion)?
-            .unwrap_or(ByteSize::mb(1));
-        let configuration = self.to_configuration::<F>()?;
-        let stream_url = self.stream_url.parse()?;
-        let transformer = self.to_transformer()?;
-        let persistence = self.to_persistence();
-        let metadata = self.to_metadata()?;
-        let bearer_token = self.to_bearer_token();
-        let status_server_address = self.to_status_server_address()?;
-        Ok(SinkConnectorOptions {
-            stream_url,
-            configuration,
-            transformer,
-            metadata,
-            bearer_token,
-            persistence,
-            max_message_size: max_message_size.as_u64() as usize,
-            status_server_address,
-        })
+#[derive(Args, Debug, Default)]
+pub struct ConnectorOptions {
+    #[command(flatten)]
+    pub persistence: Option<PersistenceOptions>,
+    #[command(flatten)]
+    pub status_server: StatusServerOptions,
+}
+
+#[derive(Args, Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StreamOptions {
+    /// DNA stream url. If starting with `https://`, use a secure connection.
+    #[arg(long, env)]
+    pub stream_url: Option<String>,
+    /// Limits the maximum size of a decoded message. Accept message size in human readable form,
+    /// e.g. 1kb, 1MB, 1GB. If not set the default is 1MB.
+    #[arg(long, env)]
+    pub max_message_size: Option<String>,
+    /// Add metadata to the stream, in the `key: value` format. Can be specified multiple times.
+    #[arg(long, short = 'M', env, value_delimiter = ',')]
+    pub metadata: Option<Vec<String>>,
+    /// Use the authorization together when connecting to the stream.
+    #[arg(long, short = 'A', env)]
+    pub auth_token: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StreamConfigurationOptions {
+    /// The data filter.
+    #[serde(flatten)]
+    pub filter: NetworkFilterOptions,
+    /// Set the response preferred batch size.
+    pub batch_size: Option<u64>,
+    /// The finality of the data to be streamed.
+    pub finality: Option<DataFinality>,
+    /// Start streaming data from the specified block.
+    pub starting_block: Option<u64>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "network", content = "filter", rename_all = "camelCase")]
+pub enum NetworkFilterOptions {
+    Starknet(v1alpha2::Filter),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum PersistenceOptionsError {
+    #[error("missing etcd url")]
+    MissingEtcdUrl,
+    #[error("missing sink id")]
+    MissingSinkId,
+}
+
+impl PersistenceOptions {
+    /// Validates the persistence options and returns a `Persistence` object.
+    pub fn to_persistence(self) -> Result<Persistence, PersistenceOptionsError> {
+        let url = self
+            .persist_to_etcd
+            .ok_or(PersistenceOptionsError::MissingEtcdUrl)?;
+        let sink_id = self.sink_id.ok_or(PersistenceOptionsError::MissingSinkId)?;
+        Ok(Persistence::new(url, sink_id))
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum StatusServerOptionsError {
+    #[error("invalid address: {0}")]
+    InvalidAddress(#[from] AddrParseError),
+}
+
+impl StatusServerOptions {
+    pub fn to_status_server(self) -> Result<StatusServer, StatusServerOptionsError> {
+        let address = self
+            .status_server_address
+            .unwrap_or_else(|| "0.0.0.0:8118".to_string())
+            .parse()?;
+        Ok(StatusServer::new(address))
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum StreamOptionsError {
+    #[error("missing stream url")]
+    MissingStreamUrl,
+    #[error("invalid stream url: {0}")]
+    InvalidStreamUrl(#[from] InvalidUri),
+    #[error("invalid max message size: {0}")]
+    MessageSize(String),
+    #[error("invalid metadata: {0}")]
+    InvalidMetadata(String),
+}
+
+impl StreamOptions {
+    pub fn merge(self, other: StreamOptions) -> StreamOptions {
+        StreamOptions {
+            stream_url: other.stream_url.or(self.stream_url),
+            max_message_size: other.max_message_size.or(self.max_message_size),
+            metadata: other.metadata.or(self.metadata),
+            auth_token: other.auth_token.or(self.auth_token),
+        }
     }
 
-    pub fn to_configuration<F>(&self) -> Result<Configuration<F>, ConfigurationError>
-    where
-        F: Message + Default + Clone + de::DeserializeOwned,
-    {
-        let filter: F = self.new_filter()?;
-        let mut configuration = Configuration::<F>::default().with_filter(|_| filter.clone());
-        configuration = if let Some(finality) = &self.finality {
-            let finality = finality.to_finality();
-            configuration.with_finality(finality)
-        } else {
-            configuration
-        };
+    pub fn to_stream_configuration(self) -> Result<StreamConfiguration, StreamOptionsError> {
+        let stream_url: Uri = self
+            .stream_url
+            .ok_or(StreamOptionsError::MissingStreamUrl)?
+            .parse()?;
+        let max_message_size_bytes: ByteSize = self
+            .max_message_size
+            .map(|s| s.parse())
+            .transpose()
+            .map_err(StreamOptionsError::MessageSize)?
+            .unwrap_or(ByteSize::mb(100));
+
+        let mut metadata = MetadataMap::new();
+        for entry in self.metadata.unwrap_or_default() {
+            match entry.split_once(':') {
+                None => {
+                    return Err(StreamOptionsError::InvalidMetadata(
+                        "metadata must be in the `key: value` format".to_string(),
+                    ))
+                }
+                Some((key, value)) => {
+                    let key: MetadataKey = key.parse().map_err(|_| {
+                        StreamOptionsError::InvalidMetadata("invalid metadata key".to_string())
+                    })?;
+                    let value: MetadataValue = value.parse().map_err(|_| {
+                        StreamOptionsError::InvalidMetadata("invalid metadata value".to_string())
+                    })?;
+                    metadata.insert(key, value);
+                }
+            }
+        }
+
+        Ok(StreamConfiguration {
+            stream_url,
+            max_message_size_bytes,
+            metadata,
+            bearer_token: self.auth_token,
+        })
+    }
+}
+
+impl StreamConfigurationOptions {
+    /// Returns a `Configuration` object to stream Starknet data.
+    pub fn as_starknet(&self) -> Option<Configuration<v1alpha2::Filter>> {
+        let mut configuration = Configuration::default();
 
         configuration = if let Some(batch_size) = self.batch_size {
             configuration.with_batch_size(batch_size)
@@ -244,125 +198,264 @@ impl ConfigurationArgs {
             configuration
         };
 
-        configuration = if let Some(starting_block) = self.starting_cursor.starting_block {
-            configuration.with_starting_block(starting_block)
+        configuration = if let Some(finality) = self.finality {
+            configuration.with_finality(finality)
         } else {
             configuration
         };
 
-        Ok(configuration)
-    }
-
-    /// Returns the Deno transformation to apply to data.
-    pub fn to_transformer(&self) -> Result<Option<Transformer>, TransformerError> {
-        // only forward variables from env file to transformer.
-        let allow_env = if let Some(env_file) = &self.env_file {
-            let mut variables = Vec::default();
-            for item in dotenvy::from_path_iter(env_file)? {
-                let (key, value) = item?;
-                std::env::set_var(&key, value);
-                variables.push(key);
+        // The starting block is inclusive, but the stream expects the index of the block
+        // immediately before the first one sent.
+        configuration = match self.starting_block {
+            Some(starting_block) if starting_block > 0 => {
+                configuration.with_starting_block(starting_block - 1)
             }
-            Some(variables)
-        } else {
-            None
+            _ => configuration,
         };
 
-        if let Some(transform) = &self.transform {
-            let current_dir = std::env::current_dir().expect("current directory");
-            let transformer_options = TransformerOptions { allow_env };
-            let transformer = Transformer::from_file(transform, current_dir, transformer_options)?;
-            Ok(Some(transformer))
-        } else {
-            Ok(None)
-        }
-    }
-
-    pub fn to_persistence(&self) -> Option<Persistence> {
-        if let Some(etcd_url) = &self.persistence.persist_to_etcd {
-            let sink_id = self
-                .persistence
-                .sink_id
-                .as_ref()
-                .expect("sink_id is required when persist_to_etcd is set");
-            let persistence = Persistence::new(etcd_url, sink_id);
-            Some(persistence)
-        } else {
-            None
-        }
-    }
-
-    pub fn to_metadata(&self) -> Result<MetadataMap, MetadataError> {
-        let mut metadata = MetadataMap::new();
-        for entry in &self.metadata {
-            match entry.split_once(':') {
-                None => return Err(MetadataError::InvalidFormat),
-                Some((key, value)) => {
-                    let key: MetadataKey = key.parse()?;
-                    let value: MetadataValue = value.parse()?;
-                    metadata.insert(key, value);
-                }
+        match self.filter {
+            NetworkFilterOptions::Starknet(ref filter) => {
+                Some(configuration.with_filter(|_| filter.clone()))
             }
         }
-
-        Ok(metadata)
-    }
-
-    pub fn to_bearer_token(&self) -> Option<String> {
-        self.auth_token.clone()
-    }
-
-    pub fn to_status_server_address(&self) -> Result<SocketAddr, StatusServerError> {
-        let address: SocketAddr = self.status_server.status_server_address.parse()?;
-        Ok(address)
-    }
-
-    fn new_filter<F>(&self) -> Result<F, FilterError>
-    where
-        F: Message + Default + Clone + de::DeserializeOwned,
-    {
-        let filter_path = Path::new(&self.filter);
-        let filter_file = File::open(filter_path)?;
-        let filter_reader = BufReader::new(filter_file);
-        let filter = serde_json::from_reader(filter_reader)?;
-        Ok(filter)
     }
 }
 
-impl FinalityArgs {
-    pub fn to_finality(&self) -> DataFinality {
-        if self.pending {
-            DataFinality::DataStatusPending
-        } else if self.accepted {
-            DataFinality::DataStatusAccepted
-        } else if self.finalized {
-            DataFinality::DataStatusFinalized
-        } else {
-            DataFinality::DataStatusAccepted
-        }
-    }
-}
+#[cfg(test)]
+mod tests {
+    use apibara_core::node::v1alpha2::DataFinality;
+    use assert_matches::assert_matches;
+    use bytesize::ByteSize;
 
-impl From<ConfigurationArgsWithoutFinality> for ConfigurationArgs {
-    fn from(value: ConfigurationArgsWithoutFinality) -> Self {
-        Self {
-            batch_size: value.batch_size,
-            filter: value.filter,
-            transform: value.transform,
-            max_message_size: value.max_message_size,
-            metadata: value.metadata,
-            auth_token: value.auth_token,
-            stream_url: value.stream_url,
-            env_file: value.env_file,
-            finality: Some(FinalityArgs {
-                finalized: true,
-                accepted: false,
-                pending: false,
-            }),
-            starting_cursor: value.starting_cursor,
-            network: value.network,
-            persistence: value.persistence,
-            status_server: value.status_server,
+    use super::{
+        PersistenceOptions, StatusServerOptions, StreamConfigurationOptions, StreamOptions,
+        StreamOptionsError,
+    };
+
+    #[test]
+    pub fn test_persistence_options() {
+        let options = PersistenceOptions {
+            persist_to_etcd: Some("http://localhost:2379".to_string()),
+            sink_id: Some("sink_id".to_string()),
+        };
+        let _ = options.to_persistence().expect("convert to persistence");
+    }
+
+    #[test]
+    pub fn test_status_server_options() {
+        let options = StatusServerOptions {
+            status_server_address: Some("0.0.0.0:1111".to_string()),
+        };
+        let _ = options
+            .to_status_server()
+            .expect("convert to status server");
+    }
+
+    #[test]
+    pub fn test_stream_options_from_json() {
+        let json = r#"
+        {
+            "streamUrl": "https://test.test.a5a.ch",
+            "maxMessageSize": "1MB",
+            "metadata": ["key1: value1", "key2: value2"],
+            "authToken": "auth_token"
         }
+        "#;
+        let config = serde_json::from_str::<StreamOptions>(json)
+            .expect("parse StreamOptions from json")
+            .to_stream_configuration()
+            .expect("stream configuration");
+
+        assert!(config.metadata.get("key2").is_some());
+        assert_eq!(config.stream_url.scheme().unwrap(), "https");
+    }
+
+    #[test]
+    pub fn test_stream_options_invalid_url() {
+        let json = r#"
+        {
+            "streamUrl": "",
+            "maxMessageSize": "1MB",
+            "metadata": ["key1: value1", "key2: value2"],
+            "authToken": "auth_token"
+        }
+        "#;
+        let config = serde_json::from_str::<StreamOptions>(json)
+            .expect("parse StreamOptions from json")
+            .to_stream_configuration();
+        assert_matches!(config, Err(StreamOptionsError::InvalidStreamUrl(_)));
+    }
+
+    #[test]
+    pub fn test_stream_options_invalid_message_size() {
+        let json = r#"
+        {
+            "streamUrl": "https://test.test.a5a.ch",
+            "maxMessageSize": "xxxx",
+            "metadata": ["key1: value1", "key2: value2"],
+            "authToken": "auth_token"
+        }
+        "#;
+        let config = serde_json::from_str::<StreamOptions>(json)
+            .expect("parse StreamOptions from json")
+            .to_stream_configuration();
+        assert_matches!(config, Err(StreamOptionsError::MessageSize(_)));
+    }
+
+    #[test]
+    pub fn test_stream_options_invalid_metadata() {
+        let json = r#"
+        {
+            "streamUrl": "https://test.test.a5a.ch",
+            "maxMessageSize": "1MB",
+            "metadata": ["key1 value1", "key2: value2"],
+            "authToken": "auth_token"
+        }
+        "#;
+        let config = serde_json::from_str::<StreamOptions>(json)
+            .expect("parse StreamOptions from json")
+            .to_stream_configuration();
+        assert_matches!(config, Err(StreamOptionsError::InvalidMetadata(_)));
+    }
+
+    #[test]
+    pub fn test_stream_options_invalid_metadata_key() {
+        let json = r#"
+        {
+            "streamUrl": "https://test.test.a5a.ch",
+            "maxMessageSize": "1MB",
+            "metadata": ["key1 key1: value1", "key2: value2"],
+            "authToken": "auth_token"
+        }
+        "#;
+        let config = serde_json::from_str::<StreamOptions>(json)
+            .expect("parse StreamOptions from json")
+            .to_stream_configuration();
+        assert_matches!(config, Err(StreamOptionsError::InvalidMetadata(_)));
+    }
+
+    #[test]
+    pub fn test_stream_options_merge() {
+        let json1 = r#"
+        {
+            "streamUrl": "https://test.test.a5a.ch",
+            "maxMessageSize": "1MB",
+            "metadata": ["key1 key1: value1", "key2: value2"]
+        }
+        "#;
+        let config1 =
+            serde_json::from_str::<StreamOptions>(json1).expect("parse StreamOptions from json");
+
+        let json2 = r#"
+        {
+            "streamUrl": "https://secret.secret.a5a.ch",
+            "metadata": []
+        }
+        "#;
+        let config2 =
+            serde_json::from_str::<StreamOptions>(json2).expect("parse StreamOptions from json");
+
+        let config = config1
+            .merge(config2)
+            .to_stream_configuration()
+            .expect("stream configuration");
+
+        assert_eq!(
+            config.stream_url.to_string(),
+            "https://secret.secret.a5a.ch/"
+        );
+        assert_eq!(config.max_message_size_bytes, ByteSize::mb(1));
+        assert!(config.metadata.is_empty());
+        assert!(config.bearer_token.is_none());
+    }
+
+    #[test]
+    pub fn test_stream_configuration_with_all_options() {
+        let json = r#"
+        {
+            "network": "starknet",
+            "filter": {
+                "header": { "weak": false }
+            },
+            "batchSize": 100,
+            "finality": "DATA_STATUS_PENDING",
+            "startingBlock": 0
+        }
+        "#;
+        let config = serde_json::from_str::<StreamConfigurationOptions>(json)
+            .expect("parse StreamConfigurationOptions from json")
+            .as_starknet()
+            .expect("starknet configuration");
+
+        assert_eq!(config.batch_size, 100);
+        assert_eq!(config.finality, Some(DataFinality::DataStatusPending));
+        assert_eq!(config.starting_cursor, None);
+        assert!(config.filter.header.is_some());
+    }
+
+    #[test]
+    pub fn test_stream_configuration_with_only_filter() {
+        let json = r#"
+        {
+            "network": "starknet",
+            "filter": {
+                "header": { "weak": false }
+            }
+        }
+        "#;
+        let config = serde_json::from_str::<StreamConfigurationOptions>(json)
+            .expect("parse StreamConfigurationOptions from json")
+            .as_starknet()
+            .expect("starknet configuration");
+
+        assert_eq!(config.batch_size, 1);
+        assert_eq!(config.finality, None);
+        assert_eq!(config.starting_cursor, None);
+        assert!(config.filter.header.is_some());
+    }
+
+    #[test]
+    pub fn test_stream_configuration_adjusts_starting_block() {
+        let json = r#"
+        {
+            "network": "starknet",
+            "filter": {
+                "header": { "weak": false }
+            },
+            "startingBlock": 1000
+        }
+        "#;
+        let config = serde_json::from_str::<StreamConfigurationOptions>(json)
+            .expect("parse StreamConfigurationOptions from json")
+            .as_starknet()
+            .expect("starknet configuration");
+
+        assert_eq!(config.starting_cursor.unwrap().order_key, 999);
+    }
+
+    #[test]
+    pub fn test_stream_configuration_requires_filter() {
+        let json = r#"
+        {
+            "network": "starknet"
+        }
+        "#;
+        let config = serde_json::from_str::<StreamConfigurationOptions>(json);
+        assert!(config.is_err());
+    }
+
+    #[test]
+    pub fn test_stream_configuration_ignores_extra_fields() {
+        let json = r#"
+        {
+            "network": "starknet",
+            "filter": {
+                "header": { "weak": false }
+            },
+            "notAField": "notAValue"
+        }
+        "#;
+        let config = serde_json::from_str::<StreamConfigurationOptions>(json);
+        assert!(config.is_ok());
     }
 }

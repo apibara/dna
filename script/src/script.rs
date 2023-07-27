@@ -9,9 +9,9 @@ use deno_runtime::{
 use crate::module_loader::WorkerModuleLoader;
 
 deno_core::extension!(
-    apibara_transform,
-    ops = [op_transform_return],
-    esm_entry_point = "ext:apibara_transform/env.js",
+    apibara_script,
+    ops = [op_script_return],
+    esm_entry_point = "ext:apibara_script/env.js",
     esm = ["env.js"],
     customizer = |ext: &mut deno_core::ExtensionBuilder| {
         ext.force_op_registration();
@@ -20,52 +20,54 @@ deno_core::extension!(
 
 pub use serde_json::Value;
 
-pub struct Transformer {
+pub struct Script {
     worker: MainWorker,
     module: ModuleSpecifier,
     _timeout: Duration,
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum TransformerError {
+pub enum ScriptError {
     #[error("Failed to resolve module: {0}")]
     ModuleResolution(#[from] deno_core::ModuleResolutionError),
     #[error(transparent)]
     Deno(#[from] deno_core::anyhow::Error),
     #[error("Failed to deserialize data: {0}")]
     V8Deserialization(#[from] serde_v8::Error),
-    #[error("Transformer timed out: {0}")]
+    #[error("Failed to deserialize json value: {0}")]
+    JsonDeserialization(#[from] serde_json::Error),
+    #[error("Script timed out: {0}")]
     Timeout(#[from] tokio::time::error::Elapsed),
     #[error("Failed to load environment file: {0}")]
     EnvironmentFile(#[from] dotenvy::Error),
 }
 
 #[derive(Debug, Default)]
-pub struct TransformerOptions {
-    /// Environment variables the transformer has access to.
+pub struct ScriptOptions {
+    /// Environment variables the script has access to.
     ///
     /// An empty list gives access to _ALL_ environment variables.
     pub allow_env: Option<Vec<String>>,
 }
 
-impl Transformer {
-    /// Creates a [Transformer] from the given file.
+impl Script {
+    /// Creates a [Script] from the given file.
     ///
     /// A relative file path is considered relative to the given current directory.
     pub fn from_file(
         path: &str,
         current_dir: impl AsRef<Path>,
-        options: TransformerOptions,
-    ) -> Result<Self, TransformerError> {
+        options: ScriptOptions,
+    ) -> Result<Self, ScriptError> {
         let module = deno_core::resolve_path(path, current_dir.as_ref())?;
         Self::from_module(module, options)
     }
 
-    /// Creates a [Transformer] from the given module specifier.
+    /// Creates a [Script] from the given module specifier.
     pub fn from_module(
         module: ModuleSpecifier,
-        options: TransformerOptions,
-    ) -> Result<Self, TransformerError> {
+        options: ScriptOptions,
+    ) -> Result<Self, ScriptError> {
         let module_loader = WorkerModuleLoader::new();
         let permissions = Self::default_permissions(options)?;
         let worker = MainWorker::bootstrap_from_options(
@@ -74,37 +76,60 @@ impl Transformer {
             WorkerOptions {
                 module_loader: Rc::new(module_loader),
                 startup_snapshot: None,
-                extensions: vec![apibara_transform::init_ops_and_esm()],
+                extensions: vec![apibara_script::init_ops_and_esm()],
                 ..WorkerOptions::default()
             },
         );
 
-        Ok(Transformer {
+        Ok(Script {
             worker,
             module,
             _timeout: Duration::from_secs(5),
         })
     }
 
-    pub async fn transform(&mut self, data: &Value) -> Result<Value, TransformerError> {
+    /// Returns the configuration object exported by the script.
+    pub async fn configuration<C>(&mut self) -> Result<C, ScriptError>
+    where
+        C: serde::de::DeserializeOwned,
+    {
+        let code: FastString = format!(
+            r#"(async (globalThis) => {{
+                const module = await import("{0}");
+                __script_result = module.config;
+                globalThis.Script.return_value(__script_result);
+            }})(globalThis)"#,
+            self.module
+        )
+        .into();
+        let configuration = self.execute_script(code).await?;
+        let configuration = serde_json::from_value(configuration)?;
+        Ok(configuration)
+    }
+
+    pub async fn transform(&mut self, data: &Value) -> Result<Value, ScriptError> {
         let code: FastString = format!(
             r#"(async (globalThis) => {{
             const module = await import("{0}");
             const t = module.default;
             const data = {1};
-            let __transform_result = t.constructor.name === 'AsyncFunction'
+            let __script_result = t.constructor.name === 'AsyncFunction'
               ? await t(data)
               : t(data);
-            if (typeof __transform_result === 'undefined') {{
-              __transform_result = null;
+            if (typeof __script_result === 'undefined') {{
+              __script_result = null;
             }}
-            globalThis.Transform.return_value(__transform_result);
+            globalThis.Script.return_value(__script_result);
         }})(globalThis)"#,
             self.module, data,
         )
         .into();
 
-        self.worker.execute_script("[transform]", code)?;
+        self.execute_script(code).await
+    }
+
+    async fn execute_script(&mut self, code: FastString) -> Result<Value, ScriptError> {
+        self.worker.execute_script("[script]", code)?;
         // TODO:
         //  - limit amount of time
         //  - limit amount of memory
@@ -126,9 +151,7 @@ impl Transformer {
         }
     }
 
-    fn default_permissions(
-        options: TransformerOptions,
-    ) -> Result<PermissionsContainer, TransformerError> {
+    fn default_permissions(options: ScriptOptions) -> Result<PermissionsContainer, ScriptError> {
         let permissions = Permissions::from_options(&PermissionsOptions {
             allow_env: options.allow_env,
             allow_hrtime: true,
@@ -151,7 +174,7 @@ impl deno_core::Resource for ReturnValueResource {
 }
 
 #[op]
-fn op_transform_return(
+fn op_script_return(
     state: &mut OpState,
     args: Value,
     _buf: Option<ZeroCopyBuf>,
