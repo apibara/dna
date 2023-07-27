@@ -4,7 +4,7 @@ use std::{sync::Arc, time::Duration};
 use apibara_core::starknet::v1alpha2;
 use apibara_node::db::libmdbx::EnvironmentKind;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, info};
+use tracing::info;
 
 use crate::{
     core::GlobalBlockId,
@@ -107,7 +107,7 @@ where
         &self,
         number: u64,
     ) -> Result<IngestResult, BlockIngestionError> {
-        debug!(
+        info!(
             block_number = %number,
             "ingest block by number"
         );
