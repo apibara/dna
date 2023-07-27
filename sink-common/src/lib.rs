@@ -1,65 +1,89 @@
+mod cli;
 mod configuration;
 mod connector;
+mod cursor;
+mod json;
 mod persistence;
 mod status;
 
-use std::fmt::{self, Display};
+use apibara_core::starknet::v1alpha2;
+use serde::Deserialize;
+use tokio_util::sync::CancellationToken;
 
-use apibara_core::node::v1alpha2::Cursor;
-use configuration::SinkConnectorFromConfigurationError;
-use prost::Message;
-use serde::{de, ser};
-use serde_json::Value;
+pub use self::cli::*;
+pub use self::configuration::*;
+pub use self::connector::*;
+pub use self::cursor::DisplayCursor;
+pub use self::json::ValueExt;
+pub use self::persistence::*;
+pub use self::status::*;
+pub use apibara_sink_options_derive::SinkOptions;
 
-pub use self::configuration::{
-    ConfigurationArgs, ConfigurationArgsWithoutFinality, ConfigurationError, FilterError,
-    FinalityArgs, StartingCursorArgs,
-};
-pub use self::connector::{Sink, SinkConnector, SinkConnectorError};
-pub use self::status::start_status_server;
-pub use apibara_transformer::TransformerError;
+pub use apibara_script::ScriptOptions;
 
-pub trait SinkConnectorExt: Sized {
-    fn from_configuration_args(
-        args: ConfigurationArgs,
-    ) -> Result<Self, SinkConnectorFromConfigurationError>;
+#[derive(Debug, Deserialize)]
+pub struct FullOptionsFromScript<SinkOptions> {
+    #[serde(flatten)]
+    pub connector: OptionsFromScript,
+    #[serde(flatten)]
+    pub sink: SinkOptions,
 }
 
-impl<F, B> SinkConnectorExt for SinkConnector<F, B>
+pub async fn run_sink_connector<S>(
+    script: &str,
+    connector_cli_options: OptionsFromCli,
+    sink_cli_options: S::Options,
+    ct: CancellationToken,
+) -> Result<(), SinkConnectorError>
 where
-    F: Message + Default + Clone + de::DeserializeOwned,
-    B: Message + Default + ser::Serialize,
+    S: Sink + Send + Sync,
 {
-    fn from_configuration_args(
-        args: ConfigurationArgs,
-    ) -> Result<Self, SinkConnectorFromConfigurationError> {
-        let options = args.to_sink_connector_options()?;
-        Ok(SinkConnector::new(options))
-    }
-}
+    let mut script = load_script(script, ScriptOptions::default())?;
 
-pub fn is_array_of_objects(value: &Value) -> bool {
-    match value {
-        Value::Array(array) => {
-            for v in array {
-                if !v.is_object() {
-                    return false;
-                }
-            }
-            true
-        }
-        _ => false,
-    }
-}
+    let options_from_script = script
+        .configuration::<FullOptionsFromScript<S::Options>>()
+        .await?;
 
-/// A newtype to display a cursor that may be `None` as "genesis".
-pub struct DisplayCursor<'a>(pub &'a Option<Cursor>);
+    // Setup sink.
+    let sink_options = options_from_script.sink.merge(sink_cli_options);
+    let sink = S::from_options(sink_options).await.unwrap();
 
-impl<'a> Display for DisplayCursor<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.0 {
-            Some(cursor) => write!(f, "{}", cursor),
-            None => write!(f, "Cursor(genesis)"),
-        }
-    }
+    // Setup connector.
+    let connector_options_from_script = options_from_script.connector;
+    let stream_configuration = connector_options_from_script.stream_configuration;
+    let stream_options = connector_options_from_script
+        .stream
+        .merge(connector_cli_options.stream);
+
+    let stream = stream_options.to_stream_configuration().unwrap();
+    let persistence = connector_cli_options
+        .connector
+        .persistence
+        .map(|p| p.to_persistence())
+        .transpose()
+        .unwrap();
+    let status_server = connector_cli_options
+        .connector
+        .status_server
+        .to_status_server()
+        .unwrap();
+
+    let sink_connector_options = SinkConnectorOptions {
+        stream,
+        persistence,
+        status_server,
+    };
+
+    let connector = SinkConnector::new(script, sink, sink_connector_options);
+
+    if let Some(starknet_config) = stream_configuration.as_starknet() {
+        connector
+            .consume_stream::<v1alpha2::Filter, v1alpha2::Block>(starknet_config, ct)
+            .await
+            .unwrap();
+    } else {
+        todo!()
+    };
+
+    Ok(())
 }

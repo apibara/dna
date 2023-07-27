@@ -142,9 +142,9 @@ dependencies = [
 
 [[package]]
 name = "anstyle"
-version = "1.0.0"
+version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "41ed9a86bf92ae6580e0a31281f65a1b1d867c0cc68d5346e2ae128dddfa6a7d"
+checksum = "3a30da5c5f2d5e72842e00bcb57657162cdabef0931f40e2deb9b4140440cecd"
 
 [[package]]
 name = "anstyle-parse"
@@ -179,6 +179,17 @@ name = "anyhow"
 version = "1.0.71"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9c7d0618f0e0b7e8ff11427422b64564d5fb0be1940354bfe2e0529b18a9d9b8"
+
+[[package]]
+name = "apibara-cli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "apibara-sink-common",
+ "clap",
+ "serde",
+ "tokio 1.28.2",
+]
 
 [[package]]
 name = "apibara-core"
@@ -269,6 +280,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "apibara-script"
+version = "0.1.0"
+dependencies = [
+ "assert_matches",
+ "data-url",
+ "deno_ast",
+ "deno_core",
+ "deno_runtime",
+ "dotenvy",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "serde_v8",
+ "tempfile",
+ "thiserror",
+ "tokio 1.28.2",
+]
+
+[[package]]
 name = "apibara-sdk"
 version = "0.1.0"
 dependencies = [
@@ -294,9 +324,13 @@ dependencies = [
 name = "apibara-sink-common"
 version = "0.1.0"
 dependencies = [
+ "anstyle",
+ "anyhow",
  "apibara-core",
+ "apibara-script",
  "apibara-sdk",
- "apibara-transformer",
+ "apibara-sink-options-derive",
+ "assert_matches",
  "async-trait",
  "bytesize",
  "clap",
@@ -304,7 +338,9 @@ dependencies = [
  "dotenvy",
  "etcd-client",
  "exponential-backoff",
+ "lazy_static",
  "prost",
+ "regex",
  "serde",
  "serde_json",
  "thiserror",
@@ -312,6 +348,7 @@ dependencies = [
  "tokio-stream",
  "tokio-util",
  "tracing",
+ "validator",
  "warp",
 ]
 
@@ -332,6 +369,26 @@ dependencies = [
  "tokio 1.28.2",
  "tokio-util",
  "tracing",
+]
+
+[[package]]
+name = "apibara-sink-options-derive"
+version = "0.1.0"
+dependencies = [
+ "proc-macro-error",
+ "proc-macro2 1.0.60",
+ "quote 1.0.28",
+ "syn 1.0.109",
+]
+
+[[package]]
+name = "apibara-sink-options-derive-tests"
+version = "0.1.0"
+dependencies = [
+ "apibara-sink-common",
+ "apibara-sink-options-derive",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -393,6 +450,7 @@ dependencies = [
  "tokio 1.28.2",
  "tokio-util",
  "tracing",
+ "validator",
 ]
 
 [[package]]
@@ -443,24 +501,6 @@ dependencies = [
  "tracing-futures",
  "url",
  "warp",
-]
-
-[[package]]
-name = "apibara-transformer"
-version = "0.1.0"
-dependencies = [
- "assert_matches",
- "data-url",
- "deno_ast",
- "deno_core",
- "deno_runtime",
- "dotenvy",
- "reqwest",
- "serde_json",
- "serde_v8",
- "tempfile",
- "thiserror",
- "tokio 1.28.2",
 ]
 
 [[package]]
@@ -717,7 +757,7 @@ dependencies = [
  "arrow-schema",
  "arrow-select",
  "regex",
- "regex-syntax 0.7.2",
+ "regex-syntax 0.7.4",
 ]
 
 [[package]]
@@ -3430,6 +3470,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "idna"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7d20d6b07bfbc108882d88ed8e37d39636dcc260e15e30c45e6ba089610b917c"
+dependencies = [
+ "unicode-bidi",
+ "unicode-normalization",
+]
+
+[[package]]
 name = "if_chain"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4068,7 +4118,7 @@ version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8263075bb86c5a1b1427b5ae862e8889656f126e9f77c484496e8b47cf5c5558"
 dependencies = [
- "regex-automata",
+ "regex-automata 0.1.10",
 ]
 
 [[package]]
@@ -5540,13 +5590,14 @@ dependencies = [
 
 [[package]]
 name = "regex"
-version = "1.8.4"
+version = "1.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d0ab3ca65655bb1e41f2a8c8cd662eb4fb035e67c3f78da1d61dffe89d07300f"
+checksum = "b2eae68fc220f7cf2532e4494aded17545fce192d59cd996e0fe7887f4ceb575"
 dependencies = [
  "aho-corasick",
  "memchr",
- "regex-syntax 0.7.2",
+ "regex-automata 0.3.3",
+ "regex-syntax 0.7.4",
 ]
 
 [[package]]
@@ -5559,6 +5610,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "regex-automata"
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "39354c10dd07468c2e73926b23bb9c2caca74c5501e38a35da70406f1d923310"
+dependencies = [
+ "aho-corasick",
+ "memchr",
+ "regex-syntax 0.7.4",
+]
+
+[[package]]
 name = "regex-syntax"
 version = "0.6.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5566,9 +5628,9 @@ checksum = "f162c6dd7b008981e4d40210aca20b4bd0f9b60ca9271061b07f78537722f2e1"
 
 [[package]]
 name = "regex-syntax"
-version = "0.7.2"
+version = "0.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "436b050e76ed2903236f032a59761c1eb99e1b0aead2c257922771dab1fc8c78"
+checksum = "e5ea92a5b6195c6ef2a0295ea818b312502c6fc94dde986c5553242e18fd4ce2"
 
 [[package]]
 name = "remove_dir_all"
@@ -8259,6 +8321,48 @@ dependencies = [
  "fslock",
  "once_cell",
  "which",
+]
+
+[[package]]
+name = "validator"
+version = "0.16.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b92f40481c04ff1f4f61f304d61793c7b56ff76ac1469f1beb199b1445b253bd"
+dependencies = [
+ "idna 0.4.0",
+ "lazy_static",
+ "regex",
+ "serde",
+ "serde_derive",
+ "serde_json",
+ "url",
+ "validator_derive",
+]
+
+[[package]]
+name = "validator_derive"
+version = "0.16.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bc44ca3088bb3ba384d9aecf40c6a23a676ce23e09bdaca2073d99c207f864af"
+dependencies = [
+ "if_chain",
+ "lazy_static",
+ "proc-macro-error",
+ "proc-macro2 1.0.60",
+ "quote 1.0.28",
+ "regex",
+ "syn 1.0.109",
+ "validator_types",
+]
+
+[[package]]
+name = "validator_types"
+version = "0.16.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "111abfe30072511849c5910134e8baf8dc05de4c0e5903d681cbd5c9c4d611e3"
+dependencies = [
+ "proc-macro2 1.0.60",
+ "syn 1.0.109",
 ]
 
 [[package]]

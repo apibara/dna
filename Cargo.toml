@@ -11,24 +11,29 @@ members = [
     "node",
     "sdk",
     "starknet",
+    "script",
     "sink-common",
+    "sink-options-derive",
+    "sink-options-derive-tests",
     "sink-webhook",
     "sink-mongo",
     "sink-parquet",
     "sink-postgres",
     "operator",
+    "cli",
     "examples/starknet-simple",
 ]
 
 [workspace.dependencies]
 assert_matches = "1.5.0"
 anyhow = "1.0.66"
+anstyle = "1.0.1"
 arrayvec = "0.7.2"
 async-stream = "0.3.5"
 async-trait = "0.1.57"
 byteorder = "1.4.3"
 byte-unit = "4.0.14"
-clap = { version = "4.3.3", features = ["derive", "env", "cargo", "unicode"] }
+clap = { version = "4.3.3", features = ["derive", "env", "cargo", "unicode", "color", "unstable-styles"] }
 ctrlc = { version = "3.2.3", features = ["termination"] }
 dirs = "4.0.0"
 dotenvy = "0.15.7"
@@ -47,6 +52,7 @@ pbjson-types = "0.5.1"
 pin-project = "1.0.12"
 prost = "0.11.0"
 reqwest = { version = "0.11.16", default-features = false, features = ["serde_json", "rustls-tls"] }
+regex = "1.9.1"
 serde = "1.0.155"
 serde_json = "1.0.94"
 # starknet = { git = "https://github.com/xJonathanLEI/starknet-rs", rev = "c5cf1967d44dd" }
@@ -70,6 +76,7 @@ tracing-futures = { version = "0.2.5", features = ["tokio", "futures-03"] }
 tracing-opentelemetry = "0.18.0"
 tracing-subscriber = { version = "0.3.15", features = ["std", "env-filter", "json"] }
 tracing-tree = "0.2.2"
+validator = { version = "0.16.1", features = ["derive"] }
 quickcheck = "1.0.3"
 quickcheck_macros = "1.0.0"
 warp = "0.3.5"

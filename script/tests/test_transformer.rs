@@ -4,7 +4,7 @@
 // - [x] import json
 use std::fs;
 
-use apibara_transformer::{Transformer, TransformerError, TransformerOptions};
+use apibara_script::{Script, ScriptError, ScriptOptions};
 use assert_matches::assert_matches;
 use serde_json::json;
 use tempfile::NamedTempFile;
@@ -18,28 +18,28 @@ fn write_source(ext: &str, code: &str) -> NamedTempFile {
     tempfile
 }
 
-async fn new_transformer_with_code_and_options(
+async fn new_script_with_code_and_options(
     ext: &str,
     code: &str,
-    options: TransformerOptions,
-) -> (NamedTempFile, Transformer) {
+    options: ScriptOptions,
+) -> (NamedTempFile, Script) {
     let file = write_source(ext, code);
-    let transformer = Transformer::from_file(
+    let script = Script::from_file(
         file.path().to_str().unwrap(),
         std::env::current_dir().unwrap(),
         options,
     )
     .unwrap();
-    (file, transformer)
+    (file, script)
 }
 
-async fn new_transformer_with_code(ext: &str, code: &str) -> (NamedTempFile, Transformer) {
-    new_transformer_with_code_and_options(ext, code, Default::default()).await
+async fn new_script_with_code(ext: &str, code: &str) -> (NamedTempFile, Script) {
+    new_script_with_code_and_options(ext, code, Default::default()).await
 }
 
 #[tokio::test]
 async fn test_identity() {
-    let (_file, mut transformer) = new_transformer_with_code(
+    let (_file, mut script) = new_script_with_code(
         "js",
         r#"
         export default function (data) {
@@ -53,13 +53,13 @@ async fn test_identity() {
         "foo": "bar",
         "baz": 42,
     });
-    let result = transformer.transform(&input).await.unwrap();
+    let result = script.transform(&input).await.unwrap();
     assert_eq!(result, input);
 }
 
 #[tokio::test]
 async fn test_return_data_is_different() {
-    let (_file, mut transformer) = new_transformer_with_code(
+    let (_file, mut script) = new_script_with_code(
         "js",
         r#"
         export default function (data) {
@@ -76,7 +76,7 @@ async fn test_return_data_is_different() {
     }, {
         "foo": "bux",
     }]);
-    let result = transformer.transform(&input).await.unwrap();
+    let result = script.transform(&input).await.unwrap();
     let expected = json!([{
         "foo": "bar",
     }, {
@@ -87,7 +87,7 @@ async fn test_return_data_is_different() {
 
 #[tokio::test]
 async fn test_import_library_over_http() {
-    let (_file, mut transformer) = new_transformer_with_code(
+    let (_file, mut script) = new_script_with_code(
         "js",
         r#"
         import capitalizeKeys from 'https://cdn.jsdelivr.net/gh/stdlib-js/utils-capitalize-keys@deno/mod.js';
@@ -106,7 +106,7 @@ async fn test_import_library_over_http() {
     }, {
         "foo": "bux",
     }]);
-    let result = transformer.transform(&input).await.unwrap();
+    let result = script.transform(&input).await.unwrap();
     let expected = json!([{
         "Foo": "bar",
         "Baz": 42,
@@ -118,7 +118,7 @@ async fn test_import_library_over_http() {
 
 #[tokio::test]
 async fn test_typescript() {
-    let (_file, mut transformer) = new_transformer_with_code(
+    let (_file, mut script) = new_script_with_code(
         "ts",
         r#"
         interface Data {
@@ -136,7 +136,7 @@ async fn test_typescript() {
         "foo": "bar",
         "baz": 42,
     });
-    let result = transformer.transform(&input).await.unwrap();
+    let result = script.transform(&input).await.unwrap();
     assert_eq!(result, input);
 }
 
@@ -158,7 +158,7 @@ async fn test_import_data() {
         "#
     .replace("<JSON_FILE>", json_file.path().to_str().unwrap());
 
-    let (_file, mut transformer) = new_transformer_with_code("ts", &code).await;
+    let (_file, mut script) = new_script_with_code("ts", &code).await;
     let input = json!({
         "key": vec!["0x99cd8bde557814842a3121e8ddfd433a539b8c9f14bf31ebf108d12e6196e9"],
         "data": vec![
@@ -168,7 +168,7 @@ async fn test_import_data() {
             "0x0"
         ],
     });
-    let result = transformer.transform(&input).await.unwrap();
+    let result = script.transform(&input).await.unwrap();
     let expected = json!({
         "is_json": true
     });
@@ -177,7 +177,7 @@ async fn test_import_data() {
 
 #[tokio::test]
 async fn test_use_starknet_js() {
-    let (_file, mut transformer) = new_transformer_with_code(
+    let (_file, mut script) = new_script_with_code(
         "js",
         r#"
         import { hash } from 'https://esm.sh/starknet';
@@ -192,7 +192,7 @@ async fn test_use_starknet_js() {
     let input = json!([{
         "key": "Transfer",
     }]);
-    let result = transformer.transform(&input).await.unwrap();
+    let result = script.transform(&input).await.unwrap();
     let expected = json!({
         "result": "0x1d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
     });
@@ -201,7 +201,7 @@ async fn test_use_starknet_js() {
 
 #[tokio::test]
 async fn test_net_is_denied() {
-    let (_file, mut transformer) = new_transformer_with_code(
+    let (_file, mut script) = new_script_with_code(
         "js",
         r#"
         export default function (data) {
@@ -212,13 +212,13 @@ async fn test_net_is_denied() {
     )
     .await;
     let input = json!({});
-    let result = transformer.transform(&input).await;
-    assert_matches!(result, Err(TransformerError::Deno(_)));
+    let result = script.transform(&input).await;
+    assert_matches!(result, Err(ScriptError::Deno(_)));
 }
 
 #[tokio::test]
 async fn test_read_is_denied() {
-    let (_file, mut transformer) = new_transformer_with_code(
+    let (_file, mut script) = new_script_with_code(
         "js",
         r#"
         export default function (data) {
@@ -229,13 +229,13 @@ async fn test_read_is_denied() {
     )
     .await;
     let input = json!({});
-    let result = transformer.transform(&input).await;
-    assert_matches!(result, Err(TransformerError::Deno(_)));
+    let result = script.transform(&input).await;
+    assert_matches!(result, Err(ScriptError::Deno(_)));
 }
 
 #[tokio::test]
 async fn test_write_is_denied() {
-    let (_file, mut transformer) = new_transformer_with_code(
+    let (_file, mut script) = new_script_with_code(
         "js",
         r#"
         export default function (data) {
@@ -246,13 +246,13 @@ async fn test_write_is_denied() {
     )
     .await;
     let input = json!({});
-    let result = transformer.transform(&input).await;
-    assert_matches!(result, Err(TransformerError::Deno(_)));
+    let result = script.transform(&input).await;
+    assert_matches!(result, Err(ScriptError::Deno(_)));
 }
 
 #[tokio::test]
 async fn test_run_is_denied() {
-    let (_file, mut transformer) = new_transformer_with_code(
+    let (_file, mut script) = new_script_with_code(
         "js",
         r#"
         export default function (data) {
@@ -263,13 +263,13 @@ async fn test_run_is_denied() {
     )
     .await;
     let input = json!({});
-    let result = transformer.transform(&input).await;
-    assert_matches!(result, Err(TransformerError::Deno(_)));
+    let result = script.transform(&input).await;
+    assert_matches!(result, Err(ScriptError::Deno(_)));
 }
 
 #[tokio::test]
 async fn test_sys_is_denied() {
-    let (_file, mut transformer) = new_transformer_with_code(
+    let (_file, mut script) = new_script_with_code(
         "js",
         r#"
         export default function (data) {
@@ -280,13 +280,13 @@ async fn test_sys_is_denied() {
     )
     .await;
     let input = json!({});
-    let result = transformer.transform(&input).await;
-    assert_matches!(result, Err(TransformerError::Deno(_)));
+    let result = script.transform(&input).await;
+    assert_matches!(result, Err(ScriptError::Deno(_)));
 }
 
 #[tokio::test]
 async fn test_env_is_denied_by_default() {
-    let (_file, mut transformer) = new_transformer_with_code(
+    let (_file, mut script) = new_script_with_code(
         "js",
         r#"
         export default function (data) {
@@ -297,13 +297,13 @@ async fn test_env_is_denied_by_default() {
     )
     .await;
     let input = json!({});
-    let result = transformer.transform(&input).await;
-    assert_matches!(result, Err(TransformerError::Deno(_)));
+    let result = script.transform(&input).await;
+    assert_matches!(result, Err(ScriptError::Deno(_)));
 }
 
 #[tokio::test]
 async fn test_env_can_access_some_variables() {
-    let (_file, mut transformer) = new_transformer_with_code_and_options(
+    let (_file, mut script) = new_script_with_code_and_options(
         "js",
         r#"
         export default function (data) {
@@ -311,12 +311,12 @@ async fn test_env_can_access_some_variables() {
           return { result };
         }
         "#,
-        TransformerOptions {
+        ScriptOptions {
             allow_env: Some(vec!["CARGO".to_string()]),
             ..Default::default()
         },
     )
     .await;
     let input = json!({});
-    transformer.transform(&input).await.unwrap();
+    script.transform(&input).await.unwrap();
 }

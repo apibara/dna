@@ -2,16 +2,28 @@
 
 use std::net::SocketAddr;
 
+use tokio_util::sync::CancellationToken;
 use tracing::info;
 use warp::Filter;
 
-/// Starts the status server at the provided address.
-pub async fn start_status_server(status_address: SocketAddr) {
-    let routes = warp::path("status").map(|| "OK");
+#[derive(Clone)]
+pub struct StatusServer {
+    address: SocketAddr,
+}
 
-    let server = warp::serve(routes).try_bind(status_address);
+impl StatusServer {
+    pub fn new(address: SocketAddr) -> Self {
+        StatusServer { address }
+    }
 
-    info!("starting status server at {}", status_address);
+    /// Starts the status server.
+    pub async fn start(self, ct: CancellationToken) {
+        let routes = warp::path("status").map(|| "OK");
 
-    server.await
+        let (_, server) = warp::serve(routes)
+            .try_bind_with_graceful_shutdown(self.address, async move { ct.cancelled().await })
+            .expect("failed to bind status server");
+        info!(address = ?self.address, "starting status server");
+        server.await;
+    }
 }
