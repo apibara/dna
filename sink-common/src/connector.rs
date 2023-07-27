@@ -306,6 +306,7 @@ where
         Err(SinkConnectorError::MaximumRetriesExceeded)
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn handle_data<S, D>(
         &mut self,
         sink: &mut S,
@@ -347,10 +348,8 @@ where
                 Ok(_) => {
                     if finality == DataFinality::DataStatusPending {
                         self.needs_invalidation = true;
-                    } else {
-                        if let Some(persistence) = persistence {
-                            persistence.put_cursor(end_cursor).await?;
-                        }
+                    } else if let Some(persistence) = persistence {
+                        persistence.put_cursor(end_cursor).await?;
                     }
 
                     return Ok(());
