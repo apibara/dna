@@ -76,7 +76,6 @@ tracing-futures = { version = "0.2.5", features = ["tokio", "futures-03"] }
 tracing-opentelemetry = "0.18.0"
 tracing-subscriber = { version = "0.3.15", features = ["std", "env-filter", "json"] }
 tracing-tree = "0.2.2"
-validator = { version = "0.16.1", features = ["derive"] }
 quickcheck = "1.0.3"
 quickcheck_macros = "1.0.0"
 warp = "0.3.5"

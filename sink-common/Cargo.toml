@@ -30,7 +30,6 @@ tokio = { version = "1.20.1", features = ["full"] }
 tokio-stream.workspace = true
 tokio-util.workspace = true
 tracing.workspace = true
-validator.workspace = true
 warp.workspace = true
 
 [dev-dependencies]
