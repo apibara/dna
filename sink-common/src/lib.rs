@@ -6,6 +6,8 @@ mod json;
 mod persistence;
 mod status;
 
+use std::env;
+
 use apibara_core::starknet::v1alpha2;
 use serde::Deserialize;
 use tokio_util::sync::CancellationToken;
@@ -38,7 +40,14 @@ pub async fn run_sink_connector<S>(
 where
     S: Sink + Send + Sync,
 {
-    let mut script = load_script(script, ScriptOptions::default())?;
+    let script_allowed_env_vars =
+        load_environment_variables(&connector_cli_options.connector.dotenv)?;
+
+    let script_options = ScriptOptions {
+        allow_env: script_allowed_env_vars,
+    };
+
+    let mut script = load_script(script, script_options)?;
 
     let options_from_script = script
         .configuration::<FullOptionsFromScript<S::Options>>()
@@ -86,4 +95,27 @@ where
     };
 
     Ok(())
+}
+
+pub fn load_environment_variables(
+    options: &DotenvOptions,
+) -> Result<Option<Vec<String>>, SinkConnectorError> {
+    let Some(env_from_file) = options.env_from_file.as_ref() else {
+        return Ok(None);
+    };
+
+    let env_iter = dotenvy::from_path_iter(env_from_file)?;
+
+    let mut allow_env = vec![];
+    for item in env_iter {
+        let (key, value) = item?;
+        allow_env.push(key.clone());
+        env::set_var(key, value);
+    }
+
+    if allow_env.is_empty() {
+        return Ok(None);
+    }
+
+    Ok(Some(allow_env))
 }

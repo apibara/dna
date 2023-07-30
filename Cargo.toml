@@ -21,7 +21,6 @@ members = [
     "sink-postgres",
     "operator",
     "cli",
-    "examples/starknet-simple",
 ]
 
 [workspace.dependencies]

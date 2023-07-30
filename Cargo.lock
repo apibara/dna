@@ -288,7 +288,6 @@ dependencies = [
  "deno_ast",
  "deno_core",
  "deno_runtime",
- "dotenvy",
  "reqwest",
  "serde",
  "serde_json",
@@ -2706,19 +2705,6 @@ dependencies = [
  "impl-serde",
  "primitive-types",
  "uint",
-]
-
-[[package]]
-name = "example-starknet-simple"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "apibara-core",
- "apibara-sdk",
- "chrono",
- "hex",
- "tokio 1.28.2",
- "tokio-stream",
 ]
 
 [[package]]

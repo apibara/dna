@@ -1,6 +1,9 @@
 use std::{io::ErrorKind, process};
 
-use apibara_sink_common::{apibara_cli_style, load_script, FullOptionsFromScript, ScriptOptions};
+use apibara_sink_common::{
+    apibara_cli_style, load_environment_variables, load_script, DotenvOptions,
+    FullOptionsFromScript, ScriptOptions,
+};
 use clap::{Args, Parser, Subcommand};
 use serde::Deserialize;
 
@@ -28,12 +31,20 @@ struct DummyOptions {
 struct RunArgs {
     /// The path to the indexer script.
     script: String,
+    #[clap(flatten)]
+    dotenv: DotenvOptions,
     /// Arguments forwarded to the indexer.
     args: Vec<String>,
 }
 
 async fn run(args: RunArgs) -> anyhow::Result<()> {
-    let mut script = load_script(&args.script, ScriptOptions::default())?;
+    // While not recommended, the script may return a different sink based on some env variable. We
+    // need to load the environment variables before loading the script.
+    let allow_env = load_environment_variables(&args.dotenv)?;
+    let script_options = ScriptOptions { allow_env };
+
+    let mut script = load_script(&args.script, script_options)?;
+
     // Load the configuration from the script, but we don't need the full options yet.
     let configuration = script
         .configuration::<FullOptionsFromScript<DummyOptions>>()
@@ -43,11 +54,19 @@ async fn run(args: RunArgs) -> anyhow::Result<()> {
     let sink_type = configuration.sink.sink_type;
     let sink_command = format!("apibara-sink-{}", sink_type);
 
+    // Add back the `--env-from-file` argument if specified.
+    let mut extra_args = args.args;
+    if let Some(env_from_file) = args.dotenv.env_from_file {
+        extra_args.push("--env-from-file".to_string());
+        extra_args.push(env_from_file.to_string_lossy().to_string());
+    };
+
     let command_res = process::Command::new(&sink_command)
         .arg("run")
         .arg(args.script)
-        .args(args.args)
+        .args(extra_args)
         .spawn();
+
     match command_res {
         Ok(mut child) => {
             child.wait()?;
