@@ -49,7 +49,10 @@ async fn run(args: RunArgs) -> anyhow::Result<()> {
         .args(args.args)
         .spawn();
     match command_res {
-        Ok(_) => Ok(()),
+        Ok(mut child) => {
+            child.wait()?;
+            Ok(())
+        }
         Err(err) => {
             if let ErrorKind::NotFound = err.kind() {
                 eprintln!("error: executable {} is not in your $PATH.", sink_command);
