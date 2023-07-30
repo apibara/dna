@@ -16,17 +16,17 @@ pub struct SinkWebhookConfiguration {
 #[sink_options(tag = "webhook")]
 pub struct SinkWebhookOptions {
     /// The target url to send the request to.
-    #[arg(long, env)]
+    #[arg(long, env = "WEBHOOK_TARGET_URL")]
     target_url: Option<String>,
 
     /// Additional headers to send with the request.
-    #[arg(long, short = 'H', env, value_delimiter = ',')]
+    #[arg(long, short = 'H', value_delimiter = ',', env = "WEBHOOK_HEADERS")]
     header: Option<Vec<String>>,
 
     /// Send the data received from the transform step as is.
     ///
     /// Use this to interact with any API like Discord or Telegram.
-    #[arg(long, env, action)]
+    #[arg(long, action, env = "WEBHOOK_RAW")]
     raw: Option<bool>,
 }
 

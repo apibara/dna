@@ -84,6 +84,8 @@ pub enum SinkConnectorError {
     CtrlC(#[from] ctrlc::Error),
     #[error("JSON conversion error: {0}")]
     Json(#[from] serde_json::Error),
+    #[error("Failed to load environment variables: {0}")]
+    Dotenv(#[from] dotenvy::Error),
     #[error("Sink error: {0}")]
     Sink(Box<dyn std::error::Error + Send + Sync + 'static>),
     #[error("Maximum number of retries exceeded")]

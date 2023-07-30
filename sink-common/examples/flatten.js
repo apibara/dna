@@ -6,7 +6,7 @@ export default function flatten(batch) {
 
 function flattenBlock(block) {
   const { header, events } = block;
-  return (events ?? []).map(event => combineEventWithHeader(event, header));
+  return (events ?? []).map((event) => combineEventWithHeader(event, header));
 }
 
 function combineEventWithHeader({ event, transaction, receipt }, header) {

@@ -1,7 +1,7 @@
 // This is a Deno script that is invoked on every batch of data.
 
 // Yes, we can import any Deno package!
-import BigNumber from 'https://unpkg.com/bignumber.js@latest/bignumber.mjs';
+import BigNumber from "https://unpkg.com/bignumber.js@latest/bignumber.mjs";
 
 // Define some token-specific constants.
 const DECIMALS = 18;
@@ -10,7 +10,7 @@ const DENOMINATOR = BigNumber(10).pow(DECIMALS);
 // Convert from uint256(low, high) to a decimal string.
 function toAmount(low, high) {
   const amount = BigNumber(
-    BigInt(low) + (BigInt(high) << 128n)
+    BigInt(low) + (BigInt(high) << 128n),
   );
   return amount.div(DENOMINATOR);
 }
@@ -40,5 +40,5 @@ function decodeEvent(header, { event, transaction, receipt }, event_idx) {
     transferFrom,
     transferTo,
     transferAmount: transferAmount.toNumber(),
-  }
+  };
 }

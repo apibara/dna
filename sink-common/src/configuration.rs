@@ -1,4 +1,4 @@
-use std::net::AddrParseError;
+use std::{net::AddrParseError, path::PathBuf};
 
 use apibara_core::{node::v1alpha2::DataFinality, starknet::v1alpha2};
 use apibara_sdk::{Configuration, InvalidUri, MetadataKey, MetadataMap, MetadataValue, Uri};
@@ -49,6 +49,18 @@ pub struct ConnectorOptions {
     pub persistence: Option<PersistenceOptions>,
     #[command(flatten)]
     pub status_server: StatusServerOptions,
+    #[command(flatten)]
+    pub dotenv: DotenvOptions,
+}
+
+#[derive(Args, Debug, Default)]
+pub struct DotenvOptions {
+    /// Load script environment variables from the specified file.
+    ///
+    /// Notice that by default the script doesn't have access to any environment variable,
+    /// only from the ones specified in this file.
+    #[arg(long, env)]
+    pub env_from_file: Option<PathBuf>,
 }
 
 #[derive(Args, Debug, Default, Deserialize)]
