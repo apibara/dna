@@ -1,7 +1,7 @@
 # Apibara 🤝 Parquet
 
-`apibara-sink-parquet` is an utility to write on-chain data from Apibara DNA to Parquet files.
-
+`apibara-sink-parquet` is an utility to write on-chain data from Apibara DNA to
+Parquet files.
 
 ## Example usage
 
@@ -17,6 +17,6 @@ cargo run --bin apibara-sink-parquet -- \
     --starknet
 ```
 
-For a complete description of the CLI arguments, run `apibara-sink-parquet --help`.
-To read more about the `--filter` and `--transform` flags, look at the
-`sink-common` README.
+For a complete description of the CLI arguments, run
+`apibara-sink-parquet --help`. To read more about the `--filter` and
+`--transform` flags, look at the `sink-common` README.

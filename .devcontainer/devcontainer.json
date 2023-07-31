@@ -1,10 +1,10 @@
 {
   "name": "Apibara DNA Development",
   "build": {
-    "dockerfile": "Dockerfile",
+    "dockerfile": "Dockerfile"
   },
   "mounts": [
-    "source=apibara_dev_nix,target=/nix,type=volume",
+    "source=apibara_dev_nix,target=/nix,type=volume"
   ],
   "containerEnv": {
     "PROJECT_DIR": "${containerWorkspaceFolder}"
@@ -20,5 +20,5 @@
     "denoland.vscode-deno"
   ],
   "forwardPorts": [],
-  "remoteUser": "vscode",
+  "remoteUser": "vscode"
 }
