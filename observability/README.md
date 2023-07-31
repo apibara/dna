@@ -1,7 +1,7 @@
 # Apibara Observability
 
-This crate contains helpers to setup observability with `tracing` and `opentelemetry`.
-
+This crate contains helpers to setup observability with `tracing` and
+`opentelemetry`.
 
 ## Usage
 

@@ -8,30 +8,30 @@ This guide will go through the recommended workflow for new contributors.
 ## Before you start
 
 The first step is to decide what to work on. The best place to look for work is
-the [project's issues](https://github.com/apibara/dna/issues).
-Issues labelled "Good first issue" are small tasks that don't require
-specialized knowledge of the Apibara codebase.
+the [project's issues](https://github.com/apibara/dna/issues). Issues labelled
+"Good first issue" are small tasks that don't require specialized knowledge of
+the Apibara codebase.
 
 If you're an Apibara user, you can also propose changes to Apibara that solve
 your pain points. In this case, please open an issue before starting to work.
 
-After you decide what to work on, hop on the [Discord
-server](https://discord.gg/VDh2CRQ4) to chat with our team. The `#open-source`
-channel is perfect for syncing and receiving early feedback on your
-contribution.
+After you decide what to work on, hop on the
+[Discord server](https://discord.gg/VDh2CRQ4) to chat with our team. The
+`#open-source` channel is perfect for syncing and receiving early feedback on
+your contribution.
 
 ## Development
 
 Apibara DNA is built in Rust. We use [Nix](https://nixos.org/) to create
 reproducible builds. While Nix is terrific, we understand it's also a complex
-tool, and this section will help you start with it.
-For an easier setup, you can **use the provided devcontainer** that installs and
-configures Nix for you.
+tool, and this section will help you start with it. For an easier setup, you can
+**use the provided devcontainer** that installs and configures Nix for you.
 
 **Installing Nix**
 
-If you don't have Nix installed, install it on your system. The ["Zero to
-Nix"](https://zero-to-nix.com/start/install) guide has a great tutorial on it.
+If you don't have Nix installed, install it on your system. The
+["Zero to Nix"](https://zero-to-nix.com/start/install) guide has a great
+tutorial on it.
 
 **Clone the project**
 
@@ -69,8 +69,8 @@ nix build .#apibara-starknet
 **Committing changes**
 
 This project prefixes changes with the subproject it changed and then a short
-commit message. Usually, we prefer a single commit for each unit of work, so
-use `git commit --amend` freely while developing.  
+commit message. Usually, we prefer a single commit for each unit of work, so use
+`git commit --amend` freely while developing.\
 If the commit is large, please briefly describe why you made this change.
 
 ```
@@ -82,9 +82,8 @@ This change is needed because ...
 Don't use any prefix if your change concerns CI or the build system.
 
 We recommend splitting significant contributions up into many independent
-stacked changes. Our team recommends using [Graphite for stacked
-changes](https://graphite.dev/).
-
+stacked changes. Our team recommends using
+[Graphite for stacked changes](https://graphite.dev/).
 
 ## Code Review
 
@@ -104,7 +103,8 @@ git commit --amend
 gt commit amend # gt ca also works
 ```
 
-This step ensures that git history always looks clean and tidy. Push changes to your fork:
+This step ensures that git history always looks clean and tidy. Push changes to
+your fork:
 
 ```
 git push --force-with-lease
@@ -114,19 +114,20 @@ After your PR is in good shape, we will merge it into the main branch and ship
 it. Congratulations, the code you wrote is now used by hundreds of developers
 and thousands of end users 🎊
 
-
 ## Making a release
 
 Releases are prepared manually to ensure changes are communicated effectively.
 
 **1. Update crate version**
 
-Update crate version, following [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+Update crate version, following
+[Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 **2. Update changelog**
 
-Update the `CHANGELOG.md` file in the target crate, following [Common Changelog](https://common-changelog.org/).
-Make sure to include the link to the release that will be created in Step 5.
+Update the `CHANGELOG.md` file in the target crate, following
+[Common Changelog](https://common-changelog.org/). Make sure to include the link
+to the release that will be created in Step 5.
 
 **3. Open a Pull Request**
 
@@ -138,5 +139,5 @@ Nothing much to do here.
 
 **5. Create GitHub Release**
 
-Create a release on GitHub, creating a new tag in the format `<crate>/v<version>` (e.g. `operator/v1.2.3`).
-
+Create a release on GitHub, creating a new tag in the format
+`<crate>/v<version>` (e.g. `operator/v1.2.3`).

@@ -1,10 +1,13 @@
 # Apibara 🤝 Postgres
 
-`apibara-sink-postgres` is an utility to write on-chain data from Apibara DNA to postgres.
+`apibara-sink-postgres` is an utility to write on-chain data from Apibara DNA to
+postgres.
 
 ## Example usage
 
-- (Optional) Bring up a local postgres and adminer (Datbase UI) instance by writing the following yaml in a `docker-compose.yml` file and then run `docker-compose up`.
+- (Optional) Bring up a local postgres and adminer (Datbase UI) instance by
+  writing the following yaml in a `docker-compose.yml` file and then run
+  `docker-compose up`.
 
 ```yml
 version: "3.1"
@@ -24,7 +27,8 @@ services:
             - 8080:8080
 ```
 
-- Create the database table (you can use the adminer UI at http://localhost:8080)
+- Create the database table (you can use the adminer UI at
+  http://localhost:8080)
 
 ```sql
 CREATE TABLE "public"."apibara" (
@@ -38,9 +42,11 @@ CREATE TABLE "public"."apibara" (
 )
 ```
 
-> This table is meant to store the data transformed by the example in the [sink-common's README](../sink-common/README.md#transform)
+> This table is meant to store the data transformed by the example in the
+> [sink-common's README](../sink-common/README.md#transform)
 
-- Create `filter.json` and `transform.json` files, you can use the examples from the [sink-common's README](../sink-common/README.md#filter)
+- Create `filter.json` and `transform.json` files, you can use the examples from
+  the [sink-common's README](../sink-common/README.md#filter)
 
 - Run the binary:
 
@@ -56,6 +62,6 @@ cargo run --bin apibara-sink-postgres -- \
     --starknet
 ```
 
-For a complete description of the CLI arguments, run `apibara-sink-postgres --help`.
-To read more about the `--filter` and `--transform` flags, look at the
-`sink-common` README.
+For a complete description of the CLI arguments, run
+`apibara-sink-postgres --help`. To read more about the `--filter` and
+`--transform` flags, look at the `sink-common` README.

@@ -3,10 +3,10 @@
 `apibara-sink-webhook` is an utility to automatically invoke a webhook with
 on-chain data from Apibara DNA.
 
-
 ## Example usage
 
-(Optional) Bring up a local http server with `docker run --rm -p 8080:8080  mendhak/http-https-echo`.
+(Optional) Bring up a local http server with
+`docker run --rm -p 8080:8080  mendhak/http-https-echo`.
 
 Compile the project with `cargo build -p apibara-sink-webhook`.
 
@@ -22,6 +22,6 @@ apibara-sink-webhook \
     --starknet
 ```
 
-For a complete description of the CLI arguments, run `apibara-sink-webhook --help`.
-To read more about the `--filter` and `--transform` flags, look at the
-`sink-common` README.
+For a complete description of the CLI arguments, run
+`apibara-sink-webhook --help`. To read more about the `--filter` and
+`--transform` flags, look at the `sink-common` README.
