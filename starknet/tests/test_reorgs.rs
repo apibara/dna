@@ -38,6 +38,7 @@ async fn test_reorg_from_client_pov() {
                 wait_for_rpc: true,
                 devnet: true,
                 use_metadata: Vec::default(),
+                head_refresh_interval_ms: None,
                 websocket_address: None,
             };
             start_node(args, cts).await.unwrap();

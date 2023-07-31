@@ -37,6 +37,7 @@ where
     sequencer_provider: Arc<G>,
     request_span: O,
     websocket_address: Option<String>,
+    block_ingestion_config: BlockIngestionConfig,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -69,6 +70,7 @@ where
         sequencer_provider: G,
         request_span: O,
         websocket_address: Option<String>,
+        block_ingestion_config: BlockIngestionConfig,
     ) -> Self {
         let db = Arc::new(db);
         let sequencer_provider = Arc::new(sequencer_provider);
@@ -77,6 +79,7 @@ where
             sequencer_provider,
             request_span,
             websocket_address,
+            block_ingestion_config,
         }
     }
 
@@ -93,11 +96,10 @@ where
             self.wait_for_rpc(ct.clone()).await?;
         }
 
-        // TODO: config from command line
         let (block_ingestion_client, block_ingestion) = BlockIngestion::new(
             self.sequencer_provider.clone(),
             self.db.clone(),
-            BlockIngestionConfig::default(),
+            self.block_ingestion_config,
         );
 
         let mut block_ingestion_handle = tokio::spawn({
@@ -190,9 +192,9 @@ where
 pub struct StarkNetNodeBuilder<O: RequestObserver, E: EnvironmentKind> {
     datadir: PathBuf,
     provider: HttpProvider,
-    poll_interval: Duration,
     request_observer: O,
     websocket_address: Option<String>,
+    block_ingestion_config: BlockIngestionConfig,
     _phantom: PhantomData<E>,
 }
 
@@ -221,13 +223,12 @@ where
             .expect("no datadir");
         let url = url.parse()?;
         let sequencer = HttpProvider::new(url);
-        let poll_interval = Duration::from_millis(5_000);
         let request_observer = SimpleRequestObserver::default();
         let builder = StarkNetNodeBuilder {
             datadir,
             provider: sequencer,
-            poll_interval,
             request_observer,
+            block_ingestion_config: BlockIngestionConfig::default(),
             websocket_address: None,
             _phantom: Default::default(),
         };
@@ -238,10 +239,6 @@ where
         self.datadir = datadir;
     }
 
-    pub fn with_poll_interval(&mut self, poll_interval: Duration) {
-        self.poll_interval = poll_interval;
-    }
-
     pub fn with_request_observer<N: RequestObserver>(
         self,
         request_observer: N,
@@ -249,11 +246,15 @@ where
         StarkNetNodeBuilder {
             datadir: self.datadir,
             provider: self.provider,
-            poll_interval: self.poll_interval,
             request_observer,
             websocket_address: self.websocket_address,
+            block_ingestion_config: self.block_ingestion_config,
             _phantom: self._phantom,
         }
+    }
+
+    pub fn with_block_ingestion_config(&mut self, block_ingestion_config: BlockIngestionConfig) {
+        self.block_ingestion_config = block_ingestion_config;
     }
 
     pub fn build(self) -> Result<StarkNetNode<HttpProvider, O, E>, StarkNetNodeBuilderError> {
@@ -270,6 +271,7 @@ where
             self.provider,
             self.request_observer,
             self.websocket_address,
+            self.block_ingestion_config,
         ))
     }
 
