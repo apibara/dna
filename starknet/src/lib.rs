@@ -15,8 +15,9 @@ pub use apibara_node::{
     db::libmdbx::NoWriteMap,
     server::{MetadataKeyRequestObserver, SimpleRequestObserver},
 };
+use ingestion::BlockIngestionConfig;
 
-use std::path::PathBuf;
+use std::{path::PathBuf, time::Duration};
 
 use anyhow::Result;
 use apibara_node::db::default_data_dir;
@@ -36,6 +37,9 @@ pub struct StartArgs {
     /// Indexer name. Defaults to `starknet`.
     #[arg(long, env)]
     pub name: Option<String>,
+    /// Head refresh interval (in milliseconds).
+    #[arg(long, env)]
+    pub head_refresh_interval_ms: Option<u64>,
     /// Wait for RPC to be available before starting.
     #[arg(long, env)]
     pub wait_for_rpc: bool,
@@ -82,6 +86,15 @@ pub async fn start_node(args: StartArgs, cts: CancellationToken) -> Result<()> {
 
     if let Some(websocket_address) = args.websocket_address {
         node.with_websocket_address(websocket_address);
+    }
+
+    if let Some(head_refresh_interval_free) = args.head_refresh_interval_ms {
+        // Adjust to some value that makes sense.
+        let head_refresh_interval = head_refresh_interval_free.clamp(100, 10_000);
+        node.with_block_ingestion_config(BlockIngestionConfig {
+            head_refresh_interval: Duration::from_millis(head_refresh_interval),
+            ..Default::default()
+        });
     }
 
     node.build()?.start(cts.clone(), args.wait_for_rpc).await?;

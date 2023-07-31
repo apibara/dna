@@ -249,12 +249,13 @@ where
     async fn ingest_pending(&mut self) -> Result<(), BlockIngestionError> {
         // some node configurations don't support pending data.
         // in that case, simply ignore any error.
+        debug!("ingest pending block");
 
         let Some((status, mut header, body)) = self.provider.get_maybe_block(&BlockId::Pending).await else {
             return Ok(())
         };
 
-        // pending block is not what was expected. do nothing.
+        // pending block is not what was expected, do nothing.
         let is_next_pending_block = if let Some(hash) = header.parent_block_hash.as_ref() {
             *self.current_head.hash() == hash.into()
         } else {
