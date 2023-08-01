@@ -6,6 +6,15 @@ The format is based on [Common Changelog](https://common-changelog.org/), and
 this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.3] - 2023-08-01
+
+_Handle Madara more frequent blocks._
+
+### Added
+
+ - Add a new `--head-refresh-interval-ms` flag to control how often the server
+   checks for new blocks from the Starknet node. Defaults to 3 seconds.
+
 ## [1.0.2] - 2023-07-27
 
 _Improve logging and tracing._
