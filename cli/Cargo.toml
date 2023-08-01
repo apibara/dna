@@ -10,8 +10,9 @@ path = "src/main.rs"
 doc = false
 
 [dependencies]
+apibara-observability = { path = "../observability" }
 apibara-sink-common = { path = "../sink-common" }
-anyhow.workspace = true
 clap.workspace = true
+color-eyre.workspace = true
 serde.workspace = true
 tokio.workspace = true

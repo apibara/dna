@@ -8,13 +8,13 @@ license.workspace = true
 
 [dependencies]
 anstyle.workspace = true
-anyhow.workspace = true
 apibara-core = { path = "../core" }
 apibara-sdk = { path = "../sdk" }
 apibara-script = { path = "../script" }
 apibara-sink-options-derive = { path = "../sink-options-derive" }
 async-trait.workspace = true
 bytesize = {version = "1.1.0", features = ["serde"]}
+color-eyre.workspace = true
 clap.workspace = true
 ctrlc.workspace = true
 dotenvy.workspace = true

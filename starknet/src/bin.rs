@@ -1,7 +1,7 @@
-use anyhow::Result;
-use apibara_node::o11y::init_opentelemetry;
+use apibara_node::o11y::{init_error_handler, init_opentelemetry};
 use apibara_starknet::{set_ctrlc_handler, start_node, StartArgs};
 use clap::{Parser, Subcommand};
+use color_eyre::eyre::Result;
 use tokio_util::sync::CancellationToken;
 
 #[derive(Parser)]
@@ -19,6 +19,7 @@ enum CliCommand {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    init_error_handler()?;
     init_opentelemetry()?;
 
     let cts = CancellationToken::new();

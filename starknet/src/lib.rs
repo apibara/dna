@@ -19,9 +19,9 @@ use ingestion::BlockIngestionConfig;
 
 use std::{path::PathBuf, time::Duration};
 
-use anyhow::Result;
 use apibara_node::db::default_data_dir;
 use clap::Args;
+use color_eyre::eyre::Result;
 use tempdir::TempDir;
 use tokio_util::sync::CancellationToken;
 use tracing::info;

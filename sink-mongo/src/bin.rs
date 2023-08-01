@@ -1,4 +1,4 @@
-use apibara_observability::init_opentelemetry;
+use apibara_observability::{init_error_handler, init_opentelemetry};
 use apibara_sink_common::{run_sink_connector, set_ctrlc_handler, OptionsFromCli};
 use apibara_sink_mongo::{MongoSink, SinkMongoOptions};
 use clap::{Args, Parser, Subcommand};
@@ -27,7 +27,8 @@ struct RunArgs {
 }
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn main() -> color_eyre::eyre::Result<()> {
+    init_error_handler()?;
     init_opentelemetry()?;
     let args = Cli::parse();
 

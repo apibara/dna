@@ -25,7 +25,7 @@ pub fn load_script(path: &str, options: ScriptOptions) -> Result<Script, LoadScr
 }
 
 /// Connect the cancellation token to the ctrl-c handler.
-pub fn set_ctrlc_handler(ct: CancellationToken) -> anyhow::Result<()> {
+pub fn set_ctrlc_handler(ct: CancellationToken) -> color_eyre::eyre::Result<()> {
     ctrlc::set_handler({
         move || {
             ct.cancel();

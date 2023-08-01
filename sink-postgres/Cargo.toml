@@ -15,11 +15,11 @@ name = "apibara-sink-postgres"
 path = "src/bin.rs"
 
 [dependencies]
-anyhow.workspace = true
 apibara-core = { path = "../core" }
 apibara-observability = { path = "../observability" }
 apibara-sink-common = { path = "../sink-common" }
 async-trait.workspace = true
+color-eyre.workspace = true
 clap.workspace = true
 serde.workspace = true
 serde_json.workspace = true

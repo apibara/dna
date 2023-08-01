@@ -13,6 +13,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "addr2line"
+version = "0.20.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f4fa78e18c64fce05e902adecd7a5eed15a5e0a3439f7b0e169f0252214865e3"
+dependencies = [
+ "gimli",
+]
+
+[[package]]
 name = "adler"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -184,9 +193,10 @@ checksum = "9c7d0618f0e0b7e8ff11427422b64564d5fb0be1940354bfe2e0529b18a9d9b8"
 name = "apibara-cli"
 version = "0.1.0"
 dependencies = [
- "anyhow",
+ "apibara-observability",
  "apibara-sink-common",
  "clap",
+ "color-eyre",
  "serde",
  "tokio 1.28.2",
 ]
@@ -250,6 +260,7 @@ dependencies = [
 name = "apibara-observability"
 version = "0.1.0"
 dependencies = [
+ "color-eyre",
  "opentelemetry",
  "opentelemetry-otlp",
  "thiserror",
@@ -263,9 +274,9 @@ dependencies = [
 name = "apibara-operator"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "apibara-observability",
  "clap",
+ "color-eyre",
  "futures 0.3.28",
  "k8s-openapi",
  "kube",
@@ -324,7 +335,6 @@ name = "apibara-sink-common"
 version = "0.1.0"
 dependencies = [
  "anstyle",
- "anyhow",
  "apibara-core",
  "apibara-script",
  "apibara-sdk",
@@ -333,6 +343,7 @@ dependencies = [
  "async-trait",
  "bytesize",
  "clap",
+ "color-eyre",
  "ctrlc",
  "dotenvy",
  "etcd-client",
@@ -354,12 +365,12 @@ dependencies = [
 name = "apibara-sink-mongo"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "apibara-core",
  "apibara-observability",
  "apibara-sink-common",
  "async-trait",
  "clap",
+ "color-eyre",
  "mongodb",
  "serde",
  "serde_json",
@@ -393,13 +404,13 @@ dependencies = [
 name = "apibara-sink-parquet"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "apibara-core",
  "apibara-observability",
  "apibara-sink-common",
  "arrow",
  "async-trait",
  "clap",
+ "color-eyre",
  "parquet",
  "serde",
  "serde_json",
@@ -414,12 +425,12 @@ dependencies = [
 name = "apibara-sink-postgres"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "apibara-core",
  "apibara-observability",
  "apibara-sink-common",
  "async-trait",
  "clap",
+ "color-eyre",
  "serde",
  "serde_json",
  "thiserror",
@@ -433,12 +444,12 @@ dependencies = [
 name = "apibara-sink-webhook"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "apibara-core",
  "apibara-observability",
  "apibara-sink-common",
  "async-trait",
  "clap",
+ "color-eyre",
  "http",
  "prost",
  "reqwest",
@@ -454,7 +465,6 @@ dependencies = [
 name = "apibara-starknet"
 version = "1.0.2"
 dependencies = [
- "anyhow",
  "apibara-core",
  "apibara-node",
  "apibara-sdk",
@@ -464,6 +474,7 @@ dependencies = [
  "byteorder",
  "chrono",
  "clap",
+ "color-eyre",
  "ctrlc",
  "futures 0.3.28",
  "futures-channel",
@@ -962,6 +973,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "backtrace"
+version = "0.3.68"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4319208da049c43661739c5fade2ba182f09d1dc2299b32298d3a31692b17e12"
+dependencies = [
+ "addr2line",
+ "cc",
+ "cfg-if 1.0.0",
+ "libc",
+ "miniz_oxide 0.7.1",
+ "object",
+ "rustc-demangle",
+]
+
+[[package]]
 name = "base16ct"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1350,6 +1376,33 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ddfc5b9aa5d4507acaf872de71051dfd0e309860e88966e1051e462a077aac4f"
 dependencies = [
  "bitflags 1.3.2",
+]
+
+[[package]]
+name = "color-eyre"
+version = "0.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5a667583cca8c4f8436db8de46ea8233c42a7d9ae424a82d338f2e4675229204"
+dependencies = [
+ "backtrace",
+ "color-spantrace",
+ "eyre",
+ "indenter",
+ "once_cell",
+ "owo-colors",
+ "tracing-error",
+]
+
+[[package]]
+name = "color-spantrace"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1ba75b3d9449ecdccb27ecbc479fdc0b87fa2dd43d2f8298f9bf0e59aacc8dce"
+dependencies = [
+ "once_cell",
+ "owo-colors",
+ "tracing-core",
+ "tracing-error",
 ]
 
 [[package]]
@@ -2717,6 +2770,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "eyre"
+version = "0.6.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4c2b6b5a29c02cdc822728b7d7b8ae1bab3e3b05d44522770ddd49722eeac7eb"
+dependencies = [
+ "indenter",
+ "once_cell",
+]
+
+[[package]]
 name = "fallible-iterator"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2827,7 +2890,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f82b0f4c27ad9f8bfd1f3208d882da2b09c301bc1c828fd3a00d0216d2fbbff6"
 dependencies = [
  "crc32fast",
- "miniz_oxide",
+ "miniz_oxide 0.5.4",
 ]
 
 [[package]]
@@ -3099,6 +3162,12 @@ dependencies = [
  "opaque-debug",
  "polyval",
 ]
+
+[[package]]
+name = "gimli"
+version = "0.27.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b6c80984affa11d98d1b88b66ac8853f143217b399d3c74116778ff8fdb4ed2e"
 
 [[package]]
 name = "glob"
@@ -3496,6 +3565,12 @@ dependencies = [
  "quote 1.0.28",
  "syn 1.0.109",
 ]
+
+[[package]]
+name = "indenter"
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ce23b50ad8242c51a442f3ff322d56b02f08852c77e4c0b4d3fd684abc89c683"
 
 [[package]]
 name = "indexmap"
@@ -4213,6 +4288,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "miniz_oxide"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e7810e0be55b428ada41041c41f32c9f1a42817901b4ccf45fa3d4b6561e74c7"
+dependencies = [
+ "adler",
+]
+
+[[package]]
 name = "mio"
 version = "0.6.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4582,6 +4666,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "object"
+version = "0.31.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8bda667d9f2b5051b8833f59f3bf748b28ef54f850f4fcb389a252aa383866d1"
+dependencies = [
+ "memchr",
+]
+
+[[package]]
 name = "oid-registry"
 version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4708,6 +4801,12 @@ name = "overload"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b15813163c1d831bf4a13c3610c05c0d03b39feb07f7e09fa234dac9b15aaf39"
+
+[[package]]
+name = "owo-colors"
+version = "3.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c1b04fb49957986fdce4d6ee7a65027d55d4b6d2265e5848bbb507b58ccfdb6f"
 
 [[package]]
 name = "p224"
@@ -5757,6 +5856,12 @@ dependencies = [
  "libsqlite3-sys",
  "smallvec 1.10.0",
 ]
+
+[[package]]
+name = "rustc-demangle"
+version = "0.1.23"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d626bb9dae77e28219937af045c257c28bfd3f69333c512553507f5f9798cb76"
 
 [[package]]
 name = "rustc-hash"
@@ -7822,6 +7927,16 @@ checksum = "0955b8137a1df6f1a2e9a37d8a6656291ff0297c1a97c24e0d8425fe2312f79a"
 dependencies = [
  "once_cell",
  "valuable",
+]
+
+[[package]]
+name = "tracing-error"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d686ec1c0f384b1277f097b2f279a2ecc11afe8c133c1aabf036a27cb4cd206e"
+dependencies = [
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

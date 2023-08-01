@@ -5,6 +5,7 @@ use apibara_operator::{
     sink::SinkWebhook,
 };
 use clap::{Args, Parser, Subcommand};
+use color_eyre::eyre::Result;
 use kube::{Client, CustomResourceExt};
 
 #[derive(Parser, Debug)]
@@ -32,7 +33,7 @@ struct StartArgs {
     pub sink_webhook_image: Option<String>,
 }
 
-fn generate_crds(_args: GenerateCrdArgs) -> anyhow::Result<()> {
+fn generate_crds(_args: GenerateCrdArgs) -> Result<()> {
     let crds = [SinkWebhook::crd()]
         .iter()
         .map(|crd| serde_yaml::to_string(&crd))
@@ -42,7 +43,7 @@ fn generate_crds(_args: GenerateCrdArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn start(args: StartArgs) -> anyhow::Result<()> {
+async fn start(args: StartArgs) -> Result<()> {
     let client = Client::try_default().await?;
     let configuration = args.to_configuration();
     controller::start(client, configuration).await?;
@@ -50,7 +51,7 @@ async fn start(args: StartArgs) -> anyhow::Result<()> {
 }
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn main() -> Result<()> {
     init_opentelemetry()?;
     let args = Cli::parse();
 

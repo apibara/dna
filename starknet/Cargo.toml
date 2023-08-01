@@ -15,7 +15,6 @@ name = "apibara-starknet"
 path = "src/bin.rs"
 
 [dependencies]
-anyhow.workspace = true
 apibara-core = { path = "../core" }
 apibara-node = { path = "../node" }
 apibara-sdk = { path = "../sdk" }
@@ -23,6 +22,7 @@ bloomfilter = "1.0.9"
 byte-unit.workspace = true
 byteorder.workspace = true
 chrono = "0.4.22"
+color-eyre.workspace = true
 clap.workspace = true
 ctrlc.workspace = true
 futures.workspace = true
