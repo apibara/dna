@@ -56,10 +56,11 @@ rec {
     doCheck = false;
   });
 
-  buildCrate = { crate }:
+  buildCrate = { path, binaryName ? null }:
     let
-      manifest = builtins.fromTOML (builtins.readFile (crate + "/Cargo.toml"));
+      manifest = builtins.fromTOML (builtins.readFile (path + "/Cargo.toml"));
       pname = manifest.package.name;
+      binaryPath = if binaryName != null then "${allCrates}/bin/${binaryName}" else "${allCrates}/bin/${pname}";
       version = manifest.package.version;
       bin = pkgs.stdenv.mkDerivation {
         name = "${pname}-${version}";
@@ -67,7 +68,7 @@ rec {
         phases = [ "installPhase" ];
         installPhase = ''
           mkdir -p $out/bin
-          cp -r ${allCrates}/bin/${pname} $out/bin
+          cp -r ${binaryPath} $out/bin
         '';
       };
     in
@@ -107,7 +108,7 @@ rec {
       '';
     });
 
-  dockerizeCrateBin = { crate, volumes ? null, ports ? null, description ? null }:
+  dockerizeCrateBin = { crate, volumes ? null, ports ? null, description ? null, binaryName ? null, extraBinaries ? [ ] }:
     pkgs.dockerTools.buildImage {
       name = crate.pname;
       # we're publishing images, so make it less confusing
@@ -117,10 +118,10 @@ rec {
         usrBinEnv
         binSh
         caCertificates
-      ];
+      ] ++ extraBinaries;
       config = {
         Entrypoint = [
-          "${crate.bin}/bin/${crate.pname}"
+          "${crate.bin}/bin/${if binaryName != null then binaryName else crate.pname}"
         ];
         Volumes = volumes;
         ExposedPorts = ports;
@@ -129,23 +130,6 @@ rec {
           "org.opencontainers.image.licenses" = "Apache-2.0";
         } // (if description != null then { "org.opencontainers.image.description" = description; } else { }));
       };
-    };
-
-  buildAndDockerize = { path, docker ? true, ports ? null, volumes ? null, description ? null }:
-    let
-      crate = buildCrate { crate = path; };
-      image =
-        if docker then
-          dockerizeCrateBin
-            {
-              crate = crate;
-              ports = ports;
-              volumes = volumes;
-              description = description;
-            } else null;
-    in
-    {
-      inherit crate image;
     };
 
   /* Build all crates and dockerize them (if requested).
@@ -160,15 +144,38 @@ rec {
    */
   buildCrates = crates:
     let
-      built = builtins.mapAttrs (_: crate: buildAndDockerize crate) crates;
-      binaryPackages = builtins.mapAttrs (_: { crate, ... }: crate.bin) built;
+      binaries = builtins.mapAttrs
+        (_: crate: buildCrate {
+          inherit (crate) path;
+          binaryName = if crate ? binaryName then crate.binaryName else null;
+        })
+        crates;
       images =
         let
           crateNames = builtins.attrNames crates;
-          maybeImages = map (name: { name = "${name}-image"; value = built.${name}.image; }) crateNames;
-          images = builtins.filter (image: image.value != null) maybeImages;
+          images = map
+            (name:
+              let
+                def = crates.${name};
+                extraBinaries = map (bin: binaries.${bin}.bin) (if def ? extraBinaries then def.extraBinaries else [ ]);
+                built = dockerizeCrateBin {
+                  description = def.description;
+                  binaryName = if def ? binaryName then def.binaryName else null;
+                  volumes = if def ? volumes then def.volumes else null;
+                  ports = if def ? ports then def.ports else null;
+                  crate = binaries.${name};
+                  extraBinaries = extraBinaries;
+                };
+              in
+              {
+                name = "${name}-image";
+                value = built;
+              }
+            )
+            crateNames;
         in
-        (builtins.listToAttrs images);
+        builtins.listToAttrs images;
+      binaryPackages = builtins.mapAttrs (_: crate: crate.bin) binaries;
       packages = binaryPackages // images // {
         all-crates = allCrates;
       };
