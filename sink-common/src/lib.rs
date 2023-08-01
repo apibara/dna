@@ -55,7 +55,9 @@ where
 
     // Setup sink.
     let sink_options = options_from_script.sink.merge(sink_cli_options);
-    let sink = S::from_options(sink_options).await.unwrap();
+    let sink = S::from_options(sink_options)
+        .await
+        .map_err(|err| OptionsError::Sink(err.into()))?;
 
     // Setup connector.
     let connector_options_from_script = options_from_script.connector;
@@ -64,18 +66,21 @@ where
         .stream
         .merge(connector_cli_options.stream);
 
-    let stream = stream_options.to_stream_configuration().unwrap();
+    let stream = stream_options
+        .to_stream_configuration()
+        .map_err(OptionsError::Stream)?;
+
     let persistence = connector_cli_options
         .connector
         .persistence
         .map(|p| p.to_persistence())
         .transpose()
-        .unwrap();
+        .map_err(OptionsError::Persistence)?;
     let status_server = connector_cli_options
         .connector
         .status_server
         .to_status_server()
-        .unwrap();
+        .map_err(OptionsError::StatusServer)?;
 
     let sink_connector_options = SinkConnectorOptions {
         stream,
@@ -88,8 +93,7 @@ where
     if let Some(starknet_config) = stream_configuration.as_starknet() {
         connector
             .consume_stream::<v1alpha2::Filter, v1alpha2::Block>(starknet_config, ct)
-            .await
-            .unwrap();
+            .await?;
     } else {
         todo!()
     };

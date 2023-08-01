@@ -23,6 +23,11 @@ pub use opentelemetry::metrics::{Counter, Meter};
 
 const OTEL_SDK_DISABLED: &str = "OTEL_SDK_DISABLED";
 
+/// Initialize the default panic and error reporter.
+pub fn init_error_handler() -> color_eyre::eyre::Result<()> {
+    color_eyre::install()
+}
+
 pub type BoxedLayer<S> = Box<dyn Layer<S> + Send + Sync>;
 
 #[derive(Debug, thiserror::Error)]

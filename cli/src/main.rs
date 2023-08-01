@@ -1,5 +1,6 @@
 use std::{io::ErrorKind, process};
 
+use apibara_observability::{init_error_handler, init_opentelemetry};
 use apibara_sink_common::{
     apibara_cli_style, load_environment_variables, load_script, DotenvOptions,
     FullOptionsFromScript, ScriptOptions,
@@ -37,7 +38,7 @@ struct RunArgs {
     args: Vec<String>,
 }
 
-async fn run(args: RunArgs) -> anyhow::Result<()> {
+async fn run(args: RunArgs) -> color_eyre::eyre::Result<()> {
     // While not recommended, the script may return a different sink based on some env variable. We
     // need to load the environment variables before loading the script.
     let allow_env = load_environment_variables(&args.dotenv)?;
@@ -83,7 +84,10 @@ async fn run(args: RunArgs) -> anyhow::Result<()> {
 }
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn main() -> color_eyre::eyre::Result<()> {
+    init_error_handler()?;
+    init_opentelemetry()?;
+
     let args = Cli::parse();
     match args.subcommand {
         Command::Run(args) => run(args).await,

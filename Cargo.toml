@@ -25,7 +25,6 @@ members = [
 
 [workspace.dependencies]
 assert_matches = "1.5.0"
-anyhow = "1.0.66"
 anstyle = "1.0.1"
 arrayvec = "0.7.2"
 async-stream = "0.3.5"
@@ -33,6 +32,7 @@ async-trait = "0.1.57"
 byteorder = "1.4.3"
 byte-unit = "4.0.14"
 clap = { version = "4.3.3", features = ["derive", "env", "cargo", "unicode", "color", "unstable-styles"] }
+color-eyre = "0.6"
 ctrlc = { version = "3.2.3", features = ["termination"] }
 dirs = "4.0.0"
 dotenvy = "0.15.7"

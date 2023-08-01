@@ -18,6 +18,7 @@ use crate::{
     cli::LoadScriptError,
     persistence::{Persistence, PersistenceClient, PersistenceError},
     status::StatusServer,
+    PersistenceOptionsError, StatusServerOptionsError, StreamOptionsError,
 };
 
 pub trait SinkOptions: DeserializeOwned {
@@ -67,7 +68,21 @@ pub struct SinkConnectorOptions {
 }
 
 #[derive(Debug, thiserror::Error)]
+pub enum OptionsError {
+    #[error("Failed to load persistence options: {0}")]
+    Persistence(#[from] PersistenceOptionsError),
+    #[error("Failed to load status server options: {0}")]
+    StatusServer(#[from] StatusServerOptionsError),
+    #[error("Failed to load stream options: {0}")]
+    Stream(#[from] StreamOptionsError),
+    #[error("Failed to load sink options: {0}")]
+    Sink(Box<dyn std::error::Error + Send + Sync + 'static>),
+}
+
+#[derive(Debug, thiserror::Error)]
 pub enum SinkConnectorError {
+    #[error(transparent)]
+    Options(#[from] OptionsError),
     #[error(transparent)]
     ClientBuilder(#[from] apibara_sdk::ClientBuilderError),
     #[error("Failed to send configuration")]
