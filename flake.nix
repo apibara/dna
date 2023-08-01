@@ -52,12 +52,18 @@
             volumes = {
               "/data" = { };
             };
+            ports = {
+              "8118/tcp" = { };
+            };
           };
           sink-mongo = {
             description = "Integration to populate a MongoDB collection with onchain data";
             path = ./sink-mongo;
             volumes = {
               "/data" = { };
+            };
+            ports = {
+              "8118/tcp" = { };
             };
           };
           sink-postgres = {
@@ -66,12 +72,35 @@
             volumes = {
               "/data" = { };
             };
+            ports = {
+              "8118/tcp" = { };
+            };
           };
           sink-parquet = {
             description = "Integration to generate a Parquet dataset from onchain data";
             path = ./sink-parquet;
             volumes = {
               "/data" = { };
+            };
+            ports = {
+              "8118/tcp" = { };
+            };
+          };
+          cli = {
+            description = "Apibara CLI tool";
+            path = ./cli;
+            binaryName = "apibara";
+            extraBinaries = [
+              "sink-webhook"
+              "sink-postgres"
+              "sink-mongo"
+              "sink-parquet"
+            ];
+            volumes = {
+              "/data" = { };
+            };
+            ports = {
+              "8118/tcp" = { };
             };
           };
         };
