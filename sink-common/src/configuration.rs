@@ -60,7 +60,7 @@ pub struct DotenvOptions {
     /// Notice that by default the script doesn't have access to any environment variable,
     /// only from the ones specified in this file.
     #[arg(long, env)]
-    pub env_from_file: Option<PathBuf>,
+    pub allow_env: Option<PathBuf>,
 }
 
 #[derive(Args, Debug, Default, Deserialize)]

@@ -11,6 +11,7 @@ use std::env;
 use apibara_core::starknet::v1alpha2;
 use serde::Deserialize;
 use tokio_util::sync::CancellationToken;
+use tracing::debug;
 
 pub use self::cli::*;
 pub use self::configuration::*;
@@ -104,16 +105,17 @@ where
 pub fn load_environment_variables(
     options: &DotenvOptions,
 ) -> Result<Option<Vec<String>>, SinkConnectorError> {
-    let Some(env_from_file) = options.env_from_file.as_ref() else {
+    let Some(allow_env) = options.allow_env.as_ref() else {
         return Ok(None);
     };
 
-    let env_iter = dotenvy::from_path_iter(env_from_file)?;
+    let env_iter = dotenvy::from_path_iter(allow_env)?;
 
     let mut allow_env = vec![];
     for item in env_iter {
         let (key, value) = item?;
         allow_env.push(key.clone());
+        debug!(env = ?key, "allowing environment variable");
         env::set_var(key, value);
     }
 
