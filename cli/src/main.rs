@@ -55,11 +55,11 @@ async fn run(args: RunArgs) -> color_eyre::eyre::Result<()> {
     let sink_type = configuration.sink.sink_type;
     let sink_command = format!("apibara-sink-{}", sink_type);
 
-    // Add back the `--env-from-file` argument if specified.
+    // Add back the `--allow-env` argument if specified.
     let mut extra_args = args.args;
-    if let Some(env_from_file) = args.dotenv.env_from_file {
-        extra_args.push("--env-from-file".to_string());
-        extra_args.push(env_from_file.to_string_lossy().to_string());
+    if let Some(allow_env) = args.dotenv.allow_env {
+        extra_args.push("--allow-env".to_string());
+        extra_args.push(allow_env.to_string_lossy().to_string());
     };
 
     let command_res = process::Command::new(&sink_command)
