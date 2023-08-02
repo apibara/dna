@@ -241,12 +241,14 @@ where
         start_cursor = ?start_cursor,
         end_cursor = ?end_cursor,
     );
+
     async move {
         let next_batch_span = debug_span!(
             "next_batch",
             start_cursor = ?start_cursor,
             end_cursor = ?end_cursor,
         );
+
         let batch = batch_producer
             .next_batch(cursors.into_iter(), meter)
             .instrument(next_batch_span)
@@ -257,6 +259,7 @@ where
             start_cursor = ?start_cursor,
             end_cursor = ?end_cursor,
         );
+
         let data = serialize_batch_span.in_scope(|| {
             batch
                 .iter()
@@ -264,12 +267,16 @@ where
                 .collect::<Vec<_>>()
         });
 
+        let total_size_bytes = data.iter().map(|block| block.len()).sum::<usize>();
+        meter.increment_bytes_sent_counter(total_size_bytes as u64);
+
         let data = Data {
             cursor: start_cursor.map(|cursor| cursor.to_proto()),
             end_cursor: end_cursor.map(|cursor| cursor.to_proto()),
             finality: finality as i32,
             data,
         };
+
         Ok((data, finality))
     }
     .instrument(handle_batch_span)
