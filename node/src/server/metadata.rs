@@ -15,6 +15,9 @@ pub trait RequestObserver: Send + Sync + 'static {
 pub trait RequestMeter: Send + Sync + 'static {
     /// Increments the counter for the given name by the given amount.
     fn increment_counter(&self, name: &'static str, amount: u64);
+
+    /// Increments the counter for the total bytes sent by the given amount.
+    fn increment_bytes_sent_counter(&self, amount: u64);
 }
 
 /// A [RequestObserver] that adds no context.
@@ -24,6 +27,7 @@ pub struct SimpleRequestObserver {}
 /// A [RequestMeter] that adds no context.
 pub struct SimpleMeter {
     counter: Counter<u64>,
+    bytes_sent_counter: Counter<u64>,
 }
 
 /// A [RequestObserver] that adds a specific metadata value to the span and meter.
@@ -37,19 +41,29 @@ pub struct MetadataKeyRequestObserver {
 pub struct MetadataKeyMeter {
     metadata: Vec<KeyValue>,
     counter: Counter<u64>,
+    bytes_sent_counter: Counter<u64>,
 }
 
 impl Default for SimpleMeter {
     fn default() -> Self {
         let counter = new_data_out_counter();
-        SimpleMeter { counter }
+        let bytes_sent_counter = new_bytes_sent_counter();
+        SimpleMeter {
+            counter,
+            bytes_sent_counter,
+        }
     }
 }
 
 impl MetadataKeyMeter {
     pub fn new(metadata: Vec<KeyValue>) -> Self {
         let counter = new_data_out_counter();
-        MetadataKeyMeter { metadata, counter }
+        let bytes_sent_counter = new_bytes_sent_counter();
+        MetadataKeyMeter {
+            metadata,
+            counter,
+            bytes_sent_counter,
+        }
     }
 }
 
@@ -76,6 +90,11 @@ impl RequestMeter for SimpleMeter {
         let cx = o11y::Context::current();
         self.counter
             .add(&cx, amount, &[KeyValue::new("datum", name)]);
+    }
+
+    fn increment_bytes_sent_counter(&self, amount: u64) {
+        let cx = o11y::Context::current();
+        self.bytes_sent_counter.add(&cx, amount, &[]);
     }
 }
 
@@ -107,9 +126,20 @@ impl RequestMeter for MetadataKeyMeter {
         let attributes = &[&[KeyValue::new("datum", name)], self.metadata.as_slice()].concat();
         self.counter.add(&cx, amount, attributes);
     }
+
+    fn increment_bytes_sent_counter(&self, amount: u64) {
+        let cx = o11y::Context::current();
+        let attributes = self.metadata.as_slice();
+        self.bytes_sent_counter.add(&cx, amount, attributes);
+    }
 }
 
 fn new_data_out_counter() -> Counter<u64> {
     let meter = o11y::meter("stream_data");
     meter.u64_counter("data_out").init()
+}
+
+fn new_bytes_sent_counter() -> Counter<u64> {
+    let meter = o11y::meter("stream_data");
+    meter.u64_counter("stream_bytes_sent").init()
 }
