@@ -1,5 +1,5 @@
 use apibara_core::node::v1alpha2::{Cursor, DataFinality};
-use apibara_sink_common::{DisplayCursor, Sink, ValueExt};
+use apibara_sink_common::{CursorAction, DisplayCursor, Sink, ValueExt};
 use async_trait::async_trait;
 use serde_json::Value;
 use tokio_postgres::types::Json;
@@ -66,7 +66,7 @@ impl Sink for PostgresSink {
         end_cursor: &Cursor,
         finality: &DataFinality,
         batch: &Value,
-    ) -> Result<(), Self::Error> {
+    ) -> Result<CursorAction, Self::Error> {
         info!(
             cursor = %DisplayCursor(cursor),
             end_cursor = %end_cursor,
@@ -76,7 +76,7 @@ impl Sink for PostgresSink {
 
         let Some(values) = batch.as_array_of_objects() else {
             warn!("data is not an array of objects, skipping");
-            return Ok(());
+            return Ok(CursorAction::Persist);
         };
 
         let batch = values
@@ -93,7 +93,7 @@ impl Sink for PostgresSink {
             .execute(&self.insert_statement, &[&Json(batch)])
             .await?;
 
-        Ok(())
+        Ok(CursorAction::Persist)
     }
 
     async fn handle_invalidate(&mut self, cursor: &Option<Cursor>) -> Result<(), Self::Error> {

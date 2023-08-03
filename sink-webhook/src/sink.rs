@@ -1,5 +1,5 @@
 use apibara_core::node::v1alpha2::{Cursor, DataFinality};
-use apibara_sink_common::{LoadScriptError, Sink};
+use apibara_sink_common::{CursorAction, LoadScriptError, Sink};
 use async_trait::async_trait;
 use http::{
     header::{InvalidHeaderName, InvalidHeaderValue},
@@ -94,7 +94,7 @@ impl Sink for WebhookSink {
         end_cursor: &Cursor,
         finality: &DataFinality,
         batch: &Value,
-    ) -> Result<(), Self::Error> {
+    ) -> Result<CursorAction, Self::Error> {
         let cursor_str = cursor
             .clone()
             .map(|c| c.to_string())
@@ -108,7 +108,7 @@ impl Sink for WebhookSink {
         );
 
         if self.raw {
-            self.send(&batch).await
+            self.send(&batch).await?;
         } else {
             let body = &json!({
                 "data": {
@@ -118,8 +118,10 @@ impl Sink for WebhookSink {
                     "batch": batch,
                 },
             });
-            self.send(&body).await
+            self.send(&body).await?;
         }
+
+        Ok(CursorAction::Persist)
     }
 
     #[instrument(skip(self), err(Debug))]

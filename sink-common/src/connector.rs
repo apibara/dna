@@ -25,6 +25,11 @@ pub trait SinkOptions: DeserializeOwned {
     fn merge(self, other: Self) -> Self;
 }
 
+pub enum CursorAction {
+    Persist,
+    Skip,
+}
+
 #[async_trait]
 pub trait Sink {
     type Options: SinkOptions;
@@ -40,7 +45,7 @@ pub trait Sink {
         end_cursor: &Cursor,
         finality: &DataFinality,
         batch: &Value,
-    ) -> Result<(), Self::Error>;
+    ) -> Result<CursorAction, Self::Error>;
 
     async fn handle_invalidate(&mut self, cursor: &Option<Cursor>) -> Result<(), Self::Error>;
 
@@ -352,11 +357,13 @@ where
                 .handle_data(&cursor, &end_cursor, &finality, &data)
                 .await
             {
-                Ok(_) => {
+                Ok(cursor_action) => {
                     if finality == DataFinality::DataStatusPending {
                         self.needs_invalidation = true;
                     } else if let Some(persistence) = persistence {
-                        persistence.put_cursor(end_cursor).await?;
+                        if let CursorAction::Persist = cursor_action {
+                            persistence.put_cursor(end_cursor).await?;
+                        }
                     }
 
                     return Ok(());

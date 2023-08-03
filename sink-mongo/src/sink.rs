@@ -1,5 +1,5 @@
 use apibara_core::node::v1alpha2::{Cursor, DataFinality};
-use apibara_sink_common::{DisplayCursor, Sink, ValueExt};
+use apibara_sink_common::{CursorAction, DisplayCursor, Sink, ValueExt};
 use async_trait::async_trait;
 use mongodb::bson::{doc, to_bson, Bson, Document};
 
@@ -58,7 +58,7 @@ impl Sink for MongoSink {
         end_cursor: &Cursor,
         finality: &DataFinality,
         batch: &Value,
-    ) -> Result<(), Self::Error> {
+    ) -> Result<CursorAction, Self::Error> {
         info!(
             cursor = %DisplayCursor(cursor),
             end_cursor = %end_cursor,
@@ -68,11 +68,12 @@ impl Sink for MongoSink {
 
         let Some(values) = batch.as_array_of_objects() else {
             warn!("data is not an array of objects, skipping");
-            return Ok(());
+            return Ok(CursorAction::Persist);
         };
 
         if values.is_empty() {
-            return Ok(());
+            warn!("data is empty, skipping");
+            return Ok(CursorAction::Persist);
         }
 
         // convert to u32 because that's the maximum bson can handle
@@ -95,7 +96,7 @@ impl Sink for MongoSink {
 
         self.collection.insert_many(documents, None).await?;
 
-        Ok(())
+        Ok(CursorAction::Persist)
     }
 
     async fn handle_invalidate(&mut self, cursor: &Option<Cursor>) -> Result<(), Self::Error> {

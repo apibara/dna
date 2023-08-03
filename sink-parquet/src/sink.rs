@@ -1,7 +1,7 @@
 use std::{fs::File, sync::Arc};
 
 use apibara_core::node::v1alpha2::{Cursor, DataFinality};
-use apibara_sink_common::{DisplayCursor, Sink, ValueExt};
+use apibara_sink_common::{CursorAction, DisplayCursor, Sink, ValueExt};
 use arrow::json::reader::{infer_json_schema_from_iterator, Decoder, ReaderBuilder};
 use arrow::record_batch::RecordBatch;
 use async_trait::async_trait;
@@ -91,15 +91,17 @@ impl Sink for ParquetSink {
         end_cursor: &Cursor,
         finality: &DataFinality,
         batch: &Value,
-    ) -> Result<(), Self::Error> {
+    ) -> Result<CursorAction, Self::Error> {
         let Some(batch) = batch.as_array_of_objects() else {
             warn!("received non-array data");
-            return Ok(())
+            // Skip persistence in case the buffer is still not flushed
+            return Ok(CursorAction::Skip)
         };
 
         if batch.is_empty() {
             debug!("skip empty batch");
-            return Ok(());
+            // Skip persistence in case the buffer is still not flushed
+            return Ok(CursorAction::Skip);
         }
 
         info!(
@@ -114,12 +116,15 @@ impl Sink for ParquetSink {
             None => State::new_from_batch(self.config.batch_size, cursor, end_cursor, batch)?,
         };
 
+        let mut cursor_action = CursorAction::Skip;
+
         if let Some((batch, filename)) = state.handle_batch(cursor, end_cursor, batch).await? {
             self.write_batch(batch, filename)?;
+            cursor_action = CursorAction::Persist;
         }
 
         self.state = Some(state);
-        Ok(())
+        Ok(cursor_action)
     }
 
     #[instrument(skip(self, cursor), err(Debug))]
