@@ -17,6 +17,7 @@ use warp::Filter as WarpFilter;
 #[derive(Clone)]
 pub struct WebsocketStreamServer<R: StorageReader + Send + Sync + 'static> {
     address: String,
+    blocks_per_second_quota: u32,
     ingestion: Arc<IngestionStreamClient>,
     storage: Arc<R>,
 }
@@ -26,12 +27,14 @@ impl<R: StorageReader + Send + Sync + 'static> WebsocketStreamServer<R> {
         address: String,
         db: Arc<R>,
         ingestion: IngestionStreamClient,
+        blocks_per_second_quota: u32,
     ) -> WebsocketStreamServer<R> {
         let ingestion = Arc::new(ingestion);
         WebsocketStreamServer {
             address,
             ingestion,
             storage: db,
+            blocks_per_second_quota,
         }
     }
 
@@ -89,6 +92,7 @@ impl<R: StorageReader + Send + Sync + 'static> WebsocketStreamServer<R> {
             ingestion_stream,
             cursor_producer,
             batch_producer,
+            self.blocks_per_second_quota,
             meter,
         );
 

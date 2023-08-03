@@ -38,6 +38,7 @@ where
     request_span: O,
     websocket_address: Option<String>,
     block_ingestion_config: BlockIngestionConfig,
+    blocks_per_second_quota: u32,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -71,6 +72,7 @@ where
         request_span: O,
         websocket_address: Option<String>,
         block_ingestion_config: BlockIngestionConfig,
+        blocks_per_second_quota: Option<u32>,
     ) -> Self {
         let db = Arc::new(db);
         let sequencer_provider = Arc::new(sequencer_provider);
@@ -80,6 +82,7 @@ where
             request_span,
             websocket_address,
             block_ingestion_config,
+            blocks_per_second_quota: blocks_per_second_quota.unwrap_or(10_000),
         }
     }
 
@@ -114,8 +117,12 @@ where
 
         // TODO: configure from command line
         let server_addr: SocketAddr = "0.0.0.0:7171".parse()?;
-        let server = Server::<E, O>::new(self.db.clone(), block_ingestion_client.clone())
-            .with_request_observer(self.request_span);
+        let server = Server::<E, O>::new(
+            self.db.clone(),
+            block_ingestion_client.clone(),
+            self.blocks_per_second_quota,
+        )
+        .with_request_observer(self.request_span);
         let mut server_handle = tokio::spawn({
             let ct = ct.clone();
             async move {
@@ -135,6 +142,7 @@ where
                     websocket_address,
                     storage,
                     block_ingestion_client.clone(),
+                    self.blocks_per_second_quota,
                 );
                 tokio::spawn(Arc::new(websocket_server).start())
             }
@@ -194,6 +202,7 @@ pub struct StarkNetNodeBuilder<O: RequestObserver, E: EnvironmentKind> {
     provider: HttpProvider,
     request_observer: O,
     websocket_address: Option<String>,
+    blocks_per_second_quota: Option<u32>,
     block_ingestion_config: BlockIngestionConfig,
     _phantom: PhantomData<E>,
 }
@@ -229,6 +238,7 @@ where
             provider: sequencer,
             request_observer,
             block_ingestion_config: BlockIngestionConfig::default(),
+            blocks_per_second_quota: None,
             websocket_address: None,
             _phantom: Default::default(),
         };
@@ -248,6 +258,7 @@ where
             provider: self.provider,
             request_observer,
             websocket_address: self.websocket_address,
+            blocks_per_second_quota: self.blocks_per_second_quota,
             block_ingestion_config: self.block_ingestion_config,
             _phantom: self._phantom,
         }
@@ -272,10 +283,15 @@ where
             self.request_observer,
             self.websocket_address,
             self.block_ingestion_config,
+            self.blocks_per_second_quota,
         ))
     }
 
     pub(crate) fn with_websocket_address(&mut self, websocket_address: String) {
-        self.websocket_address = Some(websocket_address)
+        self.websocket_address = Some(websocket_address);
+    }
+
+    pub(crate) fn with_blocks_per_second_limit(&mut self, limit: u32) {
+        self.blocks_per_second_quota = Some(limit);
     }
 }

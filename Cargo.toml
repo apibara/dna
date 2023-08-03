@@ -38,6 +38,7 @@ dirs = "4.0.0"
 dotenvy = "0.15.7"
 futures = "0.3.23"
 futures-util = "0.3.26"
+governor = "0.6.0"
 hex = { version = "0.4.3", features = ["serde"] }
 http = "0.2.9"
 hyper = "0.14.20"

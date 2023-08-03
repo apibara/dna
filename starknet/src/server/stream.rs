@@ -25,6 +25,7 @@ use crate::{
 
 pub struct StreamService<R: StorageReader, O: RequestObserver> {
     ingestion: Arc<IngestionStreamClient>,
+    blocks_per_second_quota: u32,
     storage: Arc<R>,
     request_observer: O,
 }
@@ -34,12 +35,18 @@ where
     R: StorageReader + Send + Sync + 'static,
     O: RequestObserver,
 {
-    pub fn new(ingestion: Arc<IngestionStreamClient>, storage: R, request_observer: O) -> Self {
+    pub fn new(
+        ingestion: Arc<IngestionStreamClient>,
+        storage: R,
+        request_observer: O,
+        blocks_per_second_quota: u32,
+    ) -> Self {
         let storage = Arc::new(storage);
         StreamService {
             ingestion,
             storage,
             request_observer,
+            blocks_per_second_quota,
         }
     }
 
@@ -70,6 +77,7 @@ where
             ingestion_stream,
             cursor_producer,
             batch_producer,
+            self.blocks_per_second_quota,
             stream_meter,
         );
 

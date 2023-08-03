@@ -38,6 +38,7 @@ async fn test_reorg_from_client_pov() {
                 wait_for_rpc: true,
                 devnet: true,
                 use_metadata: Vec::default(),
+                blocks_per_second_limit: None,
                 head_refresh_interval_ms: None,
                 websocket_address: None,
             };
