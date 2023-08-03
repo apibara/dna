@@ -464,7 +464,7 @@ dependencies = [
 
 [[package]]
 name = "apibara-starknet"
-version = "1.0.3"
+version = "1.0.4"
 dependencies = [
  "apibara-core",
  "apibara-node",
