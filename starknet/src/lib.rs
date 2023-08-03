@@ -43,6 +43,9 @@ pub struct StartArgs {
     /// Wait for RPC to be available before starting.
     #[arg(long, env)]
     pub wait_for_rpc: bool,
+    /// Set an upper bound on the number of blocks per second clients can stream.
+    #[arg(long, env)]
+    pub blocks_per_second_limit: Option<u32>,
     /// Create a temporary directory for data, deleted when devnet is closed.
     #[arg(long, env)]
     pub devnet: bool,
@@ -86,6 +89,10 @@ pub async fn start_node(args: StartArgs, cts: CancellationToken) -> Result<()> {
 
     if let Some(websocket_address) = args.websocket_address {
         node.with_websocket_address(websocket_address);
+    }
+
+    if let Some(limit) = args.blocks_per_second_limit {
+        node.with_blocks_per_second_limit(limit);
     }
 
     if let Some(head_refresh_interval_free) = args.head_refresh_interval_ms {

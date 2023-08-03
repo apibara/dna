@@ -46,6 +46,7 @@ async fn test_starknet_reorgs() {
         devnet: false,
         head_refresh_interval_ms: None,
         use_metadata: Vec::default(),
+        blocks_per_second_limit: None,
         websocket_address: None,
     };
 

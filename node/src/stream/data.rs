@@ -1,3 +1,4 @@
+use core::num::NonZeroU32;
 use std::time::{Duration, Instant};
 
 use apibara_core::node::v1alpha2::{
@@ -5,6 +6,7 @@ use apibara_core::node::v1alpha2::{
 };
 use async_stream::stream;
 use futures::{stream::FusedStream, Stream, StreamExt};
+use governor::{DefaultDirectRateLimiter, Quota, RateLimiter};
 use prost::Message;
 use tracing::{debug_span, instrument, trace, Instrument};
 
@@ -20,6 +22,7 @@ pub fn new_data_stream<C, F, B, M>(
     ingestion_stream: impl Stream<Item = Result<IngestionMessage<C>, StreamError>> + Unpin,
     mut cursor_producer: impl CursorProducer<Cursor = C, Filter = F> + Unpin + FusedStream,
     mut batch_producer: impl BatchProducer<Cursor = C, Filter = F, Block = B>,
+    blocks_per_second_quota: u32,
     meter: M,
 ) -> impl Stream<Item = Result<StreamDataResponse, StreamError>>
 where
@@ -30,6 +33,8 @@ where
 {
     let mut configuration_stream = configuration_stream.fuse();
     let mut ingestion_stream = ingestion_stream.fuse();
+
+    let mut limiter = new_rate_limiter(blocks_per_second_quota, 1);
 
     // try_stream! doesn't work with tokio::select! so we have to use stream! and helper functions.
     Box::pin(stream! {
@@ -65,8 +70,9 @@ where
                 configuration_message = configuration_stream.select_next_some() => {
                     has_configuration = true;
                     match handle_configuration_message(&mut cursor_producer, &mut batch_producer, configuration_message).await {
-                        Ok((new_stream_id, configure_response)) => {
+                        Ok((new_stream_id, batch_size, configure_response)) => {
                             stream_id = new_stream_id;
+                            limiter = new_rate_limiter(blocks_per_second_quota, batch_size);
                             // send invalidate message if the specified cursor is no longer valid.
                             match configure_response {
                                 ReconfigureResponse::Ok => {},
@@ -122,7 +128,7 @@ where
                 batch_cursor = cursor_producer.select_next_some(), if has_configuration => {
                     use stream_data_response::Message;
 
-                    match handle_batch_cursor(&mut cursor_producer, &mut batch_producer, batch_cursor, &meter).await {
+                    match handle_batch_cursor(&mut cursor_producer, &mut batch_producer, batch_cursor, &meter, &limiter).await {
                         Ok((data, finality)) => {
                             let should_send_data =
                                 if !data.data.is_empty() || finality == DataFinality::DataStatusAccepted {
@@ -158,7 +164,7 @@ async fn handle_configuration_message<C, F, B>(
     cursor_producer: &mut impl CursorProducer<Cursor = C, Filter = F>,
     batch_producer: &mut impl BatchProducer<Cursor = C, Filter = F, Block = B>,
     configuration_message: Result<StreamConfiguration<C, F>, StreamError>,
-) -> Result<(u64, ReconfigureResponse<C>), StreamError>
+) -> Result<(u64, usize, ReconfigureResponse<C>), StreamError>
 where
     C: Cursor + Send + Sync,
     F: Message + Default + Clone,
@@ -170,6 +176,7 @@ where
         "reconfigure_cursor_producer",
         stream_id = configuration_message.stream_id
     );
+
     let ingestion_response = cursor_producer
         .reconfigure(&configuration_message)
         .instrument(cursor_producer_span)
@@ -181,7 +188,11 @@ where
     );
     batch_producer_span.in_scope(|| batch_producer.reconfigure(&configuration_message))?;
 
-    Ok((configuration_message.stream_id, ingestion_response))
+    Ok((
+        configuration_message.stream_id,
+        configuration_message.batch_size,
+        ingestion_response,
+    ))
 }
 
 #[instrument(skip_all, level = "debug")]
@@ -204,6 +215,7 @@ async fn handle_batch_cursor<C, F, B, M>(
     batch_producer: &mut impl BatchProducer<Cursor = C, Filter = F, Block = B>,
     batch_cursor: Result<BatchCursor<C>, StreamError>,
     meter: &M,
+    limiter: &DefaultDirectRateLimiter,
 ) -> Result<(Data, DataFinality), StreamError>
 where
     C: Cursor + Send + Sync,
@@ -235,6 +247,8 @@ where
             DataFinality::DataStatusPending,
         ),
     };
+
+    limiter.until_ready().await;
 
     let handle_batch_span = debug_span!(
         "handle_batch",
@@ -281,4 +295,13 @@ where
     }
     .instrument(handle_batch_span)
     .await
+}
+
+fn new_rate_limiter(blocks_per_second_quota: u32, batch_size: usize) -> DefaultDirectRateLimiter {
+    // Convert to quota per minute to allow some bursting at the beginning.
+    let quota_per_minute =
+        NonZeroU32::new(1 + blocks_per_second_quota * 60 / batch_size as u32).unwrap();
+    let quota = Quota::per_minute(quota_per_minute);
+
+    RateLimiter::direct(quota)
 }

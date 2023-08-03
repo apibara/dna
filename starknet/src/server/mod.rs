@@ -20,6 +20,7 @@ use self::health::HealthReporter;
 pub struct Server<E: EnvironmentKind, O: RequestObserver> {
     db: Arc<Environment<E>>,
     ingestion: Arc<IngestionStreamClient>,
+    blocks_per_second_quota: u32,
     request_observer: O,
 }
 
@@ -41,6 +42,7 @@ where
     pub fn new(
         db: Arc<Environment<E>>,
         ingestion: IngestionStreamClient,
+        blocks_per_second_quota: u32,
     ) -> Server<E, SimpleRequestObserver> {
         let ingestion = Arc::new(ingestion);
         let request_observer = SimpleRequestObserver::default();
@@ -48,6 +50,7 @@ where
             db,
             ingestion,
             request_observer,
+            blocks_per_second_quota,
         }
     }
 
@@ -57,6 +60,7 @@ where
             db: self.db,
             ingestion: self.ingestion,
             request_observer,
+            blocks_per_second_quota: self.blocks_per_second_quota,
         }
     }
 
@@ -73,8 +77,13 @@ where
             .build()?;
 
         let storage = DatabaseStorage::new(self.db);
-        let stream_service =
-            StreamService::new(self.ingestion, storage, self.request_observer).into_service();
+        let stream_service = StreamService::new(
+            self.ingestion,
+            storage,
+            self.request_observer,
+            self.blocks_per_second_quota,
+        )
+        .into_service();
 
         info!(addr = %addr, "starting server");
 
