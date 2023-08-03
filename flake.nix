@@ -130,6 +130,10 @@
 
         # all packages.
         # show them with `nix flake show`.
+        # there's three packages for each crate:
+        #  - the binary compiled for the current nix system.
+        # - `-image`: a docker image with the binary.
+        # - `-universal`: a binary that runs on non-nix systems.
         # build with `nix build .#<name>`.
         packages = (native.packages // { });
       }

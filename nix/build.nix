@@ -60,7 +60,8 @@ rec {
     let
       manifest = builtins.fromTOML (builtins.readFile (path + "/Cargo.toml"));
       pname = manifest.package.name;
-      binaryPath = if binaryName != null then "${allCrates}/bin/${binaryName}" else "${allCrates}/bin/${pname}";
+      realBinaryName = if binaryName != null then binaryName else pname;
+      binaryPath = "${allCrates}/bin/${realBinaryName}";
       version = manifest.package.version;
       bin = pkgs.stdenv.mkDerivation {
         name = "${pname}-${version}";
@@ -74,6 +75,7 @@ rec {
     in
     {
       inherit pname version bin;
+      binaryName = realBinaryName;
     };
 
   buildCrateTests = args:
@@ -175,8 +177,44 @@ rec {
             crateNames;
         in
         builtins.listToAttrs images;
+      binariesUniversal =
+        let
+          mkUniversal = name: value:
+            {
+              name = "${name}-universal";
+              value = pkgs.stdenv.mkDerivation {
+                name = "${name}-universal";
+                buildInputs = [
+                  value.bin
+                  pkgs.patchelf
+                ];
+                phases = [ "installPhase" ];
+                installPhase =
+                  if pkgs.stdenv.isLinux then
+                    let
+                      interpreter =
+                        if pkgs.system == "x86_64-linux" then
+                          "/lib64/ld-linux-x86-64.so.2"
+                        else
+                          "/lib/ld-linux-aarch64.so.1";
+                    in
+                    ''
+                      mkdir -p $out/bin
+                      cp --no-preserve=mode ${value.bin}/bin/${value.binaryName} $out/bin
+                      chmod +x $out/bin/${value.binaryName}
+                      patchelf --set-interpreter ${interpreter} $out/bin/${value.binaryName}
+                    ''
+                  else
+                    ''
+                      mkdir -p $out/bin
+                      cp -r ${value.bin}/bin $out
+                    '';
+              };
+            };
+        in
+        pkgs.lib.attrsets.mapAttrs' mkUniversal binaries;
       binaryPackages = builtins.mapAttrs (_: crate: crate.bin) binaries;
-      packages = binaryPackages // images // {
+      packages = binaryPackages // images // binariesUniversal // {
         all-crates = allCrates;
       };
     in
