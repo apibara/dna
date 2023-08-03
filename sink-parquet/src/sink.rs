@@ -181,7 +181,7 @@ impl State {
         let mut decoder = self.decoder.lock().await;
         (*decoder).serialize(batch)?;
 
-        self.end_block_number = end_cursor.order_key;
+        self.end_block_number = end_cursor.order_key + 1;
         if !self.should_flush() {
             return Ok(None);
         }
