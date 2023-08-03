@@ -6,6 +6,20 @@ The format is based on [Common Changelog](https://common-changelog.org/), and
 this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+
+## [1.0.4] - 2023-08-03
+
+_Control maximum stream speed._
+
+### Added
+
+ - Add a new `--blocks-per-second-limit` flag to control how many blocks per
+   second each stream is allowed to stream.
+   This is needed to avoid that a few clients use all available bandwidth and
+   reduce service quality for all other clients.
+ - Add the `stream_bytes_sent` metric that tracks how much data is sent to each
+   client.
+
 ## [1.0.3] - 2023-08-01
 
 _Handle Madara more frequent blocks._
@@ -33,6 +47,8 @@ _Start publishing versioned Docker images._
 
 _First tagged release 🎉_
 
+[1.0.4]: https://github.com/apibara/dna/releases/tag/starknet/v1.0.4
+[1.0.3]: https://github.com/apibara/dna/releases/tag/starknet/v1.0.3
 [1.0.2]: https://github.com/apibara/dna/releases/tag/starknet/v1.0.2
 [1.0.1]: https://github.com/apibara/dna/releases/tag/starknet/v1.0.1
 [1.0.0]: https://github.com/apibara/dna/releases/tag/starknet/v1.0.0
