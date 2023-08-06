@@ -73,10 +73,35 @@ let
     '';
   };
 
+  /* Prepares the binary to be uploaded to Buildkite.
+
+    Notice that this script expects the binary to be in `./result/bin`.
+  */
+  ci-prepare-binary = pkgs.writeShellApplication {
+    name = "ci-prepare-binary";
+    runtimeInputs = with pkgs; [ ];
+    text = ''
+      function dry_run() {
+        if [[ "''${DRY_RUN:-false}" == "true" ]]; then
+          echo "[dry-run] $*"
+        else
+          "$@"
+        fi
+      }
+
+      name=$1
+      arch=$2
+      os=$3
+
+      filename="''${name}-''${arch}-''${os}.tar.gz"
+      echo "--- Archiving binary to ''${filename}"
+      tar -cvzf "''${filename}" -C ./result/bin .
+    '';
+  };
+
   /* Publish a docker image to the registry, with support for multiple architectures.
 
-    If the `BUILDKITE_COMMIT` env variable is set, it will be used to tag the image,
-    otherwise the `latest` tag is used.
+    If the `BUILDKITE_TAG` env variable is not set, the script will do nothing.
 
     If the `BUILDKITE_TAG` env variable is set, the image will be versioned. The tag
     is expected to be in the format `$name/vX.Y.Z` where `$name` is the name of the
@@ -89,12 +114,10 @@ let
 
     Example:
       BUILDKITE_TAG=operator/v1.2.3
-      BUILDKITE_COMMIT=ffff
 
       The image will be tagged as:
-       - quay.io/apibara/operator:ffff-x86_64
-       - quay.io/apibara/operator:ffff-aarch64
-       - quay.io/apibara/operator:ffff
+       - quay.io/apibara/operator:1.2.3-x86_64
+       - quay.io/apibara/operator:1.2.3-aarch64
        - quay.io/apibara/operator:1.2.3
        - quay.io/apibara/operator:1.2
        - quay.io/apibara/operator:1
@@ -129,8 +152,24 @@ let
         exit 1
       fi
 
+      if [ -z "''${BUILDKITE_TAG:-}" ]; then
+        echo "No tag specified"
+        exit 0
+      fi
+
+      if [[ "''${BUILDKITE_TAG:-}" != ''${name}/v* ]]; then
+        echo "Tag is for different image"
+        exit 0
+      fi
+
+      version=''${BUILDKITE_TAG#"''${name}/v"}
+      if [[ $(semver validate "''${version}") != "valid" ]]; then
+        echo "Invalid version ''${version}"
+        exit 1
+      fi
+
       base="quay.io/apibara/''${name}"
-      image="''${base}:''${BUILDKITE_COMMIT:-latest}"
+      image="''${base}:''${version}"
 
       # First, load the images and push them to the registry
       images=()
@@ -147,45 +186,32 @@ let
         images+=("''${destImage}")
       done
 
-      # Assemble the manifests
-      echo "--- Combining images into manifest ''${image}'"
-      dry_run docker manifest create "''${image}" "''${images[@]}"
-      dry_run docker manifest push --purge "''${image}"
+      # Tag and push image v X.Y.Z
+      echo "--- Tagging release ''${base}:''${version}"
+      dry_run docker manifest create "''${base}:''${version}" "''${images[@]}"
+      echo "--- Pushing release ''${base}:''${version}"
+      dry_run docker manifest push --purge "''${base}:''${version}"
 
-      if [[ "''${BUILDKITE_TAG:-}" == ''${name}/v* ]]; then
-        version=''${BUILDKITE_TAG#"''${name}/v"}
-        if [[ $(semver validate "''${version}") != "valid" ]]; then
-          echo "Invalid version ''${version}"
-          exit 1
-        fi
+      # Tag and push image v X.Y
+      tag="$(semver get major "''${version}").$(semver get minor "''${version}")"
+      echo "--- Tagging release ''${base}:''${tag}"
+      dry_run docker manifest create "''${base}:''${tag}" "''${images[@]}"
+      echo "--- Pushing release ''${base}:''${tag}"
+      dry_run docker manifest push --purge "''${base}:''${tag}"
 
-        # Tag and push image v X.Y.Z
-        echo "--- Tagging release ''${base}:''${version}"
-        dry_run docker manifest create "''${base}:''${version}" "''${images[@]}"
-        echo "--- Pushing release ''${base}:''${version}"
-        dry_run docker manifest push --purge "''${base}:''${version}"
+      # Tag and push image v X
+      tag="$(semver get major "''${version}")"
+      echo "--- Tagging release ''${base}:''${tag}"
+      dry_run docker manifest create "''${base}:''${tag}" "''${images[@]}"
+      echo "--- Pushing release ''${base}:''${tag}"
+      dry_run docker manifest push --purge "''${base}:''${tag}"
 
-        # Tag and push image v X.Y
-        tag="$(semver get major "''${version}").$(semver get minor "''${version}")"
-        echo "--- Tagging release ''${base}:''${tag}"
-        dry_run docker manifest create "''${base}:''${tag}" "''${images[@]}"
-        echo "--- Pushing release ''${base}:''${tag}"
-        dry_run docker manifest push --purge "''${base}:''${tag}"
-
-        # Tag and push image v X
-        tag="$(semver get major "''${version}")"
-        echo "--- Tagging release ''${base}:''${tag}"
-        dry_run docker manifest create "''${base}:''${tag}" "''${images[@]}"
-        echo "--- Pushing release ''${base}:''${tag}"
-        dry_run docker manifest push --purge "''${base}:''${tag}"
-
-        # Tag and push image latest
-        tag="latest"
-        echo "--- Tagging release ''${base}:''${tag}"
-        dry_run docker manifest create "''${base}:''${tag}" "''${images[@]}"
-        echo "--- Pushing release ''${base}:''${tag}"
-        dry_run docker manifest push --purge "''${base}:''${tag}"
-      fi
+      # Tag and push image latest
+      tag="latest"
+      echo "--- Tagging release ''${base}:''${tag}"
+      dry_run docker manifest create "''${base}:''${tag}" "''${images[@]}"
+      echo "--- Pushing release ''${base}:''${tag}"
+      dry_run docker manifest push --purge "''${base}:''${tag}"
     '';
   };
 
@@ -252,50 +278,6 @@ let
         {
           wait = { };
         }
-      ] ++ (onAllAgents ({ name, agent }:
-        {
-          group = ":rust: Build binaries ${name}";
-          steps = [
-            {
-              label = ":rust: Build binary {{ matrix.binary }}";
-              command = "nix build .#{{ matrix.binary }}";
-              matrix = {
-                setup = {
-                  binary = binaries;
-                };
-              };
-              agents = agent;
-            }
-          ];
-        })
-      ) ++ [
-        {
-          wait = { };
-        }
-      ] ++ (onAllAgents ({ name, agent }:
-        {
-          group = ":rust: Build images ${name}";
-          steps = [
-            {
-              label = ":rust: Build image {{ matrix.binary }}";
-              commands = [
-                "nix build .#{{ matrix.binary }}-image"
-                "nix develop .#ci -c ci-prepare-image {{ matrix.binary }} ${agent.arch}"
-                "buildkite-agent artifact upload {{ matrix.binary }}-${agent.arch}-image.tar.gz"
-              ];
-              matrix = {
-                setup = {
-                  binary = binaries;
-                };
-              };
-              agents = agent;
-            }
-          ];
-        })
-      ) ++ [
-        {
-          wait = { };
-        }
         {
           label = ":pipeline:";
           command = ''
@@ -312,40 +294,104 @@ let
         # Set to "true" to skip pushing images to the registry.
         DRY_RUN = "false";
       };
-      steps = [
-        {
-          group = ":quay: Publish images";
-          steps = [
-            {
-              label = ":quay: Publish image {{ matrix.binary }}";
-              commands = (onAllAgents ({ agent, ... }:
-                "buildkite-agent artifact download {{ matrix.binary }}-${agent.arch}-image.tar.gz ."
-              )) ++ [
-                (
-                  let
-                    archs = builtins.concatStringsSep " " (onAllAgents ({ agent, ... }: agent.arch));
-                  in
-                  "nix develop .#ci -c ci-publish-image {{ matrix.binary }} ${archs}"
-                )
-              ];
-              matrix = {
-                setup = {
-                  binary = binaries;
-                };
-              };
-              plugins = [
-                {
-                  "docker-login#v2.1.0" = {
-                    username = "apibara+buildkite";
-                    password-env = "APIBARA_DOCKER_LOGIN_PASSWORD";
-                    server = "quay.io";
+      steps =
+        (onAllAgents ({ name, agent }:
+          {
+            group = ":rust: Build binaries ${name}";
+            steps = [
+              {
+                label = ":rust: Build binary {{ matrix.binary }}";
+                command = "nix build .#{{ matrix.binary }}";
+                matrix = {
+                  setup = {
+                    binary = binaries;
                   };
-                }
-              ];
-            }
-          ];
-        }
-      ];
+                };
+                agents = agent;
+              }
+            ];
+          })
+        ) ++ [
+          {
+            wait = { };
+          }
+        ] ++ (onAllAgents ({ name, agent }:
+          {
+            group = ":rust: Build images ${name}";
+            steps = [
+              {
+                label = ":rust: Build image {{ matrix.binary }}";
+                commands = [
+                  "nix build .#{{ matrix.binary }}-image"
+                  "nix develop .#ci -c ci-prepare-image {{ matrix.binary }} ${agent.arch}"
+                  "buildkite-agent artifact upload {{ matrix.binary }}-${agent.arch}-image.tar.gz"
+                ];
+                matrix = {
+                  setup = {
+                    binary = binaries;
+                  };
+                };
+                agents = agent;
+              }
+            ];
+          })
+        ) ++ (onAllAgents ({ name, agent }:
+          {
+            group = ":rust: Build linux binaries ${name}";
+            steps = [
+              {
+                label = ":rust: Build binary {{ matrix.binary }}";
+                commands = [
+                  "nix build .#{{ matrix.binary }}-universal"
+                  "nix develop .#ci -c ci-prepare-binary {{ matrix.binary }} ${agent.arch} linux"
+                  "buildkite-agent artifact upload {{ matrix.binary }}-${agent.arch}-linux.tar.gz"
+                ];
+                matrix = {
+                  setup = {
+                    binary = binaries;
+                  };
+                };
+                agents = agent;
+              }
+            ];
+          })
+        ) ++ [
+          {
+            wait = { };
+          }
+          {
+            group = ":quay: Publish images";
+            steps = [
+              {
+                label = ":quay: Publish image {{ matrix.binary }}";
+                commands = (onAllAgents ({ agent, ... }:
+                  "buildkite-agent artifact download {{ matrix.binary }}-${agent.arch}-image.tar.gz ."
+                )) ++ [
+                  (
+                    let
+                      archs = builtins.concatStringsSep " " (onAllAgents ({ agent, ... }: agent.arch));
+                    in
+                    "nix develop .#ci -c ci-publish-image {{ matrix.binary }} ${archs}"
+                  )
+                ];
+                matrix = {
+                  setup = {
+                    binary = binaries;
+                  };
+                };
+                plugins = [
+                  {
+                    "docker-login#v2.1.0" = {
+                      username = "apibara+buildkite";
+                      password-env = "APIBARA_DOCKER_LOGIN_PASSWORD";
+                      server = "quay.io";
+                    };
+                  }
+                ];
+              }
+            ];
+          }
+        ];
     };
   };
 in
@@ -357,6 +403,7 @@ in
       ci-test
       ci-e2e-test
       ci-prepare-image
+      ci-prepare-binary
       ci-publish-image
     ];
   };
