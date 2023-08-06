@@ -5,3 +5,4 @@
 /.devcontainer/.profile
 .pre-commit-config.yaml
 .envrc
+*.profraw

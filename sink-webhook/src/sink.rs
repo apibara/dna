@@ -29,6 +29,8 @@ pub enum SinkWebhookError {
     ScriptLoading(#[from] LoadScriptError),
     #[error("Http error: {0}")]
     Http(#[from] reqwest::Error),
+    #[error("Serde error: {0}")]
+    Serde(#[from] serde_json::Error),
     #[error("Missing target url")]
     MissingTargetUrl,
     #[error("Invalid header option: {0}")]
