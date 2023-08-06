@@ -1,0 +1,30 @@
+[package]
+name = "apibara-sink-console"
+version = "0.1.0"
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[lib]
+name = "apibara_sink_console"
+path = "src/lib.rs"
+
+[[bin]]
+name = "apibara-sink-console"
+path = "src/bin.rs"
+
+[dependencies]
+apibara-core = { path = "../core" }
+apibara-observability = { path = "../observability" }
+apibara-sink-common = { path = "../sink-common" }
+async-trait.workspace = true
+color-eyre.workspace = true
+clap.workspace = true
+prost.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+tracing.workspace = true

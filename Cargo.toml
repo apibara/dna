@@ -15,6 +15,7 @@ members = [
     "sink-common",
     "sink-options-derive",
     "sink-options-derive-tests",
+    "sink-console",
     "sink-webhook",
     "sink-mongo",
     "sink-parquet",

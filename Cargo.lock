@@ -363,6 +363,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "apibara-sink-console"
+version = "0.1.0"
+dependencies = [
+ "apibara-core",
+ "apibara-observability",
+ "apibara-sink-common",
+ "async-trait",
+ "clap",
+ "color-eyre",
+ "prost",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio 1.28.2",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
 name = "apibara-sink-mongo"
 version = "0.1.0"
 dependencies = [
