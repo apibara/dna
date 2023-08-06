@@ -46,6 +46,16 @@
               "8118/tcp" = { };
             };
           };
+          sink-console = {
+            description = "Print stream data to the console";
+            path = ./sink-console;
+            volumes = {
+              "/data" = { };
+            };
+            ports = {
+              "8118/tcp" = { };
+            };
+          };
           sink-webhook = {
             description = "Integration to connect onchain data to HTTP endpoints";
             path = ./sink-webhook;
@@ -91,6 +101,7 @@
             path = ./cli;
             binaryName = "apibara";
             extraBinaries = [
+              "sink-console"
               "sink-webhook"
               "sink-postgres"
               "sink-mongo"
