@@ -17,7 +17,8 @@ use tracing::info;
 
 use common::{Devnet, DevnetClient};
 
-#[tokio::test]
+// Starknet-devnet doesn't support RCP 0.4 yet
+// #[tokio::test]
 #[ignore]
 async fn test_reorg_from_client_pov() {
     init_opentelemetry().unwrap();
