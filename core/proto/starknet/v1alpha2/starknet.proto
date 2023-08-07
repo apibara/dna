@@ -152,6 +152,16 @@ message DeployAccountTransaction {
   FieldElement class_hash = 4;
 }
 
+// Transaction execution status.
+enum ExecutionStatus {
+  // Unknown execution status.
+  EXECUTION_STATUS_UNSPECIFIED = 0;
+  // Transaction succeeded.
+  EXECUTION_STATUS_SUCCEEDED = 1;
+  // Transaction reverted.
+  EXECUTION_STATUS_REVERTED = 2;
+}
+
 // Result of the execution of a transaction.
 //
 // This message only contains the receipt data, if you also need the
@@ -169,6 +179,10 @@ message TransactionReceipt {
   repeated Event events = 5;
   // Address of the contract that was created by the transaction.
   FieldElement contract_address = 6;
+  // Transaction execution status.
+  ExecutionStatus execution_status = 7;
+  // The reason why the transaction reverted.
+  string revert_reason = 8;
 }
 
 // Message sent from L2 to L1 together with its transaction and receipt.

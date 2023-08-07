@@ -36,6 +36,9 @@ message TransactionFilter {
     L1HandlerTransactionFilter l1_handler = 5;
     DeployAccountTransactionFilter deploy_account = 6;
   }
+
+  // Include reverted transactions.
+  bool include_reverted = 7;
 }
 
 // Receive invoke transactions, v0
@@ -100,6 +103,8 @@ message L2ToL1MessageFilter {
   FieldElement to_address = 1;
   // Filter payloads that prefix-match the given data.
   repeated FieldElement payload = 2;
+  // Include messages sent by reverted transactions.
+  bool include_reverted = 3;
 }
 
 // Filter events.
@@ -110,6 +115,8 @@ message EventFilter {
   repeated FieldElement keys = 2;
   // Filter data that prefix-match the given data.
   repeated FieldElement data = 3;
+  // Include events emitted by reverted transactions.
+  bool include_reverted = 4;
 }
 
 // Filter state update data.

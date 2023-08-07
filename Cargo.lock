@@ -6350,6 +6350,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde_json_pythonic"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "62212da9872ca2a0cad0093191ee33753eddff9266cbbc1b4a602d13a3a768db"
+dependencies = [
+ "itoa",
+ "ryu",
+ "serde",
+]
+
+[[package]]
 name = "serde_repr"
 version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6673,12 +6684,14 @@ dependencies = [
 
 [[package]]
 name = "starknet"
-version = "0.3.0"
-source = "git+https://github.com/fracek/starknet-rs?rev=e1c33fc277#e1c33fc277635ebe4954126761869908ab6ebcbe"
+version = "0.5.0"
+source = "git+https://github.com/fracek/starknet-rs?rev=8e3e7272b#8e3e7272b741c5d09eedb3eafce418d741a28de1"
 dependencies = [
  "starknet-accounts",
  "starknet-contract",
  "starknet-core",
+ "starknet-crypto",
+ "starknet-ff",
  "starknet-macros",
  "starknet-providers",
  "starknet-signers",
@@ -6686,8 +6699,8 @@ dependencies = [
 
 [[package]]
 name = "starknet-accounts"
-version = "0.2.0"
-source = "git+https://github.com/fracek/starknet-rs?rev=e1c33fc277#e1c33fc277635ebe4954126761869908ab6ebcbe"
+version = "0.4.0"
+source = "git+https://github.com/fracek/starknet-rs?rev=8e3e7272b#8e3e7272b741c5d09eedb3eafce418d741a28de1"
 dependencies = [
  "async-trait",
  "starknet-core",
@@ -6698,8 +6711,8 @@ dependencies = [
 
 [[package]]
 name = "starknet-contract"
-version = "0.2.0"
-source = "git+https://github.com/fracek/starknet-rs?rev=e1c33fc277#e1c33fc277635ebe4954126761869908ab6ebcbe"
+version = "0.4.0"
+source = "git+https://github.com/fracek/starknet-rs?rev=8e3e7272b#8e3e7272b741c5d09eedb3eafce418d741a28de1"
 dependencies = [
  "serde",
  "serde_json",
@@ -6712,26 +6725,25 @@ dependencies = [
 
 [[package]]
 name = "starknet-core"
-version = "0.3.2"
-source = "git+https://github.com/fracek/starknet-rs?rev=e1c33fc277#e1c33fc277635ebe4954126761869908ab6ebcbe"
+version = "0.5.1"
+source = "git+https://github.com/fracek/starknet-rs?rev=8e3e7272b#8e3e7272b741c5d09eedb3eafce418d741a28de1"
 dependencies = [
  "base64 0.21.2",
- "ethereum-types",
  "flate2",
  "hex",
  "serde",
  "serde_json",
+ "serde_json_pythonic",
  "serde_with 2.3.3",
  "sha3",
  "starknet-crypto",
  "starknet-ff",
- "thiserror",
 ]
 
 [[package]]
 name = "starknet-crypto"
-version = "0.5.1"
-source = "git+https://github.com/fracek/starknet-rs?rev=e1c33fc277#e1c33fc277635ebe4954126761869908ab6ebcbe"
+version = "0.6.0"
+source = "git+https://github.com/fracek/starknet-rs?rev=8e3e7272b#8e3e7272b741c5d09eedb3eafce418d741a28de1"
 dependencies = [
  "crypto-bigint 0.5.2",
  "hex",
@@ -6749,8 +6761,8 @@ dependencies = [
 
 [[package]]
 name = "starknet-crypto-codegen"
-version = "0.3.1"
-source = "git+https://github.com/fracek/starknet-rs?rev=e1c33fc277#e1c33fc277635ebe4954126761869908ab6ebcbe"
+version = "0.3.2"
+source = "git+https://github.com/fracek/starknet-rs?rev=8e3e7272b#8e3e7272b741c5d09eedb3eafce418d741a28de1"
 dependencies = [
  "starknet-curve",
  "starknet-ff",
@@ -6759,8 +6771,8 @@ dependencies = [
 
 [[package]]
 name = "starknet-curve"
-version = "0.3.0"
-source = "git+https://github.com/fracek/starknet-rs?rev=e1c33fc277#e1c33fc277635ebe4954126761869908ab6ebcbe"
+version = "0.4.0"
+source = "git+https://github.com/fracek/starknet-rs?rev=8e3e7272b#8e3e7272b741c5d09eedb3eafce418d741a28de1"
 dependencies = [
  "starknet-ff",
 ]
@@ -6768,7 +6780,7 @@ dependencies = [
 [[package]]
 name = "starknet-ff"
 version = "0.3.4"
-source = "git+https://github.com/fracek/starknet-rs?rev=e1c33fc277#e1c33fc277635ebe4954126761869908ab6ebcbe"
+source = "git+https://github.com/fracek/starknet-rs?rev=8e3e7272b#8e3e7272b741c5d09eedb3eafce418d741a28de1"
 dependencies = [
  "ark-ff",
  "bigdecimal",
@@ -6781,8 +6793,8 @@ dependencies = [
 
 [[package]]
 name = "starknet-macros"
-version = "0.1.0"
-source = "git+https://github.com/fracek/starknet-rs?rev=e1c33fc277#e1c33fc277635ebe4954126761869908ab6ebcbe"
+version = "0.1.2"
+source = "git+https://github.com/fracek/starknet-rs?rev=8e3e7272b#8e3e7272b741c5d09eedb3eafce418d741a28de1"
 dependencies = [
  "starknet-core",
  "syn 2.0.18",
@@ -6790,12 +6802,14 @@ dependencies = [
 
 [[package]]
 name = "starknet-providers"
-version = "0.3.0"
-source = "git+https://github.com/fracek/starknet-rs?rev=e1c33fc277#e1c33fc277635ebe4954126761869908ab6ebcbe"
+version = "0.5.0"
+source = "git+https://github.com/fracek/starknet-rs?rev=8e3e7272b#8e3e7272b741c5d09eedb3eafce418d741a28de1"
 dependencies = [
  "async-trait",
  "auto_impl",
+ "ethereum-types",
  "flate2",
+ "log",
  "reqwest",
  "serde",
  "serde_json",
@@ -6807,8 +6821,8 @@ dependencies = [
 
 [[package]]
 name = "starknet-signers"
-version = "0.2.1"
-source = "git+https://github.com/fracek/starknet-rs?rev=e1c33fc277#e1c33fc277635ebe4954126761869908ab6ebcbe"
+version = "0.3.0"
+source = "git+https://github.com/fracek/starknet-rs?rev=8e3e7272b#8e3e7272b741c5d09eedb3eafce418d741a28de1"
 dependencies = [
  "async-trait",
  "auto_impl",

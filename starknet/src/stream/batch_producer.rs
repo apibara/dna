@@ -149,6 +149,11 @@ where
             .into_iter()
             .zip(receipts.into_iter())
             .flat_map(|(tx, rx)| {
+                // For now, never include reverted transactions.
+                // TODO: use filter flag.
+                if rx.execution_status == v1alpha2::ExecutionStatus::Reverted as i32 {
+                    return None;
+                }
                 if self.filter_transaction(&tx) {
                     Some(v1alpha2::TransactionWithReceipt {
                         transaction: Some(tx),
@@ -189,6 +194,10 @@ where
         let events = filter_events_span.in_scope(|| {
             let mut events = Vec::default();
             for receipt in &receipts {
+                // TODO: use filter flag.
+                if receipt.execution_status == v1alpha2::ExecutionStatus::Reverted as i32 {
+                    continue;
+                }
                 let transaction = &transactions[receipt.transaction_index as usize];
                 for event in &receipt.events {
                     if self.filter_event(event) {
@@ -230,6 +239,10 @@ where
 
         let mut messages = Vec::default();
         for receipt in &receipts {
+            // TODO: use filter flag.
+            if receipt.execution_status == v1alpha2::ExecutionStatus::Reverted as i32 {
+                continue;
+            }
             let transaction = &transactions[receipt.transaction_index as usize];
             for message in &receipt.l2_to_l1_messages {
                 if self.filter_l2_to_l1_message(message) {
