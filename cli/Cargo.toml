@@ -12,10 +12,16 @@ doc = false
 [dependencies]
 apibara-observability = { path = "../observability" }
 apibara-sink-common = { path = "../sink-common" }
+async-compression.workspace = true
 clap.workspace = true
 color-eyre.workspace = true
 colored = "2.0.4"
 dirs.workspace = true
+futures.workspace = true
+octocrab = "0.29.1"
+reqwest.workspace = true
 serde.workspace = true
 tabled = "0.14.0"
+tar = "0.4.40"
 tokio.workspace = true
+tokio-util.workspace = true
