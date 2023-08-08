@@ -93,9 +93,9 @@ let
       arch=$2
       os=$3
 
-      filename="''${name}-''${arch}-''${os}.tar.gz"
-      echo "--- Archiving binary to ''${filename}"
-      tar -cvzf "''${filename}" -C ./result/bin .
+      filename="''${name}-''${arch}-''${os}.gz"
+      echo "--- Compressing binary to ''${filename}"
+      gzip -c ./result/bin/* > "''${filename}"
     '';
   };
 
@@ -344,7 +344,7 @@ let
                 commands = [
                   "nix build .#{{ matrix.binary }}-universal"
                   "nix develop .#ci -c ci-prepare-binary {{ matrix.binary }} ${agent.arch} linux"
-                  "buildkite-agent artifact upload {{ matrix.binary }}-${agent.arch}-linux.tar.gz"
+                  "buildkite-agent artifact upload {{ matrix.binary }}-${agent.arch}-linux.gz"
                 ];
                 matrix = {
                   setup = {
