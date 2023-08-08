@@ -1,16 +1,24 @@
 use std::{
     env, fs,
+    io::ErrorKind,
     os::unix::prelude::PermissionsExt,
     path::{Path, PathBuf},
     process,
 };
 
+use async_compression::tokio::bufread::GzipDecoder;
 use clap::{Args, Subcommand};
 use color_eyre::eyre::{eyre, Context, Result};
 use colored::*;
+use futures::stream::TryStreamExt;
+use reqwest::Url;
 use tabled::{settings::Style, Table, Tabled};
+use tokio_util::io::StreamReader;
 
 use crate::paths::plugins_dir;
+
+static GITHUB_REPO_ORG: &str = "apibara";
+static GITHUB_REPO_NAME: &str = "dna";
 
 #[derive(Debug, Args)]
 pub struct PluginsArgs {
@@ -26,8 +34,6 @@ pub enum Command {
     List(ListArgs),
     /// Remove an installed plugin.
     Remove(RemoveArgs),
-    /// Update one or all installed plugins.
-    Update,
 }
 
 #[derive(Debug, Tabled)]
@@ -63,10 +69,6 @@ pub async fn run(args: PluginsArgs) -> Result<()> {
         Command::Install(args) => run_install(args).await,
         Command::List(args) => run_list(args),
         Command::Remove(args) => run_remove(args),
-        Command::Update => {
-            eprintln!("{}", "Updating plugins is not yet supported".red());
-            process::exit(1);
-        }
     }
 }
 
@@ -77,13 +79,75 @@ async fn run_install(args: InstallArgs) -> Result<()> {
 
     if let Some(file) = args.file {
         install_from_file(cwd.join(file))?;
-    } else if let Some(_name) = args.name {
-        eprintln!(
-            "{}",
-            "Installing plugins by name is not yet supported".red()
-        );
-        process::exit(1);
+    } else if let Some(name) = args.name {
+        install_from_github(name).await?;
     }
+
+    Ok(())
+}
+
+async fn install_from_github(name: String) -> Result<()> {
+    let (kind, name) = name
+        .split_once('-')
+        .ok_or_else(|| eyre!("Plugin name must be in the format <kind>-<name>"))?;
+
+    let releases = octocrab::instance()
+        .repos(GITHUB_REPO_ORG, GITHUB_REPO_NAME)
+        .releases()
+        .list()
+        .per_page(50)
+        .send()
+        .await
+        .wrap_err("Failed to fetch GitHub releases")?;
+
+    let tag_prefix = format!("{}-{}/", kind, name);
+    let mut plugin_release = None;
+    for release in octocrab::instance().all_pages(releases).await? {
+        if release.tag_name.starts_with(&tag_prefix) {
+            plugin_release = Some(release);
+            break;
+        }
+    }
+
+    let plugin_release = plugin_release.ok_or_else(|| {
+        eyre!(
+            "No release found for plugin {}-{}. Did you spell it correctly?",
+            kind,
+            name
+        )
+    })?;
+
+    println!(
+        "Found release {}",
+        plugin_release
+            .name
+            .unwrap_or(plugin_release.tag_name)
+            .green()
+    );
+
+    let info = PluginInfo::from_kind_name(kind.to_string(), name.to_string());
+
+    let artifact_name = info.artifact_name(env::consts::OS, env::consts::ARCH);
+    let asset = plugin_release
+        .assets
+        .iter()
+        .find(|asset| asset.name == artifact_name)
+        .ok_or_else(|| {
+            eyre!(
+                "No asset found for plugin {}-{} for your platform. OS={}, ARCH={}",
+                kind,
+                name,
+                env::consts::OS,
+                env::consts::ARCH
+            )
+        })?;
+
+    println!("Downloading {}...", asset.name.blue());
+
+    let target = plugins_dir().join(info.binary_name());
+    download_artifact_to_path(asset.browser_download_url.clone(), &target).await?;
+
+    println!("Plugin {} installed to {}", info.name, target.display());
 
     Ok(())
 }
@@ -148,7 +212,12 @@ fn get_plugins(dir: impl AsRef<Path>) -> Result<Vec<PluginInfo>> {
             continue;
         }
 
-        let (name, version) = get_binary_name_version(file.path())?;
+        let (name, version) = get_binary_name_version(file.path()).wrap_err_with(|| {
+            format!(
+                "Failed to get plugin version: {}",
+                file.file_name().to_string_lossy()
+            )
+        })?;
         let info = PluginInfo::from_name_version(name, version)?;
         plugins.push(info);
     }
@@ -201,4 +270,27 @@ impl PluginInfo {
     pub fn binary_name(&self) -> String {
         format!("apibara-{}-{}", self.kind, self.name)
     }
+
+    pub fn artifact_name(&self, os: &str, arch: &str) -> String {
+        format!("{}-{}-{}-{}.gz", self.kind, self.name, arch, os)
+    }
+}
+
+async fn download_artifact_to_path(url: Url, dest: impl AsRef<Path>) -> Result<()> {
+    let response = reqwest::get(url).await?;
+    let stream = response
+        .bytes_stream()
+        .map_err(|err| std::io::Error::new(ErrorKind::Other, err));
+
+    let stream_reader = StreamReader::new(stream);
+    let mut decompressed = GzipDecoder::new(stream_reader);
+
+    let mut file = tokio::fs::File::create(dest).await?;
+
+    tokio::io::copy(&mut decompressed, &mut file).await?;
+
+    file.set_permissions(fs::Permissions::from_mode(0o755))
+        .await?;
+
+    Ok(())
 }
