@@ -1,14 +1,13 @@
 use apibara_core::node::v1alpha2::{Cursor, DataFinality};
 use apibara_sink_common::{DisplayCursor, Sink, ValueExt};
 use async_trait::async_trait;
-use mongodb::bson::{doc, to_bson, Bson, Document};
-
+use mongodb::bson::{doc, to_document, Document};
 use mongodb::{options::ClientOptions, Client, Collection};
-
+use serde::Serialize;
 use serde_json::Value;
 use tracing::{info, warn};
-
 use crate::configuration::SinkMongoOptions;
+use mockall::automock;
 
 #[derive(Debug, thiserror::Error)]
 pub enum SinkMongoError {
@@ -24,8 +23,55 @@ pub enum SinkMongoError {
     Serialization(#[from] mongodb::bson::ser::Error),
 }
 
+#[automock]
+#[async_trait]
+pub trait MongoCollection<T: Serialize + Send + Sync> {
+    async fn insert_many(
+        &self,
+        documents: Vec<T>,
+        options: Option<mongodb::options::InsertManyOptions>,
+    ) -> mongodb::error::Result<u64>;
+
+    async fn delete_many(
+        &self,
+        filter: Document,
+        options: Option<mongodb::options::DeleteOptions>,
+    ) -> mongodb::error::Result<u64>;
+}
+
+pub struct MongoCollectionWrapper<T: Serialize + Send + Sync> {
+    collection: Collection<T>,
+}
+
+#[async_trait]
+impl<T: Serialize + Send + Sync> MongoCollection<T> for MongoCollectionWrapper<T> {
+    async fn insert_many(
+        &self,
+        documents: Vec<T>,
+        options: Option<mongodb::options::InsertManyOptions>,
+    ) -> mongodb::error::Result<u64> {
+        let result = self.collection.insert_many(documents, options).await?;
+        Ok(result.inserted_ids.len() as u64)
+    }
+
+    async fn delete_many(
+        &self,
+        filter: Document,
+        options: Option<mongodb::options::DeleteOptions>,
+    ) -> mongodb::error::Result<u64> {
+        let result = self.collection.delete_many(filter, options).await?;
+        Ok(result.deleted_count)
+    }
+}
+
 pub struct MongoSink {
-    collection: Collection<Document>,
+    collection: Box<dyn MongoCollection<Document> + Send + Sync>,
+}
+
+impl MongoSink {
+    pub fn new(collection: Box<dyn MongoCollection<Document> + Send + Sync>) -> Self {
+        Self { collection }
+    }
 }
 
 #[async_trait]
@@ -49,7 +95,9 @@ impl Sink for MongoSink {
         let db = client.database(&db_name);
         let collection = db.collection::<Document>(&collection_name);
 
-        Ok(Self { collection })
+        let collection = Box::new(MongoCollectionWrapper { collection });
+
+        Ok(Self::new(collection))
     }
 
     async fn handle_data(
@@ -75,25 +123,26 @@ impl Sink for MongoSink {
             return Ok(());
         }
 
-        // convert to u32 because that's the maximum bson can handle
-        let block_number = u32::try_from(end_cursor.order_key).unwrap();
-
         let documents: Vec<Document> = values
-            .iter()
-            .map(|document| match to_bson(document)? {
-                Bson::Document(mut doc) => {
-                    doc.insert("_cursor", block_number);
+            .clone()
+            .iter_mut()
+            .map(|obj| match obj.as_object_mut() {
+                Some(obj) => {
+                    obj.insert("_cursor".into(), end_cursor.order_key.into());
+                    let doc = to_document(obj).unwrap();
                     Ok(Some(doc))
                 }
-                value => {
-                    warn!(value = ?value, "batch value is not an object");
+                None => {
+                    warn!("batch value is not an object");
                     Ok(None)
                 }
             })
             .flat_map(|item: Result<Option<Document>, Self::Error>| item.transpose())
             .collect::<Result<Vec<_>, _>>()?;
 
-        self.collection.insert_many(documents, None).await?;
+        // the compiler is not happy if we don't set the future to a variable
+        let future = self.collection.insert_many(documents, None);
+        future.await?;
 
         Ok(())
     }
@@ -109,7 +158,9 @@ impl Sink for MongoSink {
             doc! { "_cursor": { "$gte": 0} }
         };
 
-        self.collection.delete_many(query, None).await?;
+        // the compiler is not happy if we don't set the future to a variable
+        let future = self.collection.delete_many(query, None);
+        future.await?;
 
         Ok(())
     }

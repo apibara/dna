@@ -28,3 +28,7 @@ thiserror.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
 tracing.workspace = true
+mockall.workspace = true
+
+[dev-dependencies]
+mockall.workspace = true

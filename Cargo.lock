@@ -372,6 +372,7 @@ dependencies = [
  "async-trait",
  "clap",
  "color-eyre",
+ "mockall",
  "mongodb",
  "serde",
  "serde_json",
