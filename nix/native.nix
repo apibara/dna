@@ -29,6 +29,7 @@ rec {
         rustfmt.enable = true;
         clippy.enable = true;
         cargo-check.enable = true;
+        shellcheck.enable = true;
       };
       tools = {
         rustfmt = rustToolchain;
