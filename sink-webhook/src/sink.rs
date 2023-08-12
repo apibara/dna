@@ -35,6 +35,8 @@ pub enum SinkWebhookError {
     InvalidHeader(#[from] InvalidHeader),
     #[error("Invalid target url: {0}")]
     InvalidUri(#[from] InvalidUri),
+    #[error("Serde error: {0}")]
+    Serde(#[from] serde_json::Error),
 }
 
 pub struct WebhookSink {
