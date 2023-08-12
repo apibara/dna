@@ -28,4 +28,5 @@ tokio.workspace = true
 tokio-postgres = { version = "0.7.8", features = ["with-serde_json-1"] }
 tokio-util.workspace = true
 tracing.workspace = true
-
+mockall.workspace = true
+futures-util = "0.3.28"

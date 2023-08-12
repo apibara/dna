@@ -433,6 +433,8 @@ dependencies = [
  "async-trait",
  "clap",
  "color-eyre",
+ "futures-util",
+ "mockall",
  "serde",
  "serde_json",
  "thiserror",

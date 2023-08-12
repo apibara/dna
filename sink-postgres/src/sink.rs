@@ -1,12 +1,12 @@
+use crate::SinkPostgresOptions;
 use apibara_core::node::v1alpha2::{Cursor, DataFinality};
 use apibara_sink_common::{DisplayCursor, Sink, ValueExt};
 use async_trait::async_trait;
+use mockall::{automock, mock};
 use serde_json::Value;
-use tokio_postgres::types::Json;
+use tokio_postgres::types::{Json, ToSql};
 use tokio_postgres::{Client, NoTls, Statement};
 use tracing::{info, warn};
-
-use crate::SinkPostgresOptions;
 
 #[derive(Debug, thiserror::Error)]
 pub enum SinkPostgresError {
@@ -18,11 +18,73 @@ pub enum SinkPostgresError {
     Postgres(#[from] tokio_postgres::Error),
 }
 
-pub struct PostgresSink {
+// #[automock]
+#[async_trait]
+pub trait PostgresClient {
+    async fn prepare(&self, query: &str) -> Result<Statement, tokio_postgres::Error>;
+
+    async fn execute(
+        &self,
+        statement: &Statement,
+        params: &[&(dyn ToSql + Sync)],
+    ) -> Result<u64, tokio_postgres::Error>;
+}
+
+pub struct PostgresClientWrapper {
     client: Client,
+}
+
+impl PostgresClientWrapper {
+    fn new(client: Client) -> Self {
+        Self { client }
+    }
+}
+
+#[async_trait]
+impl PostgresClient for PostgresClientWrapper {
+    async fn prepare(&self, query: &str) -> Result<Statement, tokio_postgres::Error> {
+        self.client.prepare(query).await
+    }
+
+    async fn execute(
+        &self,
+        statement: &Statement,
+        params: &[&(dyn ToSql + Sync)],
+    ) -> Result<u64, tokio_postgres::Error> {
+        let param1 = params[0];
+        let param2 = params[1];
+        if param1.to_sql() == param2.to_sql(ty, out) {
+            println("equal")
+        }
+        self.client.execute(statement, params).await
+    }
+}
+
+pub struct PostgresSink {
+    client: Box<dyn PostgresClient + Send + Sync>,
     insert_statement: Statement,
     delete_statement: Statement,
     delete_all_statement: Statement,
+}
+
+impl PostgresSink {
+    pub async fn get_statements(
+        client: &(dyn PostgresClient + Send + Sync),
+        table_name: &str,
+    ) -> Result<(Statement, Statement, Statement), SinkPostgresError> {
+        let insert_query = format!(
+            "INSERT INTO {} SELECT * FROM json_populate_recordset(NULL::{}, $1::json)",
+            &table_name, &table_name
+        );
+        let delete_query = format!("DELETE FROM {} WHERE _cursor > $1", &table_name);
+        let delete_all_query = format!("DELETE FROM {}", &table_name);
+
+        let insert_statement = client.prepare(&insert_query).await?;
+        let delete_statement = client.prepare(&delete_query).await?;
+        let delete_all_statement = client.prepare(&delete_all_query).await?;
+
+        Ok((insert_statement, delete_statement, delete_all_statement))
+    }
 }
 
 #[async_trait]
@@ -39,18 +101,14 @@ impl Sink for PostgresSink {
         let (client, connection) = config.pg.connect(NoTls).await?;
         tokio::spawn(connection);
 
+        let client = PostgresClientWrapper::new(client);
+
+        let (insert_statement, delete_statement, delete_all_statement) =
+            Self::get_statements(&client, &table_name).await?;
+
+        let client = Box::new(client);
+
         info!("postgres: client connected successfully");
-
-        let query = format!(
-            "INSERT INTO {} SELECT * FROM json_populate_recordset(NULL::{}, $1::json)",
-            &table_name, &table_name
-        );
-        let delete_query = format!("DELETE FROM {} WHERE _cursor > $1", &table_name);
-        let delete_all_query = format!("DELETE FROM {}", &table_name);
-
-        let insert_statement = client.prepare(&query).await?;
-        let delete_statement = client.prepare(&delete_query).await?;
-        let delete_all_statement = client.prepare(&delete_all_query).await?;
 
         Ok(Self {
             client,
@@ -89,8 +147,10 @@ impl Sink for PostgresSink {
             })
             .collect::<Vec<_>>();
 
+        let rows = Json(batch);
+
         self.client
-            .execute(&self.insert_statement, &[&Json(batch)])
+            .execute(&self.insert_statement, &[&rows])
             .await?;
 
         Ok(())
