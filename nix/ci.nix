@@ -39,6 +39,17 @@ let
     '';
   };
 
+  /* Test the installer script.
+  */
+  ci-installer-test = pkgs.writeShellApplication {
+    name = "ci-installer-test";
+    runtimeInputs = [ tests ];
+    text = ''
+      echo "--- Running installer test"
+      docker build --no-cache -t cli-installer -f install/Dockerfile.test install/
+    '';
+  };
+
   /* Prepares the image to be uploaded to Buildkite.
 
     Notice that this script expects the image to be in `./result`.
@@ -259,12 +270,26 @@ let
           wait = { };
         }
         {
-          label = ":test_tube: Run tests";
+          label = ":test_tube: Run unit tests";
           commands = [
             "nix develop .#ci -c ci-test"
+          ];
+        }
+        {
+          label = ":test_tube: Run e2e tests";
+          commands = [
             "nix develop .#ci -c ci-e2e-test"
           ];
         }
+      ] ++ (onAllAgents ({ name, agent }:
+        {
+          label = ":test_tube: Run installer tests on ${name}";
+          commands = [
+            "nix develop .#ci -c ci-installer-test"
+          ];
+          agents = agent;
+        })
+      ) ++ [
         {
           wait = { };
         }
@@ -402,6 +427,7 @@ in
     buildInputs = [
       ci-test
       ci-e2e-test
+      ci-installer-test
       ci-prepare-image
       ci-prepare-binary
       ci-publish-image

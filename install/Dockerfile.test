@@ -1,0 +1,9 @@
+FROM ubuntu:22.04
+
+WORKDIR /
+RUN apt-get update && apt-get install -y curl jq gzip
+COPY install.sh .
+RUN chmod +x install.sh
+RUN ./install.sh
+# Check installer added installation to path
+RUN cat ~/.bashrc | grep ".local/share/apibara/bin"
