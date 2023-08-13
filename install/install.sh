@@ -89,7 +89,7 @@ get_arch() {
             _ostype=linux
             ;;
         Darwin)
-            _ostype=darwin
+            _ostype=macos
             ;;
         *)
             err "unrecognized OS type: $_ostype"
