@@ -28,3 +28,7 @@ thiserror.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
 tracing.workspace = true
+
+[dev-dependencies]
+futures-util = "0.3.28"
+testcontainers.workspace = true

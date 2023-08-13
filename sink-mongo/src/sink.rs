@@ -1,7 +1,7 @@
 use apibara_core::node::v1alpha2::{Cursor, DataFinality};
 use apibara_sink_common::{CursorAction, DisplayCursor, Sink, ValueExt};
 use async_trait::async_trait;
-use mongodb::bson::{doc, to_bson, Bson, Document};
+use mongodb::bson::{doc, to_document, Document};
 
 use mongodb::{options::ClientOptions, Client, Collection};
 
@@ -25,7 +25,7 @@ pub enum SinkMongoError {
 }
 
 pub struct MongoSink {
-    collection: Collection<Document>,
+    pub collection: Collection<Document>,
 }
 
 #[async_trait]
@@ -76,22 +76,17 @@ impl Sink for MongoSink {
             return Ok(CursorAction::Persist);
         }
 
-        // convert to u32 because that's the maximum bson can handle
-        let block_number = u32::try_from(end_cursor.order_key).unwrap();
-
         let documents: Vec<Document> = values
-            .iter()
-            .map(|document| match to_bson(document)? {
-                Bson::Document(mut doc) => {
-                    doc.insert("_cursor", block_number);
-                    Ok(Some(doc))
-                }
-                value => {
-                    warn!(value = ?value, "batch value is not an object");
-                    Ok(None)
-                }
+            .clone()
+            .iter_mut()
+            .map(|obj| {
+                // Safe because we already checked if it's an array of objects
+                obj.as_object_mut()
+                    .unwrap()
+                    .insert("_cursor".into(), end_cursor.order_key.into());
+
+                to_document(obj)
             })
-            .flat_map(|item: Result<Option<Document>, Self::Error>| item.transpose())
             .collect::<Result<Vec<_>, _>>()?;
 
         self.collection.insert_many(documents, None).await?;
