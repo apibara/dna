@@ -25,6 +25,7 @@ pub trait SinkOptions: DeserializeOwned {
     fn merge(self, other: Self) -> Self;
 }
 
+#[derive(Debug, PartialEq)]
 pub enum CursorAction {
     Persist,
     Skip,
