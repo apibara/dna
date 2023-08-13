@@ -1,26 +1,33 @@
 ---
 title: Parquet Integration
+titleShort: Parquet
+description: "Create Parquet datasets of onchain data using Apibara."
 priority: 698
-updatedAt: 2023-06-20 21:00
+updatedAt: 2023-08-15 11:00
 ---
+
+# Parquet Integration
 
 **Notice**: the Parquet integration is still in the early stage and subject to
 change.
 
-The Parquet integration is used to generate datasets containing on-chain data.
+The Parquet integration is used to generate datasets containing onchain data.
 Parquet is the standard file format used by analytics applications such as:
 
  - The Pandas and Polars dataframe libraries for Python.
  - DuckDB, an in-process SQL OLAP database.
 
 
-## Configuration
+### Installation
 
-Additionally to the [common configuration
-options](/docs/integrations/configuration), the Parquet integration provides
-the following:
+```
+apibara plugins install sink-parquet
+```
 
- - `--output-dir`: write the Parquet files to this directory.
- - `--parquet-batch-size`: each Parquet file contains data for the specified
+
+### Configuration
+
+ - `outputDir: string`: write the Parquet files to this directory.
+ - `batchSize: string`: each Parquet file contains data for the specified
    number of blocks.
 
