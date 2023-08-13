@@ -1,12 +1,14 @@
 ---
 title: PostgreSQL Integration
+titleShort: PostgreSQL
+description: "Sync onchain data to your PostgreSQL database using Apibara."
 priority: 700
-updatedAt: 2023-06-20 21:00
+updatedAt: 2023-08-15 11:00
 ---
 
 # PostgreSQL Integration
 
-The PostgreSQL integration is used to mirror on-chain data to a Postgres
+The PostgreSQL integration is used to mirror onchain data to a Postgres
 database. Data is automatically inserted as it's produced by the chain,
 and it's invalidated in case of chain reorganizations.
 
@@ -15,19 +17,22 @@ and it's invalidated in case of chain reorganizations.
  - Easily integrate with AI libraries such as Langchain.
  - Change how tables are joined or queried without re-indexing.
 
-## Configuration
+### Installation
 
-Additionally to the [common configuration
-options](/docs/integrations/configuration), the PostgreSQL integration provides
-the following:
+```
+apibara plugins install sink-postgres
+```
 
- - `--connection-string`: URL used to connect to your PostgreSQL database.
- - `--table-name`: table where data will be inserted. The table must exist and
+
+### Configuration
+
+ - `connectionString: string`: URL used to connect to your PostgreSQL database.
+ - `tableName: string`: table where data will be inserted. The table must exist and
    it must have a schema compatible with the data returned by the transform
    step.
 
 
-## Table schema
+### Table schema
 
 The target table schema must be compatible with the data returned by the
 transformation step.

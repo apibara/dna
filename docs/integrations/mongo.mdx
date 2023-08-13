@@ -1,12 +1,14 @@
 ---
 title: MongoDB Integration
+titleShort: MongoDB
+description: "Sync onchain data to your MongoDB database using Apibara."
 priority: 699
-updatedAt: 2023-06-20 21:00
+updatedAt: 2023-08-15 11:00
 ---
 
 # MongoDB Integration
 
-The MongoDB integration provides a way to mirror on-chain data to a MongoDB
+The MongoDB integration provides a way to mirror onchain data to a MongoDB
 collection of your choice. Data is automatically inserted as it's produced by
 the chain, and it's invalidated in case of chain reorganizations.
 
@@ -16,17 +18,21 @@ the chain, and it's invalidated in case of chain reorganizations.
  - Change how collections are queried without re-indexing.
 
 
-## Configuration
+### Installation
 
-Additionally to the [common configuration
-options](/docs/integrations/configuration), the MongoDB integration provides
-the following:
+```
+apibara plugins install sink-mongo
+```
 
- - `--mongo-url`: the Mongo connection URL of your database.
- - `--db-name`: the target database name.
- - `--collection-name`: the target collection name.
 
-## Collection schema
+### Configuration
+
+ - `connectionString: string`: the Mongo connection URL of your database.
+ - `database: string`: the target database name.
+ - `collectionName: string`: the target collection name.
+
+
+### Collection schema
 
 The transformation step is required to return an array of objects. Data is
 converted to BSON and then written to the collection. The MongoDB integration

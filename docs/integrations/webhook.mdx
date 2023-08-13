@@ -1,7 +1,9 @@
 ---
 title: Webhooks & Serverless Functions Integrations
+titleShort: Webhook
+description: "Invoke a webhook or serverless function using Apibara."
 priority: 800
-updatedAt: 2023-06-20 21:00
+updatedAt: 2023-08-15 10:00
 ---
 
 # Webhooks & Serverless Functions Integrations
@@ -16,13 +18,15 @@ This integration is well suited for the following tasks:
    Cloudflare Functions, and Vercel Functions.
  - **send notifications** using the Discord or Telegram APIs.
 
+### Installation
 
-## Configuration
+```
+apibara plugins install sink-webhook
+```
 
-Additionally to the [common configuration
-options](/docs/integrations/configuration), the webhook integration provides
-the following:
+### Configuration
 
- - `--target-url`: URL where the stream data will be posted to.
- - `--header`: additional headers to send with the request. This flag can be
-  repeated to specify multiple headers.
+ - `targetUrl: string`: URL where the stream data will be posted to.
+ - `raw: boolean`: if set to `true`, the payload will be the data returned by
+   the transform function. Otherwise, wrap the data in JSON-object together
+   with its cursors.
