@@ -17,13 +17,13 @@ pub struct SinkPostgresConfiguration {
 pub struct SinkPostgresOptions {
     /// Connection string to the PostgreSQL server.
     #[arg(long, env = "POSTGRES_CONNECTION_STRING")]
-    connection_string: Option<String>,
+    pub connection_string: Option<String>,
     /// Target table name.
     ///
     /// The table must exist and have a schema compatible with the data returned by the
     /// transformation step.
     #[arg(long, env = "POSTGRES_TABLE_NAME")]
-    table_name: Option<String>,
+    pub table_name: Option<String>,
 }
 
 impl SinkOptions for SinkPostgresOptions {
