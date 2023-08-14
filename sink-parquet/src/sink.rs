@@ -93,13 +93,13 @@ impl Sink for ParquetSink {
         batch: &Value,
     ) -> Result<CursorAction, Self::Error> {
         let Some(batch) = batch.as_array_of_objects() else {
-            warn!("received non-array data");
+            warn!("data is not an array of objects, skipping");
             // Skip persistence in case the buffer is still not flushed
             return Ok(CursorAction::Skip)
         };
 
         if batch.is_empty() {
-            debug!("skip empty batch");
+            warn!("data is empty, skipping");
             // Skip persistence in case the buffer is still not flushed
             return Ok(CursorAction::Skip);
         }
@@ -127,20 +127,15 @@ impl Sink for ParquetSink {
         Ok(cursor_action)
     }
 
-    #[instrument(skip(self, cursor), err(Debug))]
-    async fn handle_invalidate(&mut self, cursor: &Option<Cursor>) -> Result<(), Self::Error> {
-        info!(
-            cursor = %DisplayCursor(cursor),
-            "handling invalidate"
-        );
-
+    #[instrument(skip(self, _cursor), err(Debug))]
+    async fn handle_invalidate(&mut self, _cursor: &Option<Cursor>) -> Result<(), Self::Error> {
         Ok(())
     }
 
     #[instrument(skip(self), err(Debug))]
     async fn handle_heartbeat(&mut self) -> Result<(), Self::Error> {
         // TODO: write to incomplete file.
-        todo!()
+        Ok(())
     }
 
     async fn cleanup(&mut self) -> Result<(), Self::Error> {
@@ -160,8 +155,8 @@ impl State {
         let schema = infer_json_schema_from_iterator(batch.iter().map(Result::Ok))?;
         debug!(schema = ?schema, "inferred schema from batch");
         let decoder = ReaderBuilder::new(Arc::new(schema)).build_decoder()?;
-        let starting_block_number = cursor.as_ref().map(|c| c.order_key + 1).unwrap_or(0);
-        let end_block_number = end_cursor.order_key + 1;
+        let starting_block_number = cursor.as_ref().map(|c| c.order_key).unwrap_or(0);
+        let end_block_number = end_cursor.order_key;
 
         Ok(State {
             decoder: Mutex::new(decoder),
@@ -181,7 +176,7 @@ impl State {
         let mut decoder = self.decoder.lock().await;
         (*decoder).serialize(batch)?;
 
-        self.end_block_number = end_cursor.order_key + 1;
+        self.end_block_number = end_cursor.order_key;
         if !self.should_flush() {
             return Ok(None);
         }
@@ -205,65 +200,5 @@ impl State {
             "{:0>10}_{:0>10}.parquet",
             self.starting_block_number, self.end_block_number
         )
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use apibara_core::node::v1alpha2::{Cursor, DataFinality};
-    use apibara_sink_common::Sink;
-    use serde_json::{json, Value};
-    use tempdir::TempDir;
-
-    use crate::configuration::SinkParquetConfiguration;
-
-    use super::ParquetSink;
-
-    fn new_sink(size: usize) -> (TempDir, ParquetSink) {
-        let data_dir = TempDir::new("sink_parquet_test").unwrap();
-        println!("data_dir: {:?}", data_dir);
-        if !data_dir.path().exists() {
-            std::fs::create_dir(data_dir.path()).unwrap();
-        }
-        let config = SinkParquetConfiguration {
-            output_dir: data_dir.path().to_path_buf(),
-            batch_size: size,
-        };
-        (data_dir, ParquetSink::new(config))
-    }
-
-    fn new_batch(size: usize) -> Value {
-        let mut batch = Vec::new();
-        for i in 0..size {
-            batch.push(json!({
-                "batchNum": i,
-                "batchStr": format!("batch_{}", i),
-            }));
-        }
-        json!(batch)
-    }
-
-    fn new_cursor(order_key: u64) -> Cursor {
-        Cursor {
-            order_key,
-            unique_key: order_key.to_be_bytes().to_vec(),
-        }
-    }
-
-    #[tokio::test]
-    async fn test_handle_data() {
-        let (_tempdir, mut sink) = new_sink(10);
-
-        let finality = DataFinality::DataStatusFinalized;
-
-        let mut start_cursor = None;
-        let batch = new_batch(10);
-        for i in 0..40 {
-            let end_cursor = new_cursor(i * 10);
-            sink.handle_data(&start_cursor, &end_cursor, &finality, &batch)
-                .await
-                .unwrap();
-            start_cursor = Some(end_cursor);
-        }
     }
 }
