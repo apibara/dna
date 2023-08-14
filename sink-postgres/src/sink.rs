@@ -19,7 +19,7 @@ pub enum SinkPostgresError {
 }
 
 pub struct PostgresSink {
-    client: Client,
+    pub client: Client,
     insert_statement: Statement,
     delete_statement: Statement,
     delete_all_statement: Statement,
@@ -74,12 +74,17 @@ impl Sink for PostgresSink {
             "postgres: handling data"
         );
 
-        let Some(values) = batch.as_array_of_objects() else {
+        let Some(batch) = batch.as_array_of_objects() else {
             warn!("data is not an array of objects, skipping");
             return Ok(CursorAction::Persist);
         };
 
-        let batch = values
+        if batch.is_empty() {
+            warn!("data is empty, skipping");
+            return Ok(CursorAction::Persist);
+        }
+
+        let batch = batch
             .iter()
             .map(|value| {
                 // Safety: we know that the batch is an array of objects
