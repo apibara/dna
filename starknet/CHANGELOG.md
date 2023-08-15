@@ -6,6 +6,14 @@ The format is based on [Common Changelog](https://common-changelog.org/), and
 this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] - 2023-08-18
+
+_Improve compatibility with Starknet 0.12.1 and RPC 0.4.0._
+
+### Change
+
+ - Update the Starknet client used. This ensures we have a better compatibility
+   with RPC 0.4.
 
 ## [1.1.0] - 2023-08-08
 
@@ -63,6 +71,7 @@ _Start publishing versioned Docker images._
 
 _First tagged release 🎉_
 
+[1.1.1]: https://github.com/apibara/dna/releases/tag/starknet/v1.1.1
 [1.1.0]: https://github.com/apibara/dna/releases/tag/starknet/v1.1.0
 [1.0.4]: https://github.com/apibara/dna/releases/tag/starknet/v1.0.4
 [1.0.3]: https://github.com/apibara/dna/releases/tag/starknet/v1.0.3
