@@ -362,13 +362,12 @@ impl ToProto<v1alpha2::Transaction> for models::InvokeTransactionV0 {
         let hash = self.transaction_hash.into();
         let max_fee = self.max_fee.into();
         let signature = self.signature.iter().map(|fe| fe.into()).collect();
-        let nonce = self.nonce.into();
 
         let meta = v1alpha2::TransactionMeta {
             hash: Some(hash),
             max_fee: Some(max_fee),
             signature,
-            nonce: Some(nonce),
+            nonce: None,
             version: 0,
         };
 
@@ -471,13 +470,12 @@ impl ToProto<v1alpha2::Transaction> for models::DeclareTransactionV0 {
         let hash = self.transaction_hash.into();
         let max_fee = self.max_fee.into();
         let signature = self.signature.iter().map(|fe| fe.into()).collect();
-        let nonce = self.nonce.into();
 
         let meta = v1alpha2::TransactionMeta {
             hash: Some(hash),
             max_fee: Some(max_fee),
             signature,
-            nonce: Some(nonce),
+            nonce: None,
             version: 1,
         };
 
@@ -675,8 +673,7 @@ impl ToProto<v1alpha2::TransactionReceipt> for models::PendingInvokeTransactionR
         let actual_fee = self.actual_fee.into();
         let l2_to_l1_messages = messages_to_proto(&self.messages_sent);
         let events = events_to_proto(&self.events);
-        let execution_status = self.execution_status.to_proto().into();
-        let revert_reason = self.revert_reason.clone().unwrap_or_default();
+        let (execution_status, revert_reason) = execution_result_to_proto(&self.execution_result);
 
         v1alpha2::TransactionReceipt {
             transaction_index: 0,
@@ -686,7 +683,7 @@ impl ToProto<v1alpha2::TransactionReceipt> for models::PendingInvokeTransactionR
             events,
             contract_address: None,
             revert_reason,
-            execution_status,
+            execution_status: execution_status.into(),
         }
     }
 }
@@ -697,8 +694,7 @@ impl ToProto<v1alpha2::TransactionReceipt> for models::PendingL1HandlerTransacti
         let actual_fee = self.actual_fee.into();
         let l2_to_l1_messages = messages_to_proto(&self.messages_sent);
         let events = events_to_proto(&self.events);
-        let execution_status = self.execution_status.to_proto().into();
-        let revert_reason = self.revert_reason.clone().unwrap_or_default();
+        let (execution_status, revert_reason) = execution_result_to_proto(&self.execution_result);
 
         v1alpha2::TransactionReceipt {
             transaction_index: 0,
@@ -707,7 +703,7 @@ impl ToProto<v1alpha2::TransactionReceipt> for models::PendingL1HandlerTransacti
             l2_to_l1_messages,
             events,
             contract_address: None,
-            execution_status,
+            execution_status: execution_status.into(),
             revert_reason,
         }
     }
@@ -719,8 +715,7 @@ impl ToProto<v1alpha2::TransactionReceipt> for models::PendingDeclareTransaction
         let actual_fee = self.actual_fee.into();
         let l2_to_l1_messages = messages_to_proto(&self.messages_sent);
         let events = events_to_proto(&self.events);
-        let execution_status = self.execution_status.to_proto().into();
-        let revert_reason = self.revert_reason.clone().unwrap_or_default();
+        let (execution_status, revert_reason) = execution_result_to_proto(&self.execution_result);
 
         v1alpha2::TransactionReceipt {
             transaction_index: 0,
@@ -729,7 +724,7 @@ impl ToProto<v1alpha2::TransactionReceipt> for models::PendingDeclareTransaction
             l2_to_l1_messages,
             events,
             contract_address: None,
-            execution_status,
+            execution_status: execution_status.into(),
             revert_reason,
         }
     }
@@ -742,8 +737,7 @@ impl ToProto<v1alpha2::TransactionReceipt> for models::PendingDeployTransactionR
         let l2_to_l1_messages = messages_to_proto(&self.messages_sent);
         let events = events_to_proto(&self.events);
         let contract_address = self.contract_address.into();
-        let execution_status = self.execution_status.to_proto().into();
-        let revert_reason = self.revert_reason.clone().unwrap_or_default();
+        let (execution_status, revert_reason) = execution_result_to_proto(&self.execution_result);
 
         v1alpha2::TransactionReceipt {
             transaction_index: 0,
@@ -752,7 +746,7 @@ impl ToProto<v1alpha2::TransactionReceipt> for models::PendingDeployTransactionR
             l2_to_l1_messages,
             events,
             contract_address: Some(contract_address),
-            execution_status,
+            execution_status: execution_status.into(),
             revert_reason,
         }
     }
@@ -764,8 +758,7 @@ impl ToProto<v1alpha2::TransactionReceipt> for models::PendingDeployAccountTrans
         let actual_fee = self.actual_fee.into();
         let l2_to_l1_messages = messages_to_proto(&self.messages_sent);
         let events = events_to_proto(&self.events);
-        let execution_status = self.execution_status.to_proto().into();
-        let revert_reason = self.revert_reason.clone().unwrap_or_default();
+        let (execution_status, revert_reason) = execution_result_to_proto(&self.execution_result);
 
         v1alpha2::TransactionReceipt {
             transaction_index: 0,
@@ -774,7 +767,7 @@ impl ToProto<v1alpha2::TransactionReceipt> for models::PendingDeployAccountTrans
             l2_to_l1_messages,
             events,
             contract_address: None,
-            execution_status,
+            execution_status: execution_status.into(),
             revert_reason,
         }
     }
@@ -800,8 +793,7 @@ impl ToProto<v1alpha2::TransactionReceipt> for models::InvokeTransactionReceipt 
         let actual_fee = self.actual_fee.into();
         let l2_to_l1_messages = messages_to_proto(&self.messages_sent);
         let events = events_to_proto(&self.events);
-        let execution_status = self.execution_status.to_proto().into();
-        let revert_reason = self.revert_reason.clone().unwrap_or_default();
+        let (execution_status, revert_reason) = execution_result_to_proto(&self.execution_result);
 
         v1alpha2::TransactionReceipt {
             transaction_index: 0,
@@ -810,7 +802,7 @@ impl ToProto<v1alpha2::TransactionReceipt> for models::InvokeTransactionReceipt 
             l2_to_l1_messages,
             events,
             contract_address: None,
-            execution_status,
+            execution_status: execution_status.into(),
             revert_reason,
         }
     }
@@ -822,8 +814,7 @@ impl ToProto<v1alpha2::TransactionReceipt> for models::L1HandlerTransactionRecei
         let actual_fee = self.actual_fee.into();
         let l2_to_l1_messages = messages_to_proto(&self.messages_sent);
         let events = events_to_proto(&self.events);
-        let execution_status = self.execution_status.to_proto().into();
-        let revert_reason = self.revert_reason.clone().unwrap_or_default();
+        let (execution_status, revert_reason) = execution_result_to_proto(&self.execution_result);
 
         v1alpha2::TransactionReceipt {
             transaction_index: 0,
@@ -832,7 +823,7 @@ impl ToProto<v1alpha2::TransactionReceipt> for models::L1HandlerTransactionRecei
             l2_to_l1_messages,
             events,
             contract_address: None,
-            execution_status,
+            execution_status: execution_status.into(),
             revert_reason,
         }
     }
@@ -844,8 +835,7 @@ impl ToProto<v1alpha2::TransactionReceipt> for models::DeclareTransactionReceipt
         let actual_fee = self.actual_fee.into();
         let l2_to_l1_messages = messages_to_proto(&self.messages_sent);
         let events = events_to_proto(&self.events);
-        let execution_status = self.execution_status.to_proto().into();
-        let revert_reason = self.revert_reason.clone().unwrap_or_default();
+        let (execution_status, revert_reason) = execution_result_to_proto(&self.execution_result);
 
         v1alpha2::TransactionReceipt {
             transaction_index: 0,
@@ -854,7 +844,7 @@ impl ToProto<v1alpha2::TransactionReceipt> for models::DeclareTransactionReceipt
             l2_to_l1_messages,
             events,
             contract_address: None,
-            execution_status,
+            execution_status: execution_status.into(),
             revert_reason,
         }
     }
@@ -867,8 +857,7 @@ impl ToProto<v1alpha2::TransactionReceipt> for models::DeployTransactionReceipt 
         let l2_to_l1_messages = messages_to_proto(&self.messages_sent);
         let events = events_to_proto(&self.events);
         let contract_address = self.contract_address.into();
-        let execution_status = self.execution_status.to_proto().into();
-        let revert_reason = self.revert_reason.clone().unwrap_or_default();
+        let (execution_status, revert_reason) = execution_result_to_proto(&self.execution_result);
 
         v1alpha2::TransactionReceipt {
             transaction_index: 0,
@@ -877,7 +866,7 @@ impl ToProto<v1alpha2::TransactionReceipt> for models::DeployTransactionReceipt 
             l2_to_l1_messages,
             events,
             contract_address: Some(contract_address),
-            execution_status,
+            execution_status: execution_status.into(),
             revert_reason,
         }
     }
@@ -890,8 +879,7 @@ impl ToProto<v1alpha2::TransactionReceipt> for models::DeployAccountTransactionR
         let l2_to_l1_messages = messages_to_proto(&self.messages_sent);
         let events = events_to_proto(&self.events);
         let contract_address = self.contract_address.into();
-        let execution_status = self.execution_status.to_proto().into();
-        let revert_reason = self.revert_reason.clone().unwrap_or_default();
+        let (execution_status, revert_reason) = execution_result_to_proto(&self.execution_result);
 
         v1alpha2::TransactionReceipt {
             transaction_index: 0,
@@ -900,7 +888,7 @@ impl ToProto<v1alpha2::TransactionReceipt> for models::DeployAccountTransactionR
             l2_to_l1_messages,
             events,
             contract_address: Some(contract_address),
-            execution_status,
+            execution_status: execution_status.into(),
             revert_reason,
         }
     }
@@ -1111,4 +1099,17 @@ fn messages_to_proto(messages: &[models::MsgToL1]) -> Vec<v1alpha2::L2ToL1Messag
             msg
         })
         .collect()
+}
+
+fn execution_result_to_proto(
+    result: &models::ExecutionResult,
+) -> (v1alpha2::ExecutionStatus, String) {
+    match result {
+        models::ExecutionResult::Succeeded => {
+            (v1alpha2::ExecutionStatus::Succeeded, String::default())
+        }
+        models::ExecutionResult::Reverted { reason } => {
+            (v1alpha2::ExecutionStatus::Reverted, reason.clone())
+        }
+    }
 }
