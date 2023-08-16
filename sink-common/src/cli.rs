@@ -1,4 +1,4 @@
-use std::fs;
+use std::{fs, path::Path};
 
 use anstyle::{AnsiColor, Style};
 use apibara_script::{Script, ScriptError, ScriptOptions};
@@ -11,6 +11,14 @@ pub enum LoadScriptError {
     FileNotFound(String),
     #[error("Script error: {0}")]
     ScriptError(#[from] ScriptError),
+}
+
+pub fn load_script_from_path(
+    path: &Path,
+    options: ScriptOptions,
+) -> Result<Script, LoadScriptError> {
+    let path = path.to_string_lossy();
+    load_script(&path, options)
 }
 
 /// Load a script from a file.

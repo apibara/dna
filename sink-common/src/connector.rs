@@ -275,7 +275,7 @@ where
 
         stream_builder = if let Some(bearer_token) = self.stream_configuration.bearer_token.clone()
         {
-            stream_builder.with_bearer_token(bearer_token)
+            stream_builder.with_bearer_token(Some(bearer_token))
         } else {
             stream_builder
         };

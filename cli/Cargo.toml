@@ -12,6 +12,9 @@ doc = false
 [dependencies]
 apibara-observability = { path = "../observability" }
 apibara-sink-common = { path = "../sink-common" }
+apibara-sdk = { path = "../sdk" }
+apibara-core = { path = "../core" }
+apibara-script = { path = "../script" }
 async-compression.workspace = true
 clap.workspace = true
 color-eyre.workspace = true
@@ -21,7 +24,13 @@ futures.workspace = true
 octocrab = "0.29.1"
 reqwest.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 tabled = "0.14.0"
 tar = "0.4.40"
 tokio.workspace = true
 tokio-util.workspace = true
+tokio-stream.workspace = true
+similar-asserts = { version = "1.4.2", features = ["serde"], git = "https://github.com/bigherc18/similar-asserts.git" }
+walkdir = "2.3.3"
+tracing.workspace = true
+tempfile.workspace = true

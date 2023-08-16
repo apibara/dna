@@ -1,6 +1,7 @@
 mod paths;
 mod plugins;
 mod run;
+mod test;
 
 use apibara_observability::{init_error_handler, init_opentelemetry};
 use apibara_sink_common::apibara_cli_style;
@@ -21,6 +22,9 @@ enum Command {
     ///
     /// Plugins are used to extend Apibara functionality, for example by adding new data sinks.
     Plugins(plugins::PluginsArgs),
+    /// Test an indexer script.
+    ///
+    Test(test::TestArgs),
 }
 
 #[tokio::main]
@@ -32,5 +36,6 @@ async fn main() -> color_eyre::eyre::Result<()> {
     match args.subcommand {
         Command::Run(args) => run::run(args).await,
         Command::Plugins(args) => plugins::run(args).await,
+        Command::Test(args) => test::run(args).await,
     }
 }

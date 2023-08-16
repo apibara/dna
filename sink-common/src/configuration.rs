@@ -1,10 +1,13 @@
 use std::{net::AddrParseError, path::PathBuf};
 
-use apibara_core::{node::v1alpha2::DataFinality, starknet::v1alpha2};
+use apibara_core::{
+    node::v1alpha2::DataFinality,
+    starknet::v1alpha2::{self},
+};
 use apibara_sdk::{Configuration, InvalidUri, MetadataKey, MetadataMap, MetadataValue, Uri};
 use bytesize::ByteSize;
 use clap::Args;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{connector::StreamConfiguration, status::StatusServer};
 
@@ -63,7 +66,7 @@ pub struct ConnectorOptions {
     pub dotenv: DotenvOptions,
 }
 
-#[derive(Args, Debug, Default)]
+#[derive(Args, Debug, Default, Clone)]
 pub struct DotenvOptions {
     /// Load script environment variables from the specified file.
     ///
@@ -73,7 +76,7 @@ pub struct DotenvOptions {
     pub allow_env: Option<PathBuf>,
 }
 
-#[derive(Args, Debug, Default, Deserialize)]
+#[derive(Args, Debug, Default, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct StreamOptions {
     /// DNA stream url. If starting with `https://`, use a secure connection.
@@ -91,7 +94,7 @@ pub struct StreamOptions {
     pub auth_token: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct StreamConfigurationOptions {
     /// The data filter.
@@ -105,7 +108,7 @@ pub struct StreamConfigurationOptions {
     pub starting_block: Option<u64>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(tag = "network", content = "filter", rename_all = "camelCase")]
 pub enum NetworkFilterOptions {
     Starknet(v1alpha2::Filter),
@@ -150,10 +153,10 @@ pub enum StreamOptionsError {
 impl StreamOptions {
     pub fn merge(self, other: StreamOptions) -> StreamOptions {
         StreamOptions {
-            stream_url: other.stream_url.or(self.stream_url),
-            max_message_size: other.max_message_size.or(self.max_message_size),
-            metadata: other.metadata.or(self.metadata),
-            auth_token: other.auth_token.or(self.auth_token),
+            stream_url: self.stream_url.or(other.stream_url),
+            max_message_size: self.max_message_size.or(other.max_message_size),
+            metadata: self.metadata.or(other.metadata),
+            auth_token: self.auth_token.or(other.auth_token),
         }
     }
 
@@ -199,6 +202,15 @@ impl StreamOptions {
 }
 
 impl StreamConfigurationOptions {
+    pub fn merge(self, other: StreamConfigurationOptions) -> StreamConfigurationOptions {
+        StreamConfigurationOptions {
+            filter: self.filter,
+            batch_size: self.batch_size.or(other.batch_size),
+            finality: self.finality.or(other.finality),
+            starting_block: self.starting_block.or(other.starting_block),
+        }
+    }
+
     /// Returns a `Configuration` object to stream Starknet data.
     pub fn as_starknet(&self) -> Option<Configuration<v1alpha2::Filter>> {
         let mut configuration = Configuration::default();
@@ -356,8 +368,8 @@ mod tests {
         let config2 =
             serde_json::from_str::<StreamOptions>(json2).expect("parse StreamOptions from json");
 
-        let config = config1
-            .merge(config2)
+        let config = config2
+            .merge(config1)
             .to_stream_configuration()
             .expect("stream configuration");
 

@@ -97,8 +97,8 @@ where
 
 impl ClientBuilder {
     /// Use the given `token` to authenticate with the server.
-    pub fn with_bearer_token(mut self, token: String) -> Self {
-        self.token = Some(token);
+    pub fn with_bearer_token(mut self, token: Option<String>) -> Self {
+        self.token = token;
         self
     }
 
