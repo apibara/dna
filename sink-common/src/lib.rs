@@ -56,7 +56,7 @@ where
         .await?;
 
     // Setup sink.
-    let sink_options = options_from_script.sink.merge(sink_cli_options);
+    let sink_options = sink_cli_options.merge(options_from_script.sink);
     let sink = S::from_options(sink_options)
         .await
         .map_err(|err| OptionsError::Sink(err.into()))?;
@@ -64,9 +64,9 @@ where
     // Setup connector.
     let connector_options_from_script = options_from_script.connector;
     let stream_configuration = connector_options_from_script.stream_configuration;
-    let stream_options = connector_options_from_script
+    let stream_options = connector_cli_options
         .stream
-        .merge(connector_cli_options.stream);
+        .merge(connector_options_from_script.stream);
 
     let stream = stream_options
         .to_stream_configuration()
