@@ -111,9 +111,12 @@ impl Script {
             const module = await import("{0}");
             const t = module.default;
             const data = {1};
-            let __script_result = t.constructor.name === 'AsyncFunction'
-              ? await t(data)
-              : t(data);
+            let __script_result;
+            if (t.constructor.name === 'AsyncFunction') {{
+              __script_result = await Promise.all(data.map(t));
+            }} else {{
+              __script_result = data.map(t);
+            }}
             if (typeof __script_result === 'undefined') {{
               __script_result = null;
             }}

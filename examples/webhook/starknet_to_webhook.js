@@ -14,7 +14,5 @@ export const config = {
   },
 };
 
-// Transform each batch of data using the function defined in starknet.js.
-export default function transform(batch) {
-  return batch.flatMap(decodeTransfersInBlock);
-}
+// Transform each block using the function defined in starknet.js.
+export default decodeTransfersInBlock;
