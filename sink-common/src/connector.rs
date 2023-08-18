@@ -1,4 +1,4 @@
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use apibara_core::node::v1alpha2::{Cursor, DataFinality};
 use apibara_script::{Script, ScriptError};
@@ -16,9 +16,10 @@ use tracing::{debug, info, trace, warn};
 
 use crate::{
     cli::LoadScriptError,
-    persistence::{Persistence, PersistenceClient, PersistenceError},
+    persistence::{Persistence, PersistenceClientError},
     status::StatusServer,
-    PersistenceOptionsError, StatusServerOptionsError, StreamOptionsError,
+    PersistenceClient, PersistenceError, PersistenceOptionsError, StatusServerOptionsError,
+    StreamOptionsError,
 };
 
 pub trait SinkOptions: DeserializeOwned {
@@ -69,7 +70,7 @@ pub struct StreamConfiguration {
 
 pub struct SinkConnectorOptions {
     pub stream: StreamConfiguration,
-    pub persistence: Option<Persistence>,
+    pub persistence: Persistence,
     pub status_server: StatusServer,
 }
 
@@ -100,7 +101,9 @@ pub enum SinkConnectorError {
     #[error("Error loading script: {0}")]
     LoadScript(#[from] LoadScriptError),
     #[error("Persistence error: {0}")]
-    Persistence(#[from] PersistenceError),
+    PersistenceFactory(#[from] PersistenceError),
+    #[error("Persistence error: {0}")]
+    Persistence(#[from] PersistenceClientError),
     #[error("CtrlC handler error: {0}")]
     CtrlC(#[from] ctrlc::Error),
     #[error("JSON conversion error: {0}")]
@@ -121,7 +124,7 @@ where
     sink: S,
     stream_configuration: StreamConfiguration,
     backoff: Backoff,
-    persistence: Option<Persistence>,
+    persistence: Persistence,
     status_server: StatusServer,
     needs_invalidation: bool,
 }
@@ -159,44 +162,35 @@ where
         F: Message + Default,
         B: Message + Default + Serialize,
     {
-        let mut persistence = if let Some(persistence) = self.persistence.take() {
-            Some(persistence.connect().await?)
-        } else {
-            None
-        };
+        let mut persistence = self.persistence.connect().await?;
 
-        let mut lock = if let Some(persistence) = persistence.as_mut() {
-            info!("acquiring persistence lock");
-            // lock will block until it's acquired.
-            // limit the time we wait for the lock to 30 seconds or until the cancellation token is
-            // cancelled.
-            // notice we can straight exit if the cancellation token is cancelled, since the lock
-            // is not held by us.
-            tokio::select! {
-                lock = persistence.lock() => {
-                    Some(lock?)
-                }
-                _ = tokio::time::sleep(Duration::from_secs(30)) => {
-                    info!("failed to acquire persistence lock within 30 seconds");
-                    return Ok(())
-                }
-                _ = ct.cancelled() => {
-                    return Ok(())
-                }
+        info!("acquiring persistence lock");
+        // lock will block until it's acquired.
+        // limit the time we wait for the lock to 30 seconds or until the cancellation token is
+        // cancelled.
+        // notice we can straight exit if the cancellation token is cancelled, since the lock
+        // is not held by us.
+        tokio::select! {
+            ret = persistence.lock() => {
+                ret?;
+                info!("lock acquired");
             }
-        } else {
-            None
-        };
-
-        if let Some(persistence) = persistence.as_mut() {
-            let starting_cursor = persistence.get_cursor().await?;
-            if starting_cursor.is_some() {
-                info!(cursor = ?starting_cursor, "restarting from last cursor");
-                configuration.starting_cursor = starting_cursor.clone();
-
-                self.handle_invalidate(starting_cursor, Some(persistence), ct.clone())
-                    .await?;
+            _ = tokio::time::sleep(Duration::from_secs(30)) => {
+                info!("failed to acquire persistence lock within 30 seconds");
+                return Ok(())
             }
+            _ = ct.cancelled() => {
+                return Ok(())
+            }
+        }
+
+        let starting_cursor = persistence.get_cursor().await?;
+        if starting_cursor.is_some() {
+            info!(cursor = ?starting_cursor, "restarting from last cursor");
+            configuration.starting_cursor = starting_cursor.clone();
+
+            self.handle_invalidate(starting_cursor, &mut persistence, ct.clone())
+                .await?;
         }
 
         let (configuration_client, configuration_stream) = configuration::channel(128);
@@ -227,9 +221,6 @@ where
             )
             .await?;
 
-        let mut last_lock_renewal = Instant::now();
-        let min_lock_refresh = Duration::from_secs(30);
-
         // Only start status server at this moment.
         // We want to avoid tricking k8s into believing the server is running fine when it's stuck
         // waiting for the lock.
@@ -250,16 +241,7 @@ where
                             break;
                         }
                         Some(message) => {
-                            self.handle_message(message, persistence.as_mut(), ct.clone()).await?;
-
-                            // Renew the lock every 30 seconds to avoid hammering etcd.
-                            if last_lock_renewal.elapsed() > min_lock_refresh {
-                                if let Some(lock) = lock.as_mut() {
-                                    // persistence.renew_lock(&lock).await?;
-                                    lock.keep_alive().await?;
-                                }
-                                last_lock_renewal = Instant::now();
-                            }
+                            self.handle_message(message, &mut persistence, ct.clone()).await?;
                         }
                     }
                 }
@@ -273,37 +255,34 @@ where
             .map_err(SinkConnectorError::Sink)?;
 
         // unlock the lock, if any.
-        if let Some(mut persistence) = persistence {
-            persistence.unlock(lock).await?;
-        }
+        persistence.unlock().await?;
 
         Ok(())
     }
 
-    async fn handle_invalidate(
+    async fn handle_invalidate<P>(
         &mut self,
         cursor: Option<Cursor>,
-        persistence: Option<&mut PersistenceClient>,
+        persistence: &mut P,
         ct: CancellationToken,
     ) -> Result<(), SinkConnectorError>
     where
+        P: PersistenceClient + Send,
         S: Sink + Sync + Send,
     {
         debug!(cursor = ?cursor, "received invalidate");
         for duration in &self.backoff {
             match self.sink.handle_invalidate(&cursor).await {
                 Ok(_) => {
-                    if let Some(persistence) = persistence {
-                        // if the sink started streaming from the genesis block
-                        // and if the genesis block has been reorged, delete the
-                        // stored cursor value to restart from genesis.
-                        match cursor {
-                            None => {
-                                persistence.delete_cursor().await?;
-                            }
-                            Some(cursor) => {
-                                persistence.put_cursor(cursor).await?;
-                            }
+                    // if the sink started streaming from the genesis block
+                    // and if the genesis block has been reorged, delete the
+                    // stored cursor value to restart from genesis.
+                    match cursor {
+                        None => {
+                            persistence.delete_cursor().await?;
+                        }
+                        Some(cursor) => {
+                            persistence.put_cursor(cursor).await?;
                         }
                     }
                     return Ok(());
@@ -326,28 +305,25 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    async fn handle_data<B>(
+    async fn handle_data<B, P>(
         &mut self,
         cursor: Option<Cursor>,
         end_cursor: Cursor,
         finality: DataFinality,
         batch: Vec<B>,
-        persistence: Option<&mut PersistenceClient>,
+        persistence: &mut P,
         ct: CancellationToken,
     ) -> Result<(), SinkConnectorError>
     where
         B: Message + Default + Serialize,
+        P: PersistenceClient + Send,
     {
-        let mut persistence = persistence;
-
         trace!(cursor = ?cursor, end_cursor = ?end_cursor, "received data");
         let json_batch = serde_json::to_value(&batch)?;
         let data = self.script.transform(&json_batch).await?;
 
         if self.needs_invalidation {
-            let mut persistence = persistence.as_mut().map(|persistence| persistence.clone());
-
-            self.handle_invalidate(cursor.clone(), persistence.as_mut(), ct.clone())
+            self.handle_invalidate(cursor.clone(), persistence, ct.clone())
                 .await?;
             self.needs_invalidation = false;
         }
@@ -361,10 +337,8 @@ where
                 Ok(cursor_action) => {
                     if finality == DataFinality::DataStatusPending {
                         self.needs_invalidation = true;
-                    } else if let Some(persistence) = persistence {
-                        if let CursorAction::Persist = cursor_action {
-                            persistence.put_cursor(end_cursor).await?;
-                        }
+                    } else if let CursorAction::Persist = cursor_action {
+                        persistence.put_cursor(end_cursor).await?;
                     }
 
                     return Ok(());
@@ -386,14 +360,15 @@ where
         Err(SinkConnectorError::MaximumRetriesExceeded)
     }
 
-    async fn handle_message<B>(
+    async fn handle_message<B, P>(
         &mut self,
         message: DataMessage<B>,
-        persistence: Option<&mut PersistenceClient>,
+        persistence: &mut P,
         ct: CancellationToken,
     ) -> Result<(), SinkConnectorError>
     where
         B: Message + Default + Serialize,
+        P: PersistenceClient + Send,
     {
         match message {
             DataMessage::Data {

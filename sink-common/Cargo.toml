@@ -34,3 +34,5 @@ warp.workspace = true
 
 [dev-dependencies]
 assert_matches.workspace = true
+tempdir.workspace = true
+testcontainers.workspace = true

@@ -71,12 +71,7 @@ where
         .to_stream_configuration()
         .map_err(OptionsError::Stream)?;
 
-    let persistence = connector_cli_options
-        .connector
-        .persistence
-        .map(|p| p.to_persistence())
-        .transpose()
-        .map_err(OptionsError::Persistence)?;
+    let persistence = Persistence::new_from_options(connector_cli_options.connector.persistence);
     let status_server = connector_cli_options
         .connector
         .status_server
