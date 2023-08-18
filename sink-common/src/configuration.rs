@@ -6,7 +6,7 @@ use bytesize::ByteSize;
 use clap::Args;
 use serde::Deserialize;
 
-use crate::{connector::StreamConfiguration, persistence::Persistence, status::StatusServer};
+use crate::{connector::StreamConfiguration, status::StatusServer};
 
 #[derive(Debug, Deserialize)]
 pub struct OptionsFromScript {
@@ -27,12 +27,22 @@ pub struct OptionsFromCli {
 /// Options for the connector persistence.
 #[derive(Args, Debug, Default, Deserialize)]
 pub struct PersistenceOptions {
-    #[arg(long, env, requires = "sink_id")]
-    /// URL to the etcd server used to persist data.
-    pub persist_to_etcd: Option<String>,
+    #[command(flatten)]
+    pub persistence_type: PersistenceTypeOptions,
     #[arg(long, env)]
     /// Unique identifier for this sink.
     pub sink_id: Option<String>,
+}
+
+#[derive(Args, Debug, Default, Deserialize)]
+#[group(required = false, multiple = false)]
+pub struct PersistenceTypeOptions {
+    #[arg(long, env, requires = "sink_id")]
+    /// URL to the etcd server used to persist data.
+    pub persist_to_etcd: Option<String>,
+    #[arg(long, env, requires = "sink_id")]
+    /// Path to the directory used to persist data.
+    pub persist_to_fs: Option<String>,
 }
 
 /// Status server options.
@@ -46,7 +56,7 @@ pub struct StatusServerOptions {
 #[derive(Args, Debug, Default)]
 pub struct ConnectorOptions {
     #[command(flatten)]
-    pub persistence: Option<PersistenceOptions>,
+    pub persistence: PersistenceOptions,
     #[command(flatten)]
     pub status_server: StatusServerOptions,
     #[command(flatten)]
@@ -107,17 +117,6 @@ pub enum PersistenceOptionsError {
     MissingEtcdUrl,
     #[error("missing sink id")]
     MissingSinkId,
-}
-
-impl PersistenceOptions {
-    /// Validates the persistence options and returns a `Persistence` object.
-    pub fn to_persistence(self) -> Result<Persistence, PersistenceOptionsError> {
-        let url = self
-            .persist_to_etcd
-            .ok_or(PersistenceOptionsError::MissingEtcdUrl)?;
-        let sink_id = self.sink_id.ok_or(PersistenceOptionsError::MissingSinkId)?;
-        Ok(Persistence::new(url, sink_id))
-    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -240,18 +239,8 @@ mod tests {
     use bytesize::ByteSize;
 
     use super::{
-        PersistenceOptions, StatusServerOptions, StreamConfigurationOptions, StreamOptions,
-        StreamOptionsError,
+        StatusServerOptions, StreamConfigurationOptions, StreamOptions, StreamOptionsError,
     };
-
-    #[test]
-    pub fn test_persistence_options() {
-        let options = PersistenceOptions {
-            persist_to_etcd: Some("http://localhost:2379".to_string()),
-            sink_id: Some("sink_id".to_string()),
-        };
-        let _ = options.to_persistence().expect("convert to persistence");
-    }
 
     #[test]
     pub fn test_status_server_options() {
