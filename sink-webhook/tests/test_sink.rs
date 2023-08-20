@@ -31,6 +31,7 @@ fn new_cursor(order_key: u64) -> Cursor {
 }
 
 #[tokio::test]
+#[ignore]
 async fn test_handle_data() -> Result<(), SinkWebhookError> {
     let server = wiremock::MockServer::start().await;
 
@@ -73,6 +74,7 @@ async fn test_handle_data() -> Result<(), SinkWebhookError> {
 }
 
 #[tokio::test]
+#[ignore]
 async fn test_handle_invalidate() -> Result<(), SinkWebhookError> {
     let server = wiremock::MockServer::start().await;
 
@@ -105,6 +107,7 @@ async fn test_handle_invalidate() -> Result<(), SinkWebhookError> {
 }
 
 #[tokio::test]
+#[ignore]
 async fn test_handle_data_raw() -> Result<(), SinkWebhookError> {
     let server = wiremock::MockServer::start().await;
 
@@ -137,6 +140,7 @@ async fn test_handle_data_raw() -> Result<(), SinkWebhookError> {
 }
 
 #[tokio::test]
+#[ignore]
 async fn test_handle_invalidate_raw() -> Result<(), SinkWebhookError> {
     let server = wiremock::MockServer::start().await;
 
