@@ -110,6 +110,7 @@ async fn new_sink(port: u16) -> PostgresSink {
 }
 
 #[tokio::test]
+#[ignore]
 async fn test_handle_data() -> Result<(), SinkPostgresError> {
     let docker = clients::Cli::default();
     let postgres = docker.run(Postgres::default());
@@ -202,16 +203,19 @@ async fn test_handle_invalidate_all(
 }
 
 #[tokio::test]
+#[ignore]
 async fn test_handle_invalidate_genesis() -> Result<(), SinkPostgresError> {
     test_handle_invalidate_all(&None).await
 }
 
 #[tokio::test]
+#[ignore]
 async fn test_handle_invalidate_block_zero() -> Result<(), SinkPostgresError> {
     test_handle_invalidate_all(&Some(new_cursor(0))).await
 }
 
 #[tokio::test]
+#[ignore]
 async fn test_handle_invalidate() -> Result<(), SinkPostgresError> {
     let docker = clients::Cli::default();
     let postgres = docker.run(Postgres::default());

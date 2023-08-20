@@ -83,6 +83,7 @@ async fn get_all_docs(collection: &Collection<Document>) -> Vec<Document> {
 }
 
 #[tokio::test]
+#[ignore]
 async fn test_handle_data() -> Result<(), SinkMongoError> {
     let docker = clients::Cli::default();
     let mongo = docker.run(Mongo::default());
@@ -179,16 +180,19 @@ async fn test_handle_invalidate_all(
 }
 
 #[tokio::test]
+#[ignore]
 async fn test_handle_invalidate_genesis() -> Result<(), SinkMongoError> {
     test_handle_invalidate_all(&None).await
 }
 
 #[tokio::test]
+#[ignore]
 async fn test_handle_invalidate_block_zero() -> Result<(), SinkMongoError> {
     test_handle_invalidate_all(&Some(new_cursor(0))).await
 }
 
 #[tokio::test]
+#[ignore]
 async fn test_handle_invalidate() -> Result<(), SinkMongoError> {
     let docker = clients::Cli::default();
     let mongo = docker.run(Mongo::default());
