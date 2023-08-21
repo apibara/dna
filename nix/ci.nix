@@ -43,7 +43,6 @@ let
   */
   ci-installer-test = pkgs.writeShellApplication {
     name = "ci-installer-test";
-    runtimeInputs = [ tests ];
     text = ''
       echo "--- Running installer test"
       docker build --no-cache -t cli-installer -f install/Dockerfile.test install/
@@ -272,13 +271,13 @@ let
         {
           label = ":test_tube: Run unit tests";
           commands = [
-            "nix develop .#ci -c ci-test"
+            "nix develop .#tests -c ci-test"
           ];
         }
         {
           label = ":test_tube: Run e2e tests";
           commands = [
-            "nix develop .#ci -c ci-e2e-test"
+            "nix develop .#tests -c ci-e2e-test"
           ];
         }
       ] ++ (onAllAgents ({ name, agent }:
@@ -423,14 +422,21 @@ in
 {
   inherit pipeline;
 
-  shell.ci = pkgs.mkShell {
-    buildInputs = [
-      ci-test
-      ci-e2e-test
-      ci-installer-test
-      ci-prepare-image
-      ci-prepare-binary
-      ci-publish-image
-    ];
+  shell = {
+    ci = pkgs.mkShell {
+      buildInputs = [
+        ci-installer-test
+        ci-prepare-image
+        ci-prepare-binary
+        ci-publish-image
+      ];
+    };
+
+    tests = pkgs.mkShell {
+      buildInputs = [
+        ci-test
+        ci-e2e-test
+      ];
+    };
   };
 }
