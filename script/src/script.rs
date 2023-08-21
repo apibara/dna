@@ -113,9 +113,11 @@ impl Script {
             const data = {1};
             let __script_result;
             if (t.constructor.name === 'AsyncFunction') {{
-              __script_result = await Promise.all(data.map(t));
+              // "flatten" the results into an array of values.
+              const r = await Promise.all(data.map(t));
+              __script_result = r.flatMap(x => x);
             }} else {{
-              __script_result = data.map(t);
+              __script_result = data.flatMap(t);
             }}
             if (typeof __script_result === 'undefined') {{
               __script_result = null;
