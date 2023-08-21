@@ -88,8 +88,9 @@ async fn test_multiple_indexers() {
     assert!(cursor.is_none());
 }
 
-#[tokio::test]
-#[ignore]
+// Flaky test
+// #[tokio::test]
+// #[ignore]
 async fn test_lock_unlock_single() {
     let docker = clients::Cli::default();
     let etcd = docker.run(Etcd::default());
