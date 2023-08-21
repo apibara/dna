@@ -110,7 +110,15 @@ impl Sink for WebhookSink {
         );
 
         if self.raw {
-            self.send(&batch).await?;
+            // Send each item returned by the transform script as a separate request
+            let Some(batch) = batch.as_array() else {
+                warn!("raw mode: batch is not an array");
+                return Ok(CursorAction::Persist)
+            };
+
+            for item in batch {
+                self.send(&item).await?;
+            }
         } else {
             let body = &json!({
                 "data": {
