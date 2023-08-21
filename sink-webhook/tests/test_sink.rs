@@ -122,6 +122,7 @@ async fn test_handle_data_raw() -> Result<(), SinkWebhookError> {
     let batch_size = 2;
     let num_batches = 5;
 
+    let mut prev_count = 0;
     for order_key in 0..num_batches {
         let cursor = Some(new_cursor(order_key * batch_size));
         let end_cursor = new_cursor((order_key + 1) * batch_size);
@@ -131,9 +132,14 @@ async fn test_handle_data_raw() -> Result<(), SinkWebhookError> {
         sink.handle_data(&cursor, &end_cursor, &finality, &batch)
             .await?;
 
+        let batch_as_array = batch.as_array().unwrap();
         let requests = server.received_requests().await.unwrap();
-        assert_eq!(requests.len() as u64, order_key + 1);
-        assert_eq!(requests.last().unwrap().body_json::<Value>()?, batch);
+        assert_eq!(requests.len() - prev_count, batch_as_array.len());
+        assert_eq!(
+            &requests.last().unwrap().body_json::<Value>()?,
+            batch_as_array.last().unwrap()
+        );
+        prev_count = requests.len();
     }
 
     Ok(())
