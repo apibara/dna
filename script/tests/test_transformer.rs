@@ -84,6 +84,66 @@ async fn test_return_data_is_different() {
 }
 
 #[tokio::test]
+async fn test_return_data_is_flattened() {
+    let (_file, mut script) = new_script_with_code(
+        "js",
+        r#"
+        export default function ({ foo }) {
+            return [{ foo }, { foo }]
+        }
+        "#,
+    )
+    .await;
+    let input = json!([{
+        "foo": "bar",
+        "baz": 42,
+    }, {
+        "foo": "bux",
+    }]);
+    let result = script.transform(&input).await.unwrap();
+    let expected = json!([{
+        "foo": "bar",
+    }, {
+        "foo": "bar",
+    }, {
+        "foo": "bux",
+    }, {
+        "foo": "bux",
+    }]);
+    assert_eq!(result, expected);
+}
+
+#[tokio::test]
+async fn test_async_return_data_is_flattened() {
+    let (_file, mut script) = new_script_with_code(
+        "js",
+        r#"
+        export default async function ({ foo }) {
+            return [{ foo }, { foo }]
+        }
+        "#,
+    )
+    .await;
+    let input = json!([{
+        "foo": "bar",
+        "baz": 42,
+    }, {
+        "foo": "bux",
+    }]);
+    let result = script.transform(&input).await.unwrap();
+    let expected = json!([{
+        "foo": "bar",
+    }, {
+        "foo": "bar",
+    }, {
+        "foo": "bux",
+    }, {
+        "foo": "bux",
+    }]);
+    assert_eq!(result, expected);
+}
+
+#[tokio::test]
 async fn test_import_library_over_http() {
     let (_file, mut script) = new_script_with_code(
         "js",
