@@ -7,12 +7,17 @@ assignees: ''
 
 ---
 
-**Describe the bug** A clear and concise description of what the bug is.
+**Describe the bug**
 
-**To Reproduce** Steps to reproduce the behavior.
+A clear and concise description of what the bug is.
 
-**Expected behavior** A clear and concise description of what you expected to
-happen.
+**To Reproduce**
+
+Steps to reproduce the behavior.
+
+**Expected behavior**
+
+A clear and concise description of what you expected to happen.
 
 **Software (please complete the following information):**
 
@@ -21,4 +26,6 @@ happen.
 - Apibara version
 - Programming language and version (Rust, Cargo, Typescript)
 
-**Additional context** Add any other context about the problem here.
+**Additional context**
+
+Add any other context about the problem here.
