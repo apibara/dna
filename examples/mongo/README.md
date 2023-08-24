@@ -13,11 +13,11 @@ _Mirror onchain data to a MongoDB collection._
 You must set the `MONGO_CONNECTION_STRING` environment variable to the one
 provided by your MongoDB provider.
 
-For developing locally, we provide a `docker-compose.mongo.yml` file that starts
+For developing locally, we provide a `docker-compose.yml` file that starts
 MongoDB and Mongo Express. Run it with:
 
 ```
-docker-compose -f docker-compose.mongo.yml up
+docker compose up
 ```
 
 Then export the following environment variable:
