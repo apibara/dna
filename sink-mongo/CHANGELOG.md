@@ -6,6 +6,19 @@ The format is based on [Common Changelog](https://common-changelog.org/), and
 this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2023-08-29
+
+_Introduce entity mode to index stateful entities._
+
+### Added
+
+ - Add _entity mode_ to index stateful entities. When this mode is turned on
+   (by setting the `entityMode` option to `true`), the indexer behaviour changes
+   to enable updating entities while indexing.
+   The return value of the transform is expected to be a list of `{ entity, update }`
+   objects, where `update` is a MongoDB update document or pipeline.
+   Please refer to the document to read more about entity mode.
+
 ## [0.2.0] - 2023-08-21
 
 _This release improves the developer experience when running locally._
@@ -30,5 +43,6 @@ _This release improves the developer experience when running locally._
 _First tagged release 🎉_
 
 
+[0.3.0]: https://github.com/apibara/dna/releases/tag/sink-mongo/v0.3.0
 [0.2.0]: https://github.com/apibara/dna/releases/tag/sink-mongo/v0.2.0
 [0.1.0]: https://github.com/apibara/dna/releases/tag/sink-mongo/v0.1.0
