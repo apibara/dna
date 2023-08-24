@@ -1,5 +1,6 @@
 use apibara_sink_common::SinkOptions;
 use clap::Args;
+use serde::Deserialize;
 
 #[derive(Debug, Args, Default, SinkOptions)]
 #[sink_options(tag = "mongo")]
@@ -13,6 +14,8 @@ pub struct SinkMongoOptions {
     /// The collection where to store the data.
     #[arg(long, env = "MONGO_COLLECTION_NAME")]
     pub collection_name: Option<String>,
+    /// Enable storing records as entities.
+    pub entity_mode: Option<bool>,
 }
 
 impl SinkOptions for SinkMongoOptions {
@@ -21,6 +24,7 @@ impl SinkOptions for SinkMongoOptions {
             connection_string: self.connection_string.or(other.connection_string),
             database: self.database.or(other.database),
             collection_name: self.collection_name.or(other.collection_name),
+            entity_mode: self.entity_mode.or(other.entity_mode),
         }
     }
 }
