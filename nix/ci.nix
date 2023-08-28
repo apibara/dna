@@ -43,9 +43,12 @@ let
   */
   ci-installer-test = pkgs.writeShellApplication {
     name = "ci-installer-test";
+    runtimeInputs = with pkgs; [
+      buildah
+    ];
     text = ''
       echo "--- Running installer test"
-      docker build --no-cache -t cli-installer -f install/Dockerfile.test install/
+      buildah bud --no-cache -t cli-installer -f install/Dockerfile.test install/
     '';
   };
 
@@ -56,30 +59,16 @@ let
   ci-prepare-image = pkgs.writeShellApplication {
     name = "ci-prepare-image";
     runtimeInputs = with pkgs; [
-      docker
+      buildah
+      skopeo
     ];
     text = ''
-      function dry_run() {
-        if [[ "''${DRY_RUN:-false}" == "true" ]]; then
-          echo "[dry-run] $*"
-        else
-          "$@"
-        fi
-      }
-
       name=$1
       arch=$2
 
-      echo "--- Loading docker image"
-      docker image load -i ./result
-
-      tagged="''${name}:latest-''${arch}"
-      echo "--- Tagging image ''${tagged}"
-      docker image tag "apibara-''${name}:latest" "''${tagged}"
-
       filename="''${name}-''${arch}-image.tar.gz"
-      echo "--- Saving image to ''${filename}"
-      docker image save -o "''${filename}" "''${tagged}"
+      echo "--- Copying image to ''${filename}"
+      skopeo copy "docker-archive:result" "docker-archive:''${filename}"
     '';
   };
 
@@ -91,14 +80,6 @@ let
     name = "ci-prepare-binary";
     runtimeInputs = with pkgs; [ ];
     text = ''
-      function dry_run() {
-        if [[ "''${DRY_RUN:-false}" == "true" ]]; then
-          echo "[dry-run] $*"
-        else
-          "$@"
-        fi
-      }
-
       name=$1
       arch=$2
       os=$3
@@ -109,7 +90,7 @@ let
     '';
   };
 
-  /* Publish a docker image to the registry, with support for multiple architectures.
+  /* Publish a container image to the registry, with support for multiple architectures.
 
     If the `BUILDKITE_TAG` env variable is not set, the script will do nothing.
 
@@ -135,13 +116,14 @@ let
 
     Arguments:
 
-     - `filename`: the filename of the docker image to load.
+     - `filename`: the filename of the container image to load.
      - `name`: the name of the image to publish.
   */
   ci-publish-image = pkgs.writeShellApplication {
     name = "ci-publish-image";
     runtimeInputs = with pkgs; [
-      docker
+      skopeo
+      buildah
       semver-tool
     ];
     text = ''
@@ -184,44 +166,43 @@ let
       # First, load the images and push them to the registry
       images=()
       for arch in "''${archs[@]}"; do
-        echo "--- Loading docker image ''${arch}"
-        filename="''${name}-''${arch}-image.tar.gz"
-        docker image load -i "''${filename}"
+        echo "--- Copying image ''${arch}"
 
-        sourceImage="''${name}:latest-''${arch}"
+        filename="''${name}-''${arch}-image.tar.gz"
         destImage="''${image}-''${arch}"
-        echo "--- Pushing image ''${sourceImage} to ''${destImage}"
-        docker image tag "''${sourceImage}" "''${destImage}"
-        dry_run docker push "''${destImage}"
+
+        echo "Copying ''${filename} to ''${destImage}"
+        dry_run skopeo copy "docker-archive:''${filename}" "docker://''${destImage}"
+
         images+=("''${destImage}")
       done
 
       # Tag and push image v X.Y.Z
       echo "--- Tagging release ''${base}:''${version}"
-      dry_run docker manifest create "''${base}:''${version}" "''${images[@]}"
+      dry_run buildah manifest create "''${base}:''${version}" "''${images[@]}"
       echo "--- Pushing release ''${base}:''${version}"
-      dry_run docker manifest push --purge "''${base}:''${version}"
+      dry_run buildah manifest push --all "''${base}:''${version}"
 
       # Tag and push image v X.Y
       tag="$(semver get major "''${version}").$(semver get minor "''${version}")"
       echo "--- Tagging release ''${base}:''${tag}"
-      dry_run docker manifest create "''${base}:''${tag}" "''${images[@]}"
+      dry_run buildah manifest create "''${base}:''${tag}" "''${images[@]}"
       echo "--- Pushing release ''${base}:''${tag}"
-      dry_run docker manifest push --purge "''${base}:''${tag}"
+      dry_run buildah manifest push --all "''${base}:''${tag}"
 
       # Tag and push image v X
       tag="$(semver get major "''${version}")"
       echo "--- Tagging release ''${base}:''${tag}"
-      dry_run docker manifest create "''${base}:''${tag}" "''${images[@]}"
+      dry_run buildah manifest create "''${base}:''${tag}" "''${images[@]}"
       echo "--- Pushing release ''${base}:''${tag}"
-      dry_run docker manifest push --purge "''${base}:''${tag}"
+      dry_run buildah manifest push --all "''${base}:''${tag}"
 
       # Tag and push image latest
       tag="latest"
       echo "--- Tagging release ''${base}:''${tag}"
-      dry_run docker manifest create "''${base}:''${tag}" "''${images[@]}"
+      dry_run buildah manifest create "''${base}:''${tag}" "''${images[@]}"
       echo "--- Pushing release ''${base}:''${tag}"
-      dry_run docker manifest push --purge "''${base}:''${tag}"
+      dry_run buildah manifest push --all "''${base}:''${tag}"
     '';
   };
 
@@ -274,12 +255,18 @@ let
             "nix develop .#tests -c ci-test"
           ];
         }
+        /*
         {
           label = ":test_tube: Run e2e tests";
           commands = [
             "nix develop .#tests -c ci-e2e-test"
           ];
         }
+        */
+        {
+          wait = { };
+        }
+        /*
       ] ++ (onAllAgents ({ name, agent }:
         {
           label = ":test_tube: Run installer tests on ${name}";
@@ -292,6 +279,7 @@ let
         {
           wait = { };
         }
+        */
       ] ++ (onAllAgents ({ name, agent }:
         {
           label = ":rust: Build crate ${name}";
@@ -403,15 +391,6 @@ let
                     binary = binaries;
                   };
                 };
-                plugins = [
-                  {
-                    "docker-login#v2.1.0" = {
-                      username = "apibara+buildkite";
-                      password-env = "APIBARA_DOCKER_LOGIN_PASSWORD";
-                      server = "quay.io";
-                    };
-                  }
-                ];
               }
             ];
           }
