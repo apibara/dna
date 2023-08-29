@@ -1,0 +1,149 @@
+// Apibara Runner service
+syntax = "proto3";
+
+package apibara.runner.v1;
+
+import "google/protobuf/empty.proto";
+
+service IndexerRunner {
+  rpc CreateIndexer(CreateIndexerRequest) returns (Indexer);
+  rpc GetIndexer(GetIndexerRequest) returns (Indexer);
+  rpc ListIndexers(ListIndexersRequest) returns (ListIndexersResponse);
+  rpc UpdateIndexer(UpdateIndexerRequest) returns (Indexer);
+  rpc DeleteIndexer(DeleteIndexerRequest) returns (google.protobuf.Empty);
+}
+
+// Create and start running a new indexer.
+message CreateIndexerRequest {
+  // Unique indexer id, e.g. `my-indexer`.
+  string indexer_id = 1;
+  // Indexer configuration.
+  Indexer indexer = 2;
+}
+
+message GetIndexerRequest {
+  // Indexer name, e.g. `indexers/my-indexer`.
+  string name = 1;
+}
+
+message ListIndexersRequest {
+  // Number of indexers per page.
+  int32 page_size = 1;
+  // Continuation token.
+  string page_token = 2;
+  // Filter indexers.
+  string filter = 3;
+}
+
+message ListIndexersResponse {
+  // Indexers in the page.
+  repeated Indexer indexers = 1;
+  // Continuation token.
+  string next_page_token = 2;
+}
+
+message UpdateIndexerRequest {
+  // New indexer configuration.
+  Indexer indexer = 1;
+}
+
+message DeleteIndexerRequest {
+  // Indexer name, e.g. `indexers/my-indexer`.
+  string name = 1;
+}
+
+// An indexer.
+message Indexer {
+  // Indexer name, e.g. `indexers/my-indexer`.
+  string name = 1;
+
+  // Indexer source code.
+  Source source = 2;
+
+  // The sink type, if known.
+  //
+  // This enables runners to perform optimizations on how to run the indexer,
+  // for example by calling the sink binary directly or pulling smaller images.
+  string sink_type = 3;
+
+  // Indexer environment variables.
+  map<string, string> environment = 4;
+
+  // Additional labels to attach to the indexer.
+  map<string, string> labels = 5;
+
+  // Indexer state.
+  //
+  // Filled by the runner every time it returns data to the client.
+  State state = 6;
+}
+
+message Source {
+  oneof source {
+    GitHub github = 1;
+    Filesystem filesystem = 2;
+    Script script = 3;
+  }
+}
+
+// Fetch source from GitHub.
+message GitHub {
+  // GitHub owner, e.g. `apibara`.
+  string owner = 1;
+
+  // GitHub repository, e.g. `my-indexer`.
+  string repo = 2;
+
+  // Git branch name, e.g. `main`.
+  string branch = 3;
+
+  // Run the indexer from the specified subdirectory in the project.
+  optional string subdir = 4;
+
+  // The script to run.
+  string script = 5;
+}
+
+// Run the indexer from the local filesystem.
+message Filesystem {
+  // Path to the indexer project.
+  string path = 1;
+
+  // The script to run.
+  string script = 2;
+}
+
+// Run the indexer from a script.
+message Script {
+  // Script filename.
+  string filename = 1;
+
+  // Script contents.
+  string contents = 2;
+}
+
+message State {
+  // The indexer status.
+  enum Status {
+    // Unspecified status.
+    STATUS_UNSPECIFIED = 0;
+    // The indexer is starting.
+    STATUS_STARTING = 1;
+    // The indexer is running.
+    STATUS_RUNNING = 2;
+    // The indexer has errored and is not stopped.
+    STATUS_ERRORED = 3;
+  }
+
+  // The indexer status.
+  Status status = 1;
+
+  // The last block the indexer has processed.
+  uint64 current_block = 2;
+
+  // The head of the chain the indexer is indexing.
+  uint64 head_block = 3;
+
+  // A status message, e.g. 'Indexer is running' or 'Indexer stopped: {reason}'.
+  string message = 4;
+}
