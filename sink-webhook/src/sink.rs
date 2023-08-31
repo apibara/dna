@@ -1,5 +1,5 @@
 use apibara_core::node::v1alpha2::{Cursor, DataFinality};
-use apibara_sink_common::{CursorAction, LoadScriptError, Sink};
+use apibara_sink_common::{CursorAction, DisplayCursor, LoadScriptError, Sink};
 use async_trait::async_trait;
 use http::{
     header::{InvalidHeaderName, InvalidHeaderValue},
@@ -97,16 +97,11 @@ impl Sink for WebhookSink {
         finality: &DataFinality,
         batch: &Value,
     ) -> Result<CursorAction, Self::Error> {
-        let cursor_str = cursor
-            .clone()
-            .map(|c| c.to_string())
-            .unwrap_or("genesis".into());
-
         info!(
-            cursor = %cursor_str,
+            cursor = %DisplayCursor(cursor),
             end_block = %end_cursor,
             finality = ?finality,
-            "webhook: calling with data"
+            "calling with data"
         );
 
         if self.raw {
@@ -145,7 +140,7 @@ impl Sink for WebhookSink {
             .map(|c| c.to_string())
             .unwrap_or("genesis".into());
 
-        info!(cursor = %cursor_str, "webhook: calling with invalidate");
+        info!(cursor = %cursor_str, "calling with invalidate");
         let body = json!({
             "invalidate": {
                 "cursor": cursor,
