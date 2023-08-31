@@ -52,7 +52,7 @@ impl Sink for MongoSink {
     type Error = SinkMongoError;
 
     async fn from_options(options: Self::Options) -> Result<Self, Self::Error> {
-        info!("mongo: connecting to database");
+        info!("connecting to database");
         let connection_string = options
             .connection_string
             .ok_or(Self::Error::MissingConnectionString)?;
@@ -110,7 +110,7 @@ impl Sink for MongoSink {
     }
 
     async fn handle_invalidate(&mut self, cursor: &Option<Cursor>) -> Result<(), Self::Error> {
-        info!(cursor = %DisplayCursor(cursor), "mongo: handling invalidate");
+        info!(cursor = %DisplayCursor(cursor), "handling invalidate");
 
         let mut session = self.client.start_session(None).await?;
 

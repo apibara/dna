@@ -31,7 +31,7 @@ impl Sink for PostgresSink {
     type Error = SinkPostgresError;
 
     async fn from_options(options: Self::Options) -> Result<Self, Self::Error> {
-        info!("postgres: connecting to database");
+        info!("connecting to database");
         let config = options.to_postgres_configuration()?;
         let table_name = config.table_name;
 
@@ -39,7 +39,7 @@ impl Sink for PostgresSink {
         let (client, connection) = config.pg.connect(NoTls).await?;
         tokio::spawn(connection);
 
-        info!("postgres: client connected successfully");
+        info!("client connected successfully");
 
         let query = format!(
             "INSERT INTO {} SELECT * FROM json_populate_recordset(NULL::{}, $1::json)",
@@ -71,7 +71,7 @@ impl Sink for PostgresSink {
             cursor = %DisplayCursor(cursor),
             end_cursor = %end_cursor,
             finality = ?finality,
-            "postgres: handling data"
+            "handling data"
         );
 
         let Some(batch) = batch.as_array_of_objects() else {
@@ -80,7 +80,6 @@ impl Sink for PostgresSink {
         };
 
         if batch.is_empty() {
-            warn!("data is empty, skipping");
             return Ok(CursorAction::Persist);
         }
 
@@ -102,7 +101,7 @@ impl Sink for PostgresSink {
     }
 
     async fn handle_invalidate(&mut self, cursor: &Option<Cursor>) -> Result<(), Self::Error> {
-        info!(cursor = %DisplayCursor(cursor), "postgres: handling invalidate");
+        info!(cursor = %DisplayCursor(cursor), "handling invalidate");
 
         if let Some(cursor) = cursor {
             // convert to i64 because that's the tokio_postgres type that maps to bigint

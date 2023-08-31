@@ -99,7 +99,6 @@ impl Sink for ParquetSink {
         };
 
         if batch.is_empty() {
-            warn!("data is empty, skipping");
             // Skip persistence in case the buffer is still not flushed
             return Ok(CursorAction::Skip);
         }
