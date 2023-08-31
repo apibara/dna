@@ -209,12 +209,9 @@ let
   */
   agents = {
     x86_64-linux = {
-      os = "linux";
-      arch = "x86_64";
+      queue = "default";
     };
     aarch64-linux = {
-      os = "linux";
-      arch = "aarch64";
       queue = "aarch64-linux";
     };
   };
@@ -234,9 +231,6 @@ let
         {
           label = ":nix: Checks";
           command = "nix flake check";
-        }
-        {
-          wait = { };
         }
         {
           label = ":rust: Build tests";
