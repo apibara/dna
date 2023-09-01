@@ -210,9 +210,13 @@ let
   agents = {
     x86_64-linux = {
       queue = "default";
+      os = "linux";
+      arch = "x86_64";
     };
     aarch64-linux = {
       queue = "aarch64-linux";
+      os = "linux";
+      arch = "aarch64";
     };
   };
 
@@ -274,7 +278,9 @@ let
         {
           label = ":rust: Build crate ${name}";
           command = "nix build .#all-crates";
-          agents = agent;
+          agents = {
+            queue = agent.queue;
+          };
         })
       ) ++ [
         {
@@ -309,7 +315,9 @@ let
                     binary = binaries;
                   };
                 };
-                agents = agent;
+                agents = {
+                  queue = agent.queue;
+                };
               }
             ];
           })
@@ -333,7 +341,9 @@ let
                     binary = binaries;
                   };
                 };
-                agents = agent;
+                agents = {
+                  queue = agent.queue;
+                };
               }
             ];
           })
@@ -353,7 +363,9 @@ let
                     binary = binaries;
                   };
                 };
-                agents = agent;
+                agents = {
+                  queue = agent.queue;
+                };
               }
             ];
           })
