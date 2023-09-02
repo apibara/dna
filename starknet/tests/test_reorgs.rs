@@ -41,6 +41,7 @@ async fn test_reorg_from_client_pov() {
                 use_metadata: Vec::default(),
                 blocks_per_second_limit: None,
                 head_refresh_interval_ms: None,
+                address: None,
                 websocket_address: None,
             };
             start_node(args, cts).await.unwrap();

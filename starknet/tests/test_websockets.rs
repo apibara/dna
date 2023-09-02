@@ -43,6 +43,7 @@ async fn test_reorg_from_client_pov_websockets() {
                 devnet: true,
                 use_metadata: Vec::default(),
                 head_refresh_interval_ms: None,
+                address: None,
                 websocket_address: Some("127.0.0.1:8080".into()),
                 blocks_per_second_limit: None,
             };

@@ -53,6 +53,9 @@ pub struct StartArgs {
     /// Use the specified metadata key for tracing and metering.
     #[arg(long, env)]
     pub use_metadata: Vec<String>,
+    /// Bind the DNA server to this address, defaults to `0.0.0.0:7171`.
+    #[arg(long, env)]
+    pub address: Option<String>,
     // Websocket address
     #[arg(long, env)]
     pub websocket_address: Option<String>,
@@ -86,6 +89,10 @@ pub async fn start_node(args: StartArgs, cts: CancellationToken) -> Result<()> {
             .map(|p| p.join(name))
             .expect("no datadir");
         node.with_datadir(datadir);
+    }
+
+    if let Some(address) = args.address {
+        node.with_address(address);
     }
 
     if let Some(websocket_address) = args.websocket_address {
