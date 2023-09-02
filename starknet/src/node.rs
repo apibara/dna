@@ -37,6 +37,7 @@ where
     db: Arc<Environment<E>>,
     sequencer_provider: Arc<G>,
     request_span: O,
+    address: Option<String>,
     websocket_address: Option<String>,
     block_ingestion_config: BlockIngestionConfig,
     blocks_per_second_quota: u32,
@@ -73,6 +74,7 @@ where
         db: Environment<E>,
         sequencer_provider: G,
         request_span: O,
+        address: Option<String>,
         websocket_address: Option<String>,
         block_ingestion_config: BlockIngestionConfig,
         blocks_per_second_quota: Option<u32>,
@@ -83,6 +85,7 @@ where
             db,
             sequencer_provider,
             request_span,
+            address,
             websocket_address,
             block_ingestion_config,
             blocks_per_second_quota: blocks_per_second_quota.unwrap_or(10_000),
@@ -225,6 +228,7 @@ pub struct StarkNetNodeBuilder<O: RequestObserver, E: EnvironmentKind> {
     datadir: PathBuf,
     provider: HttpProvider,
     request_observer: O,
+    address: Option<String>,
     websocket_address: Option<String>,
     blocks_per_second_quota: Option<u32>,
     block_ingestion_config: BlockIngestionConfig,
@@ -263,6 +267,7 @@ where
             request_observer,
             block_ingestion_config: BlockIngestionConfig::default(),
             blocks_per_second_quota: None,
+            address: None,
             websocket_address: None,
             _phantom: Default::default(),
         };
@@ -281,6 +286,7 @@ where
             datadir: self.datadir,
             provider: self.provider,
             request_observer,
+            address: self.address,
             websocket_address: self.websocket_address,
             blocks_per_second_quota: self.blocks_per_second_quota,
             block_ingestion_config: self.block_ingestion_config,
@@ -305,10 +311,15 @@ where
             db,
             self.provider,
             self.request_observer,
+            self.address,
             self.websocket_address,
             self.block_ingestion_config,
             self.blocks_per_second_quota,
         ))
+    }
+
+    pub(crate) fn with_address(&mut self, address: String) {
+        self.address = Some(address);
     }
 
     pub(crate) fn with_websocket_address(&mut self, websocket_address: String) {
