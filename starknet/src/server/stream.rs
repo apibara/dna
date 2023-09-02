@@ -6,7 +6,9 @@ use std::{
     task::{self, Poll},
 };
 
-use apibara_core::node::v1alpha2::{stream_server, StreamDataRequest, StreamDataResponse};
+use apibara_core::node::v1alpha2::{
+    stream_server, StatusRequest, StatusResponse, StreamDataRequest, StreamDataResponse,
+};
 use apibara_node::{
     server::RequestObserver,
     stream::{new_data_stream, ResponseStream, StreamConfigurationStream, StreamError},
@@ -20,11 +22,13 @@ use crate::{
     core::IngestionMessage,
     db::StorageReader,
     ingestion::IngestionStreamClient,
+    status::StatusClient,
     stream::{DbBatchProducer, SequentialCursorProducer},
 };
 
 pub struct StreamService<R: StorageReader, O: RequestObserver> {
     ingestion: Arc<IngestionStreamClient>,
+    status_client: StatusClient,
     blocks_per_second_quota: u32,
     storage: Arc<R>,
     request_observer: O,
@@ -37,6 +41,7 @@ where
 {
     pub fn new(
         ingestion: Arc<IngestionStreamClient>,
+        status_client: StatusClient,
         storage: R,
         request_observer: O,
         blocks_per_second_quota: u32,
@@ -44,6 +49,7 @@ where
         let storage = Arc::new(storage);
         StreamService {
             ingestion,
+            status_client,
             storage,
             request_observer,
             blocks_per_second_quota,
@@ -120,6 +126,17 @@ where
             .stream_data_with_configuration(metadata, configuration_stream)
             .await;
         Ok(Response::new(Box::pin(response)))
+    }
+
+    async fn status(
+        &self,
+        _request: Request<StatusRequest>,
+    ) -> Result<Response<StatusResponse>, tonic::Status> {
+        self.status_client
+            .get_status()
+            .await
+            .map(Response::new)
+            .map_err(|e| tonic::Status::internal(format!("Failed to get status: {}", e)))
     }
 }
 

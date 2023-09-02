@@ -13,13 +13,17 @@ use tokio_util::sync::CancellationToken;
 use tonic::transport::Server as TonicServer;
 use tracing::{debug_span, error, info};
 
-use crate::{db::DatabaseStorage, ingestion::IngestionStreamClient, server::stream::StreamService};
+use crate::{
+    db::DatabaseStorage, ingestion::IngestionStreamClient, server::stream::StreamService,
+    status::StatusClient,
+};
 
 use self::health::HealthReporter;
 
 pub struct Server<E: EnvironmentKind, O: RequestObserver> {
     db: Arc<Environment<E>>,
     ingestion: Arc<IngestionStreamClient>,
+    status: StatusClient,
     blocks_per_second_quota: u32,
     request_observer: O,
 }
@@ -42,6 +46,7 @@ where
     pub fn new(
         db: Arc<Environment<E>>,
         ingestion: IngestionStreamClient,
+        status: StatusClient,
         blocks_per_second_quota: u32,
     ) -> Server<E, SimpleRequestObserver> {
         let ingestion = Arc::new(ingestion);
@@ -49,6 +54,7 @@ where
         Server {
             db,
             ingestion,
+            status,
             request_observer,
             blocks_per_second_quota,
         }
@@ -59,6 +65,7 @@ where
         Server {
             db: self.db,
             ingestion: self.ingestion,
+            status: self.status,
             request_observer,
             blocks_per_second_quota: self.blocks_per_second_quota,
         }
@@ -79,6 +86,7 @@ where
         let storage = DatabaseStorage::new(self.db);
         let stream_service = StreamService::new(
             self.ingestion,
+            self.status,
             storage,
             self.request_observer,
             self.blocks_per_second_quota,

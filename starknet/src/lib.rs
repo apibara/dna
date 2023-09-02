@@ -5,6 +5,7 @@ pub mod ingestion;
 pub mod node;
 pub mod provider;
 pub mod server;
+pub mod status;
 pub mod stream;
 pub mod websocket;
 
