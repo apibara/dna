@@ -8,6 +8,8 @@ service Stream {
   rpc StreamData(stream StreamDataRequest) returns (stream StreamDataResponse);
   // Stream data from the node.
   rpc StreamDataImmutable(StreamDataRequest) returns (stream StreamDataResponse);
+  // Get DNA service status.
+  rpc Status(StatusRequest) returns (StatusResponse);
 }
 
 // Request data to be streamed.
@@ -76,3 +78,15 @@ message Data {
 
 // Sent to clients to check if stream is still connected.
 message Heartbeat {}
+
+// Request for the `Status` method.
+message StatusRequest {
+}
+
+// Response for the `Status` method.
+message StatusResponse {
+  // The current head of the chain.
+  Cursor current_head = 1;
+  // The last cursor that was ingested by the node.
+  Cursor last_ingested = 2;
+}

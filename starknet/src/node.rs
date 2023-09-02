@@ -23,6 +23,7 @@ use crate::{
     ingestion::{BlockIngestion, BlockIngestionConfig, BlockIngestionError},
     provider::{HttpProviderError, Provider},
     server::{Server, ServerError},
+    status::{StatusService, StatusServiceError},
     websocket::WebsocketStreamServer,
     HttpProvider,
 };
@@ -43,13 +44,15 @@ where
 
 #[derive(Debug, thiserror::Error)]
 pub enum StarkNetNodeError {
-    #[error("failed while ingesting blocks")]
+    #[error("failed while ingesting blocks: {0}")]
     BlockIngestion(BlockIngestionError),
-    #[error("database operation failed")]
+    #[error("database operation failed: {0}")]
     Database(#[from] libmdbx::Error),
-    #[error("server error")]
+    #[error("server error: {0}")]
     Server(#[from] ServerError),
-    #[error("error parsing server address")]
+    #[error("status service error: {0}")]
+    StatusServer(#[from] StatusServiceError),
+    #[error("error parsing server address: {0}")]
     AddressParseError(#[from] AddrParseError),
 }
 
@@ -115,11 +118,29 @@ where
             }
         });
 
-        // TODO: configure from command line
-        let server_addr: SocketAddr = "0.0.0.0:7171".parse()?;
+        let (status_service, status_client) = StatusService::new(
+            self.sequencer_provider.clone(),
+            block_ingestion_client.clone(),
+        );
+
+        let mut status_service_handle = tokio::spawn({
+            let ct = ct.clone();
+            async move {
+                status_service
+                    .start(ct)
+                    .await
+                    .map_err(StarkNetNodeError::StatusServer)
+            }
+        });
+
+        let server_addr: SocketAddr = self
+            .address
+            .unwrap_or_else(|| "0.0.0.0:7171".to_string())
+            .parse()?;
         let server = Server::<E, O>::new(
             self.db.clone(),
             block_ingestion_client.clone(),
+            status_client,
             self.blocks_per_second_quota,
         )
         .with_request_observer(self.request_span);
@@ -154,6 +175,9 @@ where
         tokio::select! {
             ret = &mut block_ingestion_handle => {
                 warn!(result = ?ret, "block ingestion terminated");
+            }
+            ret = &mut status_service_handle => {
+                warn!(result = ?ret, "status service terminated");
             }
             ret = &mut server_handle => {
                 warn!(result = ?ret, "server terminated");
