@@ -183,22 +183,22 @@ let
 
       # Tag and push image v X.Y.Z
       echo "--- Pushing release ''${base}:''${version}"
-      dry_run buildah manifest push --all "''${manifest}" "''${base}:''${version}"
+      dry_run buildah manifest push --all "''${manifest}" "docker://''${base}:''${version}"
 
       # Tag and push image v X.Y
       tag="$(semver get major "''${version}").$(semver get minor "''${version}")"
       echo "--- Pushing release ''${base}:''${tag}"
-      dry_run buildah manifest push --all "''${manifest}" "''${base}:''${tag}"
+      dry_run buildah manifest push --all "''${manifest}" "docker://''${base}:''${tag}"
 
       # Tag and push image v X
       tag="$(semver get major "''${version}")"
       echo "--- Pushing release ''${base}:''${tag}"
-      dry_run buildah manifest push --all "''${manifest}" "''${base}:''${tag}"
+      dry_run buildah manifest push --all "''${manifest}" "docker://''${base}:''${tag}"
 
       # Tag and push image latest
       tag="latest"
       echo "--- Pushing release ''${base}:''${tag}"
-      dry_run buildah manifest push --all "''${manifest}" "''${base}:''${tag}"
+      dry_run buildah manifest push --all "''${manifest}" "docker://''${base}:''${tag}"
     '';
   };
 
