@@ -10,6 +10,7 @@ export const config = {
   filter,
   sinkType: "postgres",
   sinkOptions: {
+    // noTls: true,
     tableName: "transfers",
   },
 };

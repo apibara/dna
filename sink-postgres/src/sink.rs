@@ -1,11 +1,14 @@
 use apibara_core::node::v1alpha2::{Cursor, DataFinality};
 use apibara_sink_common::{CursorAction, DisplayCursor, Sink, ValueExt};
 use async_trait::async_trait;
+use native_tls::{Certificate, TlsConnector};
+use postgres_native_tls::MakeTlsConnector;
 use serde_json::Value;
 use tokio_postgres::types::Json;
 use tokio_postgres::{Client, NoTls, Statement};
 use tracing::{info, warn};
 
+use crate::configuration::TlsConfiguration;
 use crate::SinkPostgresOptions;
 
 #[derive(Debug, thiserror::Error)]
@@ -16,6 +19,10 @@ pub enum SinkPostgresError {
     MissingTableName,
     #[error("Postgres error: {0}")]
     Postgres(#[from] tokio_postgres::Error),
+    #[error("TLS error: {0}")]
+    Tls(#[from] native_tls::Error),
+    #[error("IO error: {0}")]
+    IO(#[from] std::io::Error),
 }
 
 pub struct PostgresSink {
@@ -35,9 +42,54 @@ impl Sink for PostgresSink {
         let config = options.to_postgres_configuration()?;
         let table_name = config.table_name;
 
-        // TODO: add flag to use tls
-        let (client, connection) = config.pg.connect(NoTls).await?;
-        tokio::spawn(connection);
+        // Notice that all `connector` and `connection` types are different, so it's easier/cleaner
+        // to just connect and spawn a connection inside each branch.
+        let client = match config.tls {
+            TlsConfiguration::NoTls => {
+                info!("Using insecure connection");
+                let (client, connection) = config.pg.connect(NoTls).await?;
+                tokio::spawn(connection);
+                client
+            }
+            TlsConfiguration::Tls {
+                certificate,
+                accept_invalid_hostnames,
+                accept_invalid_certificates,
+                disable_system_roots,
+                use_sni,
+            } => {
+                info!("Configure TLS connection");
+                let mut builder = TlsConnector::builder();
+
+                if let Some(certificate) = certificate {
+                    let certificate = tokio::fs::read(certificate).await?;
+                    let certificate = Certificate::from_pem(&certificate)?;
+                    builder.add_root_certificate(certificate);
+                }
+
+                if let Some(accept_invalid_certificates) = accept_invalid_certificates {
+                    builder.danger_accept_invalid_certs(accept_invalid_certificates);
+                }
+
+                if let Some(disable_system_roots) = disable_system_roots {
+                    builder.disable_built_in_roots(disable_system_roots);
+                }
+
+                if let Some(accept_invalid_hostnames) = accept_invalid_hostnames {
+                    builder.danger_accept_invalid_hostnames(accept_invalid_hostnames);
+                }
+
+                if let Some(use_sni) = use_sni {
+                    builder.use_sni(use_sni);
+                }
+
+                let connector = builder.build()?;
+                let connector = MakeTlsConnector::new(connector);
+                let (client, connection) = config.pg.connect(connector).await?;
+                tokio::spawn(connection);
+                client
+            }
+        };
 
         info!("client connected successfully");
 

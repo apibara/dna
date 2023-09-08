@@ -13,11 +13,11 @@ _Mirror onchain data to a PostgreSQL table._
 You must set the `POSTGRES_CONNECTION_STRING` environment variable to the one
 provided by your PostgreSQL provider.
 
-For developing locally, we provide a `docker-compose.postgres.yml` file that
+For developing locally, we provide a `docker-compose.yml` file that
 starts Hasura locally. Run it with:
 
 ```
-docker-compose -f docker-compose.postgres.yml up
+docker-compose up
 ```
 
 Then export the following environment variable:
@@ -29,8 +29,9 @@ export POSTGRES_CONNECTION_STRING='postgres://postgres:postgres@localhost:5432/p
 Follow
 [the steps on the official Hasura
 documentation](https://hasura.io/docs/latest/getting-started/docker-simple/#step-2-connect-a-database)
-to connect to the database and create the following table (TL;DR: use
-`PG_DATABASE_URL` to connect Hasura to PostgreSQL).
+to connect to the database and create the following table (TL;DR: visit
+http://localhost:8080 and use `PG_DATABASE_URL` to connect Hasura to
+PostgreSQL).
 
 **Notice**: the `_cursor` column is REQUIRED by Apibara to automatically
 invalidate data following chain reorganizations.
