@@ -30,6 +30,12 @@ apibara plugins install sink-postgres
  - `tableName: string`: table where data will be inserted. The table must exist and
    it must have a schema compatible with the data returned by the transform
    step.
+ - `noTls: boolean`: disable TLS when connecting to the server.
+ - `tlsCertificate: string`: path to the PEM-formatted X509 TLS certificate.
+ - `tlsDisableSystemRoots: boolean`: disable system root certificates.
+ - `tlsAcceptInvalidCertificates: boolean`: accept invalid TLS certificates.
+ - `tlsAcceptInvalidHostnames: boolean`: disable hostname validation.
+ - `tlsUseSni: boolean`: use Server Name Identification (SNI).
 
 
 ### Table schema
@@ -40,3 +46,30 @@ Batch data is converted to Postgres records using the `json_populate_recordset`
 function. Additionally, the PostgreSQL integration **requires a `_cursor`
 column** in the table to keep track of each batch's cursor, so that data can be
 invalidated in case of chain reorganizations.
+
+### Provider-specific setup
+
+#### Supabase
+
+You have two options:
+
+ - disable TLS by adding the `--no-tls=true` flag when running your indexer.
+   **This is not recommended for production**.
+ - download the SSL certificate from your Supabase dashboard (Settings =>
+   Database) and convert it to PEM.
+
+After downloading the `.crt` certificate from your dashboard, you will have a
+`.crt` file in your download folder. This file will be named something like
+`prod-ca-2021.pem`. Convert it to PEM using, for example, the `openssl` CLI tool.
+
+```bash
+openssl x509 -in prod-ca-2021.crt -out prod-ca-2021.pem -outform PEM
+```
+
+Use the `--tls-certificate` (or `sinkOptions.tlsCertificate` in your
+script) flag to point to the PEM certificate path.
+
+#### Neon
+
+Use the provided connection string.
+

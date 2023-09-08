@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::{path::PathBuf, str::FromStr};
 
 use apibara_sink_common::SinkOptions;
 use clap::Args;
@@ -7,9 +7,22 @@ use tokio_postgres::Config;
 use crate::sink::SinkPostgresError;
 
 #[derive(Debug)]
+pub enum TlsConfiguration {
+    NoTls,
+    Tls {
+        certificate: Option<PathBuf>,
+        accept_invalid_certificates: Option<bool>,
+        disable_system_roots: Option<bool>,
+        accept_invalid_hostnames: Option<bool>,
+        use_sni: Option<bool>,
+    },
+}
+
+#[derive(Debug)]
 pub struct SinkPostgresConfiguration {
     pub pg: Config,
     pub table_name: String,
+    pub tls: TlsConfiguration,
 }
 
 #[derive(Debug, Args, Default, SinkOptions)]
@@ -24,6 +37,24 @@ pub struct SinkPostgresOptions {
     /// transformation step.
     #[arg(long, env = "POSTGRES_TABLE_NAME")]
     pub table_name: Option<String>,
+    /// Disable TLS when connecting to the PostgreSQL server.
+    #[arg(long, env = "POSTGRES_NO_TLS")]
+    pub no_tls: Option<bool>,
+    /// Path to the PEM-formatted X509 TLS certificate file.
+    #[arg(long, env = "POSTGRES_TLS_CERTIFICATE")]
+    pub tls_certificate: Option<String>,
+    /// Disable system root certificates.
+    #[arg(long, env = "POSTGRES_TLS_DISABLE_SYSTEM_ROOTS")]
+    pub tls_disable_system_roots: Option<bool>,
+    /// Disable certificate validation.
+    #[arg(long, env = "POSTGRES_TLS_ACCEPT_INVALID_CERTIFICATES")]
+    pub tls_accept_invalid_certificates: Option<bool>,
+    /// Disable hostname validation.
+    #[arg(long, env = "POSTGRES_TLS_ACCEPT_INVALID_HOSTNAMES")]
+    pub tls_accept_invalid_hostnames: Option<bool>,
+    /// Use Server Name Indication (SNI).
+    #[arg(long, env = "POSTGRES_TLS_USE_SNI")]
+    pub tls_use_sni: Option<bool>,
 }
 
 impl SinkOptions for SinkPostgresOptions {
@@ -31,6 +62,18 @@ impl SinkOptions for SinkPostgresOptions {
         Self {
             connection_string: self.connection_string.or(other.connection_string),
             table_name: self.table_name.or(other.table_name),
+            no_tls: self.no_tls.or(other.no_tls),
+            tls_certificate: self.tls_certificate.or(other.tls_certificate),
+            tls_disable_system_roots: self
+                .tls_disable_system_roots
+                .or(other.tls_disable_system_roots),
+            tls_accept_invalid_certificates: self
+                .tls_accept_invalid_certificates
+                .or(other.tls_accept_invalid_certificates),
+            tls_accept_invalid_hostnames: self
+                .tls_accept_invalid_hostnames
+                .or(other.tls_accept_invalid_hostnames),
+            tls_use_sni: self.tls_use_sni.or(other.tls_use_sni),
         }
     }
 }
@@ -44,6 +87,23 @@ impl SinkPostgresOptions {
         let table_name = self
             .table_name
             .ok_or_else(|| SinkPostgresError::MissingTableName)?;
-        Ok(SinkPostgresConfiguration { pg, table_name })
+
+        let tls = if self.no_tls.unwrap_or(false) {
+            TlsConfiguration::NoTls
+        } else {
+            TlsConfiguration::Tls {
+                certificate: self.tls_certificate.map(PathBuf::from),
+                accept_invalid_certificates: self.tls_accept_invalid_certificates,
+                disable_system_roots: self.tls_disable_system_roots,
+                accept_invalid_hostnames: self.tls_accept_invalid_hostnames,
+                use_sni: self.tls_use_sni,
+            }
+        };
+
+        Ok(SinkPostgresConfiguration {
+            pg,
+            table_name,
+            tls,
+        })
     }
 }
