@@ -6,6 +6,23 @@ The format is based on [Common Changelog](https://common-changelog.org/), and
 this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2023-09-11
+
+_Bring support for TLS connections._
+
+### Changed
+
+ - **Breaking**: use TLS by default. You can revert to the old insecure
+   connection by using the `--no-tls=true` CLI flag, or setting
+   `sinkOptions.noTls: true` in your script.
+
+### Added
+
+ - You can now connect to PostgreSQL securely using TLS connections. The TLS
+   connection can be customized by providing a self-signed certificate, or by
+   enabling/disabling certificate and hostname validation.
+
+
 ## [0.2.0] - 2023-08-21
 
 _This release improves the developer experience when running locally._
@@ -30,5 +47,6 @@ _This release improves the developer experience when running locally._
 _First tagged release 🎉_
 
 
+[0.3.0]: https://github.com/apibara/dna/releases/tag/sink-postgres/v0.3.0
 [0.2.0]: https://github.com/apibara/dna/releases/tag/sink-postgres/v0.2.0
 [0.1.0]: https://github.com/apibara/dna/releases/tag/sink-postgres/v0.1.0
