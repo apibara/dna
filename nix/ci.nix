@@ -256,6 +256,7 @@ let
         {
           label = ":test_tube: Run e2e tests";
           commands = [
+            "podman system service --time=0 unix:///var/run/docker.sock &"
             "nix develop .#tests -c ci-e2e-test"
           ];
         }
