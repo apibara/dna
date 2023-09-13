@@ -253,14 +253,12 @@ let
             "nix develop .#tests -c ci-test"
           ];
         }
-        /*
         {
           label = ":test_tube: Run e2e tests";
           commands = [
             "nix develop .#tests -c ci-e2e-test"
           ];
         }
-        */
         {
           wait = { };
         }
@@ -420,7 +418,10 @@ in
     };
 
     tests = pkgs.mkShell {
-      buildInputs = [
+      buildInputs = with pkgs; [
+        # used by e2e tests to start test containers
+        docker-client
+
         ci-test
         ci-e2e-test
       ];

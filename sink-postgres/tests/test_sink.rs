@@ -1,54 +1,18 @@
-use std::collections::HashMap;
-
 use apibara_core::node::v1alpha2::{Cursor, DataFinality};
 use apibara_sink_common::{CursorAction, Sink};
 use apibara_sink_postgres::{PostgresSink, SinkPostgresError, SinkPostgresOptions};
 use serde_json::{json, Value};
-use testcontainers::{
-    clients,
-    core::{ExecCommand, WaitFor},
-    Container, Image,
-};
-use tokio_postgres::Client;
+use testcontainers::{clients, core::WaitFor, GenericImage};
+use tokio_postgres::{Client, NoTls};
 
-const NAME: &str = "postgres";
-const TAG: &str = "11-alpine";
-
-#[derive(Debug)]
-pub struct Postgres {
-    env_vars: HashMap<String, String>,
-}
-
-impl Default for Postgres {
-    fn default() -> Self {
-        let mut env_vars = HashMap::new();
-        env_vars.insert("POSTGRES_DB".to_owned(), "postgres".to_owned());
-        env_vars.insert("POSTGRES_HOST_AUTH_METHOD".into(), "trust".into());
-
-        Self { env_vars }
-    }
-}
-
-impl Image for Postgres {
-    type Args = ();
-
-    fn name(&self) -> String {
-        NAME.to_owned()
-    }
-
-    fn tag(&self) -> String {
-        TAG.to_owned()
-    }
-
-    fn ready_conditions(&self) -> Vec<WaitFor> {
-        vec![WaitFor::message_on_stderr(
+fn new_postgres_image() -> GenericImage {
+    GenericImage::new("postgres", "15-alpine")
+        .with_exposed_port(5432)
+        .with_env_var("POSTGRES_DB", "postgres")
+        .with_env_var("POSTGRES_HOST_AUTH_METHOD", "trust")
+        .with_wait_for(WaitFor::message_on_stderr(
             "database system is ready to accept connections",
-        )]
-    }
-
-    fn env_vars(&self) -> Box<dyn Iterator<Item = (&String, &String)> + '_> {
-        Box::new(self.env_vars.iter())
-    }
+        ))
 }
 
 fn new_cursor(order_key: u64) -> Cursor {
@@ -97,7 +61,6 @@ fn new_rows(start_cursor: &Option<Cursor>, end_cursor: &Cursor) -> Vec<TestRow> 
     let end_block_num = end_cursor.order_key as i64;
 
     (start_block_num..end_block_num)
-        .into_iter()
         .map(|i| TestRow {
             block_num: i as i32,
             cursor: end_block_num,
@@ -132,14 +95,22 @@ async fn get_num_rows(client: &Client) -> i64 {
     rows[0].get(0)
 }
 
-fn create_test_table(postgres: &Container<'_, Postgres>) {
+async fn create_test_table(port: u16) {
     let create_table_query =
         "CREATE TABLE test ( block_num int primary key, block_str varchar(10), _cursor bigint);";
 
-    postgres.exec(ExecCommand {
-        cmd: format!(r#"psql postgres -U postgres -c "{}""#, create_table_query).into(),
-        ready_conditions: vec![WaitFor::millis(500)],
+    let connection_string = format!("postgresql://postgres@localhost:{}", port);
+    let (client, connection) = tokio_postgres::connect(&connection_string, NoTls)
+        .await
+        .unwrap();
+
+    tokio::spawn(async move {
+        if let Err(e) = connection.await {
+            eprintln!("connection error: {}", e);
+        }
     });
+
+    client.query(create_table_query, &[]).await.unwrap();
 }
 
 async fn new_sink(port: u16) -> PostgresSink {
@@ -156,10 +127,10 @@ async fn new_sink(port: u16) -> PostgresSink {
 #[ignore]
 async fn test_handle_data() -> Result<(), SinkPostgresError> {
     let docker = clients::Cli::default();
-    let postgres = docker.run(Postgres::default());
+    let postgres = docker.run(new_postgres_image());
     let port = postgres.get_host_port_ipv4(5432);
 
-    create_test_table(&postgres);
+    create_test_table(port).await;
 
     let mut sink = new_sink(port).await;
 
@@ -206,10 +177,10 @@ async fn test_handle_invalidate_all(
     assert!(invalidate_from.is_none() || invalidate_from.clone().unwrap().order_key == 0);
 
     let docker = clients::Cli::default();
-    let postgres = docker.run(Postgres::default());
+    let postgres = docker.run(new_postgres_image());
     let port = postgres.get_host_port_ipv4(5432);
 
-    create_test_table(&postgres);
+    create_test_table(port).await;
 
     let mut sink = new_sink(port).await;
 
@@ -261,10 +232,10 @@ async fn test_handle_invalidate_block_zero() -> Result<(), SinkPostgresError> {
 #[ignore]
 async fn test_handle_invalidate() -> Result<(), SinkPostgresError> {
     let docker = clients::Cli::default();
-    let postgres = docker.run(Postgres::default());
+    let postgres = docker.run(new_postgres_image());
     let port = postgres.get_host_port_ipv4(5432);
 
-    create_test_table(&postgres);
+    create_test_table(port).await;
 
     let mut sink = new_sink(port).await;
 
