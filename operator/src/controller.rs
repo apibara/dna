@@ -1,39 +1,68 @@
 use std::fmt::Debug;
 
 use futures::{Future, Stream, StreamExt};
+use k8s_openapi::api;
 use kube::{
+    api::ListParams,
     core::Resource,
     runtime::{
-        controller::{Action, Error as ControllerError},
+        controller::{self, Action},
         reflector::ObjectRef,
-        watcher::Error as WatcherError,
+        watcher, Controller,
     },
-    Client,
+    Api, Client,
 };
-use tracing::{info, warn};
+use tokio_util::sync::CancellationToken;
+use tracing::{error, info, warn};
 
 use crate::{
     configuration::Configuration,
-    reconcile::{Context, Error},
-    sink::webhook_controller,
+    context::{Context, OperatorError},
+    crd::Indexer,
+    reconcile,
 };
 
-pub type ReconcileItem<K> = Result<(ObjectRef<K>, Action), ControllerError<Error, WatcherError>>;
-
-pub async fn start(client: Client, configuration: Configuration) -> Result<(), Error> {
-    info!("controller started");
+pub async fn start(
+    client: Client,
+    configuration: Configuration,
+    ct: CancellationToken,
+) -> Result<(), OperatorError> {
+    info!("Starting controller");
 
     let ctx = Context {
         client,
         configuration,
     };
-    let webhook_controller = webhook_controller::start_controller(ctx.clone()).await?;
 
-    run_controller_to_end(webhook_controller).await;
+    let indexers = Api::<Indexer>::all(ctx.client.clone());
 
-    info!("controller terminated");
+    if indexers.list(&ListParams::default()).await.is_err() {
+        error!("Indexer CRD not installed");
+        return Err(OperatorError::CrdNotInstalled("Indexer".to_string()));
+    }
+
+    info!("CRD installed. Starting controllor loop");
+
+    let pods = Api::<api::core::v1::Pod>::all(ctx.client.clone());
+
+    let controller = Controller::new(indexers, watcher::Config::default())
+        .owns(pods, watcher::Config::default())
+        .graceful_shutdown_on(async move {
+            ct.cancelled().await;
+        })
+        .run(
+            reconcile::reconcile_indexer,
+            reconcile::error_policy,
+            ctx.into(),
+        );
+
+    run_controller_to_end(controller).await;
+
     Ok(())
 }
+
+type ReconcileItem<K> =
+    Result<(ObjectRef<K>, Action), controller::Error<OperatorError, watcher::Error>>;
 
 fn run_controller_to_end<K>(
     controller_stream: impl Stream<Item = ReconcileItem<K>>,
@@ -45,7 +74,7 @@ where
     controller_stream.for_each(|res| async move {
         match res {
             Ok((obj, action)) => info!(obj = ?obj, action = ?action, "reconcile success"),
-            Err(err) => warn!(err = ?err, "reconcile failed"),
+            Err(err) => warn!(err = ?err, "reconcile error"),
         }
     })
 }

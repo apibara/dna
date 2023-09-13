@@ -1,7 +1,9 @@
 #[cfg(feature = "operator")]
 pub mod configuration;
 #[cfg(feature = "operator")]
+pub mod context;
+#[cfg(feature = "operator")]
 pub mod controller;
+pub mod crd;
 #[cfg(feature = "operator")]
 pub mod reconcile;
-pub mod sink;

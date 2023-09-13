@@ -14,9 +14,3 @@ Change the value of the `production` key to your key, then deploy it with:
 kubectl apply -f apikey.yaml
 ```
 
-### Content Structure
-
-- `config.yaml`: contains a `ConfigMap` with a filter and transform for the AVNU
-  exchange on Starknet Goerli.
-- `webhook.yaml`: deploys a webhook integration that streams AVNU data to
-  [/dev/null as a Service](https://devnull-as-a-service.com/code/).
