@@ -296,6 +296,7 @@ dependencies = [
  "apibara-observability",
  "clap",
  "color-eyre",
+ "ctrlc",
  "futures 0.3.28",
  "k8s-openapi",
  "kube",
