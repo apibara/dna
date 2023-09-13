@@ -6,24 +6,24 @@ priority: 1000
 updatedAt: 2023-08-15 10:00
 ---
 
-# Apibara Integrations
+# Apibara integrations
 
 From our own and our users experience building indexers, we noticed common
 patterns when it comes to integrate onchain data with the services that power
 modern applications.
 
 Apibara provides built-in _integrations_ that simplify integrating onchain data
-with common services such as web APIs, databases, and data analytics tools.
+with common services such as web API, databases, and data analytics tools.
 
 
 ## Integrations concepts
 
 All integrations follow these three steps:
 
- - data is streamed from a DNA stream by using the user-provided **filter**.
+ - stream data from a DNA stream by using the user-provided **filter**.
  - optionally, each batch of data is **transformed** by running a
-   Javascript/Typescript script. This step is powered by Deno, a lightweight
-   and powerful Javascript runtime.
+   JavaScript/Typescript script. This step is powered by Deno, a lightweight
+   and powerful JavaScript runtime.
  - finally, data is sent to the downstream integration. This step looks
    different based on the type of integration.
 
@@ -36,16 +36,16 @@ services that require the most recent real-time data.
 ## Types of integrations
 
 Apibara goal is to bring onchain data to any application. At the moment, we
-provide three types of integrations:
+offer three types of integrations:
 
 
-### Web APIs
+### Web API
 
- - **Serverless functions**: invoke serverless functions for each batch of
+ - **serverless functions**: invoke serverless functions for each batch of
    data, both historical and live data. Functions are also invoked when a chain
    reorganization happens, so that your application can manage them.
- - **Webhooks**: invoke a webhook for each batch of data, with exactly the payload
- you provide. This integration does not invoke the HTTP webhook in case of
+ - **webhooks**: invoke a webhook for each batch of data, with exactly the payload
+ you provide. This integration doesn't invoke the HTTP webhook in case of
  chain reorganization.
 
 
@@ -68,7 +68,7 @@ integrations work as follows:
 We provide integrations for the following two databases:
 
  - **PostgreSQL**: write data to the _table_ specified by the user. Batch data
-   is converted to Postgres records using the `json_populate_recordset`
+   is converted to PostgreSQL records using the `json_populate_recordset`
    function. Apibara requires a `_cursor` column in the table to keep track of
    each batch's cursor, so that data can be invalidated in case of chain
    reorganizations.

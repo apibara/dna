@@ -6,9 +6,9 @@ priority: 700
 updatedAt: 2023-08-15 11:00
 ---
 
-# PostgreSQL Integration
+# PostgreSQL integration
 
-The PostgreSQL integration is used to mirror onchain data to a Postgres
+The PostgreSQL integration is used to mirror onchain data to a PostgreSQL
 database. Data is automatically inserted as it's produced by the chain,
 and it's invalidated in case of chain reorganizations.
 
@@ -42,7 +42,7 @@ apibara plugins install sink-postgres
 
 The target table schema must be compatible with the data returned by the
 transformation step.
-Batch data is converted to Postgres records using the `json_populate_recordset`
+Batch data is converted to PostgreSQL records using the `json_populate_recordset`
 function. Additionally, the PostgreSQL integration **requires a `_cursor`
 column** in the table to keep track of each batch's cursor, so that data can be
 invalidated in case of chain reorganizations.
@@ -54,7 +54,7 @@ invalidated in case of chain reorganizations.
 You have two options:
 
  - disable TLS by adding the `--no-tls=true` flag when running your indexer.
-   **This is not recommended for production**.
+   **This isn't recommended for production**.
  - download the SSL certificate from your Supabase dashboard (Settings =>
    Database) and convert it to PEM.
 
