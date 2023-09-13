@@ -8,7 +8,12 @@ use mongodb::{
     Collection,
 };
 use serde_json::{json, Value};
-use testcontainers::{clients, images::mongo::Mongo};
+use testcontainers::{clients, core::WaitFor, GenericImage};
+
+fn new_mongo_image() -> GenericImage {
+    GenericImage::new("mongo", "7.0.1")
+        .with_wait_for(WaitFor::message_on_stdout("Waiting for connections"))
+}
 
 fn new_cursor(order_key: u64) -> Cursor {
     Cursor {
@@ -86,7 +91,7 @@ async fn get_all_docs(collection: &Collection<Document>) -> Vec<Document> {
 #[ignore]
 async fn test_handle_data() -> Result<(), SinkMongoError> {
     let docker = clients::Cli::default();
-    let mongo = docker.run(Mongo::default());
+    let mongo = docker.run(new_mongo_image());
     let port = mongo.get_host_port_ipv4(27017);
 
     let options = SinkMongoOptions {
@@ -141,7 +146,7 @@ async fn test_handle_invalidate_all(
     assert!(invalidate_from.is_none() || invalidate_from.clone().unwrap().order_key == 0);
 
     let docker = clients::Cli::default();
-    let mongo = docker.run(Mongo::default());
+    let mongo = docker.run(new_mongo_image());
     let port = mongo.get_host_port_ipv4(27017);
 
     let options = SinkMongoOptions {
@@ -197,7 +202,7 @@ async fn test_handle_invalidate_block_zero() -> Result<(), SinkMongoError> {
 #[ignore]
 async fn test_handle_invalidate() -> Result<(), SinkMongoError> {
     let docker = clients::Cli::default();
-    let mongo = docker.run(Mongo::default());
+    let mongo = docker.run(new_mongo_image());
     let port = mongo.get_host_port_ipv4(27017);
 
     let options = SinkMongoOptions {
@@ -256,7 +261,7 @@ async fn test_handle_invalidate() -> Result<(), SinkMongoError> {
 #[ignore]
 async fn test_handle_data_in_entity_mode() -> Result<(), SinkMongoError> {
     let docker = clients::Cli::default();
-    let mongo = docker.run(Mongo::default());
+    let mongo = docker.run(new_mongo_image());
     let port = mongo.get_host_port_ipv4(27017);
 
     let options = SinkMongoOptions {
@@ -380,7 +385,7 @@ async fn test_handle_data_in_entity_mode() -> Result<(), SinkMongoError> {
 #[ignore]
 async fn test_handle_invalidate_in_entity_mode() -> Result<(), SinkMongoError> {
     let docker = clients::Cli::default();
-    let mongo = docker.run(Mongo::default());
+    let mongo = docker.run(new_mongo_image());
     let port = mongo.get_host_port_ipv4(27017);
 
     let options = SinkMongoOptions {

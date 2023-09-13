@@ -65,7 +65,7 @@ starknet = { git = "https://github.com/fracek/starknet-rs", rev = "5bb6950" }
 thiserror = "1.0.32"
 tempfile = "3.3.0"
 tempdir = "0.3.7"
-testcontainers = { version = "0.14.0", features = ["experimental"] }
+testcontainers = { git = "https://github.com/fracek/testcontainers-rs.git", rev = "98a5557e" }
 tokio = { version = "1.20.1", features = ["full"] }
 tokio-stream = { version = "0.1.10", features = ["sync"] }
 tokio-util = "0.7.4"
