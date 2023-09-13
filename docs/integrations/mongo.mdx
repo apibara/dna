@@ -6,7 +6,7 @@ priority: 699
 updatedAt: 2023-08-29 15:00
 ---
 
-# MongoDB Integration
+# MongoDB integration
 
 The MongoDB integration provides a way to mirror onchain data to a MongoDB
 collection of your choice. Data is automatically inserted as it's produced by
@@ -62,7 +62,7 @@ information on why you need to add this condition to your filter.
 The MongoDB integration works with two types of data:
 
  - Immutable logs (default): the values returned by the indexer represent
-   something that doesn't change over time, in other words they are a list of
+   something that doesn't change over time, in other words they're a list of
    items. For example, they represent a list of token transfers.
  - Mutable entities: the values returned by the indexer represent the state of
    an entity at a given block. For example, token balances change block by
@@ -70,7 +70,7 @@ The MongoDB integration works with two types of data:
 
 You can index entities by setting the `entityMode` option to true. When you set
 this option, the indexer expects the transform function to return a list of
-update operations. An update operation is a Javascript object with an `entity`
+update operations. An update operation is a JavaScript object with an `entity`
 property used to filter which entities should be updated, and an `update` property
 with either an [update
 document](https://www.mongodb.com/docs/manual/reference/method/db.collection.updateMany/#std-label-updateMany-behavior-update-expressions)
@@ -138,7 +138,7 @@ type Cursor = {
 It follows that a field is valid at the most recent block if its `_cursor.to`
 field is `null`.
 
-**Example**: we are indexing an ERC-721 token with the following transfers:
+**Example**: we're indexing an ERC-721 token with the following transfers:
 
  - block: 1000, transfer from 0x0 to 0xA
  - block: 1010, transfer from 0xA to 0xB

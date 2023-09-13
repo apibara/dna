@@ -241,6 +241,10 @@ let
           command = "nix build .#tests";
         }
         {
+          label = ":books: Check documentation";
+          command = "nix develop .#ci -c vale docs/";
+        }
+        {
           wait = { };
         }
         {
@@ -405,11 +409,13 @@ in
 
   shell = {
     ci = pkgs.mkShell {
-      buildInputs = [
+      buildInputs = with pkgs; [
         ci-installer-test
         ci-prepare-image
         ci-prepare-binary
         ci-publish-image
+
+        vale
       ];
     };
 
