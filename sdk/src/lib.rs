@@ -7,8 +7,8 @@ use std::{
 };
 
 use apibara_core::node::v1alpha2::{
-    stream_client::StreamClient, stream_data_response, Cursor, DataFinality, StreamDataRequest,
-    StreamDataResponse,
+    stream_client::StreamClient as ProtoStreamClient, stream_data_response, Cursor, DataFinality,
+    StatusRequest, StatusResponse, StreamDataRequest, StreamDataResponse,
 };
 use futures::Stream;
 use pin_project::pin_project;
@@ -16,7 +16,10 @@ use prost::Message;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::{self, Sender};
 use tokio_stream::wrappers::ReceiverStream;
-use tonic::{metadata::KeyAndValueRef, transport::Channel, Streaming};
+use tonic::{
+    codegen::InterceptedService, metadata::KeyAndValueRef, service::Interceptor,
+    transport::Channel, Streaming,
+};
 use tracing::debug;
 
 // Re-export tonic Uri
@@ -73,20 +76,17 @@ pub enum DataMessage<D: Message + Default> {
     Heartbeat,
 }
 
+/// Data stream client.
+pub struct StreamClient(ProtoStreamClient<InterceptedService<Channel, MetadataInterceptor>>);
+
 /// Data stream builder.
 ///
 /// This struct is used to configure and connect to an Apibara data stream.
 #[derive(Default)]
-pub struct ClientBuilder<F, D>
-where
-    F: Message + Default,
-    D: Message + Default,
-{
+pub struct ClientBuilder {
     token: Option<String>,
     max_message_size: Option<usize>,
     metadata: MetadataMap,
-    _data: PhantomData<D>,
-    _filter: PhantomData<F>,
 }
 
 /// A stream of on-chain data.
@@ -107,11 +107,7 @@ where
     _data: PhantomData<D>,
 }
 
-impl<F, D> ClientBuilder<F, D>
-where
-    F: Message + Default,
-    D: Message + Default,
-{
+impl ClientBuilder {
     /// Use the given `token` to authenticate with the server.
     pub fn with_bearer_token(mut self, token: String) -> Self {
         self.token = Some(token);
@@ -135,55 +131,39 @@ where
     ///
     /// If a configuration was provided, the client will immediately send it to the server upon
     /// connecting.
-    pub async fn connect<C>(
-        self,
-        url: Uri,
-        configuration: C,
-    ) -> Result<DataStream<F, D, C>, ClientBuilderError>
-    where
-        C: Stream<Item = Configuration<F>> + Send + Sync + 'static,
-    {
+    pub async fn connect(self, url: Uri) -> Result<StreamClient, ClientBuilderError> {
         let channel = Channel::builder(url).connect().await?;
+        let interceptor = MetadataInterceptor::new(self.metadata, self.token)?;
 
-        // parse authorization token outside of the interceptor
-        let token_meta = if let Some(token) = self.token.clone() {
-            let token: tonic::metadata::MetadataValue<_> = format!("Bearer {token}").parse()?;
-            Some(("authorization", token))
-        } else {
-            None
-        };
-
-        let mut default_client =
-            StreamClient::with_interceptor(channel, move |mut req: tonic::Request<()>| {
-                let req_meta = req.metadata_mut();
-
-                for kv in self.metadata.iter() {
-                    match kv {
-                        KeyAndValueRef::Ascii(key, value) => {
-                            req_meta.insert(key, value.clone());
-                        }
-                        KeyAndValueRef::Binary(key, value) => {
-                            req_meta.insert_bin(key, value.clone());
-                        }
-                    }
-                }
-
-                if let Some((key, value)) = token_meta.clone() {
-                    req_meta.insert(key, value);
-                }
-
-                Ok(req)
-            });
-
+        let mut default_client = ProtoStreamClient::with_interceptor(channel, interceptor);
         default_client = if let Some(max_message_size) = self.max_message_size {
             default_client.max_decoding_message_size(max_message_size)
         } else {
             default_client
         };
 
+        Ok(StreamClient(default_client))
+    }
+}
+
+impl StreamClient {
+    /// Start streaming data.
+    ///
+    /// If a configuration was provided, the client will immediately send it to the server upon
+    /// connecting.
+    pub async fn start_stream<F, D, C>(
+        mut self,
+        configuration: C,
+    ) -> Result<DataStream<F, D, C>, ClientBuilderError>
+    where
+        F: Message + Default,
+        D: Message + Default,
+        C: Stream<Item = Configuration<F>> + Send + Sync + 'static,
+    {
         let (inner_tx, inner_rx) = mpsc::channel(128);
 
-        let inner_stream = default_client
+        let inner_stream = self
+            .0
             .stream_data(ReceiverStream::new(inner_rx))
             .await?
             .into_inner();
@@ -197,6 +177,13 @@ where
         };
 
         Ok(stream)
+    }
+
+    /// Request the stream status.
+    pub async fn status(mut self) -> Result<StatusResponse, ClientBuilderError> {
+        let request = StatusRequest {};
+        let response = self.0.status(request).await?;
+        Ok(response.into_inner())
     }
 }
 
@@ -303,5 +290,52 @@ impl<D: Message + Default> DataMessage<D> {
                 Some(message)
             }
         }
+    }
+}
+
+pub struct MetadataInterceptor {
+    metadata: MetadataMap,
+    token_meta: Option<(&'static str, MetadataValue)>,
+}
+
+impl MetadataInterceptor {
+    fn new(metadata: MetadataMap, token: Option<String>) -> Result<Self, ClientBuilderError> {
+        // parse authorization token outside of the interceptor
+        let token_meta = if let Some(token) = token {
+            let token: tonic::metadata::MetadataValue<_> = format!("Bearer {token}").parse()?;
+            Some(("authorization", token))
+        } else {
+            None
+        };
+        Ok(Self {
+            metadata,
+            token_meta,
+        })
+    }
+}
+
+impl Interceptor for MetadataInterceptor {
+    fn call(
+        &mut self,
+        mut request: tonic::Request<()>,
+    ) -> Result<tonic::Request<()>, tonic::Status> {
+        let req_meta = request.metadata_mut();
+
+        for kv in self.metadata.iter() {
+            match kv {
+                KeyAndValueRef::Ascii(key, value) => {
+                    req_meta.insert(key, value.clone());
+                }
+                KeyAndValueRef::Binary(key, value) => {
+                    req_meta.insert_bin(key, value.clone());
+                }
+            }
+        }
+
+        if let Some((key, value)) = self.token_meta.clone() {
+            req_meta.insert(key, value);
+        }
+
+        Ok(request)
     }
 }
