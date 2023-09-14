@@ -202,7 +202,7 @@ where
             .map_err(|_| SinkConnectorError::SendConfiguration)?;
 
         debug!("start consume stream");
-        let mut stream_builder = ClientBuilder::<F, B>::default()
+        let mut stream_builder = ClientBuilder::default()
             .with_max_message_size(
                 self.stream_configuration.max_message_size_bytes.as_u64() as usize
             )
@@ -215,10 +215,9 @@ where
         };
 
         let mut data_stream = stream_builder
-            .connect(
-                self.stream_configuration.stream_url.clone(),
-                configuration_stream,
-            )
+            .connect(self.stream_configuration.stream_url.clone())
+            .await?
+            .start_stream::<F, B, _>(configuration_stream)
             .await?;
 
         // Only start status server at this moment.
