@@ -82,10 +82,14 @@ async fn test_starknet_reorgs() {
         let uri = "http://localhost:7171".parse().unwrap();
         let (config_client, config_stream) = configuration::channel(128);
         config_client.send(configuration.clone()).await.unwrap();
-        let mut data_stream = ClientBuilder::<Filter, Block>::default()
-            .connect(uri, config_stream)
+        let mut data_stream = ClientBuilder::default()
+            .connect(uri)
+            .await
+            .unwrap()
+            .start_stream::<Filter, Block, _>(config_stream)
             .await
             .unwrap();
+
         info!("connected. tests starting");
         let mut block_hash = None;
         for i in 0..11 {
@@ -143,10 +147,14 @@ async fn test_starknet_reorgs() {
         let (config_client, config_stream) = configuration::channel(128);
         config_client.send(configuration).await.unwrap();
         let uri = "http://localhost:7171".parse().unwrap();
-        let mut data_stream = ClientBuilder::<Filter, Block>::default()
-            .connect(uri, config_stream)
+        let mut data_stream = ClientBuilder::default()
+            .connect(uri)
+            .await
+            .unwrap()
+            .start_stream::<Filter, Block, _>(config_stream)
             .await
             .unwrap();
+
         info!("reconnected. tests starting");
         for _ in 0..5 {
             data_stream.try_next().await.unwrap().unwrap();

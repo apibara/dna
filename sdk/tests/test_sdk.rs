@@ -16,9 +16,11 @@ async fn test_apibara_high_level_api() -> Result<(), Box<dyn std::error::Error>>
         .await?;
 
     let uri = Uri::from_static("https://goerli.starknet.a5a.ch");
-    let stream = ClientBuilder::<Filter, Block>::default()
+    let stream = ClientBuilder::default()
         .with_bearer_token("my_auth_token".into())
-        .connect(uri, config_stream)
+        .connect(uri)
+        .await?
+        .start_stream::<Filter, Block, _>(config_stream)
         .await?;
 
     let mut stream = stream.take(2);

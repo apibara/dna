@@ -5,9 +5,8 @@ static STARKNET_DESCRIPTOR_FILE: &str = "starknet_v1alpha2_descriptor.bin";
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
-    println!("cargo:rerun-if-changed=proto/node/v1alpha2/stream.proto");
-    println!("cargo:rerun-if-changed=proto/starknet/v1alpha2/starknet.proto");
-    println!("cargo:rerun-if-changed=proto/starknet/v1alpha2/filter.proto");
+    println!("cargo:rerun-if-changed=proto/node/v1alpha2");
+    println!("cargo:rerun-if-changed=proto/starknet/v1alpha2");
 
     tonic_build::configure()
         .build_client(true)

@@ -9,6 +9,7 @@ mod status;
 use std::env;
 
 use apibara_core::starknet::v1alpha2;
+use color_eyre::Result;
 use serde::Deserialize;
 use tokio_util::sync::CancellationToken;
 use tracing::debug;
@@ -37,7 +38,7 @@ pub async fn run_sink_connector<S>(
     connector_cli_options: OptionsFromCli,
     sink_cli_options: S::Options,
     ct: CancellationToken,
-) -> Result<(), SinkConnectorError>
+) -> Result<()>
 where
     S: Sink + Send + Sync,
 {
@@ -97,9 +98,7 @@ where
     Ok(())
 }
 
-pub fn load_environment_variables(
-    options: &DotenvOptions,
-) -> Result<Option<Vec<String>>, SinkConnectorError> {
+pub fn load_environment_variables(options: &DotenvOptions) -> Result<Option<Vec<String>>> {
     let Some(allow_env) = options.allow_env.as_ref() else {
         return Ok(None);
     };

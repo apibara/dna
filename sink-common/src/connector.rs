@@ -2,9 +2,15 @@ use std::time::Duration;
 
 use apibara_core::node::v1alpha2::{Cursor, DataFinality};
 use apibara_script::{Script, ScriptError};
-use apibara_sdk::{configuration, ClientBuilder, Configuration, DataMessage, MetadataMap, Uri};
+use apibara_sdk::{
+    configuration, ClientBuilder, Configuration, DataMessage, MetadataMap, StreamClient, Uri,
+};
 use async_trait::async_trait;
 use bytesize::ByteSize;
+use color_eyre::{
+    eyre::{eyre, Context},
+    Result,
+};
 use exponential_backoff::Backoff;
 use prost::Message;
 use serde::de::DeserializeOwned;
@@ -18,8 +24,8 @@ use crate::{
     cli::LoadScriptError,
     persistence::{Persistence, PersistenceClientError},
     status::StatusServer,
-    PersistenceClient, PersistenceError, PersistenceOptionsError, StatusServerOptionsError,
-    StreamOptionsError,
+    PersistenceClient, PersistenceError, PersistenceOptionsError, StatusServerClient,
+    StatusServerOptionsError, StreamOptionsError,
 };
 
 pub trait SinkOptions: DeserializeOwned {
@@ -37,7 +43,7 @@ pub trait Sink {
     type Options: SinkOptions;
     type Error: std::error::Error + Send + Sync + 'static;
 
-    async fn from_options(options: Self::Options) -> Result<Self, Self::Error>
+    async fn from_options(options: Self::Options) -> std::result::Result<Self, Self::Error>
     where
         Self: Sized;
 
@@ -49,13 +55,16 @@ pub trait Sink {
         batch: &Value,
     ) -> Result<CursorAction, Self::Error>;
 
-    async fn handle_invalidate(&mut self, cursor: &Option<Cursor>) -> Result<(), Self::Error>;
+    async fn handle_invalidate(
+        &mut self,
+        cursor: &Option<Cursor>,
+    ) -> std::result::Result<(), Self::Error>;
 
-    async fn cleanup(&mut self) -> Result<(), Self::Error> {
+    async fn cleanup(&mut self) -> std::result::Result<(), Self::Error> {
         Ok(())
     }
 
-    async fn handle_heartbeat(&mut self) -> Result<(), Self::Error> {
+    async fn handle_heartbeat(&mut self) -> std::result::Result<(), Self::Error> {
         Ok(())
     }
 }
@@ -90,8 +99,6 @@ pub enum OptionsError {
 pub enum SinkConnectorError {
     #[error(transparent)]
     Options(#[from] OptionsError),
-    #[error(transparent)]
-    ClientBuilder(#[from] apibara_sdk::ClientBuilderError),
     #[error("Failed to send configuration")]
     SendConfiguration,
     #[error("Stream error: {0}")]
@@ -157,12 +164,25 @@ where
         mut self,
         mut configuration: Configuration<F>,
         ct: CancellationToken,
-    ) -> Result<(), SinkConnectorError>
+    ) -> Result<()>
     where
         F: Message + Default,
         B: Message + Default + Serialize,
     {
         let mut persistence = self.persistence.connect().await?;
+
+        let stream_client = self.new_stream_client().await?;
+
+        let (status_client, mut status_server) = self
+            .status_server
+            .clone()
+            .start(stream_client.clone(), ct.clone())
+            .await?;
+
+        // Set starting cursor now, before it's modified.
+        status_client
+            .set_starting_cursor(configuration.starting_cursor.clone())
+            .await?;
 
         info!("acquiring persistence lock");
         // lock will block until it's acquired.
@@ -189,8 +209,13 @@ where
             info!(cursor = ?starting_cursor, "restarting from last cursor");
             configuration.starting_cursor = starting_cursor.clone();
 
-            self.handle_invalidate(starting_cursor, &mut persistence, ct.clone())
-                .await?;
+            self.handle_invalidate(
+                starting_cursor.clone(),
+                &status_client,
+                &mut persistence,
+                ct.clone(),
+            )
+            .await?;
         }
 
         let (configuration_client, configuration_stream) = configuration::channel(128);
@@ -202,28 +227,10 @@ where
             .map_err(|_| SinkConnectorError::SendConfiguration)?;
 
         debug!("start consume stream");
-        let mut stream_builder = ClientBuilder::default()
-            .with_max_message_size(
-                self.stream_configuration.max_message_size_bytes.as_u64() as usize
-            )
-            .with_metadata(self.stream_configuration.metadata.clone());
 
-        stream_builder = if let Some(bearer_token) = self.stream_configuration.bearer_token.take() {
-            stream_builder.with_bearer_token(bearer_token)
-        } else {
-            stream_builder
-        };
-
-        let mut data_stream = stream_builder
-            .connect(self.stream_configuration.stream_url.clone())
-            .await?
+        let mut data_stream = stream_client
             .start_stream::<F, B, _>(configuration_stream)
             .await?;
-
-        // Only start status server at this moment.
-        // We want to avoid tricking k8s into believing the server is running fine when it's stuck
-        // waiting for the lock.
-        let mut status_server = Box::pin(self.status_server.clone().start(ct.clone()));
 
         loop {
             tokio::select! {
@@ -234,13 +241,13 @@ where
                     break;
                 }
                 maybe_message = data_stream.try_next() => {
-                    match maybe_message.map_err(SinkConnectorError::Stream)? {
+                    match maybe_message.context("failed to read dna stream")? {
                         None => {
                             warn!("data stream closed");
                             break;
                         }
                         Some(message) => {
-                            self.handle_message(message, &mut persistence, ct.clone()).await?;
+                            self.handle_message(message, &status_client, &mut persistence, ct.clone()).await?;
                         }
                     }
                 }
@@ -259,12 +266,34 @@ where
         Ok(())
     }
 
+    async fn new_stream_client(&self) -> Result<StreamClient> {
+        let mut stream_builder = ClientBuilder::default()
+            .with_max_message_size(
+                self.stream_configuration.max_message_size_bytes.as_u64() as usize
+            )
+            .with_metadata(self.stream_configuration.metadata.clone());
+
+        stream_builder = if let Some(bearer_token) = self.stream_configuration.bearer_token.clone()
+        {
+            stream_builder.with_bearer_token(bearer_token)
+        } else {
+            stream_builder
+        };
+
+        let client = stream_builder
+            .connect(self.stream_configuration.stream_url.clone())
+            .await?;
+
+        Ok(client)
+    }
+
     async fn handle_invalidate<P>(
         &mut self,
         cursor: Option<Cursor>,
+        status_client: &StatusServerClient,
         persistence: &mut P,
         ct: CancellationToken,
-    ) -> Result<(), SinkConnectorError>
+    ) -> Result<()>
     where
         P: PersistenceClient + Send,
         S: Sink + Sync + Send,
@@ -279,9 +308,11 @@ where
                     match cursor {
                         None => {
                             persistence.delete_cursor().await?;
+                            status_client.update_cursor(None).await?;
                         }
                         Some(cursor) => {
-                            persistence.put_cursor(cursor).await?;
+                            persistence.put_cursor(cursor.clone()).await?;
+                            status_client.update_cursor(Some(cursor)).await?;
                         }
                     }
                     return Ok(());
@@ -289,7 +320,7 @@ where
                 Err(err) => {
                     warn!(err = ?err, "handle_invalidate error");
                     if ct.is_cancelled() {
-                        return Err(SinkConnectorError::Sink(err.into()));
+                        return Err(err).context("handle invalidate");
                     }
                     tokio::select! {
                         _ = tokio::time::sleep(duration) => {},
@@ -300,7 +331,8 @@ where
                 }
             }
         }
-        Err(SinkConnectorError::MaximumRetriesExceeded)
+
+        Err(eyre!("handle invalidate failed after retry"))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -310,9 +342,10 @@ where
         end_cursor: Cursor,
         finality: DataFinality,
         batch: Vec<B>,
+        status_client: &StatusServerClient,
         persistence: &mut P,
         ct: CancellationToken,
-    ) -> Result<(), SinkConnectorError>
+    ) -> Result<()>
     where
         B: Message + Default + Serialize,
         P: PersistenceClient + Send,
@@ -322,7 +355,7 @@ where
         let data = self.script.transform(&json_batch).await?;
 
         if self.needs_invalidation {
-            self.handle_invalidate(cursor.clone(), persistence, ct.clone())
+            self.handle_invalidate(cursor.clone(), status_client, persistence, ct.clone())
                 .await?;
             self.needs_invalidation = false;
         }
@@ -337,7 +370,8 @@ where
                     if finality == DataFinality::DataStatusPending {
                         self.needs_invalidation = true;
                     } else if let CursorAction::Persist = cursor_action {
-                        persistence.put_cursor(end_cursor).await?;
+                        persistence.put_cursor(end_cursor.clone()).await?;
+                        status_client.update_cursor(Some(end_cursor)).await?;
                     }
 
                     return Ok(());
@@ -345,7 +379,7 @@ where
                 Err(err) => {
                     warn!(err = ?err, "handle_data error");
                     if ct.is_cancelled() {
-                        return Err(SinkConnectorError::Sink(err.into()));
+                        return Err(err).context("handle data");
                     }
                     tokio::select! {
                         _ = tokio::time::sleep(duration) => {},
@@ -356,15 +390,17 @@ where
                 }
             }
         }
-        Err(SinkConnectorError::MaximumRetriesExceeded)
+
+        Err(eyre!("handle data failed after retry"))
     }
 
     async fn handle_message<B, P>(
         &mut self,
         message: DataMessage<B>,
+        status_client: &StatusServerClient,
         persistence: &mut P,
         ct: CancellationToken,
-    ) -> Result<(), SinkConnectorError>
+    ) -> Result<()>
     where
         B: Message + Default + Serialize,
         P: PersistenceClient + Send,
@@ -376,18 +412,29 @@ where
                 finality,
                 batch,
             } => {
-                self.handle_data(cursor, end_cursor, finality, batch, persistence, ct)
-                    .await
+                self.handle_data(
+                    cursor,
+                    end_cursor,
+                    finality,
+                    batch,
+                    status_client,
+                    persistence,
+                    ct,
+                )
+                .await
             }
             DataMessage::Invalidate { cursor } => {
-                self.handle_invalidate(cursor, persistence, ct).await
+                self.handle_invalidate(cursor, status_client, persistence, ct)
+                    .await
             }
-            DataMessage::Heartbeat => self
-                .sink
-                .handle_heartbeat()
-                .await
-                .map_err(Into::into)
-                .map_err(SinkConnectorError::Sink),
+            DataMessage::Heartbeat => {
+                self.sink
+                    .handle_heartbeat()
+                    .await
+                    .context("handle heartbeat")?;
+                status_client.heartbeat().await?;
+                Ok(())
+            }
         }
     }
 }
