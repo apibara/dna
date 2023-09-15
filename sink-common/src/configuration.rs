@@ -129,7 +129,7 @@ impl StatusServerOptions {
     pub fn to_status_server(self) -> Result<StatusServer, StatusServerOptionsError> {
         let address = self
             .status_server_address
-            .unwrap_or_else(|| "0.0.0.0:8118".to_string())
+            .unwrap_or_else(|| "0.0.0.0:0".to_string())
             .parse()?;
         Ok(StatusServer::new(address))
     }

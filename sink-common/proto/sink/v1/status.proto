@@ -1,0 +1,35 @@
+// Apibara Sink status server
+syntax = "proto3";
+
+package apibara.sink.v1;
+
+service Status {
+  // Get Sink status.
+  rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
+}
+
+// Request for the `GetStatus` method.
+message GetStatusRequest {}
+
+// Response for the `GetStatus` method.
+message GetStatusResponse {
+  // The status of the sink.
+  SinkStatus status = 1;
+  // The starting block.
+  optional uint64 starting_block = 2;
+  // The current block.
+  optional uint64 current_block = 3;
+  // The current head of the chain.
+  optional uint64 head_block = 4;
+  // The reason why the sink is not running.
+  optional string reason = 5;
+}
+
+enum SinkStatus {
+  SINK_STATUS_UNKNOWN = 0;
+  // The sink is running.
+  SINK_STATUS_RUNNING = 1;
+  // The sink has errored.
+  SINK_STATUS_ERRORED = 2;
+}
+

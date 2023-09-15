@@ -63,10 +63,14 @@ async fn test_reorg_from_client_pov() {
         let (config_client, config_stream) = configuration::channel(128);
         config_client.send(configuration).await.unwrap();
         let uri = "http://localhost:7171".parse().unwrap();
-        let mut data_stream = ClientBuilder::<Filter, Block>::default()
-            .connect(uri, config_stream)
+        let mut data_stream = ClientBuilder::default()
+            .connect(uri)
+            .await
+            .unwrap()
+            .start_stream::<Filter, Block, _>(config_stream)
             .await
             .unwrap();
+
         info!("connected. tests starting");
         let devnet_client = DevnetClient::new(format!("http://localhost:{}", rpc_port));
 
@@ -170,10 +174,14 @@ async fn test_reorg_from_client_pov() {
         let (config_client, config_stream) = configuration::channel(128);
         config_client.send(configuration).await.unwrap();
         let uri = "http://localhost:7171".parse().unwrap();
-        let mut data_stream = ClientBuilder::<Filter, Block>::default()
-            .connect(uri, config_stream)
+        let mut data_stream = ClientBuilder::default()
+            .connect(uri)
+            .await
+            .unwrap()
+            .start_stream::<Filter, Block, _>(config_stream)
             .await
             .unwrap();
+
         info!("re-connected. tests starting");
         // first message should be warning of reorg
         match data_stream.try_next().await.unwrap().unwrap() {
