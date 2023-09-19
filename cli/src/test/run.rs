@@ -135,7 +135,8 @@ async fn run_test(
         ))?
         .filter;
 
-    let NetworkFilterOptions::Starknet(snapshot_filter) = &snapshot.stream_configuration_options.filter;
+    let NetworkFilterOptions::Starknet(snapshot_filter) =
+        &snapshot.stream_configuration_options.filter;
 
     if snapshot_filter != filter {
         let left = format!("{:#?}", SimilarAssertsDebug(&snapshot_filter));
@@ -271,7 +272,7 @@ pub async fn run_generate_snapshot(
 
     let file = File::create(snapshot_path)?;
     let mut writer = BufWriter::new(file);
-    serde_json::to_writer(&mut writer, &snapshot)?;
+    serde_json::to_writer_pretty(&mut writer, &snapshot)?;
     writer.flush()?;
 
     let start_block = snapshot.stream[0]["cursor"]["orderKey"]
