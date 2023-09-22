@@ -302,7 +302,7 @@ where
         fs::create_dir_all(&self.datadir).map_err(StarkNetNodeBuilderError::CreateDatadir)?;
 
         let db = Environment::<E>::builder()
-            .with_size_gib(10, 100)
+            .with_size_gib(10, 256)
             .with_growth_step_gib(2)
             .open(&self.datadir)
             .map_err(StarkNetNodeBuilderError::DatabaseOpen)?;
