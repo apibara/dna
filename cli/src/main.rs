@@ -21,9 +21,9 @@ enum Command {
     /// Manage plugins.
     ///
     /// Plugins are used to extend Apibara functionality, for example by adding new data sinks.
+    #[clap(alias = "plugin")]
     Plugins(plugins::PluginsArgs),
     /// Test an indexer script.
-    ///
     Test(test::TestArgs),
 }
 
