@@ -190,7 +190,6 @@ impl Indexer {
         use api::core::v1::PodSpec;
 
         // Initialize volume, volume mounts, and env vars.
-
         let mut volumes = Vec::new();
         let mut volume_mounts = Vec::new();
         let env = self.spec.env.clone().unwrap_or_default();
