@@ -22,12 +22,15 @@ use crate::{
     reconcile,
 };
 
-pub async fn start(
+pub type ReconcileItem<K> =
+    Result<(ObjectRef<K>, Action), controller::Error<OperatorError, watcher::Error>>;
+
+pub async fn create(
     client: Client,
     configuration: Configuration,
     ct: CancellationToken,
-) -> Result<(), OperatorError> {
-    info!("Starting controller");
+) -> Result<impl Stream<Item = ReconcileItem<Indexer>>, OperatorError> {
+    info!("Creating controller");
 
     let ctx = Context {
         client,
@@ -56,13 +59,20 @@ pub async fn start(
             ctx.into(),
         );
 
+    Ok(controller)
+}
+
+pub async fn start(
+    client: Client,
+    configuration: Configuration,
+    ct: CancellationToken,
+) -> Result<(), OperatorError> {
+    let controller = create(client, configuration, ct).await?;
+
     run_controller_to_end(controller).await;
 
     Ok(())
 }
-
-type ReconcileItem<K> =
-    Result<(ObjectRef<K>, Action), controller::Error<OperatorError, watcher::Error>>;
 
 fn run_controller_to_end<K>(
     controller_stream: impl Stream<Item = ReconcileItem<K>>,

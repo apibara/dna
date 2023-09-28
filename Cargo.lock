@@ -306,6 +306,7 @@ dependencies = [
  "serde_yaml",
  "thiserror",
  "tokio 1.28.2",
+ "tokio-stream",
  "tokio-util",
  "tracing",
 ]
