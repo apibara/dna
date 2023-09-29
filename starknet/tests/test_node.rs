@@ -50,6 +50,7 @@ async fn test_starknet_reorgs() {
         blocks_per_second_limit: None,
         address: None,
         websocket_address: None,
+        quota_server: None,
     };
 
     let configuration = Configuration::<Filter>::default()

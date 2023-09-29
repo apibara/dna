@@ -4,6 +4,7 @@ use crate::server::stream::IngestionStream;
 use crate::stream::{DbBatchProducer, SequentialCursorProducer};
 use apibara_core::starknet::v1alpha2::Block;
 use apibara_core::starknet::v1alpha2::Filter;
+use apibara_node::server::QuotaClient;
 use apibara_node::stream::{new_data_stream, StreamConfigurationStream, StreamError};
 use apibara_sdk::{Configuration, DataMessage};
 use futures::future;
@@ -79,6 +80,7 @@ impl<R: StorageReader + Send + Sync + 'static> WebsocketStreamServer<R> {
         let configuration_stream = StreamConfigurationStream::new(configuration_stream);
 
         let meter = apibara_node::server::SimpleMeter::default();
+        let quota_client = QuotaClient::no_quota();
         // let stream_span = self.request_observer.stream_data_span(&metadata);
         // let stream_meter = self.request_observer.stream_data_meter(&metadata);
 
@@ -94,6 +96,7 @@ impl<R: StorageReader + Send + Sync + 'static> WebsocketStreamServer<R> {
             batch_producer,
             self.blocks_per_second_quota,
             meter,
+            quota_client,
         );
 
         // TODO: send the first decoding error downstream

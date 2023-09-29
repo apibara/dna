@@ -20,7 +20,7 @@ use ingestion::BlockIngestionConfig;
 
 use std::{path::PathBuf, time::Duration};
 
-use apibara_node::db::default_data_dir;
+use apibara_node::{db::default_data_dir, server::QuotaConfiguration};
 use clap::Args;
 use color_eyre::eyre::Result;
 use tempdir::TempDir;
@@ -53,12 +53,27 @@ pub struct StartArgs {
     /// Use the specified metadata key for tracing and metering.
     #[arg(long, env)]
     pub use_metadata: Vec<String>,
+    #[command(flatten)]
+    pub quota_server: Option<QuotaServerArgs>,
     /// Bind the DNA server to this address, defaults to `0.0.0.0:7171`.
     #[arg(long, env)]
     pub address: Option<String>,
     // Websocket address
     #[arg(long, env)]
     pub websocket_address: Option<String>,
+}
+
+#[derive(Default, Clone, Debug, Args)]
+pub struct QuotaServerArgs {
+    /// Quota server address.
+    #[arg(long, env)]
+    pub quota_server_address: Option<String>,
+    /// Metadata key used to identify the team.
+    #[arg(long, env)]
+    pub team_metadata_key: Option<String>,
+    /// Metadata key used to identify the client.
+    #[arg(long, env)]
+    pub client_metadata_key: Option<String>,
 }
 
 /// Connect the cancellation token to the ctrl-c handler.
@@ -84,7 +99,7 @@ pub async fn start_node(args: StartArgs, cts: CancellationToken) -> Result<()> {
     } else if let Some(datadir) = args.data {
         info!("using user-provided datadir");
         node.with_datadir(datadir);
-    } else if let Some(name) = args.name {
+    } else if let Some(name) = &args.name {
         let datadir = default_data_dir()
             .map(|p| p.join(name))
             .expect("no datadir");
@@ -93,6 +108,21 @@ pub async fn start_node(args: StartArgs, cts: CancellationToken) -> Result<()> {
 
     if let Some(address) = args.address {
         node.with_address(address);
+    }
+
+    let quota_args = args.quota_server.unwrap_or_default();
+    if let Some(quota_server_address) = quota_args.quota_server_address {
+        let server_address = quota_server_address.parse()?;
+        let network_name = args.name.unwrap_or_else(|| "starknet".to_string());
+        let quota_configuration = QuotaConfiguration::RemoteQuota {
+            server_address,
+            network_name,
+            team_metadata_key: quota_args
+                .team_metadata_key
+                .unwrap_or_else(|| "x-team-name".to_string()),
+            client_metadata_key: quota_args.client_metadata_key,
+        };
+        node.with_quota_configuration(quota_configuration);
     }
 
     if let Some(websocket_address) = args.websocket_address {

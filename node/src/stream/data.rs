@@ -10,7 +10,11 @@ use governor::{DefaultDirectRateLimiter, Quota, RateLimiter};
 use prost::Message;
 use tracing::{debug_span, instrument, trace, Instrument};
 
-use crate::{core::Cursor, server::RequestMeter, stream::BatchCursor};
+use crate::{
+    core::Cursor,
+    server::{QuotaClient, QuotaStatus, RequestMeter},
+    stream::BatchCursor,
+};
 
 use super::{
     BatchProducer, CursorProducer, IngestionMessage, IngestionResponse, ReconfigureResponse,
@@ -24,6 +28,7 @@ pub fn new_data_stream<C, F, B, M>(
     mut batch_producer: impl BatchProducer<Cursor = C, Filter = F, Block = B>,
     blocks_per_second_quota: u32,
     meter: M,
+    quota_client: QuotaClient,
 ) -> impl Stream<Item = Result<StreamDataResponse, StreamError>>
 where
     C: Cursor + Send + Sync,
@@ -43,6 +48,18 @@ where
         let mut last_batch_sent = Instant::now();
         // Send a batch (no matter if empty or not) at least once every this interval.
         let max_batch_interval = Duration::from_secs(10);
+
+        let mut last_quota_sent = Instant::now();
+        let quota_interval = Duration::from_secs(15);
+
+        let mut data_units = 0u64;
+
+        match quota_client.check().await.map_err(StreamError::internal)? {
+            QuotaStatus::Ok => {},
+            QuotaStatus::Exceeded => {
+                yield Err(StreamError::quota_exceeded());
+            },
+        }
 
         {
             // Some clients (notably tonic) wait for the first message before
@@ -140,6 +157,25 @@ where
                             if !should_send_data {
                                 trace!("skip empty batch");
                                 continue
+                            }
+
+                            data_units += data.data.len() as u64;
+
+                            if last_quota_sent.elapsed() > quota_interval {
+                                match quota_client.update_and_check(data_units).await {
+                                    Ok(QuotaStatus::Ok) => {},
+                                    Ok(QuotaStatus::Exceeded) => {
+                                        yield Err(StreamError::quota_exceeded());
+                                        break;
+                                    },
+                                    Err(err) => {
+                                        yield Err(StreamError::internal(err));
+                                        break;
+                                    }
+                                }
+
+                                data_units = 0;
+                                last_quota_sent = Instant::now();
                             }
 
                             last_batch_sent = Instant::now();

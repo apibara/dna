@@ -6,7 +6,7 @@ use std::{net::SocketAddr, sync::Arc};
 use apibara_core::node as node_pb;
 use apibara_node::{
     db::libmdbx::{Environment, EnvironmentKind},
-    server::{RequestObserver, SimpleRequestObserver},
+    server::{QuotaClientFactory, QuotaConfiguration, RequestObserver, SimpleRequestObserver},
 };
 use tokio::task::JoinError;
 use tokio_util::sync::CancellationToken;
@@ -26,6 +26,7 @@ pub struct Server<E: EnvironmentKind, O: RequestObserver> {
     status: StatusClient,
     blocks_per_second_quota: u32,
     request_observer: O,
+    quota_configuration: QuotaConfiguration,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -51,12 +52,14 @@ where
     ) -> Server<E, SimpleRequestObserver> {
         let ingestion = Arc::new(ingestion);
         let request_observer = SimpleRequestObserver::default();
+        let quota_configuration = QuotaConfiguration::NoQuota;
         Server {
             db,
             ingestion,
             status,
             request_observer,
             blocks_per_second_quota,
+            quota_configuration,
         }
     }
 
@@ -68,7 +71,13 @@ where
             status: self.status,
             request_observer,
             blocks_per_second_quota: self.blocks_per_second_quota,
+            quota_configuration: self.quota_configuration,
         }
+    }
+
+    pub fn with_quota_configuration(mut self, config: QuotaConfiguration) -> Self {
+        self.quota_configuration = config;
+        self
     }
 
     pub async fn start(self, addr: SocketAddr, ct: CancellationToken) -> Result<(), ServerError> {
@@ -83,13 +92,16 @@ where
             .register_encoded_file_descriptor_set(node_pb::v1alpha2::node_file_descriptor_set())
             .build()?;
 
+        let quota_client_factory = QuotaClientFactory::new(self.quota_configuration);
         let storage = DatabaseStorage::new(self.db);
+
         let stream_service = StreamService::new(
             self.ingestion,
             self.status,
             storage,
             self.request_observer,
             self.blocks_per_second_quota,
+            quota_client_factory,
         )
         .into_service();
 
