@@ -6,6 +6,17 @@ The format is based on [Common Changelog](https://common-changelog.org/), and
 this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.4] - 2023-09-30
+
+_Check usage quota._
+
+### Added
+
+ - Check clients usage quota while streaming by querying an external Quota
+   service. The quota service checks if the user has exceeded their quota
+   based on the team, client, and network name. Configure the quota service
+   specifying the `--quota-server-address` flag.
+
 ## [1.1.3] - 2023-09-22
 
 _Fix an issue with Starknet Mainnet deployments._
@@ -91,6 +102,7 @@ _Start publishing versioned Docker images._
 
 _First tagged release 🎉_
 
+[1.1.4]: https://github.com/apibara/dna/releases/tag/starknet/v1.1.4
 [1.1.3]: https://github.com/apibara/dna/releases/tag/starknet/v1.1.3
 [1.1.2]: https://github.com/apibara/dna/releases/tag/starknet/v1.1.2
 [1.1.1]: https://github.com/apibara/dna/releases/tag/starknet/v1.1.1
