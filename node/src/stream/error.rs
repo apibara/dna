@@ -4,6 +4,8 @@ use tracing::warn;
 pub enum StreamError {
     #[error("internal error: {0}")]
     Internal(Box<dyn std::error::Error + Send + Sync + 'static>),
+    #[error("quota exceeded")]
+    QuotaExceeded,
     #[error("invalid request: {message}")]
     InvalidRequest { message: String },
 }
@@ -11,6 +13,10 @@ pub enum StreamError {
 impl StreamError {
     pub fn invalid_request(message: String) -> Self {
         StreamError::InvalidRequest { message }
+    }
+
+    pub fn quota_exceeded() -> Self {
+        StreamError::QuotaExceeded
     }
 
     pub fn internal(err: impl Into<Box<dyn std::error::Error + Send + Sync + 'static>>) -> Self {
@@ -23,6 +29,9 @@ impl StreamError {
                 warn!(err = ?err, "stream error");
                 tonic::Status::internal("internal server error")
             }
+            StreamError::QuotaExceeded => tonic::Status::resource_exhausted(
+                "monthly data quota exceeded. Please contact support.",
+            ),
             StreamError::InvalidRequest { message } => tonic::Status::invalid_argument(message),
         }
     }

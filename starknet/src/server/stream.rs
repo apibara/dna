@@ -10,12 +10,13 @@ use apibara_core::node::v1alpha2::{
     stream_server, StatusRequest, StatusResponse, StreamDataRequest, StreamDataResponse,
 };
 use apibara_node::{
-    server::RequestObserver,
+    server::{QuotaClientFactory, RequestObserver},
     stream::{new_data_stream, ResponseStream, StreamConfigurationStream, StreamError},
 };
 use futures::Stream;
 use pin_project::pin_project;
 use tonic::{metadata::MetadataMap, Request, Response, Streaming};
+use tracing::warn;
 use tracing_futures::Instrument;
 
 use crate::{
@@ -32,6 +33,7 @@ pub struct StreamService<R: StorageReader, O: RequestObserver> {
     blocks_per_second_quota: u32,
     storage: Arc<R>,
     request_observer: O,
+    quota_client_factory: QuotaClientFactory,
 }
 
 impl<R, O> StreamService<R, O>
@@ -45,6 +47,7 @@ where
         storage: R,
         request_observer: O,
         blocks_per_second_quota: u32,
+        quota_client_factory: QuotaClientFactory,
     ) -> Self {
         let storage = Arc::new(storage);
         StreamService {
@@ -53,6 +56,7 @@ where
             storage,
             request_observer,
             blocks_per_second_quota,
+            quota_client_factory,
         }
     }
 
@@ -64,13 +68,25 @@ where
         &self,
         metadata: MetadataMap,
         configuration: S,
-    ) -> impl Stream<Item = Result<StreamDataResponse, tonic::Status>>
+    ) -> Result<impl Stream<Item = Result<StreamDataResponse, tonic::Status>>, tonic::Status>
     where
         S: Stream<Item = Result<StreamDataRequest, E>> + Unpin,
         E: std::error::Error + Send + Sync + 'static,
     {
         let stream_span = self.request_observer.stream_data_span(&metadata);
         let stream_meter = self.request_observer.stream_data_meter(&metadata);
+
+        let quota_client = self
+            .quota_client_factory
+            .client_with_metadata(&metadata)
+            .await
+            .map_err(|err| {
+                warn!(error = %err, "failed to create quota client");
+                tonic::Status::internal(format!(
+                    "failed to create quota client: {}",
+                    err.human_readable()
+                ))
+            })?;
 
         let configuration_stream = StreamConfigurationStream::new(configuration);
         let ingestion_stream = self.ingestion.subscribe().await;
@@ -85,9 +101,10 @@ where
             batch_producer,
             self.blocks_per_second_quota,
             stream_meter,
+            quota_client,
         );
 
-        ResponseStream::new(data_stream).instrument(stream_span)
+        Ok(ResponseStream::new(data_stream).instrument(stream_span))
     }
 }
 
@@ -110,7 +127,7 @@ where
         let metadata = request.metadata().clone();
         let response = self
             .stream_data_with_configuration(metadata, request.into_inner())
-            .await;
+            .await?;
         Ok(Response::new(Box::pin(response)))
     }
 
@@ -124,7 +141,7 @@ where
         };
         let response = self
             .stream_data_with_configuration(metadata, configuration_stream)
-            .await;
+            .await?;
         Ok(Response::new(Box::pin(response)))
     }
 

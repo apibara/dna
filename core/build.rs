@@ -7,6 +7,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
     println!("cargo:rerun-if-changed=proto/node/v1alpha2");
     println!("cargo:rerun-if-changed=proto/starknet/v1alpha2");
+    println!("cargo:rerun-if-changed=proto/quota/v1");
 
     tonic_build::configure()
         .build_client(true)
@@ -43,6 +44,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .register_descriptors(&starknet_description_set)?
         .exclude([".apibara.starknet.v1alpha2.FieldElement"])
         .build(&[".apibara"])?;
+
+    // we only need the client for the quota service.
+    tonic_build::configure()
+        .build_client(true)
+        .build_server(false)
+        .protoc_arg("--experimental_allow_proto3_optional")
+        .compile(&["proto/quota/v1/quota.proto"], &["proto/quota"])?;
 
     Ok(())
 }

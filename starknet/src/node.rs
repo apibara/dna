@@ -13,7 +13,7 @@ use apibara_node::{
         libmdbx::{self, Environment, EnvironmentKind},
         MdbxEnvironmentExt,
     },
-    server::{RequestObserver, SimpleRequestObserver},
+    server::{QuotaConfiguration, RequestObserver, SimpleRequestObserver},
 };
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
@@ -41,6 +41,7 @@ where
     websocket_address: Option<String>,
     block_ingestion_config: BlockIngestionConfig,
     blocks_per_second_quota: u32,
+    quota_configuration: QuotaConfiguration,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -70,6 +71,7 @@ where
         StarkNetNodeBuilder::<SimpleRequestObserver, E>::new(url)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         db: Environment<E>,
         sequencer_provider: G,
@@ -78,6 +80,7 @@ where
         websocket_address: Option<String>,
         block_ingestion_config: BlockIngestionConfig,
         blocks_per_second_quota: Option<u32>,
+        quota_configuration: QuotaConfiguration,
     ) -> Self {
         let db = Arc::new(db);
         let sequencer_provider = Arc::new(sequencer_provider);
@@ -89,6 +92,7 @@ where
             websocket_address,
             block_ingestion_config,
             blocks_per_second_quota: blocks_per_second_quota.unwrap_or(10_000),
+            quota_configuration,
         }
     }
 
@@ -146,7 +150,9 @@ where
             status_client,
             self.blocks_per_second_quota,
         )
-        .with_request_observer(self.request_span);
+        .with_request_observer(self.request_span)
+        .with_quota_configuration(self.quota_configuration);
+
         let mut server_handle = tokio::spawn({
             let ct = ct.clone();
             async move {
@@ -231,6 +237,7 @@ pub struct StarkNetNodeBuilder<O: RequestObserver, E: EnvironmentKind> {
     address: Option<String>,
     websocket_address: Option<String>,
     blocks_per_second_quota: Option<u32>,
+    quota_configuration: QuotaConfiguration,
     block_ingestion_config: BlockIngestionConfig,
     _phantom: PhantomData<E>,
 }
@@ -266,6 +273,7 @@ where
             provider: sequencer,
             request_observer,
             block_ingestion_config: BlockIngestionConfig::default(),
+            quota_configuration: QuotaConfiguration::NoQuota,
             blocks_per_second_quota: None,
             address: None,
             websocket_address: None,
@@ -289,6 +297,7 @@ where
             address: self.address,
             websocket_address: self.websocket_address,
             blocks_per_second_quota: self.blocks_per_second_quota,
+            quota_configuration: self.quota_configuration,
             block_ingestion_config: self.block_ingestion_config,
             _phantom: self._phantom,
         }
@@ -296,6 +305,10 @@ where
 
     pub fn with_block_ingestion_config(&mut self, block_ingestion_config: BlockIngestionConfig) {
         self.block_ingestion_config = block_ingestion_config;
+    }
+
+    pub fn with_quota_configuration(&mut self, configuration: QuotaConfiguration) {
+        self.quota_configuration = configuration;
     }
 
     pub fn build(self) -> Result<StarkNetNode<HttpProvider, O, E>, StarkNetNodeBuilderError> {
@@ -315,6 +328,7 @@ where
             self.websocket_address,
             self.block_ingestion_config,
             self.blocks_per_second_quota,
+            self.quota_configuration,
         ))
     }
 
