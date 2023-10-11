@@ -4,6 +4,7 @@ use std::{
     marker::PhantomData,
     pin::Pin,
     task::{Context, Poll},
+    time::Duration,
 };
 
 use apibara_core::node::v1alpha2::{
@@ -16,7 +17,7 @@ use pin_project::pin_project;
 use prost::Message;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::{self, Sender};
-use tokio_stream::wrappers::ReceiverStream;
+use tokio_stream::{wrappers::ReceiverStream, StreamExt, Timeout};
 use tonic::{
     codegen::InterceptedService, metadata::KeyAndValueRef, service::Interceptor,
     transport::Channel, Streaming,
@@ -65,7 +66,10 @@ pub enum DataMessage<D: Message + Default> {
 
 /// Data stream client.
 #[derive(Clone)]
-pub struct StreamClient(ProtoStreamClient<InterceptedService<Channel, MetadataInterceptor>>);
+pub struct StreamClient {
+    inner: ProtoStreamClient<InterceptedService<Channel, MetadataInterceptor>>,
+    timeout: Duration,
+}
 
 /// Data stream builder.
 ///
@@ -75,6 +79,7 @@ pub struct ClientBuilder {
     token: Option<String>,
     max_message_size: Option<usize>,
     metadata: MetadataMap,
+    timeout: Duration,
 }
 
 /// A stream of on-chain data.
@@ -90,7 +95,7 @@ where
     #[pin]
     configuration_stream: C,
     #[pin]
-    inner: Streaming<StreamDataResponse>,
+    inner: Pin<Box<Timeout<Streaming<StreamDataResponse>>>>,
     inner_tx: Sender<StreamDataRequest>,
     _data: PhantomData<D>,
 }
@@ -107,6 +112,12 @@ impl ClientBuilder {
     /// Notice: metadata will be merged with the authentication header if any.
     pub fn with_metadata(mut self, metadata: MetadataMap) -> Self {
         self.metadata = metadata;
+        self
+    }
+
+    /// Set the maximum time to wait for a message from the server.
+    pub fn with_timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = timeout;
         self
     }
 
@@ -130,7 +141,10 @@ impl ClientBuilder {
             default_client
         };
 
-        Ok(StreamClient(default_client))
+        Ok(StreamClient {
+            inner: default_client,
+            timeout: self.timeout,
+        })
     }
 }
 
@@ -148,10 +162,13 @@ impl StreamClient {
         let (inner_tx, inner_rx) = mpsc::channel(128);
 
         let inner_stream = self
-            .0
+            .inner
             .stream_data(ReceiverStream::new(inner_rx))
             .await?
-            .into_inner();
+            .into_inner()
+            .timeout(self.timeout);
+
+        let inner_stream = Box::pin(inner_stream);
 
         let stream = DataStream {
             stream_id: 0,
@@ -167,7 +184,7 @@ impl StreamClient {
     /// Request the stream status.
     pub async fn status(mut self) -> Result<StatusResponse> {
         let request = StatusRequest {};
-        let response = self.0.status(request).await?;
+        let response = self.inner.status(request).await?;
         Ok(response.into_inner())
     }
 }
@@ -204,46 +221,49 @@ where
         match this.inner.poll_next(cx) {
             Poll::Ready(None) => Poll::Ready(None),
             Poll::Pending => Poll::Pending,
-            Poll::Ready(Some(Err(e))) => Poll::Ready(Some(Err(e).context("stream error"))),
-            Poll::Ready(Some(Ok(response))) => {
-                if response.stream_id != *this.stream_id {
-                    cx.waker().wake_by_ref();
-                    return Poll::Pending;
-                }
+            Poll::Ready(Some(Err(e))) => Poll::Ready(Some(Err(e).context("stream timeout"))),
+            Poll::Ready(Some(Ok(inner_message))) => match inner_message {
+                Err(err) => Poll::Ready(Some(Err(err).context("stream error"))),
+                Ok(response) => {
+                    if response.stream_id != *this.stream_id {
+                        cx.waker().wake_by_ref();
+                        return Poll::Pending;
+                    }
 
-                match response.message {
-                    None => {
-                        cx.waker().wake_by_ref();
-                        Poll::Pending
-                    }
-                    Some(stream_data_response::Message::Data(data)) => {
-                        let batch = data
-                            .data
-                            .into_iter()
-                            .map(|b| D::decode(b.as_slice()))
-                            .filter_map(|b| b.ok())
-                            .collect::<Vec<D>>();
-                        let message = DataMessage::Data {
-                            cursor: data.cursor,
-                            end_cursor: data.end_cursor.unwrap_or_default(),
-                            finality: DataFinality::from_i32(data.finality).unwrap_or_default(),
-                            batch,
-                        };
-                        Poll::Ready(Some(Ok(message)))
-                    }
-                    Some(stream_data_response::Message::Invalidate(invalidate)) => {
-                        let message = DataMessage::Invalidate {
-                            cursor: invalidate.cursor,
-                        };
-                        Poll::Ready(Some(Ok(message)))
-                    }
-                    Some(stream_data_response::Message::Heartbeat(_)) => {
-                        debug!("received heartbeat");
-                        cx.waker().wake_by_ref();
-                        Poll::Pending
+                    match response.message {
+                        None => {
+                            cx.waker().wake_by_ref();
+                            Poll::Pending
+                        }
+                        Some(stream_data_response::Message::Data(data)) => {
+                            let batch = data
+                                .data
+                                .into_iter()
+                                .map(|b| D::decode(b.as_slice()))
+                                .filter_map(|b| b.ok())
+                                .collect::<Vec<D>>();
+                            let message = DataMessage::Data {
+                                cursor: data.cursor,
+                                end_cursor: data.end_cursor.unwrap_or_default(),
+                                finality: DataFinality::from_i32(data.finality).unwrap_or_default(),
+                                batch,
+                            };
+                            Poll::Ready(Some(Ok(message)))
+                        }
+                        Some(stream_data_response::Message::Invalidate(invalidate)) => {
+                            let message = DataMessage::Invalidate {
+                                cursor: invalidate.cursor,
+                            };
+                            Poll::Ready(Some(Ok(message)))
+                        }
+                        Some(stream_data_response::Message::Heartbeat(_)) => {
+                            debug!("received heartbeat");
+                            cx.waker().wake_by_ref();
+                            Poll::Pending
+                        }
                     }
                 }
-            }
+            },
         }
     }
 }
