@@ -75,6 +75,7 @@ pub struct StreamConfiguration {
     pub max_message_size_bytes: ByteSize,
     pub metadata: MetadataMap,
     pub bearer_token: Option<String>,
+    pub timeout_duration: Duration,
 }
 
 pub struct SinkConnectorOptions {
@@ -241,12 +242,16 @@ where
                     break;
                 }
                 maybe_message = data_stream.try_next() => {
-                    match maybe_message.context("failed to read dna stream")? {
-                        None => {
+                    match maybe_message {
+                        Err(err) => {
+                            warn!(err = ?err, "data stream error");
+                            break;
+                        }
+                        Ok(None) => {
                             warn!("data stream closed");
                             break;
                         }
-                        Some(message) => {
+                        Ok(Some(message)) => {
                             self.handle_message(message, &status_client, &mut persistence, ct.clone()).await?;
                         }
                     }
@@ -271,7 +276,8 @@ where
             .with_max_message_size(
                 self.stream_configuration.max_message_size_bytes.as_u64() as usize
             )
-            .with_metadata(self.stream_configuration.metadata.clone());
+            .with_metadata(self.stream_configuration.metadata.clone())
+            .with_timeout(self.stream_configuration.timeout_duration);
 
         stream_builder = if let Some(bearer_token) = self.stream_configuration.bearer_token.clone()
         {

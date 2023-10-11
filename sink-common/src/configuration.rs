@@ -1,4 +1,4 @@
-use std::{net::AddrParseError, path::PathBuf};
+use std::{net::AddrParseError, path::PathBuf, time::Duration};
 
 use apibara_core::{
     node::v1alpha2::DataFinality,
@@ -92,6 +92,9 @@ pub struct StreamOptions {
     /// Use the authorization together when connecting to the stream.
     #[arg(long, short = 'A', env)]
     pub auth_token: Option<String>,
+    /// Maximum timeout (in seconds) between stream messages. Defaults to 45s.
+    #[arg(long, env)]
+    pub timeout_duration_seconds: Option<u64>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -157,6 +160,9 @@ impl StreamOptions {
             max_message_size: self.max_message_size.or(other.max_message_size),
             metadata: self.metadata.or(other.metadata),
             auth_token: self.auth_token.or(other.auth_token),
+            timeout_duration_seconds: self
+                .timeout_duration_seconds
+                .or(other.timeout_duration_seconds),
         }
     }
 
@@ -171,6 +177,10 @@ impl StreamOptions {
             .transpose()
             .map_err(StreamOptionsError::MessageSize)?
             .unwrap_or(ByteSize::mb(100));
+
+        let timeout_duration = Duration::from_secs(
+            self.timeout_duration_seconds.unwrap_or(45)
+        );
 
         let mut metadata = MetadataMap::new();
         for entry in self.metadata.unwrap_or_default() {
@@ -197,6 +207,7 @@ impl StreamOptions {
             max_message_size_bytes,
             metadata,
             bearer_token: self.auth_token,
+            timeout_duration,
         })
     }
 }
