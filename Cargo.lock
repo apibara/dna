@@ -392,7 +392,7 @@ dependencies = [
 
 [[package]]
 name = "apibara-sink-console"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "apibara-core",
  "apibara-observability",
@@ -411,7 +411,7 @@ dependencies = [
 
 [[package]]
 name = "apibara-sink-mongo"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "apibara-core",
  "apibara-observability",
@@ -452,7 +452,7 @@ dependencies = [
 
 [[package]]
 name = "apibara-sink-parquet"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "apibara-core",
  "apibara-observability",
@@ -473,7 +473,7 @@ dependencies = [
 
 [[package]]
 name = "apibara-sink-postgres"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "apibara-core",
  "apibara-observability",
@@ -495,7 +495,7 @@ dependencies = [
 
 [[package]]
 name = "apibara-sink-webhook"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "apibara-core",
  "apibara-observability",

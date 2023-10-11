@@ -6,6 +6,17 @@ The format is based on [Common Changelog](https://common-changelog.org/), and
 this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] - 2023-10-11
+
+_Disconnect when stream hangs._
+
+### Added
+
+ - Add a new `--timeout-duration-seconds` flag to control the timeout between
+   stream messages. If the stream doesn't receive any message in this interval,
+   the sink exits. Defaults to 45 seconds.
+
+
 ## [0.3.0] - 2023-09-16
 
 _Introduce sink status gRPC service._
@@ -40,6 +51,7 @@ _This release improves the developer experience when running locally._
 _First tagged release 🎉_
 
 
+[0.3.1]: https://github.com/apibara/dna/releases/tag/sink-console/v0.3.1
 [0.3.0]: https://github.com/apibara/dna/releases/tag/sink-console/v0.3.0
 [0.2.0]: https://github.com/apibara/dna/releases/tag/sink-console/v0.2.0
 [0.1.0]: https://github.com/apibara/dna/releases/tag/sink-console/v0.1.0
