@@ -18,7 +18,7 @@ color-eyre.workspace = true
 clap.workspace = true
 ctrlc.workspace = true
 dotenvy.workspace = true
-etcd-client = { version = "0.11.1" }
+etcd-client = { version = "0.11.1", features = ["tls"] }
 exponential-backoff = "1.2.0"
 futures.workspace = true
 lazy_static.workspace = true
