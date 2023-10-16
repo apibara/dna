@@ -81,19 +81,24 @@ pub struct DotenvOptions {
 pub struct StreamOptions {
     /// DNA stream url. If starting with `https://`, use a secure connection.
     #[arg(long, env)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub stream_url: Option<String>,
     /// Limits the maximum size of a decoded message. Accept message size in human readable form,
     /// e.g. 1kb, 1MB, 1GB. If not set the default is 1MB.
     #[arg(long, env)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub max_message_size: Option<String>,
     /// Add metadata to the stream, in the `key: value` format. Can be specified multiple times.
     #[arg(long, short = 'M', env, value_delimiter = ',')]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<Vec<String>>,
     /// Use the authorization together when connecting to the stream.
     #[arg(long, short = 'A', env)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub auth_token: Option<String>,
     /// Maximum timeout (in seconds) between stream messages. Defaults to 45s.
     #[arg(long, env)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub timeout_duration_seconds: Option<u64>,
 }
 
@@ -104,10 +109,13 @@ pub struct StreamConfigurationOptions {
     #[serde(flatten)]
     pub filter: NetworkFilterOptions,
     /// Set the response preferred batch size.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub batch_size: Option<u64>,
     /// The finality of the data to be streamed.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub finality: Option<DataFinality>,
     /// Start streaming data from the specified block.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub starting_block: Option<u64>,
 }
 
