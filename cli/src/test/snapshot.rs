@@ -149,12 +149,26 @@ impl SnapshotGenerator {
             return Err(eyre!("Empty snapshot, no data found for the selected options (filter, starting_block, num_batches ...)"));
         }
 
+        let stream_options = sanitize_stream_options(&self.stream_options);
+
         Ok(Snapshot {
             script_path: self.script_path,
             num_batches: self.num_batches,
-            stream_options: self.stream_options,
+            stream_options,
             stream_configuration_options: self.stream_configuration_options,
             stream,
         })
+    }
+}
+
+/// Remove all the fields from the stream options that are not needed for the snapshot.
+///
+/// This is done to avoid leaking sensitive information (e.g. the bearer token) in the snapshots.
+fn sanitize_stream_options(options: &StreamOptions) -> StreamOptions {
+    StreamOptions {
+        stream_url: options.stream_url.clone(),
+        max_message_size: options.max_message_size.clone(),
+        timeout_duration_seconds: options.timeout_duration_seconds,
+        ..Default::default()
     }
 }
