@@ -74,7 +74,6 @@ pub struct StreamClient {
 /// Data stream builder.
 ///
 /// This struct is used to configure and connect to an Apibara data stream.
-#[derive(Default)]
 pub struct ClientBuilder {
     token: Option<String>,
     max_message_size: Option<usize>,
@@ -145,6 +144,17 @@ impl ClientBuilder {
             inner: default_client,
             timeout: self.timeout,
         })
+    }
+}
+
+impl Default for ClientBuilder {
+    fn default() -> Self {
+        ClientBuilder {
+            token: None,
+            max_message_size: None,
+            metadata: MetadataMap::default(),
+            timeout: Duration::from_secs(45),
+        }
     }
 }
 

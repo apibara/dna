@@ -178,9 +178,7 @@ impl StreamOptions {
             .map_err(StreamOptionsError::MessageSize)?
             .unwrap_or(ByteSize::mb(100));
 
-        let timeout_duration = Duration::from_secs(
-            self.timeout_duration_seconds.unwrap_or(45)
-        );
+        let timeout_duration = Duration::from_secs(self.timeout_duration_seconds.unwrap_or(45));
 
         let mut metadata = MetadataMap::new();
         for entry in self.metadata.unwrap_or_default() {
