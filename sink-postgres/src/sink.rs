@@ -1,6 +1,9 @@
+use std::fmt;
+
 use apibara_core::node::v1alpha2::{Cursor, DataFinality};
 use apibara_sink_common::{CursorAction, DisplayCursor, Sink, ValueExt};
 use async_trait::async_trait;
+use error_stack::{Result, ResultExt};
 use native_tls::{Certificate, TlsConnector};
 use postgres_native_tls::MakeTlsConnector;
 use serde_json::Value;
@@ -11,18 +14,14 @@ use tracing::{info, warn};
 use crate::configuration::TlsConfiguration;
 use crate::SinkPostgresOptions;
 
-#[derive(Debug, thiserror::Error)]
-pub enum SinkPostgresError {
-    #[error("Missing connection string")]
-    MissingConnectionString,
-    #[error("Missing table name")]
-    MissingTableName,
-    #[error("Postgres error: {0}")]
-    Postgres(#[from] tokio_postgres::Error),
-    #[error("TLS error: {0}")]
-    Tls(#[from] native_tls::Error),
-    #[error("IO error: {0}")]
-    IO(#[from] std::io::Error),
+#[derive(Debug)]
+pub struct SinkPostgresError;
+impl error_stack::Context for SinkPostgresError {}
+
+impl fmt::Display for SinkPostgresError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("postgres sink operation failed")
+    }
 }
 
 pub struct PostgresSink {
@@ -47,7 +46,12 @@ impl Sink for PostgresSink {
         let client = match config.tls {
             TlsConfiguration::NoTls => {
                 info!("Using insecure connection");
-                let (client, connection) = config.pg.connect(NoTls).await?;
+                let (client, connection) = config
+                    .pg
+                    .connect(NoTls)
+                    .await
+                    .change_context(SinkPostgresError)
+                    .attach_printable("failed to connect to postgres (no tls)")?;
                 tokio::spawn(connection);
                 client
             }
@@ -61,9 +65,16 @@ impl Sink for PostgresSink {
                 info!("Configure TLS connection");
                 let mut builder = TlsConnector::builder();
 
-                if let Some(certificate) = certificate {
-                    let certificate = tokio::fs::read(certificate).await?;
-                    let certificate = Certificate::from_pem(&certificate)?;
+                if let Some(ref certificate) = certificate {
+                    let certificate = tokio::fs::read(certificate)
+                        .await
+                        .change_context(SinkPostgresError)
+                        .attach_printable_lazy(|| {
+                            format!("failed to read tls certificate at {certificate:?}")
+                        })?;
+                    let certificate = Certificate::from_pem(&certificate)
+                        .change_context(SinkPostgresError)
+                        .attach_printable("failed to build certificate from PEM file")?;
                     builder.add_root_certificate(certificate);
                 }
 
@@ -83,9 +94,17 @@ impl Sink for PostgresSink {
                     builder.use_sni(use_sni);
                 }
 
-                let connector = builder.build()?;
+                let connector = builder
+                    .build()
+                    .change_context(SinkPostgresError)
+                    .attach_printable("failed to build tls connector")?;
                 let connector = MakeTlsConnector::new(connector);
-                let (client, connection) = config.pg.connect(connector).await?;
+                let (client, connection) = config
+                    .pg
+                    .connect(connector)
+                    .await
+                    .change_context(SinkPostgresError)
+                    .attach_printable("failed to connect to postgres (tls)")?;
                 tokio::spawn(connection);
                 client
             }
@@ -100,9 +119,23 @@ impl Sink for PostgresSink {
         let delete_query = format!("DELETE FROM {} WHERE _cursor > $1", &table_name);
         let delete_all_query = format!("DELETE FROM {}", &table_name);
 
-        let insert_statement = client.prepare(&query).await?;
-        let delete_statement = client.prepare(&delete_query).await?;
-        let delete_all_statement = client.prepare(&delete_all_query).await?;
+        let insert_statement = client
+            .prepare(&query)
+            .await
+            .change_context(SinkPostgresError)
+            .attach_printable("failed to prepare insert data query")?;
+
+        let delete_statement = client
+            .prepare(&delete_query)
+            .await
+            .change_context(SinkPostgresError)
+            .attach_printable("failed to prepare invalidate data query")?;
+
+        let delete_all_statement = client
+            .prepare(&delete_all_query)
+            .await
+            .change_context(SinkPostgresError)
+            .attach_printable("failed to prepare invalidate all query")?;
 
         Ok(Self {
             client,
@@ -147,7 +180,9 @@ impl Sink for PostgresSink {
 
         self.client
             .execute(&self.insert_statement, &[&Json(batch)])
-            .await?;
+            .await
+            .change_context(SinkPostgresError)
+            .attach_printable("failed to run insert data query")?;
 
         Ok(CursorAction::Persist)
     }
@@ -160,9 +195,15 @@ impl Sink for PostgresSink {
             let block_number = i64::try_from(cursor.order_key).unwrap();
             self.client
                 .execute(&self.delete_statement, &[&block_number])
-                .await?;
+                .await
+                .change_context(SinkPostgresError)
+                .attach_printable("failed to run invalidate data query")?;
         } else {
-            self.client.execute(&self.delete_all_statement, &[]).await?;
+            self.client
+                .execute(&self.delete_all_statement, &[])
+                .await
+                .change_context(SinkPostgresError)
+                .attach_printable("failed to run invalidate all data query")?;
         }
 
         Ok(())

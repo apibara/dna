@@ -91,6 +91,7 @@ async fn test_multiple_indexers() {
 // Flaky test
 // #[tokio::test]
 // #[ignore]
+#[allow(dead_code)]
 async fn test_lock_unlock_single() {
     let docker = clients::Cli::default();
     let etcd = docker.run(Etcd::default());

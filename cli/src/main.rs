@@ -1,11 +1,14 @@
+mod error;
 mod paths;
 mod plugins;
 mod run;
 mod test;
 
-use apibara_observability::{init_error_handler, init_opentelemetry};
+use apibara_observability::init_opentelemetry;
 use apibara_sink_common::apibara_cli_style;
 use clap::{Parser, Subcommand};
+use error::CliError;
+use error_stack::{Result, ResultExt};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None, styles = apibara_cli_style())]
@@ -28,9 +31,10 @@ enum Command {
 }
 
 #[tokio::main]
-async fn main() -> color_eyre::eyre::Result<()> {
-    init_error_handler()?;
-    init_opentelemetry()?;
+async fn main() -> Result<(), CliError> {
+    init_opentelemetry()
+        .change_context(CliError)
+        .attach_printable("failed to initialize opentelemetry")?;
 
     let args = Cli::parse();
     match args.subcommand {

@@ -2,8 +2,10 @@ use std::path::{Path, PathBuf};
 
 use apibara_sink_common::{DotenvOptions, StreamOptions};
 use clap::Args;
-use color_eyre::eyre::{eyre, Result};
+use error_stack::{Result, ResultExt};
 use tracing::warn;
+
+use crate::error::CliError;
 
 mod error;
 mod run;
@@ -33,7 +35,7 @@ pub struct TestArgs {
     dotenv_options: DotenvOptions,
 }
 
-fn validate_args(args: &TestArgs) -> Result<()> {
+fn validate_args(args: &TestArgs) -> Result<(), CliError> {
     if let Some(name) = &args.name {
         let is_invalid = name.contains(|c| {
             c == '/'
@@ -48,28 +50,29 @@ fn validate_args(args: &TestArgs) -> Result<()> {
                 || c == '|'
         });
         if is_invalid {
-            return Err(eyre!(
+            return Err(CliError).attach_printable(
                 r#"Invalid name `{name}`, name should not contain  /, ., \, :, *, ?, ", <, >, or | as it'll be used to construct the snapshot path"#
-            ));
+            );
         }
     }
 
     if let Some(num_batches) = args.num_batches {
         if num_batches < 1 {
-            return Err(eyre!(
-                "Invalid number of blocks `{}`, it should be > 0",
-                num_batches
-            ));
+            return Err(CliError).attach_printable_lazy(|| {
+                format!("Invalid number of blocks `{num_batches}`, it should be > 0")
+            });
         }
     }
 
     if let Some(path) = &args.path {
         // Think about using try_exists instead
         if !path.exists() {
-            return Err(eyre!(
-                "Invalid path: `{}`, no such file or directory",
-                &path.display()
-            ));
+            return Err(CliError).attach_printable_lazy(|| {
+                format!(
+                    "Invalid path: `{}`, no such file or directory",
+                    &path.display()
+                )
+            });
         }
     }
 
@@ -93,17 +96,19 @@ pub fn warn_ignored_args(args: &TestArgs) {
     }
 }
 
-pub async fn run(args: TestArgs) -> Result<()> {
+pub async fn run(args: TestArgs) -> Result<(), CliError> {
     validate_args(&args)?;
 
     match &args.path {
         Some(path) => {
             // Think about using try_exists instead
             if !path.exists() {
-                return Err(eyre!(
-                    "Invalid path: `{}`, no such file or directory",
-                    &path.display()
-                ));
+                return Err(CliError).attach_printable_lazy(|| {
+                    format!(
+                        "Invalid path: `{}`, no such file or directory",
+                        &path.display()
+                    )
+                });
             }
 
             if path.is_dir() {
@@ -114,7 +119,8 @@ pub async fn run(args: TestArgs) -> Result<()> {
 
             let extension = Path::new(&path)
                 .extension()
-                .ok_or_else(|| eyre!("Invalid path: `{}`", path.display()))?;
+                .ok_or(CliError)
+                .attach_printable_lazy(|| format!("Invalid path: `{}`", path.display()))?;
 
             match extension.to_str().unwrap() {
                 "json" => {
@@ -144,7 +150,7 @@ pub async fn run(args: TestArgs) -> Result<()> {
                         }
                     }
                 }
-                _ => return Err(eyre!(
+                _ => return Err(CliError).attach_printable_lazy(|| format!(
                     "Invalid file extension: `{}`, must be a .json for snapshots or .js / .ts for scripts",
                     path.display()
                 )),

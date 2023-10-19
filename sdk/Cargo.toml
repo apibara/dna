@@ -9,7 +9,7 @@ license.workspace = true
 [dependencies]
 apibara-core = { path = "../core" }
 async-trait.workspace = true
-color-eyre.workspace = true
+error-stack.workspace = true
 futures.workspace = true
 futures-util.workspace = true
 hex.workspace = true

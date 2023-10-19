@@ -1,7 +1,8 @@
-use apibara_observability::{init_error_handler, init_opentelemetry};
+use apibara_observability::init_opentelemetry;
 use apibara_sink_common::{run_sink_connector, set_ctrlc_handler, OptionsFromCli};
-use apibara_sink_mongo::{MongoSink, SinkMongoOptions};
+use apibara_sink_mongo::{MongoSink, SinkMongoError, SinkMongoOptions};
 use clap::{Args, Parser, Subcommand};
+use error_stack::{Result, ResultExt};
 use tokio_util::sync::CancellationToken;
 
 #[derive(Parser, Debug)]
@@ -27,17 +28,23 @@ struct RunArgs {
 }
 
 #[tokio::main]
-async fn main() -> color_eyre::eyre::Result<()> {
-    init_error_handler()?;
-    init_opentelemetry()?;
+async fn main() -> Result<(), SinkMongoError> {
+    init_opentelemetry()
+        .change_context(SinkMongoError)
+        .attach_printable("failed to initialize opentelemetry")?;
     let args = Cli::parse();
 
     let ct = CancellationToken::new();
-    set_ctrlc_handler(ct.clone())?;
+    set_ctrlc_handler(ct.clone())
+        .change_context(SinkMongoError)
+        .attach_printable("failed to setup ctrl-c handler")?;
 
     match args.subcommand {
         Command::Run(args) => {
-            run_sink_connector::<MongoSink>(&args.script, args.common, args.mongo, ct).await?;
+            run_sink_connector::<MongoSink>(&args.script, args.common, args.mongo, ct)
+                .await
+                .change_context(SinkMongoError)
+                .attach_printable("error while running mongo sink")?;
         }
     }
 

@@ -1,6 +1,7 @@
 use apibara_core::node::v1alpha2::{Cursor, DataFinality};
 use apibara_sink_common::{CursorAction, Sink};
 use apibara_sink_postgres::{PostgresSink, SinkPostgresError, SinkPostgresOptions};
+use error_stack::Result;
 use serde_json::{json, Value};
 use testcontainers::{clients, core::WaitFor, GenericImage};
 use tokio_postgres::{Client, NoTls};

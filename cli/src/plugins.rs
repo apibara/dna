@@ -8,14 +8,14 @@ use std::{
 
 use async_compression::tokio::bufread::GzipDecoder;
 use clap::{Args, Subcommand};
-use color_eyre::eyre::{eyre, Context, Result};
 use colored::*;
+use error_stack::{Result, ResultExt};
 use futures::stream::TryStreamExt;
 use reqwest::Url;
 use tabled::{settings::Style, Table, Tabled};
 use tokio_util::io::StreamReader;
 
-use crate::paths::plugins_dir;
+use crate::{error::CliError, paths::plugins_dir};
 
 static GITHUB_REPO_ORG: &str = "apibara";
 static GITHUB_REPO_NAME: &str = "dna";
@@ -64,7 +64,7 @@ pub struct RemoveArgs {
     name: String,
 }
 
-pub async fn run(args: PluginsArgs) -> Result<()> {
+pub async fn run(args: PluginsArgs) -> Result<(), CliError> {
     match args.subcommand {
         Command::Install(args) => run_install(args).await,
         Command::List(args) => run_list(args),
@@ -72,10 +72,12 @@ pub async fn run(args: PluginsArgs) -> Result<()> {
     }
 }
 
-async fn run_install(args: InstallArgs) -> Result<()> {
+async fn run_install(args: InstallArgs) -> Result<(), CliError> {
     let dir = plugins_dir();
-    fs::create_dir_all(dir)?;
-    let cwd = env::current_dir()?;
+    fs::create_dir_all(dir)
+        .change_context(CliError)
+        .attach_printable("failed to created plugins directory")?;
+    let cwd = env::current_dir().change_context(CliError)?;
 
     if let Some(file) = args.file {
         install_from_file(cwd.join(file))?;
@@ -86,10 +88,11 @@ async fn run_install(args: InstallArgs) -> Result<()> {
     Ok(())
 }
 
-async fn install_from_github(name: String) -> Result<()> {
+async fn install_from_github(name: String) -> Result<(), CliError> {
     let (kind, name) = name
         .split_once('-')
-        .ok_or_else(|| eyre!("Plugin name must be in the format <kind>-<name>"))?;
+        .ok_or(CliError)
+        .attach_printable("Plugin name must be in the format <kind>-<name>")?;
 
     let releases = octocrab::instance()
         .repos(GITHUB_REPO_ORG, GITHUB_REPO_NAME)
@@ -98,22 +101,27 @@ async fn install_from_github(name: String) -> Result<()> {
         .per_page(50)
         .send()
         .await
-        .wrap_err("Failed to fetch GitHub releases")?;
+        .change_context(CliError)
+        .attach_printable("failed to fetch GitHub releases")?;
 
     let tag_prefix = format!("{}-{}/", kind, name);
     let mut plugin_release = None;
-    for release in octocrab::instance().all_pages(releases).await? {
+    let all_releases = octocrab::instance()
+        .all_pages(releases)
+        .await
+        .change_context(CliError)
+        .attach_printable("failed to fetch GitHub releases")?;
+    for release in all_releases {
         if release.tag_name.starts_with(&tag_prefix) {
             plugin_release = Some(release);
             break;
         }
     }
 
-    let plugin_release = plugin_release.ok_or_else(|| {
-        eyre!(
+    let plugin_release = plugin_release.ok_or(CliError).attach_printable_lazy(|| {
+        format!(
             "No release found for plugin {}-{}. Did you spell it correctly?",
-            kind,
-            name
+            kind, name
         )
     })?;
 
@@ -132,8 +140,9 @@ async fn install_from_github(name: String) -> Result<()> {
         .assets
         .iter()
         .find(|asset| asset.name == artifact_name)
-        .ok_or_else(|| {
-            eyre!(
+        .ok_or(CliError)
+        .attach_printable_lazy(|| {
+            format!(
                 "No asset found for plugin {}-{} for your platform. OS={}, ARCH={}",
                 kind,
                 name,
@@ -152,24 +161,31 @@ async fn install_from_github(name: String) -> Result<()> {
     Ok(())
 }
 
-fn install_from_file(file: impl AsRef<Path>) -> Result<()> {
-    let (name, version) =
-        get_binary_name_version(&file).wrap_err("Failed to get plugin name and version")?;
+fn install_from_file(file: impl AsRef<Path>) -> Result<(), CliError> {
+    let (name, version) = get_binary_name_version(&file)?;
 
     println!("Installing {} v{}", name, version);
 
     let target = plugins_dir().join(name);
     // Copy the binary content to a new file to avoid copying the permissions.
-    let content = fs::read(&file)?;
-    fs::write(&target, content)?;
-    fs::set_permissions(&target, fs::Permissions::from_mode(0o755))?;
+    let content = fs::read(&file)
+        .change_context(CliError)
+        .attach_printable_lazy(|| format!("failed to read content of file {:?}", file.as_ref()))?;
+    fs::write(&target, content)
+        .change_context(CliError)
+        .attach_printable_lazy(|| format!("failed to write plugin to file {:?}", &target))?;
+    fs::set_permissions(&target, fs::Permissions::from_mode(0o755))
+        .change_context(CliError)
+        .attach_printable_lazy(|| {
+            format!("failed to update plugin permissions at {:?}", &target)
+        })?;
 
     println!("Plugin installed to {}", target.display());
 
     Ok(())
 }
 
-fn run_list(_args: ListArgs) -> Result<()> {
+fn run_list(_args: ListArgs) -> Result<(), CliError> {
     let dir = plugins_dir();
     let plugins = get_plugins(dir)?;
 
@@ -179,30 +195,31 @@ fn run_list(_args: ListArgs) -> Result<()> {
     Ok(())
 }
 
-fn run_remove(args: RemoveArgs) -> Result<()> {
+fn run_remove(args: RemoveArgs) -> Result<(), CliError> {
     let dir = plugins_dir();
     let plugin = PluginInfo::from_kind_name(args.kind, args.name);
     let plugin_path = dir.join(plugin.binary_name());
 
-    let (name, version) =
-        get_binary_name_version(&plugin_path).wrap_err("Failed to get plugin name and version")?;
+    let (name, version) = get_binary_name_version(&plugin_path)?;
 
     println!("Removing {} v{}", name, version);
-    fs::remove_file(plugin_path)?;
+    fs::remove_file(plugin_path.clone())
+        .change_context(CliError)
+        .attach_printable_lazy(|| format!("failed to remove plugin at {:?}", plugin_path))?;
 
     Ok(())
 }
 
-fn get_plugins(dir: impl AsRef<Path>) -> Result<Vec<PluginInfo>> {
+fn get_plugins(dir: impl AsRef<Path>) -> Result<Vec<PluginInfo>, CliError> {
     if !dir.as_ref().is_dir() {
         return Ok(vec![]);
     }
 
     let mut plugins = Vec::default();
-    for file in fs::read_dir(dir)? {
-        let file = file?;
+    for file in fs::read_dir(dir).change_context(CliError)? {
+        let file = file.change_context(CliError)?;
 
-        let metadata = file.metadata()?;
+        let metadata = file.metadata().change_context(CliError)?;
         if !metadata.is_file() || !metadata.permissions().mode() & 0o111 != 0 {
             eprintln!(
                 "{} {:?}",
@@ -212,7 +229,7 @@ fn get_plugins(dir: impl AsRef<Path>) -> Result<Vec<PluginInfo>> {
             continue;
         }
 
-        let (name, version) = get_binary_name_version(file.path()).wrap_err_with(|| {
+        let (name, version) = get_binary_name_version(file.path()).attach_printable_lazy(|| {
             format!(
                 "Failed to get plugin version: {}",
                 file.file_name().to_string_lossy()
@@ -226,16 +243,18 @@ fn get_plugins(dir: impl AsRef<Path>) -> Result<Vec<PluginInfo>> {
 }
 
 /// Runs the given plugin binary to extract the name and version.
-fn get_binary_name_version(file: impl AsRef<Path>) -> Result<(String, String)> {
+fn get_binary_name_version(file: impl AsRef<Path>) -> Result<(String, String), CliError> {
     let output = process::Command::new(file.as_ref())
         .arg("--version")
-        .output()?;
+        .output()
+        .change_context(CliError)?;
 
-    let output = String::from_utf8(output.stdout)?;
+    let output = String::from_utf8(output.stdout).change_context(CliError)?;
     let (name, version) = output
         .trim()
         .split_once(' ')
-        .ok_or_else(|| eyre!("Plugin --version output does not match spec"))?;
+        .ok_or(CliError)
+        .attach_printable("Plugin --version output does not match spec")?;
     Ok((name.to_string(), version.to_string()))
 }
 
@@ -248,16 +267,21 @@ impl PluginInfo {
         }
     }
 
-    pub fn from_name_version(name: String, version: String) -> Result<Self> {
+    pub fn from_name_version(name: String, version: String) -> Result<Self, CliError> {
         let mut parts = name.splitn(3, '-');
-        let _ = parts.next().ok_or_else(|| eyre!("Plugin name is empty"))?;
+        let _ = parts
+            .next()
+            .ok_or(CliError)
+            .attach_printable("Plugin name is empty")?;
         let kind = parts
             .next()
-            .ok_or_else(|| eyre!("Plugin name does not contain a kind"))?
+            .ok_or(CliError)
+            .attach_printable("Plugin name does not contain a kind")?
             .to_string();
         let name = parts
             .next()
-            .ok_or_else(|| eyre!("Plugin name does not contain a kind"))?
+            .ok_or(CliError)
+            .attach_printable("Plugin name does not contain a kind")?
             .to_string();
 
         Ok(Self {
@@ -276,8 +300,11 @@ impl PluginInfo {
     }
 }
 
-async fn download_artifact_to_path(url: Url, dest: impl AsRef<Path>) -> Result<()> {
-    let response = reqwest::get(url).await?;
+async fn download_artifact_to_path(url: Url, dest: impl AsRef<Path>) -> Result<(), CliError> {
+    let response = reqwest::get(url.clone())
+        .await
+        .change_context(CliError)
+        .attach_printable_lazy(|| format!("failed to GET {url}"))?;
     let stream = response
         .bytes_stream()
         .map_err(|err| std::io::Error::new(ErrorKind::Other, err));
@@ -285,12 +312,20 @@ async fn download_artifact_to_path(url: Url, dest: impl AsRef<Path>) -> Result<(
     let stream_reader = StreamReader::new(stream);
     let mut decompressed = GzipDecoder::new(stream_reader);
 
-    let mut file = tokio::fs::File::create(dest).await?;
+    let mut file = tokio::fs::File::create(&dest)
+        .await
+        .change_context(CliError)
+        .attach_printable_lazy(|| format!("failed to create file {:?}", dest.as_ref()))?;
 
-    tokio::io::copy(&mut decompressed, &mut file).await?;
+    tokio::io::copy(&mut decompressed, &mut file)
+        .await
+        .change_context(CliError)
+        .attach_printable("failed to copy artifact content")?;
 
     file.set_permissions(fs::Permissions::from_mode(0o755))
-        .await?;
+        .await
+        .change_context(CliError)
+        .attach_printable("failed to set permissions on artifact file")?;
 
     Ok(())
 }

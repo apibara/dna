@@ -1,5 +1,8 @@
+use std::fmt;
+
 use apibara_core::node::v1alpha2::Cursor;
 use async_trait::async_trait;
+use error_stack::Result;
 
 /// Client used to interact with the persistence backend.
 #[async_trait]
@@ -21,18 +24,14 @@ pub trait PersistenceClient {
 }
 
 /// Error returned by the [PersitenceClient].
-#[derive(Debug, thiserror::Error)]
-pub enum PersistenceClientError {
-    #[error("Failed to acquire lock: {0}")]
-    LockFailed(Box<dyn std::error::Error + Send + Sync>),
-    #[error("Failed to release lock: {0}")]
-    UnlockFailed(Box<dyn std::error::Error + Send + Sync>),
-    #[error("Failed to get cursor: {0}")]
-    GetCursorFailed(Box<dyn std::error::Error + Send + Sync>),
-    #[error("Failed to put cursor: {0}")]
-    PutCursorFailed(Box<dyn std::error::Error + Send + Sync>),
-    #[error("Failed to delete cursor: {0}")]
-    DeleteCursorFailed(Box<dyn std::error::Error + Send + Sync>),
+#[derive(Debug)]
+pub struct PersistenceClientError;
+impl error_stack::Context for PersistenceClientError {}
+
+impl fmt::Display for PersistenceClientError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("persistence client operation failed")
+    }
 }
 
 #[async_trait]
@@ -61,24 +60,3 @@ where
     }
 }
 
-impl PersistenceClientError {
-    pub fn lock<E: std::error::Error + Send + Sync + 'static>(err: E) -> Self {
-        Self::LockFailed(Box::new(err))
-    }
-
-    pub fn unlock<E: std::error::Error + Send + Sync + 'static>(err: E) -> Self {
-        Self::UnlockFailed(Box::new(err))
-    }
-
-    pub fn get_cursor<E: std::error::Error + Send + Sync + 'static>(err: E) -> Self {
-        Self::GetCursorFailed(Box::new(err))
-    }
-
-    pub fn put_cursor<E: std::error::Error + Send + Sync + 'static>(err: E) -> Self {
-        Self::PutCursorFailed(Box::new(err))
-    }
-
-    pub fn delete_cursor<E: std::error::Error + Send + Sync + 'static>(err: E) -> Self {
-        Self::DeleteCursorFailed(Box::new(err))
-    }
-}

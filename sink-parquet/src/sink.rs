@@ -1,3 +1,4 @@
+use std::fmt;
 use std::{fs::File, sync::Arc};
 
 use apibara_core::node::v1alpha2::{Cursor, DataFinality};
@@ -5,6 +6,7 @@ use apibara_sink_common::{CursorAction, DisplayCursor, Sink, ValueExt};
 use arrow::json::reader::{infer_json_schema_from_iterator, Decoder, ReaderBuilder};
 use arrow::record_batch::RecordBatch;
 use async_trait::async_trait;
+use error_stack::{Result, ResultExt};
 use parquet::arrow::ArrowWriter;
 use serde_json::Value;
 use tokio::sync::Mutex;
@@ -12,16 +14,14 @@ use tracing::{debug, info, instrument, warn};
 
 use crate::configuration::{SinkParquetConfiguration, SinkParquetOptions};
 
-#[derive(Debug, thiserror::Error)]
-pub enum SinkParquetError {
-    #[error("Missing output directory")]
-    MissingOutputDir,
-    #[error("arrow operation error: {0}")]
-    Arrow(#[from] arrow::error::ArrowError),
-    #[error("parquet operation error: {0}")]
-    Parquet(#[from] parquet::errors::ParquetError),
-    #[error("io error: {0}")]
-    Io(#[from] std::io::Error),
+#[derive(Debug)]
+pub struct SinkParquetError;
+impl error_stack::Context for SinkParquetError {}
+
+impl fmt::Display for SinkParquetError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("parquet sink operation failed")
+    }
 }
 
 pub struct ParquetSink {
@@ -65,10 +65,24 @@ impl ParquetSink {
             "writing batch to file"
         );
 
-        let mut file = File::create(self.config.output_dir.join(filename))?;
-        let mut writer = ArrowWriter::try_new(&mut file, batch.schema(), None)?;
-        writer.write(&batch)?;
-        writer.close()?;
+        let output_file = self.config.output_dir.join(filename);
+        let mut file = File::create(&output_file)
+            .change_context(SinkParquetError)
+            .attach_printable_lazy(|| format!("failed to create output file at {output_file:?}"))?;
+
+        let mut writer = ArrowWriter::try_new(&mut file, batch.schema(), None)
+            .change_context(SinkParquetError)
+            .attach_printable("failed to create Arrow writer")?;
+
+        writer
+            .write(&batch)
+            .change_context(SinkParquetError)
+            .attach_printable("failed to write batch")?;
+
+        writer
+            .close()
+            .change_context(SinkParquetError)
+            .attach_printable("failed to close parquet file")?;
 
         Ok(())
     }
@@ -151,9 +165,14 @@ impl State {
         end_cursor: &Cursor,
         batch: &[Value],
     ) -> Result<Self, SinkParquetError> {
-        let schema = infer_json_schema_from_iterator(batch.iter().map(Result::Ok))?;
+        let schema = infer_json_schema_from_iterator(batch.iter().map(std::result::Result::Ok))
+            .change_context(SinkParquetError)
+            .attach_printable("failed to infer json schema")?;
         debug!(schema = ?schema, "inferred schema from batch");
-        let decoder = ReaderBuilder::new(Arc::new(schema)).build_decoder()?;
+        let decoder = ReaderBuilder::new(Arc::new(schema))
+            .build_decoder()
+            .change_context(SinkParquetError)
+            .attach_printable("failed to create reader")?;
         let starting_block_number = cursor.as_ref().map(|c| c.order_key).unwrap_or(0);
         let end_block_number = end_cursor.order_key;
 
@@ -173,7 +192,7 @@ impl State {
     ) -> Result<Option<(RecordBatch, String)>, SinkParquetError> {
         debug!(size = batch.len(), "handling batch");
         let mut decoder = self.decoder.lock().await;
-        (*decoder).serialize(batch)?;
+        (*decoder).serialize(batch).change_context(SinkParquetError).attach_printable("failed to serialize batch data")?;
 
         self.end_block_number = end_cursor.order_key;
         if !self.should_flush() {
@@ -182,7 +201,8 @@ impl State {
 
         debug!("flushing batch");
         let batch_with_filename = (*decoder)
-            .flush()?
+            .flush()
+            .change_context(SinkParquetError)?
             .map(|batch| (batch, self.get_filename()));
 
         self.starting_block_number = self.end_block_number;

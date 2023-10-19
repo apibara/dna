@@ -17,9 +17,9 @@ apibara-core = { path = "../core" }
 apibara-script = { path = "../script" }
 async-compression.workspace = true
 clap.workspace = true
-color-eyre.workspace = true
 colored = "2.0.4"
 dirs.workspace = true
+error-stack.workspace = true
 futures.workspace = true
 octocrab = "0.29.1"
 reqwest.workspace = true

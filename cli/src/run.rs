@@ -5,9 +5,10 @@ use apibara_sink_common::{
 };
 use clap::Args;
 use colored::*;
+use error_stack::{Result, ResultExt};
 use serde::Deserialize;
 
-use crate::paths::plugins_dir;
+use crate::{error::CliError, paths::plugins_dir};
 
 #[derive(Args, Debug)]
 #[clap(trailing_var_arg = true, allow_hyphen_values = true)]
@@ -26,18 +27,19 @@ struct DummyOptions {
     pub sink_type: String,
 }
 
-pub async fn run(args: RunArgs) -> color_eyre::eyre::Result<()> {
+pub async fn run(args: RunArgs) -> Result<(), CliError> {
     // While not recommended, the script may return a different sink based on some env variable. We
     // need to load the environment variables before loading the script.
-    let allow_env = load_environment_variables(&args.dotenv)?;
+    let allow_env = load_environment_variables(&args.dotenv).change_context(CliError)?;
     let script_options = ScriptOptions { allow_env };
 
-    let mut script = load_script(&args.script, script_options)?;
+    let mut script = load_script(&args.script, script_options).change_context(CliError)?;
 
     // Load the configuration from the script, but we don't need the full options yet.
     let configuration = script
         .configuration::<FullOptionsFromScript<DummyOptions>>()
-        .await?;
+        .await
+        .change_context(CliError)?;
 
     // Delegate running the indexer to the sink command.
     let sink_type = configuration.sink.sink_type;
@@ -58,7 +60,7 @@ pub async fn run(args: RunArgs) -> color_eyre::eyre::Result<()> {
 
     match command_res {
         Ok(mut child) => {
-            child.wait()?;
+            child.wait().change_context(CliError)?;
             Ok(())
         }
         Err(err) => {
@@ -75,7 +77,9 @@ pub async fn run(args: RunArgs) -> color_eyre::eyre::Result<()> {
                 );
                 std::process::exit(1);
             }
-            Err(err.into())
+            Err(err)
+                .change_context(CliError)
+                .attach_printable("error while running sink")
         }
     }
 }

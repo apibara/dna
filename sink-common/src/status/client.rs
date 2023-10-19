@@ -1,6 +1,18 @@
+use std::fmt;
+
 use apibara_core::node;
-use color_eyre::eyre::{Context, Result};
+use error_stack::{Result, ResultExt};
 use tokio::sync::mpsc;
+
+#[derive(Debug)]
+pub struct StatusServerClientError;
+impl error_stack::Context for StatusServerClientError {}
+
+impl fmt::Display for StatusServerClientError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("failed to communicate with status server")
+    }
+}
 
 /// Message between the connector and the status service.
 #[derive(Debug)]
@@ -24,29 +36,38 @@ impl StatusServerClient {
     }
 
     /// Send heartbeat message to status server.
-    pub async fn heartbeat(&self) -> Result<()> {
+    pub async fn heartbeat(&self) -> Result<(), StatusServerClientError> {
         self.tx
             .send(StatusMessage::Heartbeat)
             .await
-            .context("failed to send heartbeat message to status server")?;
+            .change_context(StatusServerClientError)
+            .attach_printable("failed to send heartbeat request")?;
         Ok(())
     }
 
     /// Update the most recently processed cursor.
-    pub async fn set_starting_cursor(&self, cursor: Option<node::v1alpha2::Cursor>) -> Result<()> {
+    pub async fn set_starting_cursor(
+        &self,
+        cursor: Option<node::v1alpha2::Cursor>,
+    ) -> Result<(), StatusServerClientError> {
         self.tx
             .send(StatusMessage::SetStartingCursor(cursor))
             .await
-            .context("failed to send starting cursor to status server")?;
+            .change_context(StatusServerClientError)
+            .attach_printable("failed to send starting cursor request")?;
         Ok(())
     }
 
     /// Update the most recently processed cursor.
-    pub async fn update_cursor(&self, cursor: Option<node::v1alpha2::Cursor>) -> Result<()> {
+    pub async fn update_cursor(
+        &self,
+        cursor: Option<node::v1alpha2::Cursor>,
+    ) -> Result<(), StatusServerClientError> {
         self.tx
             .send(StatusMessage::UpdateCursor(cursor))
             .await
-            .context("failed to send update cursor message to status server")?;
+            .change_context(StatusServerClientError)
+            .attach_printable("failed to send update cursor request")?;
         Ok(())
     }
 }

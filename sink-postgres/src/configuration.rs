@@ -2,6 +2,7 @@ use std::{path::PathBuf, str::FromStr};
 
 use apibara_sink_common::SinkOptions;
 use clap::Args;
+use error_stack::{Result, ResultExt};
 use tokio_postgres::Config;
 
 use crate::sink::SinkPostgresError;
@@ -82,11 +83,15 @@ impl SinkPostgresOptions {
     pub fn to_postgres_configuration(self) -> Result<SinkPostgresConfiguration, SinkPostgresError> {
         let connection_string = self
             .connection_string
-            .ok_or_else(|| SinkPostgresError::MissingConnectionString)?;
-        let pg = Config::from_str(&connection_string)?;
+            .ok_or(SinkPostgresError)
+            .attach_printable("missing connection string")?;
+        let pg = Config::from_str(&connection_string)
+            .change_context(SinkPostgresError)
+            .attach_printable("failed to build postgres config from connection string")?;
         let table_name = self
             .table_name
-            .ok_or_else(|| SinkPostgresError::MissingTableName)?;
+            .ok_or(SinkPostgresError)
+            .attach_printable("missing table name")?;
 
         let tls = if self.no_tls.unwrap_or(false) {
             TlsConfiguration::NoTls

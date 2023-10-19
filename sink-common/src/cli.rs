@@ -1,16 +1,19 @@
-use std::{fs, path::Path};
+use std::{fmt, fs, path::Path};
 
 use anstyle::{AnsiColor, Style};
-use apibara_script::{Script, ScriptError, ScriptOptions};
+use apibara_script::{Script, ScriptOptions};
 use clap::builder::Styles;
+use error_stack::{Result, ResultExt};
 use tokio_util::sync::CancellationToken;
 
-#[derive(Debug, thiserror::Error)]
-pub enum LoadScriptError {
-    #[error("Script not found {0}")]
-    FileNotFound(String),
-    #[error("Script error: {0}")]
-    ScriptError(#[from] ScriptError),
+#[derive(Debug)]
+pub struct LoadScriptError;
+impl error_stack::Context for LoadScriptError {}
+
+impl fmt::Display for LoadScriptError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("failed to load script")
+    }
 }
 
 pub fn load_script_from_path(
@@ -24,21 +27,29 @@ pub fn load_script_from_path(
 /// Load a script from a file.
 pub fn load_script(path: &str, options: ScriptOptions) -> Result<Script, LoadScriptError> {
     let Ok(_) = fs::metadata(path) else {
-        return Err(LoadScriptError::FileNotFound(path.to_owned()));
+        return Err(LoadScriptError)
+            .attach_printable_lazy(|| format!("script file not found: {}", path));
     };
 
-    let current_dir = std::env::current_dir().expect("current directory");
-    let script = Script::from_file(path, current_dir, options)?;
+    let current_dir = std::env::current_dir()
+        .change_context(LoadScriptError)
+        .attach_printable("failed to get current directory")?;
+
+    let script = Script::from_file(path, current_dir, options)
+        .change_context(LoadScriptError)
+        .attach_printable_lazy(|| format!("failed to load script at path: {}", path))?;
+
     Ok(script)
 }
 
 /// Connect the cancellation token to the ctrl-c handler.
-pub fn set_ctrlc_handler(ct: CancellationToken) -> color_eyre::eyre::Result<()> {
+pub fn set_ctrlc_handler(ct: CancellationToken) -> Result<(), ctrlc::Error> {
     ctrlc::set_handler({
         move || {
             ct.cancel();
         }
-    })?;
+    })
+    .attach_printable("failed to register ctrl-c handler")?;
 
     Ok(())
 }

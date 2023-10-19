@@ -10,11 +10,12 @@ use apibara_sink_common::{
     load_environment_variables, load_script, DotenvOptions, NetworkFilterOptions,
     OptionsFromScript, ScriptOptions, StreamConfigurationOptions, StreamOptions,
 };
-use color_eyre::eyre::{eyre, Result};
 use colored::*;
+use error_stack::{Result, ResultExt};
 use similar_asserts::serde_impl::Debug as SimilarAssertsDebug;
 use similar_asserts::SimpleDiff;
 
+use crate::error::CliError;
 use crate::test::error::get_assertion_error;
 use crate::test::snapshot::{Snapshot, SnapshotGenerator};
 
@@ -32,7 +33,7 @@ fn to_relative_path(path: &Path) -> &Path {
 pub enum TestResult {
     Passed,
     Failed,
-    Error(color_eyre::Report),
+    Error,
 }
 
 pub async fn run_single_test(
@@ -52,31 +53,34 @@ pub async fn run_single_test(
     let snapshot = if let Some(snapshot) = snapshot {
         snapshot
     } else {
-        let file = match fs::File::open(snapshot_path) {
+        let file = match fs::File::open(snapshot_path)
+            .change_context(CliError)
+            .attach_printable_lazy(|| {
+                format!("Cannot open snapshot file `{}`", snapshot_path_display)
+            }) {
             Ok(file) => file,
             Err(err) => {
-                let err = eyre!(err).wrap_err(eyre!(
-                    "Cannot open snapshot file `{}`",
-                    snapshot_path_display
-                ));
                 println!("{}\n", "Test error".red());
                 eprintln!("{}", format!("{:#}", err).bright_red());
 
-                return TestResult::Error(err);
+                return TestResult::Error;
             }
         };
 
-        let snapshot: Snapshot = match serde_json::from_reader(file) {
-            Ok(snapshot) => snapshot,
-            Err(err) => {
-                let err = eyre!(err).wrap_err(eyre!(
+        let snapshot: Snapshot = match serde_json::from_reader(file)
+            .change_context(CliError)
+            .attach_printable_lazy(|| {
+                format!(
                     "Cannot decode json file as a Snapshot `{}`",
                     snapshot_path_display
-                ));
+                )
+            }) {
+            Ok(snapshot) => snapshot,
+            Err(err) => {
                 println!("{}\n", "Test error".red());
                 eprintln!("{}", format!("{:#}", err).bright_red());
 
-                return TestResult::Error(err);
+                return TestResult::Error;
             }
         };
         snapshot
@@ -97,7 +101,7 @@ pub async fn run_single_test(
             } else {
                 println!("{}\n", "Test error".red());
                 eprintln!("{}", format!("{:#}", err).bright_red());
-                TestResult::Error(err)
+                TestResult::Error
             }
         }
     }
@@ -107,32 +111,35 @@ async fn run_test(
     snapshot: Snapshot,
     script_path: Option<&Path>,
     dotenv_options: &DotenvOptions,
-) -> Result<()> {
+) -> Result<(), CliError> {
     let hint =
         "rerun with --override to regenerate the snapshot or change the snapshot name with --name";
 
     if let Some(script_path) = script_path {
         if snapshot.script_path != script_path {
-            return Err(eyre!(
-                "Snapshot generated with a different script: `{}`, {}",
-                snapshot.script_path.display(),
-                hint
-            ));
+            return Err(CliError).attach_printable_lazy(|| {
+                format!(
+                    "Snapshot generated with a different script: `{}`, {}",
+                    snapshot.script_path.display(),
+                    hint
+                )
+            });
         }
     }
 
     let script_path_str = snapshot.script_path.to_string_lossy().to_string();
-    let allow_env = load_environment_variables(dotenv_options)?;
-    let mut script = load_script(&script_path_str, ScriptOptions { allow_env })?;
+    let allow_env = load_environment_variables(dotenv_options).change_context(CliError)?;
+    let mut script =
+        load_script(&script_path_str, ScriptOptions { allow_env }).change_context(CliError)?;
 
     let filter = &script
         .configuration::<OptionsFromScript>()
-        .await?
+        .await
+        .change_context(CliError)?
         .stream_configuration
         .as_starknet()
-        .ok_or(eyre!(
-            "Cannot convert StreamConfigurationOptions using as_starknet"
-        ))?
+        .ok_or(CliError)
+        .attach_printable("Cannot convert StreamConfigurationOptions using as_starknet")?
         .filter;
 
     let NetworkFilterOptions::Starknet(snapshot_filter) =
@@ -144,11 +151,12 @@ async fn run_test(
 
         let diff = SimpleDiff::from_str(left.as_str(), right.as_str(), "expected", "found");
 
-        return Err(eyre!(
-            "Snapshot generated with a different filter, {}\n{}",
-            hint,
-            &diff
-        ));
+        return Err(CliError).attach_printable_lazy(|| {
+            format!(
+                "Snapshot generated with a different filter, {}\n{}",
+                hint, &diff
+            )
+        });
     }
 
     let mut expected_outputs = vec![];
@@ -158,7 +166,11 @@ async fn run_test(
         let input = message["input"].clone();
         let expected_output = message["output"].clone();
 
-        let found_output = script.transform(&input).await?;
+        let found_output = script
+            .transform(&input)
+            .await
+            .change_context(CliError)
+            .attach_printable("failed to transform data")?;
 
         expected_outputs.push(expected_output.clone());
         found_outputs.push(found_output.clone());
@@ -166,7 +178,7 @@ async fn run_test(
 
     if expected_outputs != found_outputs {
         let assertion_error = get_assertion_error(&expected_outputs, &found_outputs);
-        Err(eyre!(assertion_error))
+        Err(CliError).attach_printable(assertion_error)
     } else {
         Ok(())
     }
@@ -181,7 +193,7 @@ pub async fn merge_options(
     cli_stream_options: &StreamOptions,
     script_options: OptionsFromScript,
     snapshot: Option<Snapshot>,
-) -> Result<(StreamOptions, StreamConfigurationOptions, usize)> {
+) -> Result<(StreamOptions, StreamConfigurationOptions, usize), CliError> {
     if let Some(snapshot) = snapshot {
         let stream_options = cli_stream_options
             .clone()
@@ -221,7 +233,7 @@ pub async fn run_generate_snapshot(
     num_batches: Option<usize>,
     cli_stream_options: &StreamOptions,
     dotenv_options: &DotenvOptions,
-) -> Result<()> {
+) -> Result<(), CliError> {
     println!(
         "{} snapshot `{}` ...",
         "Generating".green().bold(),
@@ -229,10 +241,14 @@ pub async fn run_generate_snapshot(
     );
 
     let script_path_str = script_path.to_string_lossy().to_string();
-    let allow_env = load_environment_variables(dotenv_options)?;
-    let mut script = load_script(&script_path_str, ScriptOptions { allow_env })?;
+    let allow_env = load_environment_variables(dotenv_options).change_context(CliError)?;
+    let mut script =
+        load_script(&script_path_str, ScriptOptions { allow_env }).change_context(CliError)?;
 
-    let script_options = script.configuration::<OptionsFromScript>().await?;
+    let script_options = script
+        .configuration::<OptionsFromScript>()
+        .await
+        .change_context(CliError)?;
 
     let snapshot = if snapshot_path.exists() {
         match fs::File::open(snapshot_path) {
@@ -262,18 +278,17 @@ pub async fn run_generate_snapshot(
         stream_options,
         stream_configuration_options,
     )
-    .await?
     .generate()
     .await?;
 
     if !&snapshot_path.parent().unwrap().exists() {
-        fs::create_dir_all(snapshot_path.parent().unwrap())?;
+        fs::create_dir_all(snapshot_path.parent().unwrap()).change_context(CliError)?;
     }
 
-    let file = File::create(snapshot_path)?;
+    let file = File::create(snapshot_path).change_context(CliError)?;
     let mut writer = BufWriter::new(file);
-    serde_json::to_writer_pretty(&mut writer, &snapshot)?;
-    writer.flush()?;
+    serde_json::to_writer_pretty(&mut writer, &snapshot).change_context(CliError)?;
+    writer.flush().change_context(CliError)?;
 
     let start_block = snapshot.stream[0]["cursor"]["orderKey"]
         .as_u64()
@@ -364,7 +379,7 @@ pub async fn run_all_tests(
         match run_single_test(snapshot_path.path(), snapshot, None, dotenv_options).await {
             TestResult::Passed => num_passed_tests += 1,
             TestResult::Failed => num_failed_tests += 1,
-            TestResult::Error(_) => num_error_tests += 1,
+            TestResult::Error => num_error_tests += 1,
         };
     }
 

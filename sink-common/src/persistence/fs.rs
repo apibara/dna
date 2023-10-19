@@ -7,6 +7,7 @@ use std::{
 
 use apibara_core::node::v1alpha2::Cursor;
 use async_trait::async_trait;
+use error_stack::{Result, ResultExt};
 use tracing::info;
 
 use super::common::{PersistenceClient, PersistenceClientError};
@@ -20,10 +21,12 @@ impl DirPersistence {
     pub fn initialize(
         path: impl AsRef<Path>,
         sink_id: impl Into<String>,
-    ) -> Result<Self, std::io::Error> {
+    ) -> Result<Self, PersistenceClientError> {
         let path = path.as_ref();
 
-        fs::create_dir_all(path)?;
+        fs::create_dir_all(path)
+            .change_context(PersistenceClientError)
+            .attach_printable_lazy(|| format!("failed to create directory {:?}", path))?;
 
         Ok(Self {
             path: path.into(),
@@ -50,9 +53,12 @@ impl PersistenceClient for DirPersistence {
     async fn get_cursor(&mut self) -> Result<Option<Cursor>, PersistenceClientError> {
         let path = self.cursor_file_path();
         if path.exists() {
-            let content = fs::read_to_string(path).map_err(PersistenceClientError::get_cursor)?;
-            let cursor =
-                serde_json::from_str(&content).map_err(PersistenceClientError::get_cursor)?;
+            let content = fs::read_to_string(&path)
+                .change_context(PersistenceClientError)
+                .attach_printable_lazy(|| format!("failed to read cursor file {:?}", path))?;
+            let cursor = serde_json::from_str(&content)
+                .change_context(PersistenceClientError)
+                .attach_printable("failed to deserialize cursor")?;
             Ok(Some(cursor))
         } else {
             Ok(None)
@@ -60,15 +66,21 @@ impl PersistenceClient for DirPersistence {
     }
 
     async fn put_cursor(&mut self, cursor: Cursor) -> Result<(), PersistenceClientError> {
-        let serialized =
-            serde_json::to_string(&cursor).map_err(PersistenceClientError::put_cursor)?;
-        fs::write(self.cursor_file_path(), serialized)
-            .map_err(PersistenceClientError::put_cursor)?;
+        let serialized = serde_json::to_string(&cursor)
+            .change_context(PersistenceClientError)
+            .attach_printable("failed to serialize cursor")?;
+        let path = self.cursor_file_path();
+        fs::write(&path, serialized)
+            .change_context(PersistenceClientError)
+            .attach_printable_lazy(|| format!("failed to write cursor file {:?}", path))?;
         Ok(())
     }
 
     async fn delete_cursor(&mut self) -> Result<(), PersistenceClientError> {
-        fs::remove_file(self.cursor_file_path()).map_err(PersistenceClientError::delete_cursor)?;
+        let path = self.cursor_file_path();
+        fs::remove_file(&path)
+            .change_context(PersistenceClientError)
+            .attach_printable_lazy(|| format!("failed to delete cursor file {:?}", path))?;
         Ok(())
     }
 }

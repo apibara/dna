@@ -3,6 +3,7 @@ use std::{ffi::OsString, sync::Arc};
 use apibara_core::node::v1alpha2::{Cursor, DataFinality};
 use apibara_sink_common::{CursorAction, Sink};
 use apibara_sink_parquet::{ParquetSink, SinkParquetConfiguration, SinkParquetError};
+use error_stack::Result;
 use arrow::{
     array::{ArrayRef, Int64Array, StringArray},
     record_batch::RecordBatch,

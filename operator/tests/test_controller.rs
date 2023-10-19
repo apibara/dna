@@ -1,7 +1,10 @@
 use std::time::Duration;
 
-use apibara_operator::crd::{CustomSink, GitHubSource, Indexer, IndexerSource, IndexerSpec, Sink};
-use color_eyre::{eyre::eyre, Result};
+use apibara_operator::{
+    crd::{CustomSink, GitHubSource, Indexer, IndexerSource, IndexerSpec, Sink},
+    error::OperatorError,
+};
+use error_stack::{Result, ResultExt};
 use k8s_openapi::{
     api::{
         self,
@@ -18,12 +21,15 @@ use tokio_stream::StreamExt;
 use tokio_util::sync::CancellationToken;
 
 // #[tokio::test]
-pub async fn test_controller() -> Result<()> {
-    let client = Client::try_default().await?;
+pub async fn test_controller() -> Result<(), OperatorError> {
+    let client = Client::try_default().await.change_context(OperatorError)?;
 
     // list namespaces to check client is working.
     let ns_api: Api<api::core::v1::Namespace> = Api::all(client.clone());
-    let namespaces = ns_api.list(&Default::default()).await?;
+    let namespaces = ns_api
+        .list(&Default::default())
+        .await
+        .change_context(OperatorError)?;
     assert!(!namespaces.items.is_empty());
 
     // check there is no crd installed, then install it.
@@ -31,12 +37,21 @@ pub async fn test_controller() -> Result<()> {
         let crd_api: Api<
             apiextensions_apiserver::pkg::apis::apiextensions::v1::CustomResourceDefinition,
         > = Api::all(client.clone());
-        let crds = crd_api.list(&Default::default()).await?;
+        let crds = crd_api
+            .list(&Default::default())
+            .await
+            .change_context(OperatorError)?;
         assert!(crds.items.is_empty());
 
-        crd_api.create(&Default::default(), &Indexer::crd()).await?;
+        crd_api
+            .create(&Default::default(), &Indexer::crd())
+            .await
+            .change_context(OperatorError)?;
 
-        let crds = crd_api.list(&Default::default()).await?;
+        let crds = crd_api
+            .list(&Default::default())
+            .await
+            .change_context(OperatorError)?;
         assert!(crds.items.len() == 1);
     }
 
@@ -51,7 +66,10 @@ pub async fn test_controller() -> Result<()> {
     let indexer_api: Api<Indexer> = Api::namespaced(client.clone(), "default");
     let pod_api: Api<api::core::v1::Pod> = Api::namespaced(client.clone(), "default");
 
-    let indexers = indexer_api.list(&Default::default()).await?;
+    let indexers = indexer_api
+        .list(&Default::default())
+        .await
+        .change_context(OperatorError)?;
     assert!(indexers.items.is_empty());
 
     let indexer_spec = IndexerSpec {
@@ -97,20 +115,28 @@ pub async fn test_controller() -> Result<()> {
             &PatchParams::apply("test"),
             &Patch::Apply(indexer_manifest),
         )
-        .await?;
+        .await
+        .change_context(OperatorError)?;
 
-    let indexers = indexer_api.list(&Default::default()).await?;
+    let indexers = indexer_api
+        .list(&Default::default())
+        .await
+        .change_context(OperatorError)?;
     assert!(indexers.items.len() == 1);
 
     // no pod scheduled yet
-    let pods = pod_api.list(&Default::default()).await?;
+    let pods = pod_api
+        .list(&Default::default())
+        .await
+        .change_context(OperatorError)?;
     assert!(pods.items.is_empty());
 
     // start controller.
     let ct = CancellationToken::new();
     let mut controller_stream = Box::pin(
         apibara_operator::controller::create(client.clone(), Default::default(), ct.clone())
-            .await?
+            .await
+            .change_context(OperatorError)?
             .timeout(Duration::from_secs(3)),
     );
 
@@ -118,35 +144,51 @@ pub async fn test_controller() -> Result<()> {
         match controller_stream.try_next().await {
             Err(_elapsed) => break,
             Ok(item) => {
-                let (obj, _action) = item.transpose()?.ok_or_else(|| eyre!("stream ended"))?;
+                let (obj, _action) = item
+                    .transpose()
+                    .change_context(OperatorError)?
+                    .ok_or(OperatorError)?;
                 assert_eq!(obj.name, "test-indexer");
             }
         }
     }
 
     // now there's one pod scheduled
-    let _pod = pod_api.get("test-indexer").await?;
+    let _pod = pod_api
+        .get("test-indexer")
+        .await
+        .change_context(OperatorError)?;
 
     // delete the indexer
     indexer_api
         .delete("test-indexer", &Default::default())
-        .await?;
+        .await
+        .change_context(OperatorError)?;
 
     loop {
         match controller_stream.try_next().await {
             Err(_elapsed) => break,
             Ok(item) => {
-                let (obj, _action) = item.transpose()?.ok_or_else(|| eyre!("stream ended"))?;
+                let (obj, _action) = item
+                    .transpose()
+                    .change_context(OperatorError)?
+                    .ok_or(OperatorError)?;
                 assert_eq!(obj.name, "test-indexer");
             }
         }
     }
 
     // all indexers and pods cleaned up
-    let indexers = indexer_api.list(&Default::default()).await?;
+    let indexers = indexer_api
+        .list(&Default::default())
+        .await
+        .change_context(OperatorError)?;
     assert!(indexers.items.is_empty());
 
-    let pods = pod_api.list(&Default::default()).await?;
+    let pods = pod_api
+        .list(&Default::default())
+        .await
+        .change_context(OperatorError)?;
     assert!(pods.items.is_empty());
 
     // terminate controller

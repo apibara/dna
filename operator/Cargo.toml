@@ -17,7 +17,7 @@ operator = []
 
 [dependencies]
 apibara-observability = { path = "../observability" }
-color-eyre.workspace = true
+error-stack.workspace = true
 clap.workspace = true
 ctrlc.workspace = true
 futures.workspace = true
