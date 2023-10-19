@@ -14,10 +14,10 @@ apibara-script = { path = "../script" }
 apibara-sink-options-derive = { path = "../sink-options-derive" }
 async-trait.workspace = true
 bytesize = {version = "1.1.0", features = ["serde"]}
-color-eyre.workspace = true
 clap.workspace = true
 ctrlc.workspace = true
 dotenvy.workspace = true
+error-stack.workspace = true
 etcd-client = { version = "0.11.1", features = ["tls"] }
 exponential-backoff = "1.2.0"
 futures.workspace = true
@@ -26,7 +26,6 @@ prost.workspace = true
 regex.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-thiserror.workspace = true
 tonic.workspace = true
 tonic-health.workspace = true
 tonic-reflection.workspace = true

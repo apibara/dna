@@ -1,15 +1,22 @@
+use std::fmt;
+
 use apibara_core::node::v1alpha2::{Cursor, DataFinality};
 use apibara_sink_common::{CursorAction, DisplayCursor, Sink};
 use async_trait::async_trait;
+use error_stack::{Result, ResultExt};
 use serde_json::Value;
 use tracing::{info, instrument};
 
 use crate::configuration::SinkConsoleOptions;
 
-#[derive(Debug, thiserror::Error)]
-pub enum SinkConsoleError {
-    #[error("error serializing batch: {0}")]
-    Serialize(#[from] serde_json::Error),
+#[derive(Debug)]
+pub struct SinkConsoleError;
+impl error_stack::Context for SinkConsoleError {}
+
+impl fmt::Display for SinkConsoleError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("console sink operation failed")
+    }
 }
 
 #[derive(Default)]
@@ -41,7 +48,10 @@ impl Sink for ConsoleSink {
             "handle data"
         );
 
-        let pretty = serde_json::to_string_pretty(batch)?;
+        let pretty = serde_json::to_string_pretty(batch)
+            .change_context(SinkConsoleError)
+            .attach_printable("failed to serialize batch data")?;
+
         info!("{}", pretty);
 
         Ok(CursorAction::Persist)

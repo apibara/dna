@@ -1,12 +1,10 @@
-use std::{net::AddrParseError, path::PathBuf, time::Duration};
+use std::{fmt, net::AddrParseError, path::PathBuf, str::FromStr, time::Duration};
 
-use apibara_core::{
-    node::v1alpha2::DataFinality,
-    starknet::v1alpha2::{self},
-};
-use apibara_sdk::{Configuration, InvalidUri, MetadataKey, MetadataMap, MetadataValue, Uri};
+use apibara_core::{node::v1alpha2::DataFinality, starknet::v1alpha2};
+use apibara_sdk::{Configuration, MetadataKey, MetadataMap, MetadataValue, Uri};
 use bytesize::ByteSize;
 use clap::Args;
+use error_stack::{Result, ResultExt};
 use serde::{Deserialize, Serialize};
 
 use crate::{connector::StreamConfiguration, status::StatusServer};
@@ -125,22 +123,8 @@ pub enum NetworkFilterOptions {
     Starknet(v1alpha2::Filter),
 }
 
-#[derive(Debug, thiserror::Error)]
-pub enum PersistenceOptionsError {
-    #[error("missing etcd url")]
-    MissingEtcdUrl,
-    #[error("missing sink id")]
-    MissingSinkId,
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum StatusServerOptionsError {
-    #[error("invalid address: {0}")]
-    InvalidAddress(#[from] AddrParseError),
-}
-
 impl StatusServerOptions {
-    pub fn to_status_server(self) -> Result<StatusServer, StatusServerOptionsError> {
+    pub fn to_status_server(self) -> Result<StatusServer, AddrParseError> {
         let address = self
             .status_server_address
             .unwrap_or_else(|| "0.0.0.0:0".to_string())
@@ -149,16 +133,34 @@ impl StatusServerOptions {
     }
 }
 
-#[derive(Debug, thiserror::Error)]
-pub enum StreamOptionsError {
-    #[error("missing stream url")]
-    MissingStreamUrl,
-    #[error("invalid stream url: {0}")]
-    InvalidStreamUrl(#[from] InvalidUri),
-    #[error("invalid max message size: {0}")]
-    MessageSize(String),
-    #[error("invalid metadata: {0}")]
-    InvalidMetadata(String),
+#[derive(Debug)]
+pub struct MissingStreamUrlError;
+impl error_stack::Context for MissingStreamUrlError {}
+
+impl fmt::Display for MissingStreamUrlError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("missing stream url")
+    }
+}
+
+#[derive(Debug)]
+pub struct StreamOptionsError;
+impl error_stack::Context for StreamOptionsError {}
+
+impl fmt::Display for StreamOptionsError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("invalid stream options")
+    }
+}
+
+#[derive(Debug)]
+pub struct InvalidByteSizeError(String);
+impl error_stack::Context for InvalidByteSizeError {}
+
+impl fmt::Display for InvalidByteSizeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "invalid byte size: {}", self.0)
+    }
 }
 
 impl StreamOptions {
@@ -177,13 +179,17 @@ impl StreamOptions {
     pub fn to_stream_configuration(self) -> Result<StreamConfiguration, StreamOptionsError> {
         let stream_url: Uri = self
             .stream_url
-            .ok_or(StreamOptionsError::MissingStreamUrl)?
-            .parse()?;
+            .ok_or(MissingStreamUrlError)
+            .change_context(StreamOptionsError)?
+            .parse::<Uri>()
+            .change_context(StreamOptionsError)?;
         let max_message_size_bytes: ByteSize = self
             .max_message_size
-            .map(|s| s.parse())
+            .as_ref()
+            .map(|s| ByteSize::from_str(s))
             .transpose()
-            .map_err(StreamOptionsError::MessageSize)?
+            .map_err(InvalidByteSizeError)
+            .change_context(StreamOptionsError)?
             .unwrap_or(ByteSize::mb(100));
 
         let timeout_duration = Duration::from_secs(self.timeout_duration_seconds.unwrap_or(45));
@@ -192,17 +198,19 @@ impl StreamOptions {
         for entry in self.metadata.unwrap_or_default() {
             match entry.split_once(':') {
                 None => {
-                    return Err(StreamOptionsError::InvalidMetadata(
-                        "metadata must be in the `key: value` format".to_string(),
-                    ))
+                    return Err(StreamOptionsError)
+                        .attach_printable("metadata must be in the `key: value format")
+                        .attach_printable_lazy(|| format!("got: {entry}"))
                 }
                 Some((key, value)) => {
-                    let key: MetadataKey = key.parse().map_err(|_| {
-                        StreamOptionsError::InvalidMetadata("invalid metadata key".to_string())
-                    })?;
-                    let value: MetadataValue = value.parse().map_err(|_| {
-                        StreamOptionsError::InvalidMetadata("invalid metadata value".to_string())
-                    })?;
+                    let key = key
+                        .parse::<MetadataKey>()
+                        .change_context(StreamOptionsError)
+                        .attach_printable_lazy(|| format!("invalid metadata key: {key}"))?;
+                    let value = value
+                        .parse::<MetadataValue>()
+                        .change_context(StreamOptionsError)
+                        .attach_printable_lazy(|| format!("invalid metadata value: {value}"))?;
                     metadata.insert(key, value);
                 }
             }
@@ -264,7 +272,6 @@ impl StreamConfigurationOptions {
 #[cfg(test)]
 mod tests {
     use apibara_core::node::v1alpha2::DataFinality;
-    use assert_matches::assert_matches;
     use bytesize::ByteSize;
 
     use super::{
@@ -310,10 +317,12 @@ mod tests {
             "authToken": "auth_token"
         }
         "#;
-        let config = serde_json::from_str::<StreamOptions>(json)
+        let Err(err) = serde_json::from_str::<StreamOptions>(json)
             .expect("parse StreamOptions from json")
-            .to_stream_configuration();
-        assert_matches!(config, Err(StreamOptionsError::InvalidStreamUrl(_)));
+            .to_stream_configuration() else {
+                panic!("expected error");
+            };
+        assert!(err.downcast_ref::<StreamOptionsError>().is_some());
     }
 
     #[test]
@@ -326,10 +335,12 @@ mod tests {
             "authToken": "auth_token"
         }
         "#;
-        let config = serde_json::from_str::<StreamOptions>(json)
+        let Err(err) = serde_json::from_str::<StreamOptions>(json)
             .expect("parse StreamOptions from json")
-            .to_stream_configuration();
-        assert_matches!(config, Err(StreamOptionsError::MessageSize(_)));
+            .to_stream_configuration() else {
+                panic!("expected error");
+            };
+        assert!(err.downcast_ref::<StreamOptionsError>().is_some());
     }
 
     #[test]
@@ -342,10 +353,12 @@ mod tests {
             "authToken": "auth_token"
         }
         "#;
-        let config = serde_json::from_str::<StreamOptions>(json)
+        let Err(err) = serde_json::from_str::<StreamOptions>(json)
             .expect("parse StreamOptions from json")
-            .to_stream_configuration();
-        assert_matches!(config, Err(StreamOptionsError::InvalidMetadata(_)));
+            .to_stream_configuration() else {
+                panic!("expected error");
+            };
+        assert!(err.downcast_ref::<StreamOptionsError>().is_some());
     }
 
     #[test]
@@ -358,10 +371,12 @@ mod tests {
             "authToken": "auth_token"
         }
         "#;
-        let config = serde_json::from_str::<StreamOptions>(json)
+        let Err(err) = serde_json::from_str::<StreamOptions>(json)
             .expect("parse StreamOptions from json")
-            .to_stream_configuration();
-        assert_matches!(config, Err(StreamOptionsError::InvalidMetadata(_)));
+            .to_stream_configuration() else {
+                panic!("expected error");
+            };
+        assert!(err.downcast_ref::<StreamOptionsError>().is_some());
     }
 
     #[test]

@@ -28,7 +28,7 @@ fn impl_sink_options(ast: &syn::DeriveInput) -> proc_macro2::TokenStream {
 
     let impl_ast = quote!(
         impl<'de> ::serde::Deserialize<'de> for #name {
-            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+            fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
             where
                 D: ::serde::Deserializer<'de>,
             {

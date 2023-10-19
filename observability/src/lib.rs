@@ -1,18 +1,17 @@
 //! # OpenTelemetry helpers
 
-use std::env;
+use std::{env, fmt};
 
+use error_stack::{Result, ResultExt};
 use opentelemetry::{
     global,
-    metrics::MetricsError,
     sdk::{
         self, export::metrics::aggregation::cumulative_temporality_selector, metrics::selectors,
         Resource,
     },
-    trace::TraceError,
 };
 use opentelemetry_otlp::WithExportConfig;
-use tracing::{dispatcher::SetGlobalDefaultError, Subscriber};
+use tracing::Subscriber;
 
 pub use opentelemetry::metrics::{ObservableCounter, ObservableGauge};
 pub use opentelemetry::{Context, Key, KeyValue};
@@ -23,21 +22,16 @@ pub use opentelemetry::metrics::{Counter, Meter};
 
 const OTEL_SDK_DISABLED: &str = "OTEL_SDK_DISABLED";
 
-/// Initialize the default panic and error reporter.
-pub fn init_error_handler() -> color_eyre::eyre::Result<()> {
-    color_eyre::install()
-}
-
 pub type BoxedLayer<S> = Box<dyn Layer<S> + Send + Sync>;
 
-#[derive(Debug, thiserror::Error)]
-pub enum OpenTelemetryInitError {
-    #[error("error setting global default subscriber")]
-    SetGlobalDefault(#[from] SetGlobalDefaultError),
-    #[error("error configuring tracing")]
-    Trace(#[from] TraceError),
-    #[error("error configuring metrics")]
-    Metrics(#[from] MetricsError),
+#[derive(Debug)]
+pub struct OpenTelemetryInitError;
+impl error_stack::Context for OpenTelemetryInitError {}
+
+impl fmt::Display for OpenTelemetryInitError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("failed to initialize opentelemetry")
+    }
 }
 
 pub fn meter(name: &'static str) -> Meter {
@@ -86,13 +80,17 @@ where
         )
         .with_exporter(opentelemetry_otlp::new_exporter().tonic().with_env())
         .with_resource(Resource::default())
-        .build()?;
+        .build()
+        .change_context(OpenTelemetryInitError)
+        .attach_printable("failed to create metrics pipeline")?;
 
     let tracer = opentelemetry_otlp::new_pipeline()
         .tracing()
         .with_exporter(opentelemetry_otlp::new_exporter().tonic().with_env())
         .with_trace_config(sdk::trace::config().with_resource(Resource::default()))
-        .install_batch(opentelemetry::runtime::Tokio)?;
+        .install_batch(opentelemetry::runtime::Tokio)
+        .change_context(OpenTelemetryInitError)
+        .attach_printable("failed to create tracing pipeline")?;
 
     // export traces and metrics to otel
     let otel_trace_layer = tracing_opentelemetry::layer().with_tracer(tracer);

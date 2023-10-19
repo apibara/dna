@@ -20,7 +20,7 @@ apibara-observability = { path = "../observability" }
 apibara-sink-common = { path = "../sink-common" }
 arrow = { version = "41.0.0", default-features = false, features = ["arrow-json", "json"] }
 async-trait.workspace = true
-color-eyre.workspace = true
+error-stack.workspace = true
 clap.workspace = true
 parquet = { version = "41.0.0", default-features = false, features = ["arrow", "arrow-array", "arrow-schema"] }
 serde.workspace = true

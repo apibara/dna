@@ -3,9 +3,10 @@ use apibara_operator::{
     configuration::{Configuration, SinkConfiguration},
     controller,
     crd::Indexer,
+    error::OperatorError,
 };
 use clap::{Args, Parser, Subcommand};
-use color_eyre::eyre::Result;
+use error_stack::{Result, ResultExt};
 use kube::{Client, CustomResourceExt};
 use tokio_util::sync::CancellationToken;
 
@@ -55,18 +56,23 @@ struct SinkArgs {
     pub sink_webhook_image: Option<String>,
 }
 
-fn generate_crds(_args: GenerateCrdArgs) -> Result<()> {
+fn generate_crds(_args: GenerateCrdArgs) -> Result<(), OperatorError> {
     let crds = [Indexer::crd()]
         .iter()
         .map(|crd| serde_yaml::to_string(&crd))
-        .collect::<Result<Vec<_>, _>>()?
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .change_context(OperatorError)
+        .attach_printable("failed to serialize CRD to yaml")?
         .join("---\n");
     println!("{}", crds);
     Ok(())
 }
 
-async fn start(args: StartArgs) -> Result<()> {
-    let client = Client::try_default().await?;
+async fn start(args: StartArgs) -> Result<(), OperatorError> {
+    let client = Client::try_default()
+        .await
+        .change_context(OperatorError)
+        .attach_printable("failed to build Kubernetes client")?;
     let configuration = args.into_configuration();
     let ct = CancellationToken::new();
 
@@ -75,15 +81,22 @@ async fn start(args: StartArgs) -> Result<()> {
         move || {
             ct.cancel();
         }
-    })?;
+    })
+    .change_context(OperatorError)
+    .attach_printable("failed to setup ctrl-c handler")?;
 
-    controller::start(client, configuration, ct).await?;
+    controller::start(client, configuration, ct)
+        .await
+        .change_context(OperatorError)
+        .attach_printable("error while running operator")?;
     Ok(())
 }
 
 #[tokio::main]
-async fn main() -> Result<()> {
-    init_opentelemetry()?;
+async fn main() -> Result<(), OperatorError> {
+    init_opentelemetry()
+        .change_context(OperatorError)
+        .attach_printable("failed to initialize opentelemetry")?;
     let args = Cli::parse();
 
     match args.command {

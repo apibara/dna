@@ -2,10 +2,10 @@ mod client;
 mod server;
 mod service;
 
-use std::{net::SocketAddr, pin::Pin};
+use std::{fmt, net::SocketAddr, pin::Pin};
 
 use apibara_sdk::StreamClient;
-use color_eyre::eyre::{Context, Result};
+use error_stack::{Result, ResultExt};
 use futures::Future;
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
@@ -25,6 +25,16 @@ pub struct StatusServer {
     address: SocketAddr,
 }
 
+#[derive(Debug)]
+pub struct StatusServerError;
+impl error_stack::Context for StatusServerError {}
+
+impl fmt::Display for StatusServerError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("status server operation failed")
+    }
+}
+
 impl StatusServer {
     pub fn new(address: SocketAddr) -> Self {
         StatusServer { address }
@@ -35,10 +45,13 @@ impl StatusServer {
         self,
         stream_client: StreamClient,
         ct: CancellationToken,
-    ) -> Result<(
-        StatusServerClient,
-        Pin<Box<impl Future<Output = Result<()>>>>,
-    )> {
+    ) -> Result<
+        (
+            StatusServerClient,
+            Pin<Box<impl Future<Output = Result<(), StatusServerError>>>>,
+        ),
+        StatusServerError,
+    > {
         let (status_service, status_client, status_service_client, health_server) =
             StatusService::new();
         let status_server = Server::new(status_service_client, stream_client);
@@ -50,13 +63,21 @@ impl StatusServer {
 
                 let listener = TcpListener::bind(address)
                     .await
-                    .context("failed to bind status server")?;
-                info!("status server listening on {}", listener.local_addr()?);
+                    .change_context(StatusServerError)
+                    .attach_printable("failed to bind status server")?;
+
+                let local_addr = listener
+                    .local_addr()
+                    .change_context(StatusServerError)
+                    .attach_printable("failed to get local address")?;
+                info!("status server listening on {}", local_addr);
                 let listener = TcpListenerStream::new(listener);
 
                 let reflection_service = tonic_reflection::server::Builder::configure()
                     .register_encoded_file_descriptor_set(sink_file_descriptor_set())
-                    .build()?;
+                    .build()
+                    .change_context(StatusServerError)
+                    .attach_printable("failed to register to gRPC reflection service")?;
 
                 let server_fut = TonicServer::builder()
                     .add_service(health_server)
@@ -72,7 +93,9 @@ impl StatusServer {
                         match server_ret {
                             Ok(_) => {},
                             Err(err) => {
-                                return Err(err).context("status server stopped: grpc");
+                                return Err(err)
+                                    .change_context(StatusServerError)
+                                    .attach_printable("status server stopped: grpc");
                             }
                         }
                     }
@@ -80,7 +103,9 @@ impl StatusServer {
                         match status_ret {
                             Ok(_) => {},
                             Err(err) => {
-                                return Err(err).context("status server stopped: status service");
+                                return Err(err)
+                                    .change_context(StatusServerError)
+                                    .attach_printable("status server stopped: status service");
                             }
                         }
                     }

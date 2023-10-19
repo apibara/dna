@@ -1,11 +1,10 @@
+use std::fmt;
+
 use apibara_core::node::v1alpha2::{Cursor, DataFinality};
-use apibara_sink_common::{CursorAction, DisplayCursor, LoadScriptError, Sink};
+use apibara_sink_common::{CursorAction, DisplayCursor, Sink};
 use async_trait::async_trait;
-use http::{
-    header::{InvalidHeaderName, InvalidHeaderValue},
-    uri::InvalidUri,
-    HeaderMap,
-};
+use error_stack::{Result, ResultExt};
+use http::HeaderMap;
 use reqwest::Client;
 use serde::ser::Serialize;
 use serde_json::{json, Value};
@@ -13,30 +12,14 @@ use tracing::{debug, info, instrument, warn};
 
 use crate::{configuration::SinkWebhookOptions, SinkWebhookConfiguration};
 
-#[derive(Debug, thiserror::Error)]
-pub enum InvalidHeader {
-    #[error("Invalid header format")]
-    Format,
-    #[error("Invalid header name: {0}")]
-    Name(#[from] InvalidHeaderName),
-    #[error("Invalid header value: {0}")]
-    Value(#[from] InvalidHeaderValue),
-}
+#[derive(Debug)]
+pub struct SinkWebhookError;
+impl error_stack::Context for SinkWebhookError {}
 
-#[derive(Debug, thiserror::Error)]
-pub enum SinkWebhookError {
-    #[error("Failed to load script: {0}")]
-    ScriptLoading(#[from] LoadScriptError),
-    #[error("Http error: {0}")]
-    Http(#[from] reqwest::Error),
-    #[error("Missing target url")]
-    MissingTargetUrl,
-    #[error("Invalid header option: {0}")]
-    InvalidHeader(#[from] InvalidHeader),
-    #[error("Invalid target url: {0}")]
-    InvalidUri(#[from] InvalidUri),
-    #[error("Serde error: {0}")]
-    Serde(#[from] serde_json::Error),
+impl fmt::Display for SinkWebhookError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("webhook sink operation failed")
+    }
 }
 
 pub struct WebhookSink {
@@ -64,7 +47,9 @@ impl WebhookSink {
             .headers(self.headers.clone())
             .json(body)
             .send()
-            .await?;
+            .await
+            .change_context(SinkWebhookError)
+            .attach_printable("failed to POST json data")?;
 
         match response.text().await {
             Ok(text) => {

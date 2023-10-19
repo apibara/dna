@@ -5,5 +5,6 @@ pub mod context;
 #[cfg(feature = "operator")]
 pub mod controller;
 pub mod crd;
+pub mod error;
 #[cfg(feature = "operator")]
 pub mod reconcile;

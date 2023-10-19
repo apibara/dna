@@ -16,13 +16,14 @@ pub use apibara_node::{
     db::libmdbx::NoWriteMap,
     server::{MetadataKeyRequestObserver, SimpleRequestObserver},
 };
+use apibara_sdk::Uri;
 use ingestion::BlockIngestionConfig;
 
-use std::{path::PathBuf, time::Duration};
+use std::{fmt, path::PathBuf, time::Duration};
 
 use apibara_node::{db::default_data_dir, server::QuotaConfiguration};
 use clap::Args;
-use color_eyre::eyre::Result;
+use error_stack::{Result, ResultExt};
 use tempdir::TempDir;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
@@ -77,23 +78,37 @@ pub struct QuotaServerArgs {
 }
 
 /// Connect the cancellation token to the ctrl-c handler.
-pub fn set_ctrlc_handler(ct: CancellationToken) -> Result<()> {
+pub fn set_ctrlc_handler(ct: CancellationToken) -> Result<(), StarknetError> {
     ctrlc::set_handler({
         move || {
             ct.cancel();
         }
-    })?;
+    })
+    .change_context(StarknetError)
+    .attach_printable("failed to setup ctrl-c handler")?;
 
     Ok(())
 }
 
-pub async fn start_node(args: StartArgs, cts: CancellationToken) -> Result<()> {
+#[derive(Debug)]
+pub struct StarknetError;
+impl error_stack::Context for StarknetError {}
+
+impl fmt::Display for StarknetError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("starknet operation failed")
+    }
+}
+
+pub async fn start_node(args: StartArgs, cts: CancellationToken) -> Result<(), StarknetError> {
     let mut node =
-        StarkNetNode::<HttpProvider, SimpleRequestObserver, NoWriteMap>::builder(&args.rpc)?
+        StarkNetNode::<HttpProvider, SimpleRequestObserver, NoWriteMap>::builder(&args.rpc)
+            .change_context(StarknetError)
+            .attach_printable("failed to create server")?
             .with_request_observer(MetadataKeyRequestObserver::new(args.use_metadata));
 
     if args.devnet {
-        let tempdir = TempDir::new("apibara")?;
+        let tempdir = TempDir::new("apibara").change_context(StarknetError)?;
         info!("starting in devnet mode");
         node.with_datadir(tempdir.path().to_path_buf());
     } else if let Some(datadir) = args.data {
@@ -112,7 +127,10 @@ pub async fn start_node(args: StartArgs, cts: CancellationToken) -> Result<()> {
 
     let quota_args = args.quota_server.unwrap_or_default();
     if let Some(quota_server_address) = quota_args.quota_server_address {
-        let server_address = quota_server_address.parse()?;
+        let server_address = quota_server_address
+            .parse::<Uri>()
+            .change_context(StarknetError)
+            .attach_printable("failed to parse quota address server")?;
         let network_name = args.name.unwrap_or_else(|| "starknet".to_string());
         let quota_configuration = QuotaConfiguration::RemoteQuota {
             server_address,
@@ -142,7 +160,13 @@ pub async fn start_node(args: StartArgs, cts: CancellationToken) -> Result<()> {
         });
     }
 
-    node.build()?.start(cts.clone(), args.wait_for_rpc).await?;
+    node.build()
+        .change_context(StarknetError)
+        .attach_printable("failed to initialize node")?
+        .start(cts.clone(), args.wait_for_rpc)
+        .await
+        .change_context(StarknetError)
+        .attach_printable("error while running starknet node")?;
 
     Ok(())
 }

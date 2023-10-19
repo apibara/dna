@@ -1,7 +1,7 @@
-use apibara_node::o11y::{init_error_handler, init_opentelemetry};
-use apibara_starknet::{set_ctrlc_handler, start_node, StartArgs};
+use apibara_node::o11y::init_opentelemetry;
+use apibara_starknet::{set_ctrlc_handler, start_node, StarknetError, StartArgs};
 use clap::{Parser, Subcommand};
-use color_eyre::eyre::Result;
+use error_stack::{Result, ResultExt};
 use tokio_util::sync::CancellationToken;
 
 #[derive(Parser)]
@@ -18,12 +18,13 @@ enum CliCommand {
 }
 
 #[tokio::main]
-async fn main() -> Result<()> {
-    init_error_handler()?;
-    init_opentelemetry()?;
+async fn main() -> Result<(), StarknetError> {
+    init_opentelemetry()
+        .change_context(StarknetError)
+        .attach_printable("failed to initialize opentelemetry")?;
 
     let cts = CancellationToken::new();
-    set_ctrlc_handler(cts.clone())?;
+    set_ctrlc_handler(cts.clone()).change_context(StarknetError)?;
 
     match Cli::parse().command {
         CliCommand::Start(args) => start_node(args, cts).await,

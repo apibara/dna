@@ -1,6 +1,7 @@
 use apibara_core::node::v1alpha2::{Cursor, DataFinality};
 use apibara_sink_common::{CursorAction, Sink};
 use apibara_sink_mongo::{MongoSink, SinkMongoError, SinkMongoOptions};
+use error_stack::{Result, ResultExt};
 use futures_util::TryStreamExt;
 use mongodb::{
     bson::{doc, to_document, Bson, Document},
@@ -312,9 +313,11 @@ async fn test_handle_data_in_entity_mode() -> Result<(), SinkMongoError> {
                 Some(doc! {"_cursor.to": Bson::Null, "address": "0x1", "token_id": "1" }),
                 None,
             )
-            .await?
+            .await
+            .change_context(SinkMongoError)?
             .try_collect::<Vec<_>>()
-            .await?;
+            .await
+            .change_context(SinkMongoError)?;
 
         assert_eq!(new_docs.len(), 1);
         let new_doc = &new_docs[0];
@@ -328,9 +331,11 @@ async fn test_handle_data_in_entity_mode() -> Result<(), SinkMongoError> {
                 Some(doc! {"_cursor.to": Bson::Null, "address": "0x1", "token_id": "2" }),
                 None,
             )
-            .await?
+            .await
+            .change_context(SinkMongoError)?
             .try_collect::<Vec<_>>()
-            .await?;
+            .await
+            .change_context(SinkMongoError)?;
 
         assert_eq!(new_docs.len(), 1);
     }
@@ -353,9 +358,11 @@ async fn test_handle_data_in_entity_mode() -> Result<(), SinkMongoError> {
                 Some(doc! {"_cursor.to": Bson::Null, "address": "0x1", "token_id": "1" }),
                 None,
             )
-            .await?
+            .await
+            .change_context(SinkMongoError)?
             .try_collect::<Vec<_>>()
-            .await?;
+            .await
+            .change_context(SinkMongoError)?;
 
         assert_eq!(updated_docs.len(), 1);
         let updated_doc = &updated_docs[0];
@@ -368,9 +375,11 @@ async fn test_handle_data_in_entity_mode() -> Result<(), SinkMongoError> {
                 Some(doc! {"_cursor.to": Bson::Null, "address": "0x1", "token_id": "4" }),
                 None,
             )
-            .await?
+            .await
+            .change_context(SinkMongoError)?
             .try_collect::<Vec<_>>()
-            .await?;
+            .await
+            .change_context(SinkMongoError)?;
 
         assert_eq!(new_docs.len(), 1);
         let new_doc = &new_docs[0];
@@ -426,9 +435,11 @@ async fn test_handle_invalidate_in_entity_mode() -> Result<(), SinkMongoError> {
                 Some(doc! { "token_id": "2", "_cursor.to": Bson::Null }),
                 None,
             )
-            .await?
+            .await
+            .change_context(SinkMongoError)?
             .try_collect::<Vec<_>>()
-            .await?;
+            .await
+            .change_context(SinkMongoError)?;
 
         assert_eq!(new_docs.len(), 1);
         let new_doc = &new_docs[0];
@@ -448,9 +459,11 @@ async fn test_handle_invalidate_in_entity_mode() -> Result<(), SinkMongoError> {
                 Some(doc! { "token_id": "2", "_cursor.to": Bson::Null }),
                 None,
             )
-            .await?
+            .await
+            .change_context(SinkMongoError)?
             .try_collect::<Vec<_>>()
-            .await?;
+            .await
+            .change_context(SinkMongoError)?;
 
         assert_eq!(new_docs.len(), 1);
         let new_doc = &new_docs[0];
@@ -469,9 +482,11 @@ async fn test_handle_invalidate_in_entity_mode() -> Result<(), SinkMongoError> {
                 Some(doc! { "token_id": "2", "_cursor.to": Bson::Null }),
                 None,
             )
-            .await?
+            .await
+            .change_context(SinkMongoError)?
             .try_collect::<Vec<_>>()
-            .await?;
+            .await
+            .change_context(SinkMongoError)?;
 
         assert_eq!(new_docs.len(), 1);
         let new_doc = &new_docs[0];

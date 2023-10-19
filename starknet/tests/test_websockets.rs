@@ -22,7 +22,8 @@ use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 
 // Same as test_reorg_from_client_pov but using websockets
 // #[tokio::test]
-#[ignore]
+// #[ignore]
+#[allow(dead_code)]
 async fn test_reorg_from_client_pov_websockets() {
     init_opentelemetry().unwrap();
 
