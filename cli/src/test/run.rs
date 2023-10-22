@@ -30,10 +30,10 @@ fn to_relative_path(path: &Path) -> &Path {
     }
 }
 
+#[derive(Debug)]
 pub enum TestResult {
     Passed,
-    Failed,
-    Error,
+    Failed { message: String },
 }
 
 pub async fn run_single_test(
@@ -41,7 +41,7 @@ pub async fn run_single_test(
     snapshot: Option<Snapshot>,
     script_path: Option<&Path>,
     dotenv_options: &DotenvOptions,
-) -> TestResult {
+) -> Result<TestResult, CliError> {
     let snapshot_path_display = to_relative_path(snapshot_path).display();
 
     println!(
@@ -53,77 +53,42 @@ pub async fn run_single_test(
     let snapshot = if let Some(snapshot) = snapshot {
         snapshot
     } else {
-        let file = match fs::File::open(snapshot_path)
+        let file = fs::File::open(snapshot_path)
             .change_context(CliError)
             .attach_printable_lazy(|| {
                 format!("Cannot open snapshot file `{}`", snapshot_path_display)
-            }) {
-            Ok(file) => file,
-            Err(err) => {
-                println!("{}\n", "Test error".red());
-                eprintln!("{}", format!("{:#}", err).bright_red());
+            })?;
 
-                return TestResult::Error;
-            }
-        };
-
-        let snapshot: Snapshot = match serde_json::from_reader(file)
+        let snapshot: Snapshot = serde_json::from_reader(file)
             .change_context(CliError)
             .attach_printable_lazy(|| {
                 format!(
                     "Cannot decode json file as a Snapshot `{}`",
                     snapshot_path_display
                 )
-            }) {
-            Ok(snapshot) => snapshot,
-            Err(err) => {
-                println!("{}\n", "Test error".red());
-                eprintln!("{}", format!("{:#}", err).bright_red());
-
-                return TestResult::Error;
-            }
-        };
+            })?;
         snapshot
     };
 
-    match run_test(snapshot, script_path, dotenv_options).await {
-        Ok(()) => {
-            println!("{}", "Test passed".green());
-            TestResult::Passed
-        }
-        Err(err) => {
-            let err_str = err.to_string();
-
-            if err_str.contains("assertion failed") {
-                println!("{}\n", "Test failed".red());
-                eprintln!("{}", err_str);
-                TestResult::Failed
-            } else {
-                println!("{}\n", "Test error".red());
-                eprintln!("{}", format!("{:#}", err).bright_red());
-                TestResult::Error
-            }
-        }
-    }
+    run_test(snapshot, script_path, dotenv_options).await
 }
 
 async fn run_test(
     snapshot: Snapshot,
     script_path: Option<&Path>,
     dotenv_options: &DotenvOptions,
-) -> Result<(), CliError> {
+) -> Result<TestResult, CliError> {
     let hint =
         "rerun with --override to regenerate the snapshot or change the snapshot name with --name";
 
     if let Some(script_path) = script_path {
         if snapshot.script_path != script_path {
-            return Err(CliError).attach_printable_lazy(|| {
-                format!(
-                    "Snapshot generated with a different script: `{}`, {}",
-                    snapshot.script_path.display(),
-                    hint
-                )
-            });
+            let message = format!(
+                "Snapshot generated with a different script: `{}`, {}",
+                snapshot.script_path.display(),
+                hint
+            );
+            return Ok(TestResult::Failed { message });
         }
     }
 
@@ -151,12 +116,11 @@ async fn run_test(
 
         let diff = SimpleDiff::from_str(left.as_str(), right.as_str(), "expected", "found");
 
-        return Err(CliError).attach_printable_lazy(|| {
-            format!(
+        let message = format!(
                 "Snapshot generated with a different filter, {}\n{}",
                 hint, &diff
-            )
-        });
+            );
+        return Ok(TestResult::Failed { message });
     }
 
     let mut expected_outputs = vec![];
@@ -177,10 +141,10 @@ async fn run_test(
     }
 
     if expected_outputs != found_outputs {
-        let assertion_error = get_assertion_error(&expected_outputs, &found_outputs);
-        Err(CliError).attach_printable(assertion_error)
+        let message = get_assertion_error(&expected_outputs, &found_outputs);
+        Ok(TestResult::Failed { message })
     } else {
-        Ok(())
+        Ok(TestResult::Passed)
     }
 }
 
@@ -317,7 +281,7 @@ pub async fn run_all_tests(
     dir: impl AsRef<Path>,
     dotenv_options: &DotenvOptions,
     script_path: Option<&Path>,
-) {
+) -> Result<(), CliError> {
     let for_script = if let Some(script_path) = script_path {
         format!(" for `{}`", to_relative_path(script_path).display())
     } else {
@@ -377,9 +341,20 @@ pub async fn run_all_tests(
     for (snapshot_path, snapshot) in snapshots {
         println!();
         match run_single_test(snapshot_path.path(), snapshot, None, dotenv_options).await {
-            TestResult::Passed => num_passed_tests += 1,
-            TestResult::Failed => num_failed_tests += 1,
-            TestResult::Error => num_error_tests += 1,
+            Ok(TestResult::Passed) => {
+                println!("{}", "Test passed".green());
+                num_passed_tests += 1;
+            },
+            Ok(TestResult::Failed { message }) => {
+                println!("{}\n", "Test failed".red());
+                eprintln!("{}", message);
+                num_failed_tests += 1;
+            }
+            Err(err) => {
+                println!("{}\n", "Test error".red());
+                eprintln!("{}", format!("{err:?}").bright_red());
+                num_error_tests += 1
+            }
         };
     }
 
@@ -394,4 +369,6 @@ pub async fn run_all_tests(
         failed,
         error
     );
+
+    Ok(())
 }

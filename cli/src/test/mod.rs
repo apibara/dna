@@ -113,7 +113,7 @@ pub async fn run(args: TestArgs) -> Result<(), CliError> {
 
             if path.is_dir() {
                 warn_ignored_args(&args);
-                run::run_all_tests(&path, &args.dotenv_options, None).await;
+                run::run_all_tests(&path, &args.dotenv_options, None).await?;
                 return Ok(());
             }
 
@@ -125,7 +125,7 @@ pub async fn run(args: TestArgs) -> Result<(), CliError> {
             match extension.to_str().unwrap() {
                 "json" => {
                     warn_ignored_args(&args);
-                    run::run_single_test(path, None, None, &args.dotenv_options).await;
+                    run::run_single_test(path, None, None, &args.dotenv_options).await?;
                 },
                 "js" | "ts" => {
                     let snapshot_path = args.name.clone()
@@ -144,9 +144,9 @@ pub async fn run(args: TestArgs) -> Result<(), CliError> {
                     } else {
                         warn_ignored_args(&args);
                         if args.name.is_some() {
-                            run::run_single_test(&snapshot_path, None, Some(path), &args.dotenv_options).await;
+                            run::run_single_test(&snapshot_path, None, Some(path), &args.dotenv_options).await?;
                         } else {
-                            run::run_all_tests(SNAPSHOTS_DIR, &args.dotenv_options, Some(path)).await;
+                            run::run_all_tests(SNAPSHOTS_DIR, &args.dotenv_options, Some(path)).await?;
                         }
                     }
                 }
@@ -158,7 +158,7 @@ pub async fn run(args: TestArgs) -> Result<(), CliError> {
         }
         None => {
             warn_ignored_args(&args);
-            run::run_all_tests(SNAPSHOTS_DIR, &args.dotenv_options, None).await;
+            run::run_all_tests(SNAPSHOTS_DIR, &args.dotenv_options, None).await?;
         }
     }
 
