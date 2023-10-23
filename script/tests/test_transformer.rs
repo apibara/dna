@@ -1,11 +1,6 @@
-// TODO:
-// - [ ] starknet.js import
-// - [x] import from local file
-// - [x] import json
 use std::fs;
 
-use apibara_script::{Script, ScriptError, ScriptOptions};
-use assert_matches::assert_matches;
+use apibara_script::{Script, ScriptOptions};
 use serde_json::json;
 use tempfile::NamedTempFile;
 
@@ -269,7 +264,7 @@ async fn test_net_is_denied() {
     .await;
     let input = json!([{}]);
     let result = script.transform(&input).await;
-    assert_matches!(result, Err(ScriptError::Deno(_)));
+    assert!(result.is_err());
 }
 
 #[tokio::test]
@@ -286,7 +281,7 @@ async fn test_read_is_denied() {
     .await;
     let input = json!([{}]);
     let result = script.transform(&input).await;
-    assert_matches!(result, Err(ScriptError::Deno(_)));
+    assert!(result.is_err());
 }
 
 #[tokio::test]
@@ -303,7 +298,7 @@ async fn test_write_is_denied() {
     .await;
     let input = json!([{}]);
     let result = script.transform(&input).await;
-    assert_matches!(result, Err(ScriptError::Deno(_)));
+    assert!(result.is_err());
 }
 
 #[tokio::test]
@@ -320,7 +315,7 @@ async fn test_run_is_denied() {
     .await;
     let input = json!([{}]);
     let result = script.transform(&input).await;
-    assert_matches!(result, Err(ScriptError::Deno(_)));
+    assert!(result.is_err());
 }
 
 #[tokio::test]
@@ -337,7 +332,7 @@ async fn test_sys_is_denied() {
     .await;
     let input = json!([{}]);
     let result = script.transform(&input).await;
-    assert_matches!(result, Err(ScriptError::Deno(_)));
+    assert!(result.is_err());
 }
 
 #[tokio::test]
@@ -354,7 +349,7 @@ async fn test_env_is_denied_by_default() {
     .await;
     let input = json!([{}]);
     let result = script.transform(&input).await;
-    assert_matches!(result, Err(ScriptError::Deno(_)));
+    assert!(result.is_err());
 }
 
 #[tokio::test]

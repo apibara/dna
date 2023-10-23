@@ -1,10 +1,11 @@
-use std::{borrow::Cow, path::Path, rc::Rc, time::Duration};
+use std::{borrow::Cow, fmt, path::Path, rc::Rc, time::Duration};
 
 use deno_core::{op, FastString, ModuleSpecifier, OpState, ZeroCopyBuf};
 use deno_runtime::{
     permissions::{Permissions, PermissionsContainer, PermissionsOptions},
     worker::{MainWorker, WorkerOptions},
 };
+use error_stack::{Result, ResultExt};
 
 use crate::module_loader::WorkerModuleLoader;
 
@@ -26,18 +27,14 @@ pub struct Script {
     _timeout: Duration,
 }
 
-#[derive(Debug, thiserror::Error)]
-pub enum ScriptError {
-    #[error("Failed to resolve module: {0}")]
-    ModuleResolution(#[from] deno_core::ModuleResolutionError),
-    #[error(transparent)]
-    Deno(#[from] deno_core::anyhow::Error),
-    #[error("Failed to deserialize data: {0}")]
-    V8Deserialization(#[from] serde_v8::Error),
-    #[error("Failed to deserialize json value: {0}")]
-    JsonDeserialization(#[from] serde_json::Error),
-    #[error("Script timed out: {0}")]
-    Timeout(#[from] tokio::time::error::Elapsed),
+#[derive(Debug)]
+pub struct ScriptError;
+impl error_stack::Context for ScriptError {}
+
+impl fmt::Display for ScriptError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("indexer script operation failed")
+    }
 }
 
 #[derive(Debug, Default)]
@@ -57,7 +54,10 @@ impl Script {
         current_dir: impl AsRef<Path>,
         options: ScriptOptions,
     ) -> Result<Self, ScriptError> {
-        let module = deno_core::resolve_path(path, current_dir.as_ref())?;
+        let module = deno_core::resolve_path(path, current_dir.as_ref())
+            .change_context(ScriptError)
+            .attach_printable("failed to resolve Deno path")
+            .attach_printable_lazy(|| format!("path: {path}"))?;
         Self::from_module(module, options)
     }
 
@@ -101,7 +101,9 @@ impl Script {
         )
         .into();
         let configuration = self.execute_script(code).await?;
-        let configuration = serde_json::from_value(configuration)?;
+        let configuration = serde_json::from_value(configuration)
+            .change_context(ScriptError)
+            .attach_printable("failed to deserialize configuration from script")?;
         Ok(configuration)
     }
 
@@ -132,17 +134,34 @@ impl Script {
     }
 
     async fn execute_script(&mut self, code: FastString) -> Result<Value, ScriptError> {
-        self.worker.execute_script("[script]", code)?;
+        match self.worker.execute_script("[script]", code) {
+            Ok(_) => {}
+            Err(err) => {
+                return Err(ScriptError)
+                    .attach_printable("failed to execute indexer script")
+                    .attach_printable_lazy(|| format!("error: {err:?}"));
+            }
+        }
+
         // TODO:
         //  - limit amount of time
         //  - limit amount of memory
-        self.worker.run_event_loop(false).await?;
+        match self.worker.run_event_loop(false).await {
+            Ok(_) => {}
+            Err(err) => {
+                return Err(ScriptError)
+                    .attach_printable("failed to run indexer event loop")
+                    .attach_printable_lazy(|| format!("error: {err:?}"));
+            }
+        }
+
         let state = self.worker.js_runtime.op_state();
         let mut state = state.borrow_mut();
         let resource_table = &mut state.resource_table;
         let resource_id = resource_table
             .names()
             .find(|(_, name)| name == "__rust_ReturnValue");
+
         match resource_id {
             None => Ok(Value::Null),
             Some((rid, _)) => {
@@ -155,13 +174,17 @@ impl Script {
     }
 
     fn default_permissions(options: ScriptOptions) -> Result<PermissionsContainer, ScriptError> {
-        let permissions = Permissions::from_options(&PermissionsOptions {
+        match Permissions::from_options(&PermissionsOptions {
             allow_env: options.allow_env,
             allow_hrtime: true,
             prompt: false,
             ..PermissionsOptions::default()
-        })?;
-        Ok(PermissionsContainer::new(permissions))
+        }) {
+            Ok(permissions) => Ok(PermissionsContainer::new(permissions)),
+            Err(err) => Err(ScriptError)
+                .attach_printable("failed to create Deno permissions")
+                .attach_printable_lazy(|| format!("error: {err:?}")),
+        }
     }
 }
 
@@ -181,7 +204,7 @@ fn op_script_return(
     state: &mut OpState,
     args: Value,
     _buf: Option<ZeroCopyBuf>,
-) -> Result<Value, deno_core::anyhow::Error> {
+) -> std::result::Result<Value, deno_core::anyhow::Error> {
     let value = ReturnValueResource { value: args };
     state.resource_table.add(value);
 

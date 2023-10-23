@@ -1,3 +1,5 @@
+use std::fmt;
+
 use kube::Client;
 
 use crate::configuration::Configuration;
@@ -10,14 +12,12 @@ pub struct Context {
     pub configuration: Configuration,
 }
 
-#[derive(thiserror::Error, Debug)]
-pub enum OperatorError {
-    #[error("K8s api error: {0}")]
-    Kube(#[from] kube::Error),
-    #[error("K8s finalizer error: {0}")]
-    Finalizer(#[source] Box<kube::runtime::finalizer::Error<OperatorError>>),
-    #[error("CRD not installed: {0}")]
-    CrdNotInstalled(String),
-    #[error("CRD is namespaced")]
-    CrdInNamespaced,
+#[derive(Debug)]
+pub struct OperatorError;
+impl error_stack::Context for OperatorError {}
+
+impl fmt::Display for OperatorError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("operator operation failed")
+    }
 }

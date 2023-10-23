@@ -1,5 +1,6 @@
 use std::fmt::Debug;
 
+use error_stack::{Result, ResultExt};
 use futures::{Future, Stream, StreamExt};
 use k8s_openapi::api;
 use kube::{
@@ -19,11 +20,11 @@ use crate::{
     configuration::Configuration,
     context::{Context, OperatorError},
     crd::Indexer,
-    reconcile,
+    reconcile::{self, ReconcileError},
 };
 
 pub type ReconcileItem<K> =
-    Result<(ObjectRef<K>, Action), controller::Error<OperatorError, watcher::Error>>;
+    std::result::Result<(ObjectRef<K>, Action), controller::Error<ReconcileError, watcher::Error>>;
 
 pub async fn create(
     client: Client,
@@ -41,7 +42,7 @@ pub async fn create(
 
     if indexers.list(&ListParams::default()).await.is_err() {
         error!("Indexer CRD not installed");
-        return Err(OperatorError::CrdNotInstalled("Indexer".to_string()));
+        return Err(OperatorError).attach_printable("indexer CRD not installed");
     }
 
     info!("CRD installed. Starting controllor loop");

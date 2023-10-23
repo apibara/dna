@@ -192,7 +192,10 @@ impl State {
     ) -> Result<Option<(RecordBatch, String)>, SinkParquetError> {
         debug!(size = batch.len(), "handling batch");
         let mut decoder = self.decoder.lock().await;
-        (*decoder).serialize(batch).change_context(SinkParquetError).attach_printable("failed to serialize batch data")?;
+        (*decoder)
+            .serialize(batch)
+            .change_context(SinkParquetError)
+            .attach_printable("failed to serialize batch data")?;
 
         self.end_block_number = end_cursor.order_key;
         if !self.should_flush() {

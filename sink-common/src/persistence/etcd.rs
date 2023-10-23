@@ -28,7 +28,8 @@ impl EtcdPersistence {
         url: &str,
         sink_id: impl Into<String>,
     ) -> Result<EtcdPersistence, PersistenceClientError> {
-        let client = Client::connect([url], None).await
+        let client = Client::connect([url], None)
+            .await
             .change_context(PersistenceClientError)
             .attach_printable_lazy(|| format!("failed to connect to etcd server at {url}"))?;
         Ok(EtcdPersistence {
@@ -105,8 +106,7 @@ impl PersistenceClient for EtcdPersistence {
         match response.kvs().iter().next() {
             None => Ok(None),
             Some(kv) => {
-                let cursor =
-                    Cursor::decode(kv.value())
+                let cursor = Cursor::decode(kv.value())
                     .change_context(PersistenceClientError)
                     .attach_printable("failed to decode cursor")?;
                 Ok(Some(cursor))
@@ -153,7 +153,10 @@ impl Lock {
         }
 
         debug!(lease_id = %self.lease_id, "send keep alive message");
-        self.keeper.keep_alive().await.change_context(PersistenceClientError)?;
+        self.keeper
+            .keep_alive()
+            .await
+            .change_context(PersistenceClientError)?;
         self.last_lock_renewal = Instant::now();
 
         Ok(())

@@ -59,4 +59,3 @@ where
         (**self).delete_cursor().await
     }
 }
-
