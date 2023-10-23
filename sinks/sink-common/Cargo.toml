@@ -8,10 +8,10 @@ license.workspace = true
 
 [dependencies]
 anstyle.workspace = true
-apibara-core = { path = "../core" }
-apibara-observability = { path = "../observability" }
-apibara-sdk = { path = "../sdk" }
-apibara-script = { path = "../script" }
+apibara-core = { path = "../../core" }
+apibara-observability = { path = "../../observability" }
+apibara-sdk = { path = "../../sdk" }
+apibara-script = { path = "../../script" }
 apibara-sink-options-derive = { path = "../sink-options-derive" }
 async-trait.workspace = true
 bytesize = {version = "1.1.0", features = ["serde"]}

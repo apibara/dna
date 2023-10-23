@@ -15,8 +15,8 @@ name = "apibara-sink-console"
 path = "src/bin.rs"
 
 [dependencies]
-apibara-core = { path = "../core" }
-apibara-observability = { path = "../observability" }
+apibara-core = { path = "../../core" }
+apibara-observability = { path = "../../observability" }
 apibara-sink-common = { path = "../sink-common" }
 async-trait.workspace = true
 clap.workspace = true

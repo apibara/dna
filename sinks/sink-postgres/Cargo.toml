@@ -1,34 +1,35 @@
 [package]
-name = "apibara-sink-webhook"
-version = "0.3.1"
+name = "apibara-sink-postgres"
+version = "0.4.1"
 edition.workspace = true
 authors.workspace = true
 repository.workspace = true
 license.workspace = true
 
 [lib]
-name = "apibara_sink_webhook"
+name = "apibara_sink_postgres"
 path = "src/lib.rs"
 
 [[bin]]
-name = "apibara-sink-webhook"
+name = "apibara-sink-postgres"
 path = "src/bin.rs"
 
 [dependencies]
-apibara-core = { path = "../core" }
-apibara-observability = { path = "../observability" }
+apibara-core = { path = "../../core" }
+apibara-observability = { path = "../../observability" }
 apibara-sink-common = { path = "../sink-common" }
 async-trait.workspace = true
 clap.workspace = true
 error-stack.workspace = true
-http.workspace = true
-prost.workspace = true
-reqwest.workspace = true
+native-tls = "0.2.11"
+postgres-native-tls = "0.5.0"
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
+tokio-postgres = { version = "0.7.8", features = ["with-serde_json-1"] }
 tokio-util.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
-wiremock = "0.5.19"
+testcontainers.workspace = true
+

@@ -11,7 +11,7 @@ doc = false
 
 [dependencies]
 apibara-observability = { path = "../observability" }
-apibara-sink-common = { path = "../sink-common" }
+apibara-sink-common = { path = "../sinks/sink-common" }
 apibara-sdk = { path = "../sdk" }
 apibara-core = { path = "../core" }
 apibara-script = { path = "../script" }

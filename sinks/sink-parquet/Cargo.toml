@@ -15,8 +15,8 @@ name = "apibara-sink-parquet"
 path = "src/bin.rs"
 
 [dependencies]
-apibara-core = { path = "../core" }
-apibara-observability = { path = "../observability" }
+apibara-core = { path = "../../core" }
+apibara-observability = { path = "../../observability" }
 apibara-sink-common = { path = "../sink-common" }
 arrow = { version = "41.0.0", default-features = false, features = ["arrow-json", "json"] }
 async-trait.workspace = true
