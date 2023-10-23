@@ -1,10 +1,13 @@
 use std::{fmt, fs, path::Path};
 
 use anstyle::{AnsiColor, Style};
+use apibara_observability::init_opentelemetry;
 use apibara_script::{Script, ScriptOptions};
 use clap::builder::Styles;
 use error_stack::{Result, ResultExt};
 use tokio_util::sync::CancellationToken;
+
+use crate::SinkConnectorError;
 
 #[derive(Debug)]
 pub struct LoadScriptError;
@@ -40,6 +43,19 @@ pub fn load_script(path: &str, options: ScriptOptions) -> Result<Script, LoadScr
         .attach_printable_lazy(|| format!("failed to load script at path: {}", path))?;
 
     Ok(script)
+}
+
+/// Initialize opentelemetry and the sigint (ctrl-c) handler.
+pub fn initialize_sink(ct: CancellationToken) -> Result<(), SinkConnectorError> {
+    init_opentelemetry()
+        .change_context(SinkConnectorError::Configuration)
+        .attach_printable("failed to initialize opentelemetry")?;
+
+    set_ctrlc_handler(ct)
+        .change_context(SinkConnectorError::Fatal)
+        .attach_printable("failed to setup ctrl-cc handler")?;
+
+    Ok(())
 }
 
 /// Connect the cancellation token to the ctrl-c handler.

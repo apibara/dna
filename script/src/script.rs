@@ -86,6 +86,41 @@ impl Script {
         })
     }
 
+    /// Checks that the script exports a default transform function.
+    pub async fn check_transform_is_exported(&mut self) -> Result<(), ScriptError> {
+        let code: FastString = format!(
+            r#"(async (globalThis) => {{
+                const module = await import("{0}");
+                __script_result = 0;
+                if (typeof module.default !== 'function') {{
+                    __script_result = 1;
+                }} else if (module.default.length != 1) {{
+                    __script_result = 2;
+                }}
+                globalThis.Script.return_value(__script_result);
+            }})(globalThis)"#,
+            self.module
+        )
+        .into();
+
+        let result = self.execute_script(code).await?;
+
+        match result.as_u64() {
+            Some(0) => Ok(()),
+            Some(1) => Err(ScriptError)
+                .attach_printable("script does not export a default transform function"),
+            Some(2) => {
+                Err(ScriptError).attach_printable("transform function must take one argument")
+            }
+            Some(n) => Err(ScriptError)
+                .attach_printable("internal error: script returned an invalid number")
+                .attach_printable_lazy(|| format!("error code: {}", n)),
+            None => {
+                Err(ScriptError).attach_printable("internal error: script did not return a number")
+            }
+        }
+    }
+
     /// Returns the configuration object exported by the script.
     pub async fn configuration<C>(&mut self) -> Result<C, ScriptError>
     where
@@ -100,10 +135,18 @@ impl Script {
             self.module
         )
         .into();
+
         let configuration = self.execute_script(code).await?;
+
+        if Value::Null == configuration {
+            return Err(ScriptError)
+                .attach_printable("script did not return a configuration object")
+                .attach_printable("hint: did you export `config` from the script?");
+        }
         let configuration = serde_json::from_value(configuration)
             .change_context(ScriptError)
             .attach_printable("failed to deserialize configuration from script")?;
+
         Ok(configuration)
     }
 

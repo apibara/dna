@@ -1,6 +1,6 @@
-use std::{sync::Arc, time::Duration, fmt};
+use std::{fmt, sync::Arc, time::Duration};
 
-use error_stack::{Result, ResultExt, Report};
+use error_stack::{Report, Result, ResultExt};
 use k8s_openapi::{
     api,
     apimachinery::pkg::apis::meta::{self, v1::Condition},
@@ -354,7 +354,9 @@ pub async fn reconcile_indexer(
     indexer: Arc<Indexer>,
     ctx: Arc<Context>,
 ) -> std::result::Result<Action, ReconcileError> {
-    reconcile_indexer_impl(indexer, ctx).await.map_err(ReconcileError)
+    reconcile_indexer_impl(indexer, ctx)
+        .await
+        .map_err(ReconcileError)
 }
 
 async fn reconcile_indexer_impl(
@@ -377,8 +379,14 @@ async fn reconcile_indexer_impl(
     finalizer::finalizer(&indexers, INDEXER_FINALIZER, indexer, |event| async {
         use finalizer::Event::*;
         match event {
-            Apply(indexer) => indexer.reconcile(ctx.clone()).await.map_err(|err| err.into_error()),
-            Cleanup(indexer) => indexer.cleanup(ctx.clone()).await.map_err(|err| err.into_error()),
+            Apply(indexer) => indexer
+                .reconcile(ctx.clone())
+                .await
+                .map_err(|err| err.into_error()),
+            Cleanup(indexer) => indexer
+                .cleanup(ctx.clone())
+                .await
+                .map_err(|err| err.into_error()),
         }
     })
     .await
@@ -404,5 +412,4 @@ impl fmt::Display for ReconcileError {
     }
 }
 
-impl std::error::Error for ReconcileError {
-}
+impl std::error::Error for ReconcileError {}

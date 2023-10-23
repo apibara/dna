@@ -355,6 +355,7 @@ version = "0.1.0"
 dependencies = [
  "anstyle",
  "apibara-core",
+ "apibara-observability",
  "apibara-script",
  "apibara-sdk",
  "apibara-sink-options-derive",
