@@ -117,9 +117,9 @@ async fn run_test(
         let diff = SimpleDiff::from_str(left.as_str(), right.as_str(), "expected", "found");
 
         let message = format!(
-                "Snapshot generated with a different filter, {}\n{}",
-                hint, &diff
-            );
+            "Snapshot generated with a different filter, {}\n{}",
+            hint, &diff
+        );
         return Ok(TestResult::Failed { message });
     }
 
@@ -344,7 +344,7 @@ pub async fn run_all_tests(
             Ok(TestResult::Passed) => {
                 println!("{}", "Test passed".green());
                 num_passed_tests += 1;
-            },
+            }
             Ok(TestResult::Failed { message }) => {
                 println!("{}\n", "Test failed".red());
                 eprintln!("{}", message);

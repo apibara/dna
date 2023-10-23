@@ -1,4 +1,4 @@
-use std::{time::Duration, fmt};
+use std::{fmt, time::Duration};
 
 use apibara_core::node;
 use error_stack::{Result, ResultExt};

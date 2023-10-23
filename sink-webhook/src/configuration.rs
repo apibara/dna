@@ -1,7 +1,7 @@
 use apibara_sink_common::SinkOptions;
 use clap::Args;
 use error_stack::{Result, ResultExt};
-use http::{HeaderMap, HeaderName, Uri, HeaderValue};
+use http::{HeaderMap, HeaderName, HeaderValue, Uri};
 use serde::Deserialize;
 
 use crate::sink::SinkWebhookError;
@@ -68,7 +68,10 @@ fn parse_headers(headers: &[String]) -> Result<HeaderMap, SinkWebhookError> {
     let mut new_headers = HeaderMap::new();
     for header in headers {
         match header.split_once(':') {
-            None => return Err(SinkWebhookError).attach_printable("header not in the `key: value` format"),
+            None => {
+                return Err(SinkWebhookError)
+                    .attach_printable("header not in the `key: value` format")
+            }
             Some((name, value)) => {
                 let name = name
                     .parse::<HeaderName>()

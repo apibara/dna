@@ -22,7 +22,9 @@ impl Persistence {
         Self { options }
     }
 
-    pub async fn connect(&mut self) -> Result<Box<dyn PersistenceClient + Send>, PersistenceClientError> {
+    pub async fn connect(
+        &mut self,
+    ) -> Result<Box<dyn PersistenceClient + Send>, PersistenceClientError> {
         let sink_id = self
             .options
             .sink_id

@@ -1,5 +1,6 @@
-use std::{sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration, fmt};
 
+use error_stack::{Result, ResultExt, Report};
 use k8s_openapi::{
     api,
     apimachinery::pkg::apis::meta::{self, v1::Condition},
@@ -23,13 +24,20 @@ use crate::{
 static INDEXER_FINALIZER: &str = "indexer.apibara.com";
 static GIT_CLONE_IMAGE: &str = "docker.io/alpine/git:latest";
 
+pub struct ReconcileError(Report<OperatorError>);
+
 impl Indexer {
     #[instrument(skip_all)]
     async fn reconcile(&self, ctx: Arc<Context>) -> Result<Action, OperatorError> {
         use api::core::v1::Pod;
 
-        let ns = self.namespace().ok_or(OperatorError::CrdInNamespaced)?;
         let name = self.name_any();
+
+        let ns = self
+            .namespace()
+            .ok_or(OperatorError)
+            .attach_printable("failed to get namespace")
+            .attach_printable_lazy(|| format!("indexer: {name}"))?;
 
         let indexers: Api<Indexer> = Api::namespaced(ctx.client.clone(), &ns);
         let pods: Api<Pod> = Api::namespaced(ctx.client.clone(), &ns);
@@ -55,7 +63,10 @@ impl Indexer {
                 &PatchParams::apply("indexer"),
                 &Patch::Apply(pod_manifest),
             )
-            .await?;
+            .await
+            .change_context(OperatorError)
+            .attach_printable("failed to update pod")
+            .attach_printable_lazy(|| format!("indexer: {name}"))?;
 
         let pod_scheduled_condition = Condition {
             last_transition_time: pod
@@ -98,7 +109,10 @@ impl Indexer {
 
         indexers
             .patch_status(&name, &PatchParams::default(), &Patch::Merge(&status))
-            .await?;
+            .await
+            .change_context(OperatorError)
+            .attach_printable("failed to update status")
+            .attach_printable_lazy(|| format!("indexer: &name"))?;
 
         Ok(Action::requeue(Duration::from_secs(10)))
     }
@@ -107,12 +121,28 @@ impl Indexer {
     async fn cleanup(&self, ctx: Arc<Context>) -> Result<Action, OperatorError> {
         use api::core::v1::Pod;
 
-        let ns = self.namespace().ok_or(OperatorError::CrdInNamespaced)?;
         let name = self.name_any();
+
+        let ns = self
+            .namespace()
+            .ok_or(OperatorError)
+            .attach_printable("failed to get namespace")
+            .attach_printable_lazy(|| format!("indexer: {name}"))?;
+
         let pods: Api<Pod> = Api::namespaced(ctx.client.clone(), &ns);
 
-        if let Some(_existing) = pods.get_opt(&name).await? {
-            pods.delete(&name, &DeleteParams::default()).await?;
+        if let Some(_existing) = pods
+            .get_opt(&name)
+            .await
+            .change_context(OperatorError)
+            .attach_printable("failed to get pod")
+            .attach_printable_lazy(|| format!("indexer: {name}"))?
+        {
+            pods.delete(&name, &DeleteParams::default())
+                .await
+                .change_context(OperatorError)
+                .attach_printable("failed to delete pod")
+                .attach_printable_lazy(|| format!("indexer: {name}"))?;
         }
 
         Ok(Action::requeue(Duration::from_secs(10)))
@@ -134,7 +164,12 @@ impl Indexer {
         pod_name: &str,
         pods: &Api<api::core::v1::Pod>,
     ) -> Result<(i32, Option<Condition>), OperatorError> {
-        let Some(pod) = pods.get_opt(pod_name).await? else {
+        let Some(pod) = pods
+            .get_opt(pod_name)
+            .await
+            .change_context(OperatorError)
+            .attach_printable("failed to get pod")
+            .attach_printable_lazy(|| format!("indexer: {pod_name}"))? else {
             return Ok((0, None));
         };
 
@@ -161,7 +196,11 @@ impl Indexer {
         if elapsed > Duration::from_secs(60) {
             info!(pod = %pod.name_any(), "deleting pod for restart");
 
-            pods.delete(pod_name, &Default::default()).await?;
+            pods.delete(pod_name, &Default::default())
+                .await
+                .change_context(OperatorError)
+                .attach_printable("failed to delete pod")
+                .attach_printable_lazy(|| format!("indexer: {pod_name}"))?;
             Ok((1, None))
         } else {
             let error_condition = Condition {
@@ -314,8 +353,19 @@ impl Indexer {
 pub async fn reconcile_indexer(
     indexer: Arc<Indexer>,
     ctx: Arc<Context>,
+) -> std::result::Result<Action, ReconcileError> {
+    reconcile_indexer_impl(indexer, ctx).await.map_err(ReconcileError)
+}
+
+async fn reconcile_indexer_impl(
+    indexer: Arc<Indexer>,
+    ctx: Arc<Context>,
 ) -> Result<Action, OperatorError> {
-    let ns = indexer.namespace().ok_or(OperatorError::CrdInNamespaced)?;
+    let ns = indexer
+        .namespace()
+        .ok_or(OperatorError)
+        .attach_printable("failed to get namespace")?;
+
     let indexers: Api<Indexer> = Api::namespaced(ctx.client.clone(), &ns);
 
     info!(
@@ -327,16 +377,32 @@ pub async fn reconcile_indexer(
     finalizer::finalizer(&indexers, INDEXER_FINALIZER, indexer, |event| async {
         use finalizer::Event::*;
         match event {
-            Apply(indexer) => indexer.reconcile(ctx.clone()).await,
-            Cleanup(indexer) => indexer.cleanup(ctx.clone()).await,
+            Apply(indexer) => indexer.reconcile(ctx.clone()).await.map_err(|err| err.into_error()),
+            Cleanup(indexer) => indexer.cleanup(ctx.clone()).await.map_err(|err| err.into_error()),
         }
     })
     .await
-    .map_err(|err| OperatorError::Finalizer(err.into()))
+    .change_context(OperatorError)
+    .attach_printable("finalizer operation failed")
 }
 
-pub fn error_policy(_indexer: Arc<Indexer>, err: &OperatorError, _ctx: Arc<Context>) -> Action {
+pub fn error_policy(_indexer: Arc<Indexer>, err: &ReconcileError, _ctx: Arc<Context>) -> Action {
     warn!(err = ?err, "Error reconciling indexer");
 
     Action::requeue(Duration::from_secs(30))
+}
+
+impl fmt::Debug for ReconcileError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(&self.0, f)
+    }
+}
+
+impl fmt::Display for ReconcileError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(&self.0, f)
+    }
+}
+
+impl std::error::Error for ReconcileError {
 }

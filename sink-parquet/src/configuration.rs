@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
 use apibara_sink_common::SinkOptions;
-use error_stack::{Result, ResultExt};
 use clap::Args;
+use error_stack::{Result, ResultExt};
 
 use crate::sink::SinkParquetError;
 

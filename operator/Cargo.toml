@@ -27,7 +27,6 @@ schemars = "0.8.12"
 serde.workspace = true
 serde_json.workspace = true
 serde_yaml = "0.9.22"
-thiserror.workspace = true
 tokio.workspace = true
 tokio-stream.workspace = true
 tokio-util.workspace = true
