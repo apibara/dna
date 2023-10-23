@@ -1,28 +1,29 @@
 [package]
-name = "apibara-sink-mongo"
-version = "0.4.1"
+name = "apibara-sink-webhook"
+version = "0.3.1"
 edition.workspace = true
 authors.workspace = true
 repository.workspace = true
 license.workspace = true
 
 [lib]
-name = "apibara_sink_mongo"
+name = "apibara_sink_webhook"
 path = "src/lib.rs"
 
 [[bin]]
-name = "apibara-sink-mongo"
+name = "apibara-sink-webhook"
 path = "src/bin.rs"
 
 [dependencies]
-apibara-core = { path = "../core" }
-apibara-observability = { path = "../observability" }
+apibara-core = { path = "../../core" }
+apibara-observability = { path = "../../observability" }
 apibara-sink-common = { path = "../sink-common" }
 async-trait.workspace = true
 clap.workspace = true
 error-stack.workspace = true
-futures-util.workspace = true
-mongodb = "2.5.0"
+http.workspace = true
+prost.workspace = true
+reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
@@ -30,5 +31,4 @@ tokio-util.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
-futures-util = "0.3.28"
-testcontainers.workspace = true
+wiremock = "0.5.19"

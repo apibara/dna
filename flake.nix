@@ -48,7 +48,7 @@
           };
           sink-console = {
             description = "Print stream data to the console";
-            path = ./sink-console;
+            path = ./sinks/sink-console;
             volumes = {
               "/data" = { };
             };
@@ -58,7 +58,7 @@
           };
           sink-webhook = {
             description = "Integration to connect onchain data to HTTP endpoints";
-            path = ./sink-webhook;
+            path = ./sinks/sink-webhook;
             volumes = {
               "/data" = { };
             };
@@ -68,7 +68,7 @@
           };
           sink-mongo = {
             description = "Integration to populate a MongoDB collection with onchain data";
-            path = ./sink-mongo;
+            path = ./sinks/sink-mongo;
             volumes = {
               "/data" = { };
             };
@@ -78,7 +78,7 @@
           };
           sink-postgres = {
             description = "Integration to populate a PostgreSQL table with onchain data";
-            path = ./sink-postgres;
+            path = ./sinks/sink-postgres;
             volumes = {
               "/data" = { };
             };
@@ -88,7 +88,7 @@
           };
           sink-parquet = {
             description = "Integration to generate a Parquet dataset from onchain data";
-            path = ./sink-parquet;
+            path = ./sinks/sink-parquet;
             volumes = {
               "/data" = { };
             };
