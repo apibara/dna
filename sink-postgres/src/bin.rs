@@ -1,12 +1,16 @@
-use apibara_observability::init_opentelemetry;
-use apibara_sink_common::{run_sink_connector, set_ctrlc_handler, OptionsFromCli};
-use apibara_sink_postgres::{PostgresSink, SinkPostgresError, SinkPostgresOptions};
+use std::process::ExitCode;
+
+use apibara_sink_common::{
+    apibara_cli_style, initialize_sink, run_sink_connector, OptionsFromCli, ReportExt,
+    SinkConnectorError,
+};
+use apibara_sink_postgres::{PostgresSink, SinkPostgresOptions};
 use clap::{Args, Parser, Subcommand};
-use error_stack::{Result, ResultExt};
+use error_stack::Result;
 use tokio_util::sync::CancellationToken;
 
 #[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
+#[command(author, version, about, long_about = None, styles = apibara_cli_style())]
 struct Cli {
     #[command(subcommand)]
     subcommand: Command,
@@ -28,25 +32,18 @@ struct RunArgs {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), SinkPostgresError> {
-    init_opentelemetry()
-        .change_context(SinkPostgresError)
-        .attach_printable("failed to initialize opentelemetry")?;
+async fn main() -> ExitCode {
     let args = Cli::parse();
+    run_with_args(args).await.to_exit_code()
+}
 
+async fn run_with_args(args: Cli) -> Result<(), SinkConnectorError> {
     let ct = CancellationToken::new();
-    set_ctrlc_handler(ct.clone())
-        .change_context(SinkPostgresError)
-        .attach_printable("failed to setup ctrl-c handler")?;
+    initialize_sink(ct.clone())?;
 
     match args.subcommand {
         Command::Run(args) => {
-            run_sink_connector::<PostgresSink>(&args.script, args.common, args.postgres, ct)
-                .await
-                .change_context(SinkPostgresError)
-                .attach_printable("error while running postgres sink")?;
+            run_sink_connector::<PostgresSink>(&args.script, args.common, args.postgres, ct).await
         }
     }
-
-    Ok(())
 }
