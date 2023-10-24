@@ -6,6 +6,16 @@ The format is based on [Common Changelog](https://common-changelog.org/), and
 this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.2] - 2023-10-24
+
+_Error message improvements._
+
+### Changed
+
+ - This version changes how errors are handled to improve error messages.
+   Errors now show more context and additional information that will help
+   developers debug their indexers.
+
 ## [0.3.1] - 2023-10-17
 
 _Minor bug fixes in the `apibara test` command._

@@ -6,6 +6,19 @@ The format is based on [Common Changelog](https://common-changelog.org/), and
 this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.2] - 2023-10-24
+
+_Error message improvements._
+
+### Changed
+
+ - This version changes how errors are handled to improve error messages.
+   Errors now show more context and additional information that will help
+   developers debug their indexers.
+ - The sink will return a non-zero error code on failure. We use the standard
+   unix exit codes in `sysexit.h`. Developers can use exit codes to decide
+   whether to restart the indexer or not.
+
 ## [0.4.1] - 2023-10-11
 
 _Disconnect when stream hangs._
