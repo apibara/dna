@@ -35,7 +35,7 @@ main() {
     local _bin_dir="${APIBARA_ROOT_DIR}/bin"
     mkdir -p "$_bin_dir"
     ensure curl -Ls "$_release_url" > "$_bin_dir/apibara.gz"
-    ensure gzip -d "$_bin_dir/apibara.gz"
+    ensure gzip -f -d "$_bin_dir/apibara.gz"
     ensure chmod +x "$_bin_dir/apibara"
 
     say "checking installation"
