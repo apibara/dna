@@ -112,7 +112,7 @@ async fn install_from_github(name: String) -> Result<(), CliError> {
         .change_context(CliError)
         .attach_printable("failed to fetch GitHub releases")?;
     for release in all_releases {
-        if release.tag_name.starts_with(&tag_prefix) {
+        if !release.prerelease && release.tag_name.starts_with(&tag_prefix) {
             plugin_release = Some(release);
             break;
         }
