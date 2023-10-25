@@ -66,20 +66,21 @@ pub struct VolumeSource {
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug, JsonSchema, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub enum Sink {
-    /// Deploy a custom indexer image.
-    Custom(CustomSink),
-}
-
-#[derive(Deserialize, Serialize, Clone, Debug, JsonSchema, PartialEq)]
-pub struct CustomSink {
+pub struct Sink {
     /// Container image with the sink.
-    pub image: String,
+    #[serde(flatten)]
+    pub sink: SinkType,
     /// Path to the script to run.
     pub script: String,
     /// Arguments passed to the sink.
     pub args: Option<Vec<String>>,
+}
+
+#[derive(Deserialize, Serialize, Clone, Debug, JsonSchema, PartialEq)]
+#[serde(rename_all = "camelCase", untagged)]
+pub enum SinkType {
+    Type { r#type: String },
+    Image { image: String },
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug, Default, JsonSchema, PartialEq)]

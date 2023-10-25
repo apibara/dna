@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use apibara_operator::{
-    crd::{CustomSink, GitHubSource, Indexer, IndexerSource, IndexerSpec, Sink},
+    crd::{GitHubSource, Indexer, IndexerSource, IndexerSpec, Sink, SinkType},
     error::OperatorError,
 };
 use error_stack::{Result, ResultExt};
@@ -85,11 +85,11 @@ pub async fn test_controller() -> Result<(), OperatorError> {
             }),
             ..EnvVar::default()
         }]),
-        sink: Sink::Custom(CustomSink {
-            image: "quay.io/apibara/sink-console:latest".to_string(),
+        sink: Sink {
+            sink: SinkType::Type { r#type: "console".to_string() },
             script: "starknet_to_console.js".to_string(),
             args: None,
-        }),
+        },
         source: IndexerSource::GitHub(GitHubSource {
             owner: "apibara".to_string(),
             repo: "dna".to_string(),
