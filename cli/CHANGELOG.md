@@ -6,6 +6,16 @@ The format is based on [Common Changelog](https://common-changelog.org/), and
 this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.3] - 2023-10-25
+
+_Minor quality of life improvements._
+
+### Fixed
+
+ - Don't attempt to install plugins (like sinks) from pre-release releases.
+ - Show the correct plugin installation command when trying to run an indexer
+   that requires a missing sink.
+
 ## [0.3.2] - 2023-10-24
 
 _Error message improvements._
@@ -58,6 +68,8 @@ _Introduce sink status gRPC service._
 _First tagged release 🎉_
 
 
+[0.3.3]: https://github.com/apibara/dna/releases/tag/cli/v0.3.3
+[0.3.2]: https://github.com/apibara/dna/releases/tag/cli/v0.3.2
 [0.3.1]: https://github.com/apibara/dna/releases/tag/cli/v0.3.1
 [0.3.0]: https://github.com/apibara/dna/releases/tag/cli/v0.3.0
 [0.2.0]: https://github.com/apibara/dna/releases/tag/cli/v0.2.0
