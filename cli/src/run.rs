@@ -73,7 +73,7 @@ pub async fn run(args: RunArgs) -> Result<(), CliError> {
                 );
                 eprintln!(
                     "Install it with {} or by adding it to your $PATH",
-                    format!("`apibara plugins install sink {}`", sink_type).green()
+                    format!("`apibara plugins install sink-{}`", sink_type).green()
                 );
                 std::process::exit(1);
             }
