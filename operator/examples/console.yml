@@ -11,9 +11,8 @@ spec:
       branch: main
       subpath: examples/console
   sink:
-    custom:
-      image: quay.io/apibara/sink-console:latest
-      script: starknet_to_console.js
+    script: starknet_to_console.js
+    type: console
   env:
     - name: AUTH_TOKEN
       valueFrom:

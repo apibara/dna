@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 static CONSOLE_IMAGE: &str = "quay.io/apibara/sink-console:latest";
 static MONGO_IMAGE: &str = "quay.io/apibara/sink-mongo:latest";
 static PARQUET_IMAGE: &str = "quay.io/apibara/sink-parquet:latest";
@@ -6,22 +8,21 @@ static WEBHOOK_IMAGE: &str = "quay.io/apibara/sink-webhook:latest";
 
 #[derive(Debug, Clone)]
 pub struct Configuration {
-    /// Console sink configuration.
-    pub console: SinkConfiguration,
-    /// MongoDB sink configuration.
-    pub mongo: SinkConfiguration,
-    /// Parquet sink configuration.
-    pub parquet: SinkConfiguration,
-    /// PostgreSQL sink configuration.
-    pub postgres: SinkConfiguration,
-    /// Webhook sink configuration.
-    pub webhook: SinkConfiguration,
+    /// Sink type to image.
+    pub sinks: HashMap<String, SinkConfiguration>,
 }
 
 #[derive(Debug, Clone)]
 pub struct SinkConfiguration {
     /// The container image to use for the sink container.
     pub image: String,
+}
+
+impl Configuration {
+    pub fn with_sinks(&mut self, sinks: HashMap<String, SinkConfiguration>) -> &mut Self {
+        self.sinks = sinks;
+        self
+    }
 }
 
 impl Default for Configuration {
@@ -42,12 +43,14 @@ impl Default for Configuration {
             image: WEBHOOK_IMAGE.to_string(),
         };
 
-        Configuration {
-            console,
-            mongo,
-            parquet,
-            postgres,
-            webhook,
-        }
+        let sinks = HashMap::from([
+            ("console".to_string(), console),
+            ("mongo".to_string(), mongo),
+            ("parquet".to_string(), parquet),
+            ("postgres".to_string(), postgres),
+            ("webhook".to_string(), webhook),
+        ]);
+
+        Configuration { sinks }
     }
 }

@@ -18,7 +18,7 @@ use tracing::{info, instrument, warn};
 
 use crate::{
     context::{Context, OperatorError},
-    crd::{Indexer, IndexerSource, IndexerStatus, Sink},
+    crd::{Indexer, IndexerSource, IndexerStatus, SinkType},
 };
 
 static INDEXER_FINALIZER: &str = "indexer.apibara.com";
@@ -50,44 +50,71 @@ impl Indexer {
         };
 
         let metadata = self.object_metadata(&ctx);
-        let spec = self.pod_spec(&ctx);
-        let pod_manifest = Pod {
-            metadata,
-            spec: Some(spec),
-            ..Pod::default()
-        };
 
-        let pod = pods
-            .patch(
-                &name,
-                &PatchParams::apply("indexer"),
-                &Patch::Apply(pod_manifest),
-            )
-            .await
-            .change_context(OperatorError)
-            .attach_printable("failed to update pod")
-            .attach_printable_lazy(|| format!("indexer: {name}"))?;
-
-        let pod_scheduled_condition = Condition {
-            last_transition_time: pod
-                .meta()
-                .creation_timestamp
-                .clone()
-                .unwrap_or(meta::v1::Time(DateTime::<Utc>::MIN_UTC)),
-            type_: "PodScheduled".to_string(),
-            message: "Pod has been scheduled".to_string(),
-            observed_generation: self.meta().generation,
-            reason: "PodScheduled".to_string(),
-            status: "True".to_string(),
-        };
-
-        let phase = if error_condition.is_some() {
+        let mut phase = if error_condition.is_some() {
             "Error".to_string()
         } else {
             "Running".to_string()
         };
 
-        let mut conditions = vec![pod_scheduled_condition];
+        let mut conditions = Vec::default();
+        let mut pod_created = None;
+        let mut instance_name = None;
+
+        match self.pod_spec(&ctx) {
+            None => {
+                let pod_scheduled_condition = Condition {
+                    last_transition_time: self
+                        .meta()
+                        .creation_timestamp
+                        .clone()
+                        .unwrap_or(meta::v1::Time(DateTime::<Utc>::MIN_UTC)),
+                    type_: "PodNotScheduled".to_string(),
+                    message: "The specified indexer type doesn't exist.".to_string(),
+                    observed_generation: self.meta().generation,
+                    reason: "ConfigurationError".to_string(),
+                    status: "False".to_string(),
+                };
+
+                conditions.push(pod_scheduled_condition);
+                phase = "Error".to_string();
+            }
+            Some(spec) => {
+                let pod_manifest = Pod {
+                    metadata,
+                    spec: Some(spec),
+                    ..Pod::default()
+                };
+                let pod = pods
+                    .patch(
+                        &name,
+                        &PatchParams::apply("indexer"),
+                        &Patch::Apply(pod_manifest),
+                    )
+                    .await
+                    .change_context(OperatorError)
+                    .attach_printable("failed to update pod")
+                    .attach_printable_lazy(|| format!("indexer: {name}"))?;
+
+                let pod_scheduled_condition = Condition {
+                    last_transition_time: pod
+                        .meta()
+                        .creation_timestamp
+                        .clone()
+                        .unwrap_or(meta::v1::Time(DateTime::<Utc>::MIN_UTC)),
+                    type_: "PodScheduled".to_string(),
+                    message: "Pod has been scheduled".to_string(),
+                    observed_generation: self.meta().generation,
+                    reason: "PodScheduled".to_string(),
+                    status: "True".to_string(),
+                };
+
+                conditions.push(pod_scheduled_condition);
+                pod_created = pod.meta().creation_timestamp.clone();
+                instance_name = pod.metadata().name.clone();
+            }
+        }
+
         if let Some(error_condition) = error_condition {
             conditions.push(error_condition);
         }
@@ -99,8 +126,8 @@ impl Indexer {
 
         let status = json!({
             "status": IndexerStatus {
-                pod_created: pod.meta().creation_timestamp.clone(),
-                instance_name: pod.metadata().name.clone(),
+                pod_created,
+                instance_name,
                 phase: Some(phase),
                 conditions: Some(conditions),
                 restart_count,
@@ -112,7 +139,7 @@ impl Indexer {
             .await
             .change_context(OperatorError)
             .attach_printable("failed to update status")
-            .attach_printable_lazy(|| format!("indexer: &name"))?;
+            .attach_printable_lazy(|| format!("indexer: {name}"))?;
 
         Ok(Action::requeue(Duration::from_secs(10)))
     }
@@ -225,7 +252,7 @@ impl Indexer {
         }
     }
 
-    fn pod_spec(&self, ctx: &Arc<Context>) -> api::core::v1::PodSpec {
+    fn pod_spec(&self, ctx: &Arc<Context>) -> Option<api::core::v1::PodSpec> {
         use api::core::v1::PodSpec;
 
         // Initialize volume, volume mounts, and env vars.
@@ -250,16 +277,18 @@ impl Indexer {
             init_containers.push(init_container);
         }
 
-        let container = self.sink_container(&workdir, &volume_mounts, &env, ctx);
+        let container = self.sink_container(&workdir, &volume_mounts, &env, ctx)?;
         containers.push(container);
 
-        PodSpec {
+        let spec = PodSpec {
             init_containers: Some(init_containers),
             containers,
             volumes: Some(volumes),
             restart_policy: Some("Never".to_string()),
             ..PodSpec::default()
-        }
+        };
+
+        Some(spec)
     }
 
     fn source_container(
@@ -324,29 +353,38 @@ impl Indexer {
         workdir: &str,
         volume_mounts: &[api::core::v1::VolumeMount],
         env: &[api::core::v1::EnvVar],
-        _ctx: &Arc<Context>,
-    ) -> api::core::v1::Container {
+        ctx: &Arc<Context>,
+    ) -> Option<api::core::v1::Container> {
         use api::core::v1::Container;
 
-        match &self.spec.sink {
-            Sink::Custom(custom) => {
-                let mut args = vec!["run".to_string(), custom.script.clone()];
-
-                if let Some(extra_args) = &custom.args {
-                    args.extend_from_slice(extra_args);
-                }
-
-                Container {
-                    name: "sink".to_string(),
-                    image: Some(custom.image.clone()),
-                    args: Some(args),
-                    volume_mounts: Some(volume_mounts.to_owned()),
-                    env: Some(env.to_owned()),
-                    working_dir: Some(workdir.to_string()),
-                    ..Container::default()
-                }
+        let image = match &self.spec.sink.sink {
+            SinkType::Type { r#type } => {
+                let Some(config) = ctx.configuration.sinks.get(r#type) else {
+                    return None;
+                };
+                config.image.clone()
             }
+            SinkType::Image { image } => image.clone(),
+        };
+
+        let script = self.spec.sink.script.clone();
+        let mut args = vec!["run".to_string(), script];
+
+        if let Some(extra_args) = &self.spec.sink.args {
+            args.extend_from_slice(extra_args);
         }
+
+        let container = Container {
+            name: "sink".to_string(),
+            image: Some(image),
+            args: Some(args),
+            volume_mounts: Some(volume_mounts.to_owned()),
+            env: Some(env.to_owned()),
+            working_dir: Some(workdir.to_string()),
+            ..Container::default()
+        };
+
+        Some(container)
     }
 }
 

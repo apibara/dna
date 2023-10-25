@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use apibara_observability::init_opentelemetry;
 use apibara_operator::{
     configuration::{Configuration, SinkConfiguration},
@@ -9,9 +11,6 @@ use clap::{Args, Parser, Subcommand};
 use error_stack::{Result, ResultExt};
 use kube::{Client, CustomResourceExt};
 use tokio_util::sync::CancellationToken;
-
-/// Base container registry path.
-static CONTAINER_REGISTRY: &str = "quay.io/apibara";
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -39,21 +38,12 @@ struct StartArgs {
 
 #[derive(Args, Debug)]
 struct SinkArgs {
-    /// The default image to use for the console sink.
-    #[arg(long, env)]
-    pub sink_console_image: Option<String>,
-    /// The default image to use for the MongoDB sink.
-    #[arg(long, env)]
-    pub sink_mongo_image: Option<String>,
-    /// The default image to use for the Parquet sink.
-    #[arg(long, env)]
-    pub sink_parquet_image: Option<String>,
-    /// The default image to use for the PostgreSQL sink.
-    #[arg(long, env)]
-    pub sink_postgres_image: Option<String>,
-    /// The default image to use for the webhook sink.
-    #[arg(long, env)]
-    pub sink_webhook_image: Option<String>,
+    /// Sink type to image mapping.
+    ///
+    /// Values are separated by commas,
+    /// e.g. `console=quay.io/apibara/sink-console:latest,mongo=quay.io/apibara/sink-mongo:latest`.
+    #[arg(long, env, value_delimiter = ',')]
+    pub sink_images: Option<Vec<String>>,
 }
 
 fn generate_crds(_args: GenerateCrdArgs) -> Result<(), OperatorError> {
@@ -73,7 +63,9 @@ async fn start(args: StartArgs) -> Result<(), OperatorError> {
         .await
         .change_context(OperatorError)
         .attach_printable("failed to build Kubernetes client")?;
-    let configuration = args.into_configuration();
+    let configuration = args
+        .into_configuration()
+        .attach_printable("invalid cli arguments")?;
     let ct = CancellationToken::new();
 
     ctrlc::set_handler({
@@ -108,25 +100,34 @@ async fn main() -> Result<(), OperatorError> {
 }
 
 impl StartArgs {
-    pub fn into_configuration(self) -> Configuration {
-        let console = to_sink_configuration(self.sink.sink_console_image, "sink-console");
-        let mongo = to_sink_configuration(self.sink.sink_mongo_image, "sink-mongo");
-        let parquet = to_sink_configuration(self.sink.sink_parquet_image, "sink-parquet");
-        let postgres = to_sink_configuration(self.sink.sink_postgres_image, "sink-postgres");
-        let webhook = to_sink_configuration(self.sink.sink_webhook_image, "sink-webhook");
+    pub fn into_configuration(self) -> Result<Configuration, OperatorError> {
+        let mut configuration = Configuration::default();
 
-        Configuration {
-            console,
-            mongo,
-            parquet,
-            postgres,
-            webhook,
+        if let Some(sink_images) = self.sink.sink_images {
+            let mut sinks = HashMap::new();
+            for image_kv in &sink_images {
+                match image_kv.split_once('=') {
+                    Some((name, image)) if !image.contains('=') => {
+                        sinks.insert(
+                            name.to_string(),
+                            SinkConfiguration {
+                                image: image.to_string(),
+                            },
+                        );
+                    }
+                    _ => {
+                        return Err(OperatorError)
+                            .attach_printable_lazy(|| {
+                                format!("invalid sink image mapping: {}", image_kv)
+                            })
+                            .attach_printable("hint: expected format is `type=image`")
+                    }
+                }
+            }
+
+            configuration.with_sinks(sinks);
         }
-    }
-}
 
-fn to_sink_configuration(image: Option<String>, default_image: &str) -> SinkConfiguration {
-    SinkConfiguration {
-        image: image.unwrap_or_else(|| format!("{}/{}:latest", CONTAINER_REGISTRY, default_image)),
+        Ok(configuration)
     }
 }
