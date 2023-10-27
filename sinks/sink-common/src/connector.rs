@@ -201,6 +201,7 @@ where
             .change_context(SinkConnectorError::Temporary)
             .attach_printable("failed to start stream")?;
 
+        let mut ret = Ok(());
         loop {
             tokio::select! {
                 _ = ct.cancelled() => {
@@ -212,11 +213,14 @@ where
                 maybe_message = data_stream.try_next() => {
                     match maybe_message {
                         Err(err) => {
-                            warn!(err = ?err, "data stream error");
+                            ret = Err(err)
+                                .change_context(SinkConnectorError::Temporary)
+                                .attach_printable("data stream error");
                             break;
                         }
                         Ok(None) => {
-                            warn!("data stream closed");
+                            ret = Err(SinkConnectorError::Temporary)
+                                .attach_printable("data stream closed");
                             break;
                         }
                         Ok(Some(message)) => {
@@ -240,7 +244,7 @@ where
             .change_context(SinkConnectorError::Temporary)
             .attach_printable("failed to unlock persistence")?;
 
-        Ok(())
+        ret
     }
 
     async fn new_stream_client(&self) -> Result<StreamClient, SinkConnectorError> {
