@@ -6,6 +6,16 @@ The format is based on [Common Changelog](https://common-changelog.org/), and
 this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.3] - 2023-10-27
+
+_Fix exit code on disconnect._
+
+### Fixed
+
+ - In some cases, the sink would exit with a `0` exit code on error. This
+   version ensures that the sink will return a non-zero exit code on all
+   errors.
+
 ## [0.4.2] - 2023-10-24
 
 _Error message improvements._
@@ -80,6 +90,8 @@ _This release improves the developer experience when running locally._
 _First tagged release 🎉_
 
 
+[0.4.3]: https://github.com/apibara/dna/releases/tag/sink-mongo/v0.4.2
+[0.4.2]: https://github.com/apibara/dna/releases/tag/sink-mongo/v0.4.3
 [0.4.1]: https://github.com/apibara/dna/releases/tag/sink-mongo/v0.4.1
 [0.4.0]: https://github.com/apibara/dna/releases/tag/sink-mongo/v0.4.0
 [0.3.0]: https://github.com/apibara/dna/releases/tag/sink-mongo/v0.3.0
