@@ -158,7 +158,8 @@ where
             }
             _ = tokio::time::sleep(Duration::from_secs(30)) => {
                 info!("failed to acquire persistence lock within 30 seconds");
-                return Ok(())
+                return Err(SinkConnectorError::Configuration)
+                    .attach_printable("failed to acquire persistence lock within 30 seconds");
             }
             _ = ct.cancelled() => {
                 return Ok(())
