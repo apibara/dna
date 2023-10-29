@@ -263,43 +263,65 @@ impl Indexer {
             status
                 .container_statuses
                 .as_ref()
-                .and_then(|statuses| statuses.first())
+                .and_then(|statuses| statuses.iter().find(|c| c.name == "sink"))
         });
 
-        let Some(finished_at) = container_status
+        let Some(terminated) = container_status
             .and_then(|cs| cs.state.as_ref())
-            .and_then(|st| st.terminated.clone())
-            .and_then(|ts| ts.finished_at) else {
+            .and_then(|st| st.terminated.clone()) else {
                 return Ok((0, None));
             };
 
-        let elapsed = (Utc::now().time() - finished_at.0.time())
-            .to_std()
-            .unwrap_or_default();
+        let exit_code = terminated.exit_code;
 
-        // For now, restart the indexer every minute.
-        // TODO: Only restart it based on the container exit code.
-        if elapsed > Duration::from_secs(60) {
-            info!(pod = %pod.name_any(), "deleting pod for restart");
-
-            pods.delete(pod_name, &Default::default())
-                .await
-                .change_context(OperatorError)
-                .attach_printable("failed to delete pod")
-                .attach_printable_lazy(|| format!("indexer: {pod_name}"))?;
-            Ok((1, None))
-        } else {
-            let error_condition = Condition {
-                last_transition_time: finished_at,
-                type_: "PodTerminated".to_string(),
-                message: "Pod has been terminated".to_string(),
-                observed_generation: self.meta().generation,
-                reason: "PodTerminated".to_string(),
-                status: "False".to_string(),
+        // Exit code from sysexits.h
+        // 75 = temporary failure
+        //
+        // Don't restart the container if it's a non temporary error.
+        let is_temporary_error = exit_code == 0 || exit_code == 75;
+        if is_temporary_error {
+            let should_delete = match &terminated.finished_at {
+                None => true,
+                Some(finished_at) => {
+                    let elapsed = (Utc::now().time() - finished_at.0.time())
+                        .to_std()
+                        .unwrap_or_default();
+                    elapsed > Duration::from_secs(60)
+                }
             };
 
-            Ok((0, Some(error_condition)))
+            if should_delete {
+                info!(pod = %pod.name_any(), "deleting pod for restart");
+
+                pods.delete(pod_name, &Default::default())
+                    .await
+                    .change_context(OperatorError)
+                    .attach_printable("failed to delete pod")
+                    .attach_printable_lazy(|| format!("indexer: {pod_name}"))?;
+
+                return Ok((1, None));
+            }
         }
+
+        let last_transition_time = terminated
+            .finished_at
+            .unwrap_or(meta::v1::Time(DateTime::<Utc>::MIN_UTC));
+
+        let reason = if is_temporary_error {
+            "temporary".to_string()
+        } else {
+            "fatal".to_string()
+        };
+        let error_condition = Condition {
+            last_transition_time,
+            type_: "PodTerminated".to_string(),
+            message: format!("Pod has been terminated ({reason})"),
+            observed_generation: self.meta().generation,
+            reason: "PodTerminated".to_string(),
+            status: "False".to_string(),
+        };
+
+        Ok((0, Some(error_condition)))
     }
 
     fn status_service_name(&self) -> String {
