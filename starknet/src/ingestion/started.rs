@@ -51,7 +51,10 @@ where
         loop {
             let latest_indexed = match self.storage.highest_accepted_block()? {
                 Some(block) => block,
-                None => self.ingest_genesis_block().await?,
+                None => {
+                    self.ingest_genesis_block(self.config.ingestion_starting_block)
+                        .await?
+                }
             };
 
             info!(
@@ -135,9 +138,13 @@ where
     }
 
     #[tracing::instrument(skip(self))]
-    async fn ingest_genesis_block(&self) -> Result<GlobalBlockId, BlockIngestionError> {
-        info!("ingest genesis block");
-        let block_id = BlockId::Number(0);
+    async fn ingest_genesis_block(
+        &self,
+        starting_block: Option<u64>,
+    ) -> Result<GlobalBlockId, BlockIngestionError> {
+        info!(starting_block = ?starting_block, "ingest genesis block");
+        let block_number = starting_block.unwrap_or(0);
+        let block_id = BlockId::Number(block_number);
         let (status, header, body) = self
             .provider
             .get_block(&block_id)

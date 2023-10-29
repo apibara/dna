@@ -52,6 +52,7 @@ async fn test_starknet_reorgs() {
         address: None,
         websocket_address: None,
         quota_server: None,
+        dangerously_override_ingestion_start_block: None,
     };
 
     let configuration = Configuration::<Filter>::default()

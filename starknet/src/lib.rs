@@ -62,6 +62,11 @@ pub struct StartArgs {
     // Websocket address
     #[arg(long, env)]
     pub websocket_address: Option<String>,
+    /// Override the ingestion starting block.
+    ///
+    /// This should be used only for testing and never in production.
+    #[arg(long, env)]
+    pub dangerously_override_ingestion_start_block: Option<u64>,
 }
 
 #[derive(Default, Clone, Debug, Args)]
@@ -151,14 +156,19 @@ pub async fn start_node(args: StartArgs, cts: CancellationToken) -> Result<(), S
         node.with_blocks_per_second_limit(limit);
     }
 
+    let mut block_ingestion_config = BlockIngestionConfig::default();
+
     if let Some(head_refresh_interval_free) = args.head_refresh_interval_ms {
         // Adjust to some value that makes sense.
         let head_refresh_interval = head_refresh_interval_free.clamp(100, 10_000);
-        node.with_block_ingestion_config(BlockIngestionConfig {
-            head_refresh_interval: Duration::from_millis(head_refresh_interval),
-            ..Default::default()
-        });
+        block_ingestion_config.head_refresh_interval = Duration::from_millis(head_refresh_interval);
     }
+
+    if let Some(starting_block) = args.dangerously_override_ingestion_start_block {
+        block_ingestion_config.ingestion_starting_block = Some(starting_block);
+    }
+
+    node.with_block_ingestion_config(block_ingestion_config);
 
     node.build()
         .change_context(StarknetError)

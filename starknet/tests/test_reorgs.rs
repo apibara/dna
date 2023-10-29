@@ -45,6 +45,7 @@ async fn test_reorg_from_client_pov() {
                 address: None,
                 websocket_address: None,
                 quota_server: None,
+                dangerously_override_ingestion_start_block: None,
             };
             start_node(args, cts).await.unwrap();
         }
