@@ -86,7 +86,9 @@ pub async fn test_controller() -> Result<(), OperatorError> {
             ..EnvVar::default()
         }]),
         sink: Sink {
-            sink: SinkType::Type { r#type: "console".to_string() },
+            sink: SinkType::Type {
+                r#type: "console".to_string(),
+            },
             script: "starknet_to_console.js".to_string(),
             args: None,
         },
