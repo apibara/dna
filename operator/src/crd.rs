@@ -99,6 +99,8 @@ pub struct IndexerStatus {
     pub conditions: Option<Vec<Condition>>,
     /// The name of the container running the indexer.
     pub instance_name: Option<String>,
+    /// Service name exposing the indexer's status.
+    pub status_service_name: Option<String>,
     /// Current phase of the indexer.
     pub phase: Option<String>,
     /// Number of times the indexer container has restarted.

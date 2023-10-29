@@ -10,6 +10,8 @@ static WEBHOOK_IMAGE: &str = "quay.io/apibara/sink-webhook:latest";
 pub struct Configuration {
     /// Sink type to image.
     pub sinks: HashMap<String, SinkConfiguration>,
+    /// Sink status port.
+    pub status_port: i32,
 }
 
 #[derive(Debug, Clone)]
@@ -51,6 +53,9 @@ impl Default for Configuration {
             ("webhook".to_string(), webhook),
         ]);
 
-        Configuration { sinks }
+        Configuration {
+            sinks,
+            status_port: 8118,
+        }
     }
 }

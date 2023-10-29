@@ -1,8 +1,8 @@
-use std::{fmt, sync::Arc, time::Duration};
+use std::{collections::BTreeMap, fmt, sync::Arc, time::Duration};
 
 use error_stack::{Report, Result, ResultExt};
 use k8s_openapi::{
-    api,
+    api::{self, core::v1::ServiceSpec},
     apimachinery::pkg::apis::meta::{self, v1::Condition},
     chrono::{DateTime, Utc},
     Metadata,
@@ -29,7 +29,7 @@ pub struct ReconcileError(Report<OperatorError>);
 impl Indexer {
     #[instrument(skip_all)]
     async fn reconcile(&self, ctx: Arc<Context>) -> Result<Action, OperatorError> {
-        use api::core::v1::Pod;
+        use api::core::v1::{Pod, Service};
 
         let name = self.name_any();
 
@@ -41,6 +41,7 @@ impl Indexer {
 
         let indexers: Api<Indexer> = Api::namespaced(ctx.client.clone(), &ns);
         let pods: Api<Pod> = Api::namespaced(ctx.client.clone(), &ns);
+        let services: Api<Service> = Api::namespaced(ctx.client.clone(), &ns);
 
         // Check if the indexer needs to be restarted.
         let (restart_increment, error_condition) = if let Some(pod_name) = self.instance_name() {
@@ -60,8 +61,9 @@ impl Indexer {
         let mut conditions = Vec::default();
         let mut pod_created = None;
         let mut instance_name = None;
+        let mut status_service_name = None;
 
-        match self.pod_spec(&ctx) {
+        match self.pod_and_status_svc_spec(&ctx) {
             None => {
                 let pod_scheduled_condition = Condition {
                     last_transition_time: self
@@ -79,12 +81,19 @@ impl Indexer {
                 conditions.push(pod_scheduled_condition);
                 phase = "Error".to_string();
             }
-            Some(spec) => {
+            Some((spec, svc_spec)) => {
+                let svc_name = self.status_service_name();
+                let svc_metadata = kube::core::ObjectMeta {
+                    name: svc_name.clone().into(),
+                    ..metadata.clone()
+                };
+
                 let pod_manifest = Pod {
                     metadata,
                     spec: Some(spec),
                     ..Pod::default()
                 };
+
                 let pod = pods
                     .patch(
                         &name,
@@ -94,6 +103,23 @@ impl Indexer {
                     .await
                     .change_context(OperatorError)
                     .attach_printable("failed to update pod")
+                    .attach_printable_lazy(|| format!("indexer: {name}"))?;
+
+                let svc_manifest = Service {
+                    metadata: svc_metadata,
+                    spec: Some(svc_spec),
+                    ..Service::default()
+                };
+
+                let service = services
+                    .patch(
+                        &svc_name,
+                        &PatchParams::apply("indexer"),
+                        &Patch::Apply(svc_manifest),
+                    )
+                    .await
+                    .change_context(OperatorError)
+                    .attach_printable("failed to update service")
                     .attach_printable_lazy(|| format!("indexer: {name}"))?;
 
                 let pod_scheduled_condition = Condition {
@@ -109,9 +135,24 @@ impl Indexer {
                     status: "True".to_string(),
                 };
 
+                let status_service_created = Condition {
+                    last_transition_time: service
+                        .meta()
+                        .creation_timestamp
+                        .clone()
+                        .unwrap_or(meta::v1::Time(DateTime::<Utc>::MIN_UTC)),
+                    type_: "StatusServiceCreated".to_string(),
+                    message: "Status service created".to_string(),
+                    observed_generation: self.meta().generation,
+                    reason: "StatusServiceCreated".to_string(),
+                    status: "True".to_string(),
+                };
+
                 conditions.push(pod_scheduled_condition);
+                conditions.push(status_service_created);
                 pod_created = pod.meta().creation_timestamp.clone();
                 instance_name = pod.metadata().name.clone();
+                status_service_name = service.metadata().name.clone();
             }
         }
 
@@ -128,6 +169,7 @@ impl Indexer {
             "status": IndexerStatus {
                 pod_created,
                 instance_name,
+                status_service_name,
                 phase: Some(phase),
                 conditions: Some(conditions),
                 restart_count,
@@ -146,9 +188,10 @@ impl Indexer {
 
     #[instrument(skip_all)]
     async fn cleanup(&self, ctx: Arc<Context>) -> Result<Action, OperatorError> {
-        use api::core::v1::Pod;
+        use api::core::v1::{Pod, Service};
 
         let name = self.name_any();
+        let svc_name = self.status_service_name();
 
         let ns = self
             .namespace()
@@ -157,6 +200,7 @@ impl Indexer {
             .attach_printable_lazy(|| format!("indexer: {name}"))?;
 
         let pods: Api<Pod> = Api::namespaced(ctx.client.clone(), &ns);
+        let services: Api<Service> = Api::namespaced(ctx.client.clone(), &ns);
 
         if let Some(_existing) = pods
             .get_opt(&name)
@@ -169,6 +213,21 @@ impl Indexer {
                 .await
                 .change_context(OperatorError)
                 .attach_printable("failed to delete pod")
+                .attach_printable_lazy(|| format!("indexer: {name}"))?;
+        }
+
+        if let Some(_existing) = services
+            .get_opt(&svc_name)
+            .await
+            .change_context(OperatorError)
+            .attach_printable("failed to get service")
+            .attach_printable_lazy(|| format!("indexer: {name}"))?
+        {
+            services
+                .delete(&svc_name, &DeleteParams::default())
+                .await
+                .change_context(OperatorError)
+                .attach_printable("failed to delete service")
                 .attach_printable_lazy(|| format!("indexer: {name}"))?;
         }
 
@@ -243,17 +302,33 @@ impl Indexer {
         }
     }
 
-    fn object_metadata(&self, _ctx: &Arc<Context>) -> meta::v1::ObjectMeta {
+    fn status_service_name(&self) -> String {
+        self.name_any() + "-status"
+    }
+
+    fn object_metadata(&self, ctx: &Arc<Context>) -> meta::v1::ObjectMeta {
         use meta::v1::ObjectMeta;
 
         ObjectMeta {
             name: self.metadata.name.clone(),
+            labels: self.pod_labels(ctx).into(),
             ..ObjectMeta::default()
         }
     }
 
-    fn pod_spec(&self, ctx: &Arc<Context>) -> Option<api::core::v1::PodSpec> {
-        use api::core::v1::PodSpec;
+    fn pod_labels(&self, _ctx: &Arc<Context>) -> BTreeMap<String, String> {
+        let name = self.name_any();
+        BTreeMap::from([
+            ("app.kubernetes.io/name".to_string(), name.clone()),
+            ("app.kubernetes.io/instance".to_string(), name),
+        ])
+    }
+
+    fn pod_and_status_svc_spec(
+        &self,
+        ctx: &Arc<Context>,
+    ) -> Option<(api::core::v1::PodSpec, api::core::v1::ServiceSpec)> {
+        use api::core::v1::{PodSpec, ServicePort};
 
         // Initialize volume, volume mounts, and env vars.
         let mut volumes = Vec::new();
@@ -280,7 +355,7 @@ impl Indexer {
         let container = self.sink_container(&workdir, &volume_mounts, &env, ctx)?;
         containers.push(container);
 
-        let spec = PodSpec {
+        let pod_spec = PodSpec {
             init_containers: Some(init_containers),
             containers,
             volumes: Some(volumes),
@@ -288,7 +363,16 @@ impl Indexer {
             ..PodSpec::default()
         };
 
-        Some(spec)
+        let svc_spec = ServiceSpec {
+            selector: self.pod_labels(ctx).into(),
+            ports: Some(vec![ServicePort {
+                port: ctx.configuration.status_port,
+                ..ServicePort::default()
+            }]),
+            ..ServiceSpec::default()
+        };
+
+        Some((pod_spec, svc_spec))
     }
 
     fn source_container(
@@ -368,7 +452,15 @@ impl Indexer {
         };
 
         let script = self.spec.sink.script.clone();
-        let mut args = vec!["run".to_string(), script];
+
+        let port = ctx.configuration.status_port;
+        let mut args = vec![
+            "run".to_string(),
+            script,
+            "--status-server-address".to_string(),
+            format!("0.0.0.0:{port}"),
+        ];
+        use api::core::v1::ContainerPort;
 
         if let Some(extra_args) = &self.spec.sink.args {
             args.extend_from_slice(extra_args);
@@ -381,6 +473,11 @@ impl Indexer {
             volume_mounts: Some(volume_mounts.to_owned()),
             env: Some(env.to_owned()),
             working_dir: Some(workdir.to_string()),
+            ports: Some(vec![ContainerPort {
+                container_port: port,
+                name: Some("status".to_string()),
+                ..ContainerPort::default()
+            }]),
             ..Container::default()
         };
 
