@@ -48,6 +48,7 @@ async fn test_reorg_from_client_pov_websockets() {
                 websocket_address: Some("127.0.0.1:8080".into()),
                 blocks_per_second_limit: None,
                 quota_server: None,
+                dangerously_override_ingestion_start_block: None,
             };
             start_node(args, cts).await.unwrap();
         }
