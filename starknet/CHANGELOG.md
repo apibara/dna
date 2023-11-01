@@ -6,6 +6,18 @@ The format is based on [Common Changelog](https://common-changelog.org/), and
 this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.5] - 2023-11-01
+
+_Improve compatibility with Juno._
+
+### Fixed
+
+ - Fix a bug ingesting Starknet data in the presence of reverted transactions.
+   Nodes such as Juno don't always include the revert reason (the field in the
+   JSON-RPC is optional), which caused the DNA node to fail to ingest the
+   transaction and block. This release allows the revert reason field to be
+   missing.
+
 ## [1.1.4] - 2023-09-30
 
 _Check usage quota._
