@@ -2,9 +2,7 @@ use std::time::Duration;
 
 use apibara_core::node::v1alpha2::{Cursor, DataFinality};
 use apibara_script::Script;
-use apibara_sdk::{
-    configuration, ClientBuilder, Configuration, DataMessage, MetadataMap, StreamClient, Uri,
-};
+use apibara_sdk::{ClientBuilder, Configuration, DataMessage, MetadataMap, StreamClient, Uri};
 use async_trait::async_trait;
 use bytesize::ByteSize;
 use error_stack::{Result, ResultExt};
@@ -171,6 +169,7 @@ where
             .await
             .change_context(SinkConnectorError::Temporary)
             .attach_printable("failed to get starting cursor")?;
+
         if starting_cursor.is_some() {
             info!(cursor = ?starting_cursor, "restarting from last cursor");
             configuration.starting_cursor = starting_cursor.clone();
@@ -183,20 +182,10 @@ where
             )
             .await?;
         }
-
-        let (configuration_client, configuration_stream) = configuration::channel(128);
-
-        debug!(configuration = ?configuration, "sending configuration");
-        configuration_client
-            .send(configuration)
-            .await
-            .change_context(SinkConnectorError::Temporary)
-            .attach_printable("failed to send stream configuration")?;
-
         debug!("start consume stream");
 
         let mut data_stream = stream_client
-            .start_stream::<F, B, _>(configuration_stream)
+            .start_stream_immutable::<F, B>(configuration)
             .await
             .change_context(SinkConnectorError::Temporary)
             .attach_printable("failed to start stream")?;
