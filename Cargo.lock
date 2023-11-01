@@ -7091,8 +7091,8 @@ dependencies = [
 
 [[package]]
 name = "starknet"
-version = "0.5.0"
-source = "git+https://github.com/fracek/starknet-rs?rev=5bb6950#5bb6950d858957580ce1a8596f8091f8ad81592e"
+version = "0.7.0"
+source = "git+https://github.com/fracek/starknet-rs?rev=06d78d1#06d78d11fbe03aa01746c25daa9fda73882aab89"
 dependencies = [
  "starknet-accounts",
  "starknet-contract",
@@ -7106,10 +7106,11 @@ dependencies = [
 
 [[package]]
 name = "starknet-accounts"
-version = "0.4.0"
-source = "git+https://github.com/fracek/starknet-rs?rev=5bb6950#5bb6950d858957580ce1a8596f8091f8ad81592e"
+version = "0.6.0"
+source = "git+https://github.com/fracek/starknet-rs?rev=06d78d1#06d78d11fbe03aa01746c25daa9fda73882aab89"
 dependencies = [
  "async-trait",
+ "auto_impl",
  "starknet-core",
  "starknet-providers",
  "starknet-signers",
@@ -7118,8 +7119,8 @@ dependencies = [
 
 [[package]]
 name = "starknet-contract"
-version = "0.4.0"
-source = "git+https://github.com/fracek/starknet-rs?rev=5bb6950#5bb6950d858957580ce1a8596f8091f8ad81592e"
+version = "0.6.0"
+source = "git+https://github.com/fracek/starknet-rs?rev=06d78d1#06d78d11fbe03aa01746c25daa9fda73882aab89"
 dependencies = [
  "serde",
  "serde_json",
@@ -7132,8 +7133,8 @@ dependencies = [
 
 [[package]]
 name = "starknet-core"
-version = "0.5.1"
-source = "git+https://github.com/fracek/starknet-rs?rev=5bb6950#5bb6950d858957580ce1a8596f8091f8ad81592e"
+version = "0.7.0"
+source = "git+https://github.com/fracek/starknet-rs?rev=06d78d1#06d78d11fbe03aa01746c25daa9fda73882aab89"
 dependencies = [
  "base64 0.21.2",
  "flate2",
@@ -7149,8 +7150,8 @@ dependencies = [
 
 [[package]]
 name = "starknet-crypto"
-version = "0.6.0"
-source = "git+https://github.com/fracek/starknet-rs?rev=5bb6950#5bb6950d858957580ce1a8596f8091f8ad81592e"
+version = "0.6.1"
+source = "git+https://github.com/fracek/starknet-rs?rev=06d78d1#06d78d11fbe03aa01746c25daa9fda73882aab89"
 dependencies = [
  "crypto-bigint 0.5.2",
  "hex",
@@ -7169,7 +7170,7 @@ dependencies = [
 [[package]]
 name = "starknet-crypto-codegen"
 version = "0.3.2"
-source = "git+https://github.com/fracek/starknet-rs?rev=5bb6950#5bb6950d858957580ce1a8596f8091f8ad81592e"
+source = "git+https://github.com/fracek/starknet-rs?rev=06d78d1#06d78d11fbe03aa01746c25daa9fda73882aab89"
 dependencies = [
  "starknet-curve",
  "starknet-ff",
@@ -7179,7 +7180,7 @@ dependencies = [
 [[package]]
 name = "starknet-curve"
 version = "0.4.0"
-source = "git+https://github.com/fracek/starknet-rs?rev=5bb6950#5bb6950d858957580ce1a8596f8091f8ad81592e"
+source = "git+https://github.com/fracek/starknet-rs?rev=06d78d1#06d78d11fbe03aa01746c25daa9fda73882aab89"
 dependencies = [
  "starknet-ff",
 ]
@@ -7187,7 +7188,7 @@ dependencies = [
 [[package]]
 name = "starknet-ff"
 version = "0.3.4"
-source = "git+https://github.com/fracek/starknet-rs?rev=5bb6950#5bb6950d858957580ce1a8596f8091f8ad81592e"
+source = "git+https://github.com/fracek/starknet-rs?rev=06d78d1#06d78d11fbe03aa01746c25daa9fda73882aab89"
 dependencies = [
  "ark-ff",
  "bigdecimal",
@@ -7200,8 +7201,8 @@ dependencies = [
 
 [[package]]
 name = "starknet-macros"
-version = "0.1.2"
-source = "git+https://github.com/fracek/starknet-rs?rev=5bb6950#5bb6950d858957580ce1a8596f8091f8ad81592e"
+version = "0.1.4"
+source = "git+https://github.com/fracek/starknet-rs?rev=06d78d1#06d78d11fbe03aa01746c25daa9fda73882aab89"
 dependencies = [
  "starknet-core",
  "syn 2.0.28",
@@ -7209,8 +7210,8 @@ dependencies = [
 
 [[package]]
 name = "starknet-providers"
-version = "0.5.0"
-source = "git+https://github.com/fracek/starknet-rs?rev=5bb6950#5bb6950d858957580ce1a8596f8091f8ad81592e"
+version = "0.7.0"
+source = "git+https://github.com/fracek/starknet-rs?rev=06d78d1#06d78d11fbe03aa01746c25daa9fda73882aab89"
 dependencies = [
  "async-trait",
  "auto_impl",
@@ -7228,8 +7229,8 @@ dependencies = [
 
 [[package]]
 name = "starknet-signers"
-version = "0.3.0"
-source = "git+https://github.com/fracek/starknet-rs?rev=5bb6950#5bb6950d858957580ce1a8596f8091f8ad81592e"
+version = "0.5.0"
+source = "git+https://github.com/fracek/starknet-rs?rev=06d78d1#06d78d11fbe03aa01746c25daa9fda73882aab89"
 dependencies = [
  "async-trait",
  "auto_impl",

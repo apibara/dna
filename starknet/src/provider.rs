@@ -3,8 +3,9 @@ use apibara_core::starknet::v1alpha2;
 use starknet::{
     core::types::{self as models, FieldElement, FromByteArrayError, StarknetError},
     providers::{
-        jsonrpc::{HttpTransport, JsonRpcClient, JsonRpcClientError, RpcError},
-        Provider as StarknetProvider, ProviderError as StarknetProviderError,
+        jsonrpc::{HttpTransport, JsonRpcClient},
+        MaybeUnknownErrorCode, Provider as StarknetProvider,
+        ProviderError as StarknetProviderError,
     },
 };
 use url::Url;
@@ -128,19 +129,16 @@ impl ProviderError for HttpProviderError {
 }
 
 impl HttpProviderError {
-    pub fn from_provider_error<T>(
-        error: StarknetProviderError<JsonRpcClientError<T>>,
-    ) -> HttpProviderError
-    where
-        T: std::error::Error + Send + Sync + 'static,
-    {
+    pub fn from_provider_error(error: StarknetProviderError) -> HttpProviderError {
         match error {
-            StarknetProviderError::Other(error) => match error {
-                JsonRpcClientError::RpcError(RpcError::Code(StarknetError::BlockNotFound)) => {
-                    HttpProviderError::BlockNotFound
+            StarknetProviderError::StarknetError(ref starknet_error) => {
+                if let MaybeUnknownErrorCode::Known(code) = starknet_error.code {
+                    if code == StarknetError::BlockNotFound {
+                        return HttpProviderError::BlockNotFound;
+                    }
                 }
-                _ => HttpProviderError::Provider(Box::new(error)),
-            },
+                HttpProviderError::Provider(Box::new(error))
+            }
             // TODO: this is a good place to handle rate limiting.
             _ => HttpProviderError::Provider(Box::new(error)),
         }
