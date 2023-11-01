@@ -50,7 +50,7 @@ impl error_stack::Context for ClientError {}
 
 impl fmt::Display for ClientError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("the DNA client encountered an error")
+        f.write_str("DNA client encountered an error")
     }
 }
 
@@ -111,6 +111,17 @@ where
     #[pin]
     inner: Pin<Box<Timeout<Streaming<StreamDataResponse>>>>,
     inner_tx: Sender<StreamDataRequest>,
+    _data: PhantomData<D>,
+}
+
+#[derive(Debug)]
+#[pin_project]
+pub struct ImmutableDataStream<D>
+where
+    D: Message + Default,
+{
+    #[pin]
+    inner: Pin<Box<Timeout<Streaming<StreamDataResponse>>>>,
     _data: PhantomData<D>,
 }
 
@@ -207,6 +218,41 @@ impl StreamClient {
             configuration_stream: configuration,
             inner: inner_stream,
             inner_tx,
+            _data: PhantomData::default(),
+        };
+
+        Ok(stream)
+    }
+
+    /// Start streaming data sending the provided configuration.
+    pub async fn start_stream_immutable<F, D>(
+        mut self,
+        configuration: Configuration<F>,
+    ) -> Result<ImmutableDataStream<D>, ClientError>
+    where
+        F: Message + Default,
+        D: Message + Default,
+    {
+        let stream_data_request = StreamDataRequest {
+            stream_id: Some(0),
+            batch_size: Some(configuration.batch_size),
+            starting_cursor: configuration.starting_cursor,
+            finality: configuration.finality.map(|f| f as i32),
+            filter: configuration.filter.encode_to_vec(),
+        };
+
+        let inner_stream = self
+            .inner
+            .stream_data_immutable(stream_data_request)
+            .await
+            .change_context(ClientError)?
+            .into_inner()
+            .timeout(self.timeout);
+
+        let inner_stream = Box::pin(inner_stream);
+
+        let stream = ImmutableDataStream {
+            inner: inner_stream,
             _data: PhantomData::default(),
         };
 
@@ -336,6 +382,60 @@ impl<D: Message + Default> DataMessage<D> {
     }
 }
 
+impl<D> Stream for ImmutableDataStream<D>
+where
+    D: Message + Default,
+{
+    type Item = Result<DataMessage<D>, ClientError>;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let this = self.project();
+
+        match this.inner.poll_next(cx) {
+            Poll::Ready(None) => Poll::Ready(None),
+            Poll::Pending => Poll::Pending,
+            Poll::Ready(Some(Err(e))) => Poll::Ready(Some(Err(e).change_context(ClientError))),
+            Poll::Ready(Some(Ok(inner_message))) => match inner_message {
+                Err(err) => Poll::Ready(Some(status_to_error(err))),
+                Ok(response) => match response.message {
+                    None => {
+                        cx.waker().wake_by_ref();
+                        Poll::Pending
+                    }
+                    Some(stream_data_response::Message::Data(data)) => {
+                        let batch = data
+                            .data
+                            .into_iter()
+                            .map(|b| D::decode(b.as_slice()))
+                            .filter_map(|b| b.ok())
+                            .collect::<Vec<D>>();
+
+                        let message = DataMessage::Data {
+                            cursor: data.cursor,
+                            end_cursor: data.end_cursor.unwrap_or_default(),
+                            finality: DataFinality::from_i32(data.finality).unwrap_or_default(),
+                            batch,
+                        };
+
+                        Poll::Ready(Some(Ok(message)))
+                    }
+                    Some(stream_data_response::Message::Invalidate(invalidate)) => {
+                        let message = DataMessage::Invalidate {
+                            cursor: invalidate.cursor,
+                        };
+                        Poll::Ready(Some(Ok(message)))
+                    }
+                    Some(stream_data_response::Message::Heartbeat(_)) => {
+                        debug!("received heartbeat");
+                        cx.waker().wake_by_ref();
+                        Poll::Pending
+                    }
+                },
+            },
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct MetadataInterceptor {
     metadata: MetadataMap,
@@ -383,5 +483,19 @@ impl Interceptor for MetadataInterceptor {
         }
 
         Ok(request)
+    }
+}
+
+fn status_to_error<T>(status: tonic::Status) -> Result<T, ClientError> {
+    use tonic::Code;
+
+    match status.code() {
+        Code::Unauthenticated => Err(status)
+            .attach_printable("hint: did you forget to set the authentication token?")
+            .change_context(ClientError),
+        Code::OutOfRange => Err(status)
+            .attach_printable("hint: you should increase the maximum message size")
+            .change_context(ClientError),
+        _ => Err(status).change_context(ClientError),
     }
 }
