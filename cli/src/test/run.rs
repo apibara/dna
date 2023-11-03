@@ -127,11 +127,15 @@ async fn run_test(
     let mut found_outputs = vec![];
 
     for message in snapshot.stream {
-        let input = message["input"].clone();
+        let input = message["input"]
+            .as_array()
+            .ok_or(CliError)
+            .attach_printable("snapshot input should be an array")?
+            .clone();
         let expected_output = message["output"].clone();
 
         let found_output = script
-            .transform(&input)
+            .transform(input)
             .await
             .change_context(CliError)
             .attach_printable("failed to transform data")?;

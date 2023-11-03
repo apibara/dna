@@ -319,14 +319,14 @@ where
         &mut self,
         message: &IngestionMessage<Self::Cursor>,
     ) -> Result<IngestionResponse<Self::Cursor>, StreamError> {
-        let mut state = self
+        let state = self
             .get_ingestion_state_mut()
             .map_err(StreamError::internal)?;
         let response = match message {
             IngestionMessage::Pending(cursor) => {
                 state.pending = Some(*cursor);
                 // mark pending as ready to send
-                if let Some(mut configuration) = self.configuration.as_mut() {
+                if let Some(configuration) = self.configuration.as_mut() {
                     configuration.pending_sent = false;
                 }
                 IngestionResponse::Ok
@@ -344,7 +344,7 @@ where
                 state.accepted = state.accepted.map(|c| lowest_cursor(c, *cursor));
                 state.finalized = state.finalized.map(|c| lowest_cursor(c, *cursor));
                 // if the current cursor is after the new head, then data was invalidated.
-                if let Some(mut configuration) = self.configuration.as_mut() {
+                if let Some(configuration) = self.configuration.as_mut() {
                     let is_invalidated = configuration
                         .current
                         .map(|c| c.number() > cursor.number())

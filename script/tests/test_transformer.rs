@@ -44,12 +44,12 @@ async fn test_identity() {
         "#,
     )
     .await;
-    let input = json!([{
-        "foo": "bar",
-        "baz": 42,
-    }]);
-    let result = script.transform(&input).await.unwrap();
-    assert_eq!(result, input);
+    let input = vec![json!({
+    "foo": "bar",
+    "baz": 42,
+    })];
+    let result = script.transform(input.clone()).await.unwrap();
+    assert_eq!(result.as_array().unwrap(), &input);
 }
 
 #[tokio::test]
@@ -63,19 +63,25 @@ async fn test_return_data_is_different() {
         "#,
     )
     .await;
-    let input = json!([{
-        "foo": "bar",
-        "baz": 42,
-    }, {
-        "foo": "bux",
-    }]);
-    let result = script.transform(&input).await.unwrap();
-    let expected = json!([{
-        "foo": "bar",
-    }, {
-        "foo": "bux",
-    }]);
-    assert_eq!(result, expected);
+    let input = vec![
+        json!({
+            "foo": "bar",
+            "baz": 42,
+        }),
+        json!({
+            "foo": "bux",
+        }),
+    ];
+    let result = script.transform(input).await.unwrap();
+    let expected = vec![
+        json!({
+            "foo": "bar",
+        }),
+        json!({
+            "foo": "bux",
+        }),
+    ];
+    assert_eq!(result.as_array().unwrap(), &expected);
 }
 
 #[tokio::test]
@@ -89,23 +95,31 @@ async fn test_return_data_is_flattened() {
         "#,
     )
     .await;
-    let input = json!([{
-        "foo": "bar",
-        "baz": 42,
-    }, {
-        "foo": "bux",
-    }]);
-    let result = script.transform(&input).await.unwrap();
-    let expected = json!([{
-        "foo": "bar",
-    }, {
-        "foo": "bar",
-    }, {
-        "foo": "bux",
-    }, {
-        "foo": "bux",
-    }]);
-    assert_eq!(result, expected);
+    let input = vec![
+        json!({
+            "foo": "bar",
+            "baz": 42,
+        }),
+        json!({
+            "foo": "bux",
+        }),
+    ];
+    let result = script.transform(input).await.unwrap();
+    let expected = vec![
+        json!({
+            "foo": "bar",
+        }),
+        json!({
+            "foo": "bar",
+        }),
+        json!({
+            "foo": "bux",
+        }),
+        json!({
+            "foo": "bux",
+        }),
+    ];
+    assert_eq!(result.as_array().unwrap(), &expected);
 }
 
 #[tokio::test]
@@ -119,23 +133,31 @@ async fn test_async_return_data_is_flattened() {
         "#,
     )
     .await;
-    let input = json!([{
-        "foo": "bar",
-        "baz": 42,
-    }, {
-        "foo": "bux",
-    }]);
-    let result = script.transform(&input).await.unwrap();
-    let expected = json!([{
-        "foo": "bar",
-    }, {
-        "foo": "bar",
-    }, {
-        "foo": "bux",
-    }, {
-        "foo": "bux",
-    }]);
-    assert_eq!(result, expected);
+    let input = vec![
+        json!({
+            "foo": "bar",
+            "baz": 42,
+        }),
+        json!({
+            "foo": "bux",
+        }),
+    ];
+    let result = script.transform(input).await.unwrap();
+    let expected = vec![
+        json!({
+            "foo": "bar",
+        }),
+        json!({
+            "foo": "bar",
+        }),
+        json!({
+            "foo": "bux",
+        }),
+        json!({
+            "foo": "bux",
+        }),
+    ];
+    assert_eq!(result.as_array().unwrap(), &expected);
 }
 
 #[tokio::test]
@@ -151,20 +173,26 @@ async fn test_import_library_over_http() {
         "#,
     )
     .await;
-    let input = json!([{
-        "foo": "bar",
-        "baz": 42,
-    }, {
-        "foo": "bux",
-    }]);
-    let result = script.transform(&input).await.unwrap();
-    let expected = json!([{
-        "Foo": "bar",
-        "Baz": 42,
-    }, {
-        "Foo": "bux",
-    }]);
-    assert_eq!(result, expected);
+    let input = vec![
+        json!({
+            "foo": "bar",
+            "baz": 42,
+        }),
+        json!({
+            "foo": "bux",
+        }),
+    ];
+    let result = script.transform(input).await.unwrap();
+    let expected = vec![
+        json!({
+            "Foo": "bar",
+            "Baz": 42,
+        }),
+        json!({
+            "Foo": "bux",
+        }),
+    ];
+    assert_eq!(result.as_array().unwrap(), &expected);
 }
 
 #[tokio::test]
@@ -183,12 +211,12 @@ async fn test_typescript() {
         "#,
     )
     .await;
-    let input = json!([{
+    let input = vec![json!({
         "foo": "bar",
         "baz": 42,
-    }]);
-    let result = script.transform(&input).await.unwrap();
-    assert_eq!(result, input);
+    })];
+    let result = script.transform(input.clone()).await.unwrap();
+    assert_eq!(result.as_array().unwrap(), &input);
 }
 
 #[tokio::test]
@@ -210,7 +238,7 @@ async fn test_import_data() {
     .replace("<JSON_FILE>", json_file.path().to_str().unwrap());
 
     let (_file, mut script) = new_script_with_code("ts", &code).await;
-    let input = json!([{
+    let input = vec![json!({
         "key": vec!["0x99cd8bde557814842a3121e8ddfd433a539b8c9f14bf31ebf108d12e6196e9"],
         "data": vec![
             "0x4391e7c963a1dced0d206278464778711f2ad480b34f22e1d658fb3f6ac81f3",
@@ -218,12 +246,12 @@ async fn test_import_data() {
             "0x1df635bc07855",
             "0x0"
         ],
-    }]);
-    let result = script.transform(&input).await.unwrap();
-    let expected = json!([{
+    })];
+    let result = script.transform(input).await.unwrap();
+    let expected = vec![json!({
         "is_json": true
-    }]);
-    assert_eq!(result, expected);
+    })];
+    assert_eq!(result.as_array().unwrap(), &expected);
 }
 
 #[tokio::test]
@@ -240,14 +268,14 @@ async fn test_use_starknet_js() {
         "#,
     )
     .await;
-    let input = json!([{
+    let input = vec![json!({
         "key": "Transfer",
-    }]);
-    let result = script.transform(&input).await.unwrap();
-    let expected = json!([{
+    })];
+    let result = script.transform(input).await.unwrap();
+    let expected = vec![json!({
         "result": "0x99cd8bde557814842a3121e8ddfd433a539b8c9f14bf31ebf108d12e6196e9",
-    }]);
-    assert_eq!(result, expected);
+    })];
+    assert_eq!(result.as_array().unwrap(), &expected);
 }
 
 #[tokio::test]
@@ -262,8 +290,8 @@ async fn test_net_is_denied() {
         "#,
     )
     .await;
-    let input = json!([{}]);
-    let result = script.transform(&input).await;
+    let input = vec![json!({})];
+    let result = script.transform(input).await;
     assert!(result.is_err());
 }
 
@@ -279,8 +307,8 @@ async fn test_read_is_denied() {
         "#,
     )
     .await;
-    let input = json!([{}]);
-    let result = script.transform(&input).await;
+    let input = vec![json!({})];
+    let result = script.transform(input).await;
     assert!(result.is_err());
 }
 
@@ -296,8 +324,8 @@ async fn test_write_is_denied() {
         "#,
     )
     .await;
-    let input = json!([{}]);
-    let result = script.transform(&input).await;
+    let input = vec![json!({})];
+    let result = script.transform(input).await;
     assert!(result.is_err());
 }
 
@@ -313,8 +341,8 @@ async fn test_run_is_denied() {
         "#,
     )
     .await;
-    let input = json!([{}]);
-    let result = script.transform(&input).await;
+    let input = vec![json!({})];
+    let result = script.transform(input).await;
     assert!(result.is_err());
 }
 
@@ -330,8 +358,8 @@ async fn test_sys_is_denied() {
         "#,
     )
     .await;
-    let input = json!([{}]);
-    let result = script.transform(&input).await;
+    let input = vec![json!({})];
+    let result = script.transform(input).await;
     assert!(result.is_err());
 }
 
@@ -347,8 +375,8 @@ async fn test_env_is_denied_by_default() {
         "#,
     )
     .await;
-    let input = json!([{}]);
-    let result = script.transform(&input).await;
+    let input = vec![json!({})];
+    let result = script.transform(input).await;
     assert!(result.is_err());
 }
 
@@ -363,11 +391,10 @@ async fn test_env_can_access_some_variables() {
         }
         "#,
         ScriptOptions {
-            allow_env: Some(vec!["CARGO".to_string()]),
-            ..Default::default()
+            allow_env: Some(vec!["CARGO".to_string()])
         },
     )
     .await;
-    let input = json!([{}]);
-    script.transform(&input).await.unwrap();
+    let input = vec![json!({})];
+    script.transform(input).await.unwrap();
 }

@@ -11,15 +11,15 @@ let
 in
 stdenv.mkDerivation rec {
   pname = "librusty_v8";
-  version = "0.73.0";
+  version = "0.81.0";
 
   src = fetch_librusty_v8 {
     inherit version;
     shas = {
-      x86_64-linux = "sha256-rDthrqAs4yUl9BpFm8yJ2sKbUImydMMZegUBhcu6vdk=";
-      aarch64-linux = "sha256-fM7yteYrPxCLNIUKvUpH6XTdD2aYsK4SEyrkknZgzLk=";
-      x86_64-darwin = "sha256-3c3oNq6WJkFR7E/EeJ7CnN+JO7X5x+wSlqo39TbEDQk=";
-      aarch64-darwin = "sha256-fO1R99XWfgAGcZXJX8nHbfnPZOlz28kXO7fkkeEF43A=";
+      x86_64-linux = "sha256-e77LYm/sus7EY4eiRuEp6G25djDaT4wSD4FBCxy4vcE=";
+      aarch64-linux = "sha256-wPfUcuT2Z2sy5nLf8xR3QjGQKk6OsM/45jnYv/Hw+Zs=";
+      x86_64-darwin = "sha256-UbnRiywM7b7q3rITZzNeWAuKU+HXXAqVapQ9j5ND6go=";
+      aarch64-darwin = "sha256-42d3VGBv5lW1InfzYfWr6Xj0GpyJ6GWswVNtUa8ID30=";
     };
   };
 

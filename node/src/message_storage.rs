@@ -52,7 +52,7 @@ where
         txn.commit()?;
         Ok(MdbxMessageStorage {
             db,
-            phantom: PhantomData::default(),
+            phantom: PhantomData,
         })
     }
 

@@ -1,3 +1,4 @@
+mod ext;
 mod module_loader;
 mod script;
 

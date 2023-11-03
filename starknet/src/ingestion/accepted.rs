@@ -251,8 +251,10 @@ where
         // in that case, simply ignore any error.
         debug!("ingest pending block");
 
-        let Some((status, mut header, body)) = self.provider.get_maybe_block(&BlockId::Pending).await else {
-            return Ok(())
+        let Some((status, mut header, body)) =
+            self.provider.get_maybe_block(&BlockId::Pending).await
+        else {
+            return Ok(());
         };
 
         // pending block is not what was expected, do nothing.

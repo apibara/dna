@@ -433,7 +433,7 @@ impl<'env, 'txn, E: EnvironmentKind> StorageWriter for DatabaseStorageWriter<'en
         id: &GlobalBlockId,
         mut state_update: v1alpha2::StateUpdate,
     ) -> Result<(), Self::Error> {
-        if let Some(mut state_diff) = state_update.state_diff.as_mut() {
+        if let Some(state_diff) = state_update.state_diff.as_mut() {
             for storage_diff in &state_diff.storage_diffs {
                 let key = ContractAtBlockId {
                     block_id: *id,

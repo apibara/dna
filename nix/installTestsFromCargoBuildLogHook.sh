@@ -1,3 +1,5 @@
+#!/bin/bash
+
 # This is a modified version of the installFromCargoBuildLog.sh script
 # that installs all test artifacts from the cargo build log.
 function installTestsFromCargoBuildLog() (
@@ -5,11 +7,11 @@ function installTestsFromCargoBuildLog() (
   local log=${2:-${cargoBuildLog:?not defined}}
 
   if ! [ -f "${log}" ]; then
-    echo unable to install, cargo build log does not exist at: ${log}
+    echo "unable to install, cargo build log does not exist at: ${log}"
     false
   fi
 
-  echo searching for tests to install from cargo build log at ${log}
+  echo "searching for tests to install from cargo build log at ${log}"
 
   local logs
   logs=$(jq -R 'fromjson?' <"${log}")
@@ -22,7 +24,7 @@ function installTestsFromCargoBuildLog() (
     mkdir -p "${loc}"
 
     while IFS= read -r to_install; do
-      echo installing ${to_install}
+      echo "installing ${to_install}"
       cp "${to_install}" "${loc}"
     done
 
@@ -31,5 +33,5 @@ function installTestsFromCargoBuildLog() (
 
   echo "${logs}" | jq -r "${select_bins}" | installArtifacts "${dest}/bin"
 
-  echo searching for tests complete
+  echo "searching for tests complete"
 )
