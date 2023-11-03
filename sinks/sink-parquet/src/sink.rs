@@ -109,7 +109,7 @@ impl Sink for ParquetSink {
         let Some(batch) = batch.as_array_of_objects() else {
             warn!("data is not an array of objects, skipping");
             // Skip persistence in case the buffer is still not flushed
-            return Ok(CursorAction::Skip)
+            return Ok(CursorAction::Skip);
         };
 
         if batch.is_empty() {

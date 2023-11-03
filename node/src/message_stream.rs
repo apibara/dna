@@ -109,7 +109,7 @@ where
             state: State::new(current, latest, pending_interval),
             pending_interval,
             ct,
-            _phantom: PhantomData::default(),
+            _phantom: PhantomData,
         }
     }
 }

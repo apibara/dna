@@ -319,9 +319,10 @@ mod tests {
         "#;
         let Err(err) = serde_json::from_str::<StreamOptions>(json)
             .expect("parse StreamOptions from json")
-            .to_stream_configuration() else {
-                panic!("expected error");
-            };
+            .to_stream_configuration()
+        else {
+            panic!("expected error");
+        };
         assert!(err.downcast_ref::<StreamOptionsError>().is_some());
     }
 
@@ -337,9 +338,10 @@ mod tests {
         "#;
         let Err(err) = serde_json::from_str::<StreamOptions>(json)
             .expect("parse StreamOptions from json")
-            .to_stream_configuration() else {
-                panic!("expected error");
-            };
+            .to_stream_configuration()
+        else {
+            panic!("expected error");
+        };
         assert!(err.downcast_ref::<StreamOptionsError>().is_some());
     }
 
@@ -355,9 +357,10 @@ mod tests {
         "#;
         let Err(err) = serde_json::from_str::<StreamOptions>(json)
             .expect("parse StreamOptions from json")
-            .to_stream_configuration() else {
-                panic!("expected error");
-            };
+            .to_stream_configuration()
+        else {
+            panic!("expected error");
+        };
         assert!(err.downcast_ref::<StreamOptionsError>().is_some());
     }
 
@@ -373,9 +376,10 @@ mod tests {
         "#;
         let Err(err) = serde_json::from_str::<StreamOptions>(json)
             .expect("parse StreamOptions from json")
-            .to_stream_configuration() else {
-                panic!("expected error");
-            };
+            .to_stream_configuration()
+        else {
+            panic!("expected error");
+        };
         assert!(err.downcast_ref::<StreamOptionsError>().is_some());
     }
 

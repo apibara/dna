@@ -19,6 +19,7 @@ rec {
   buildArgs = ({
     nativeBuildInputs = with pkgs.pkgsBuildHost; [
       clang
+      cmake
       llvmPackages.libclang.lib
       pkg-config
       protobuf

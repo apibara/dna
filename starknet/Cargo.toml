@@ -21,7 +21,6 @@ apibara-sdk = { path = "../sdk" }
 bloomfilter = "1.0.9"
 byte-unit.workspace = true
 byteorder.workspace = true
-chrono = "0.4.22"
 clap.workspace = true
 ctrlc.workspace = true
 error-stack.workspace = true

@@ -218,7 +218,7 @@ impl StreamClient {
             configuration_stream: configuration,
             inner: inner_stream,
             inner_tx,
-            _data: PhantomData::default(),
+            _data: PhantomData,
         };
 
         Ok(stream)
@@ -253,7 +253,7 @@ impl StreamClient {
 
         let stream = ImmutableDataStream {
             inner: inner_stream,
-            _data: PhantomData::default(),
+            _data: PhantomData,
         };
 
         Ok(stream)

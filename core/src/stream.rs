@@ -178,7 +178,7 @@ where
     pub fn from_vec(data: Vec<u8>) -> Self {
         RawMessageData {
             data,
-            _phantom: PhantomData::default(),
+            _phantom: PhantomData,
         }
     }
 

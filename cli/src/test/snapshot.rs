@@ -121,22 +121,18 @@ impl SnapshotGenerator {
                                     batch,
                                 } => {
                                     debug!("Adding data to snapshot: {:?}-{:?}", cursor, end_cursor);
-                                    let input = serde_json::to_value(&batch).change_context(CliError).attach_printable("failed to deserialize batch data")?;
-                                    let output = self.script.transform(&input).await.change_context(CliError).attach_printable("failed to transform batch data")?;
 
-                                    match &input {
-                                        Value::Array(array) => {
-                                            if !array.is_empty() {
-                                                is_empty = false;
-                                            }
-                                        }
-                                        Value::Object(object) => {
-                                            if !object.is_empty() {
-                                                is_empty = false;
-                                            }
-                                        }
-                                        _ => is_empty = false,
-                                    };
+                                    let input = batch
+                                        .into_iter()
+                                        .map(|b| serde_json::to_value(b).change_context(CliError))
+                                        .collect::<Result<Vec<Value>, _>>()
+                                        .attach_printable("failed to serialize batch data")?;
+
+                                    if !input.is_empty() {
+                                        is_empty = false;
+                                    }
+
+                                    let output = self.script.transform(input.clone()).await.change_context(CliError).attach_printable("failed to transform batch data")?;
 
                                     stream.push(json!({
                                         "cursor": cursor,

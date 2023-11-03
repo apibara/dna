@@ -1,30 +1,23 @@
-use std::{borrow::Cow, fmt, path::Path, rc::Rc, time::Duration};
+use std::{fmt, path::Path, rc::Rc, time::Duration};
 
-use deno_core::{op, FastString, ModuleSpecifier, OpState, ZeroCopyBuf};
+use deno_core::{FastString, ModuleSpecifier};
 use deno_runtime::{
     permissions::{Permissions, PermissionsContainer, PermissionsOptions},
     worker::{MainWorker, WorkerOptions},
 };
 use error_stack::{Result, ResultExt};
 
-use crate::module_loader::WorkerModuleLoader;
-
-deno_core::extension!(
-    apibara_script,
-    ops = [op_script_return],
-    esm_entry_point = "ext:apibara_script/env.js",
-    esm = ["env.js"],
-    customizer = |ext: &mut deno_core::ExtensionBuilder| {
-        ext.force_op_registration();
-    },
-);
+use crate::{
+    ext::{apibara_script, TransformState},
+    module_loader::WorkerModuleLoader,
+};
 
 pub use serde_json::Value;
 
 pub struct Script {
     worker: MainWorker,
     module: ModuleSpecifier,
-    _timeout: Duration,
+    timeout: Duration,
 }
 
 #[derive(Debug)]
@@ -82,7 +75,7 @@ impl Script {
         Ok(Script {
             worker,
             module,
-            _timeout: Duration::from_secs(5),
+            timeout: Duration::from_secs(5),
         })
     }
 
@@ -97,13 +90,13 @@ impl Script {
                 }} else if (module.default.length != 1) {{
                     __script_result = 2;
                 }}
-                globalThis.Script.return_value(__script_result);
+                globalThis.Script.output_set(__script_result);
             }})(globalThis)"#,
             self.module
         )
         .into();
 
-        let result = self.execute_script(code).await?;
+        let result = self.execute_script(code, Vec::default()).await?;
 
         match result.as_u64() {
             Some(0) => Ok(()),
@@ -129,14 +122,13 @@ impl Script {
         let code: FastString = format!(
             r#"(async (globalThis) => {{
                 const module = await import("{0}");
-                __script_result = module.config;
-                globalThis.Script.return_value(__script_result);
+                globalThis.Script.output_set(module.config);
             }})(globalThis)"#,
             self.module
         )
         .into();
 
-        let configuration = self.execute_script(code).await?;
+        let configuration = self.execute_script(code, Vec::default()).await?;
 
         if Value::Null == configuration {
             return Err(ScriptError)
@@ -150,70 +142,85 @@ impl Script {
         Ok(configuration)
     }
 
-    pub async fn transform(&mut self, data: &Value) -> Result<Value, ScriptError> {
+    pub async fn transform(&mut self, data: Vec<Value>) -> Result<Value, ScriptError> {
         let code: FastString = format!(
             r#"(async (globalThis) => {{
             const module = await import("{0}");
             const t = module.default;
-            const data = {1};
-            let __script_result;
+            let batchSize = globalThis.Script.batch_size();
+            let output = Array(batchSize);
+
             if (t.constructor.name === 'AsyncFunction') {{
-              // "flatten" the results into an array of values.
-              const r = await Promise.all(data.map(t));
-              __script_result = r.flatMap(x => x);
+              let promises = Array(batchSize);
+              for (let i = 0; i < batchSize; i++) {{
+                promises[i] = await t(globalThis.Script.batch_get(i));
+              }}
+              output = await Promise.all(promises);
             }} else {{
-              __script_result = data.flatMap(t);
+              for (let i = 0; i < batchSize; i++) {{
+                output[i] = t(globalThis.Script.batch_get(i));
+              }}
             }}
+
+            // "flatten" the results into an array of values.
+            let __script_result = output.flatMap(x => x);
+
             if (typeof __script_result === 'undefined') {{
               __script_result = null;
             }}
-            globalThis.Script.return_value(__script_result);
+
+            globalThis.Script.output_set(__script_result);
         }})(globalThis)"#,
-            self.module, data,
+            self.module,
         )
         .into();
 
-        self.execute_script(code).await
+        self.execute_script(code, data).await
     }
 
-    async fn execute_script(&mut self, code: FastString) -> Result<Value, ScriptError> {
-        match self.worker.execute_script("[script]", code) {
-            Ok(_) => {}
-            Err(err) => {
-                return Err(ScriptError)
-                    .attach_printable("failed to execute indexer script")
-                    .attach_printable_lazy(|| format!("error: {err:?}"));
-            }
-        }
-
-        // TODO:
-        //  - limit amount of time
-        //  - limit amount of memory
-        match self.worker.run_event_loop(false).await {
-            Ok(_) => {}
-            Err(err) => {
-                return Err(ScriptError)
-                    .attach_printable("failed to run indexer event loop")
-                    .attach_printable_lazy(|| format!("error: {err:?}"));
-            }
-        }
-
+    async fn execute_script(
+        &mut self,
+        code: FastString,
+        input: Vec<Value>,
+    ) -> Result<Value, ScriptError> {
         let state = self.worker.js_runtime.op_state();
-        let mut state = state.borrow_mut();
-        let resource_table = &mut state.resource_table;
-        let resource_id = resource_table
-            .names()
-            .find(|(_, name)| name == "__rust_ReturnValue");
 
-        match resource_id {
-            None => Ok(Value::Null),
-            Some((rid, _)) => {
-                let entry: Rc<ReturnValueResource> =
-                    resource_table.take(rid).expect("resource entry");
-                let value = Rc::try_unwrap(entry).expect("value");
-                Ok(value.value)
+        state.borrow_mut().put::<TransformState>(TransformState {
+            input_batch: input,
+            output: Value::Null,
+        });
+
+        let future = async {
+            match self.worker.execute_script("[script]", code) {
+                Ok(_) => {}
+                Err(err) => {
+                    return Err(ScriptError)
+                        .attach_printable("failed to execute indexer script")
+                        .attach_printable_lazy(|| format!("error: {err:?}"));
+                }
+            }
+
+            match self.worker.run_event_loop(false).await {
+                Ok(_) => Ok(()),
+                Err(err) => Err(ScriptError)
+                    .attach_printable("failed to run indexer event loop")
+                    .attach_printable_lazy(|| format!("error: {err:?}")),
+            }
+        };
+
+        match tokio::time::timeout(self.timeout, future).await {
+            Ok(result) => {
+                result?;
+            }
+            Err(_) => {
+                return Err(ScriptError)
+                    .attach_printable("indexer script timed out")
+                    .attach_printable_lazy(|| format!("timeout: {:?}", self.timeout));
             }
         }
+
+        let state = state.borrow_mut().take::<TransformState>();
+        Ok(state.output)
     }
 
     fn default_permissions(options: ScriptOptions) -> Result<PermissionsContainer, ScriptError> {
@@ -229,27 +236,4 @@ impl Script {
                 .attach_printable_lazy(|| format!("error: {err:?}")),
         }
     }
-}
-
-#[derive(Debug)]
-struct ReturnValueResource {
-    value: Value,
-}
-
-impl deno_core::Resource for ReturnValueResource {
-    fn name(&self) -> Cow<str> {
-        "__rust_ReturnValue".into()
-    }
-}
-
-#[op]
-fn op_script_return(
-    state: &mut OpState,
-    args: Value,
-    _buf: Option<ZeroCopyBuf>,
-) -> std::result::Result<Value, deno_core::anyhow::Error> {
-    let value = ReturnValueResource { value: args };
-    state.resource_table.add(value);
-
-    Ok(Value::Null)
 }

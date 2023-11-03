@@ -339,12 +339,14 @@ where
     {
         trace!(cursor = ?cursor, end_cursor = ?end_cursor, "received data");
         // fatal error since if the sink is restarted it will receive the same data again.
-        let json_batch = serde_json::to_value(&batch)
-            .change_context(SinkConnectorError::Fatal)
+        let json_batch = batch
+            .into_iter()
+            .map(|b| serde_json::to_value(b).change_context(SinkConnectorError::Fatal))
+            .collect::<Result<Vec<Value>, _>>()
             .attach_printable("failed to serialize batch data")?;
         let data = self
             .script
-            .transform(&json_batch)
+            .transform(json_batch)
             .await
             .change_context(SinkConnectorError::Fatal)
             .attach_printable("failed to transform batch data")?;

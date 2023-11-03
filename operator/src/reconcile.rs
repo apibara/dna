@@ -255,7 +255,8 @@ impl Indexer {
             .await
             .change_context(OperatorError)
             .attach_printable("failed to get pod")
-            .attach_printable_lazy(|| format!("indexer: {pod_name}"))? else {
+            .attach_printable_lazy(|| format!("indexer: {pod_name}"))?
+        else {
             return Ok((0, None));
         };
 
@@ -268,9 +269,10 @@ impl Indexer {
 
         let Some(terminated) = container_status
             .and_then(|cs| cs.state.as_ref())
-            .and_then(|st| st.terminated.clone()) else {
-                return Ok((0, None));
-            };
+            .and_then(|st| st.terminated.clone())
+        else {
+            return Ok((0, None));
+        };
 
         let exit_code = terminated.exit_code;
 
