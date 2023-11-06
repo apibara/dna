@@ -200,15 +200,25 @@ where
                 }
                 let transaction = &transactions[receipt.transaction_index as usize];
                 for event in &receipt.events {
-                    if self.filter_event(event) {
-                        let transaction = transaction.clone();
-                        let receipt = receipt.clone();
+                    if let Some(filter) = self.filter_event(event) {
+                        let transaction = if filter.include_transaction.unwrap_or(true) {
+                            Some(transaction.clone())
+                        } else {
+                            None
+                        };
+
+                        let receipt = if filter.include_receipt.unwrap_or(true) {
+                            Some(receipt.clone())
+                        } else {
+                            None
+                        };
+
                         let event = event.clone();
 
                         events.push(v1alpha2::EventWithTransaction {
-                            transaction: Some(transaction),
-                            receipt: Some(receipt),
                             event: Some(event),
+                            transaction,
+                            receipt,
                         });
                     }
                 }
@@ -359,8 +369,8 @@ where
         self.filter.transactions.iter().any(|f| f.matches(tx))
     }
 
-    fn filter_event(&self, event: &v1alpha2::Event) -> bool {
-        self.filter.events.iter().any(|f| f.matches(event))
+    fn filter_event(&self, event: &v1alpha2::Event) -> Option<&v1alpha2::EventFilter> {
+        self.filter.events.iter().find(|f| f.matches(event))
     }
 
     fn filter_l2_to_l1_message(&self, message: &v1alpha2::L2ToL1Message) -> bool {
