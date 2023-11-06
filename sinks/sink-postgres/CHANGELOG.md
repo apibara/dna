@@ -6,6 +6,17 @@ The format is based on [Common Changelog](https://common-changelog.org/), and
 this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.4] - 2023-11-06
+
+_Write to the same table from multiple indexers._
+
+### Added
+
+ - Add a new `invalidate` option used to add additional conditions to the
+   invalidate query. Developers can constrain which rows are delete by an
+   indexer on data invalidation, so that multiple indexers can write to the
+   same table.
+
 ## [0.4.3] - 2023-10-27
 
 _Fix exit code on disconnect._
@@ -93,6 +104,7 @@ _This release improves the developer experience when running locally._
 _First tagged release 🎉_
 
 
+[0.4.4]: https://github.com/apibara/dna/releases/tag/sink-postgres/v0.4.4
 [0.4.3]: https://github.com/apibara/dna/releases/tag/sink-postgres/v0.4.3
 [0.4.2]: https://github.com/apibara/dna/releases/tag/sink-postgres/v0.4.2
 [0.4.1]: https://github.com/apibara/dna/releases/tag/sink-postgres/v0.4.1
