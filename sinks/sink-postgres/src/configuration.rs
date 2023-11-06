@@ -3,6 +3,7 @@ use std::{path::PathBuf, str::FromStr};
 use apibara_sink_common::SinkOptions;
 use clap::Args;
 use error_stack::{Result, ResultExt};
+use serde::Deserialize;
 use tokio_postgres::Config;
 
 use crate::sink::SinkPostgresError;
@@ -24,6 +25,7 @@ pub struct SinkPostgresConfiguration {
     pub pg: Config,
     pub table_name: String,
     pub tls: TlsConfiguration,
+    pub invalidate: Vec<InvalidateColumn>,
 }
 
 #[derive(Debug, Args, Default, SinkOptions)]
@@ -56,6 +58,17 @@ pub struct SinkPostgresOptions {
     /// Use Server Name Indication (SNI).
     #[arg(long, env = "POSTGRES_TLS_USE_SNI")]
     pub tls_use_sni: Option<bool>,
+    /// Additional conditions for the invalidate query.
+    #[clap(skip)]
+    pub invalidate: Option<Vec<InvalidateColumn>>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub struct InvalidateColumn {
+    /// Column name.
+    pub column: String,
+    /// Column value.
+    pub value: String,
 }
 
 impl SinkOptions for SinkPostgresOptions {
@@ -75,6 +88,7 @@ impl SinkOptions for SinkPostgresOptions {
                 .tls_accept_invalid_hostnames
                 .or(other.tls_accept_invalid_hostnames),
             tls_use_sni: self.tls_use_sni.or(other.tls_use_sni),
+            invalidate: self.invalidate.or(other.invalidate),
         }
     }
 }
@@ -105,10 +119,13 @@ impl SinkPostgresOptions {
             }
         };
 
+        let invalidate = self.invalidate.unwrap_or_default();
+
         Ok(SinkPostgresConfiguration {
             pg,
             table_name,
             tls,
+            invalidate,
         })
     }
 }

@@ -11,7 +11,7 @@ use tokio_postgres::types::Json;
 use tokio_postgres::{Client, NoTls, Statement};
 use tracing::{info, warn};
 
-use crate::configuration::TlsConfiguration;
+use crate::configuration::{InvalidateColumn, TlsConfiguration};
 use crate::SinkPostgresOptions;
 
 #[derive(Debug)]
@@ -116,8 +116,28 @@ impl Sink for PostgresSink {
             "INSERT INTO {} SELECT * FROM json_populate_recordset(NULL::{}, $1::json)",
             &table_name, &table_name
         );
-        let delete_query = format!("DELETE FROM {} WHERE _cursor > $1", &table_name);
-        let delete_all_query = format!("DELETE FROM {}", &table_name);
+
+        let additional_conditions: String = if config.invalidate.is_empty() {
+            "".into()
+        } else {
+            // TODO: this is quite fragile. It should properly format the column name
+            // and value.
+            config.invalidate.iter().fold(
+                String::default(),
+                |acc, InvalidateColumn { column, value }| {
+                    format!("{acc} AND \"{column}\" = '{value}'")
+                },
+            )
+        };
+
+        let delete_query = format!(
+            "DELETE FROM {} WHERE _cursor > $1 {}",
+            table_name, additional_conditions
+        );
+        let delete_all_query = format!(
+            "DELETE FROM {} WHERE true {}",
+            table_name, additional_conditions
+        );
 
         let insert_statement = client
             .prepare(&query)
