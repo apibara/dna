@@ -391,7 +391,7 @@ async fn test_env_can_access_some_variables() {
         }
         "#,
         ScriptOptions {
-            allow_env: Some(vec!["CARGO".to_string()])
+            allow_env: Some(vec!["CARGO".to_string()]),
         },
     )
     .await;

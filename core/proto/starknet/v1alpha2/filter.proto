@@ -116,7 +116,11 @@ message EventFilter {
   // Filter data that prefix-match the given data.
   repeated FieldElement data = 3;
   // Include events emitted by reverted transactions.
-  bool include_reverted = 4;
+  optional bool include_reverted = 4;
+  // Include the transaction that emitted the event. Defaults to true.
+  optional bool include_transaction = 5;
+  // Include the receipt of the transaction that emitted the event. Defaults to true.
+  optional bool include_receipt = 6;
 }
 
 // Filter state update data.
