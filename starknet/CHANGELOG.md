@@ -6,6 +6,18 @@ The format is based on [Common Changelog](https://common-changelog.org/), and
 this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.6] - 2023-11-06
+
+_Control the amount of data delivered to clients._
+
+### Changed
+
+ - Add the `include_transaction` and `include_receipt` options to
+   `EventFilter`. These flags enable clients to control how much data is
+   delivered to them by not including the transaction and/or receipt that
+   emitted an event. Users that don't use this data should enable this flag
+   to improve their indexer's performance.
+
 ## [1.1.5] - 2023-11-01
 
 _Improve compatibility with Juno._
@@ -114,6 +126,8 @@ _Start publishing versioned Docker images._
 
 _First tagged release 🎉_
 
+[1.1.6]: https://github.com/apibara/dna/releases/tag/starknet/v1.1.6
+[1.1.5]: https://github.com/apibara/dna/releases/tag/starknet/v1.1.5
 [1.1.4]: https://github.com/apibara/dna/releases/tag/starknet/v1.1.4
 [1.1.3]: https://github.com/apibara/dna/releases/tag/starknet/v1.1.3
 [1.1.2]: https://github.com/apibara/dna/releases/tag/starknet/v1.1.2
