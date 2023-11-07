@@ -6,6 +6,26 @@ The format is based on [Common Changelog](https://common-changelog.org/), and
 this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.5] - 2023-11-07
+
+_Improve performance for data-heavy indexers._ 
+
+### Added
+
+ - Update Starknet's event filter to support the new `includeTransaction`,
+   and `includeReceipt` options. These options control whether the server will
+   send the transaction and/or receipt that generated an event. For indexers
+   that don't need this data, toggling this option on can improve performance
+   drastically.
+
+### Changed
+
+ - Update the Deno runtime to `deno_core v0.244` and `deno_runtime v0.130`.
+ - Use the new
+   [`#[op2]`](https://docs.rs/deno_core/0.224.0/deno_core/attr.op2.html) macro
+   to exchange data between Deno and Rust. Data serialization and
+   deserialization between the sink and the script is now faster.
+
 ## [0.4.4] - 2023-11-06
 
 _Write to the same table from multiple indexers._
@@ -104,6 +124,7 @@ _This release improves the developer experience when running locally._
 _First tagged release 🎉_
 
 
+[0.4.5]: https://github.com/apibara/dna/releases/tag/sink-postgres/v0.4.5
 [0.4.4]: https://github.com/apibara/dna/releases/tag/sink-postgres/v0.4.4
 [0.4.3]: https://github.com/apibara/dna/releases/tag/sink-postgres/v0.4.3
 [0.4.2]: https://github.com/apibara/dna/releases/tag/sink-postgres/v0.4.2

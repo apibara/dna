@@ -6,6 +6,26 @@ The format is based on [Common Changelog](https://common-changelog.org/), and
 this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.4] - 2023-11-07
+
+_Improve performance for data-heavy indexers._ 
+
+### Added
+
+ - Update Starknet's event filter to support the new `includeTransaction`,
+   and `includeReceipt` options. These options control whether the server will
+   send the transaction and/or receipt that generated an event. For indexers
+   that don't need this data, toggling this option on can improve performance
+   drastically.
+
+### Changed
+
+ - Update the Deno runtime to `deno_core v0.244` and `deno_runtime v0.130`.
+ - Use the new
+   [`#[op2]`](https://docs.rs/deno_core/0.224.0/deno_core/attr.op2.html) macro
+   to exchange data between Deno and Rust. Data serialization and
+   deserialization between the sink and the script is now faster.
+
 ## [0.3.3] - 2023-10-27
 
 _Fix exit code on disconnect._
@@ -74,6 +94,7 @@ _This release improves the developer experience when running locally._
 _First tagged release 🎉_
 
 
+[0.3.4]: https://github.com/apibara/dna/releases/tag/sink-parquet/v0.3.4
 [0.3.3]: https://github.com/apibara/dna/releases/tag/sink-parquet/v0.3.3
 [0.3.2]: https://github.com/apibara/dna/releases/tag/sink-parquet/v0.3.2
 [0.3.1]: https://github.com/apibara/dna/releases/tag/sink-parquet/v0.3.1
