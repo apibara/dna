@@ -29,6 +29,7 @@ rec {
       CoreFoundation
       CoreServices
       Security
+      SystemConfiguration
     ]);
 
     buildInputs = with pkgs.pkgsHostHost; [
