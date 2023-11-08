@@ -1,5 +1,5 @@
 use apibara_core::node::v1alpha2::{Cursor, DataFinality};
-use apibara_sink_common::{CursorAction, Sink};
+use apibara_sink_common::{Context, CursorAction, Sink};
 use apibara_sink_mongo::{MongoSink, SinkMongoError, SinkMongoOptions};
 use error_stack::{Result, ResultExt};
 use futures_util::TryStreamExt;
@@ -114,24 +114,23 @@ async fn test_handle_data() -> Result<(), SinkMongoError> {
         let end_cursor = new_cursor((order_key + 1) * batch_size);
         let finality = DataFinality::DataStatusFinalized;
         let batch = new_batch(&cursor, &end_cursor);
+        let ctx = Context {
+            cursor: cursor.clone(),
+            end_cursor: end_cursor.clone(),
+            finality,
+        };
 
-        let action = sink
-            .handle_data(&cursor, &end_cursor, &finality, &batch)
-            .await?;
+        let action = sink.handle_data(&ctx, &batch).await?;
 
         assert_eq!(action, CursorAction::Persist);
 
         all_docs.extend(new_docs(&cursor, &end_cursor));
 
-        let action = sink
-            .handle_data(&cursor, &end_cursor, &finality, &new_not_array_of_objects())
-            .await?;
+        let action = sink.handle_data(&ctx, &new_not_array_of_objects()).await?;
 
         assert_eq!(action, CursorAction::Persist);
 
-        let action = sink
-            .handle_data(&cursor, &end_cursor, &finality, &json!([]))
-            .await?;
+        let action = sink.handle_data(&ctx, &json!([])).await?;
 
         assert_eq!(action, CursorAction::Persist);
     }
@@ -169,10 +168,13 @@ async fn test_handle_invalidate_all(
         let end_cursor = new_cursor((order_key + 1) * batch_size);
         let finality = DataFinality::DataStatusFinalized;
         let batch = new_batch(&cursor, &end_cursor);
+        let ctx = Context {
+            cursor: cursor.clone(),
+            end_cursor: end_cursor.clone(),
+            finality,
+        };
 
-        let action = sink
-            .handle_data(&cursor, &end_cursor, &finality, &batch)
-            .await?;
+        let action = sink.handle_data(&ctx, &batch).await?;
 
         assert_eq!(action, CursorAction::Persist);
 
@@ -225,10 +227,13 @@ async fn test_handle_invalidate() -> Result<(), SinkMongoError> {
         let end_cursor = new_cursor((order_key + 1) * batch_size);
         let finality = DataFinality::DataStatusFinalized;
         let batch = new_batch(&cursor, &end_cursor);
+        let ctx = Context {
+            cursor: cursor.clone(),
+            end_cursor: end_cursor.clone(),
+            finality,
+        };
 
-        let action = sink
-            .handle_data(&cursor, &end_cursor, &finality, &batch)
-            .await?;
+        let action = sink.handle_data(&ctx, &batch).await?;
 
         all_docs.extend(new_docs(&cursor, &end_cursor));
 
@@ -288,8 +293,13 @@ async fn test_handle_data_in_entity_mode() -> Result<(), SinkMongoError> {
             json!({"entity": { "address": "0x1", "token_id": "3", }, "update": [{ "$set": { "v0": "a", "v1": "a" } }] }),
         ]);
 
-        sink.handle_data(&cursor, &end_cursor, &finality, &batch)
-            .await?;
+        let ctx = Context {
+            cursor,
+            end_cursor,
+            finality,
+        };
+
+        sink.handle_data(&ctx, &batch).await?;
     }
 
     {
@@ -301,8 +311,13 @@ async fn test_handle_data_in_entity_mode() -> Result<(), SinkMongoError> {
             json!({"entity": { "address": "0x1", "token_id": "2", }, "update": [{ "$set": { "v0": "b"} }] }),
         ]);
 
-        sink.handle_data(&cursor, &end_cursor, &finality, &batch)
-            .await?;
+        let ctx = Context {
+            cursor,
+            end_cursor,
+            finality,
+        };
+
+        sink.handle_data(&ctx, &batch).await?;
 
         // Check that the values were updated correctly.
         // For example, we check that key v0 is still present.
@@ -349,8 +364,13 @@ async fn test_handle_data_in_entity_mode() -> Result<(), SinkMongoError> {
             json!({ "entity": { "address": "0x1", "token_id": "4" }, "update": { "$set": { "v0": "a", "v1": "a" } } }),
         ]);
 
-        sink.handle_data(&cursor, &end_cursor, &finality, &batch)
-            .await?;
+        let ctx = Context {
+            cursor,
+            end_cursor,
+            finality,
+        };
+
+        sink.handle_data(&ctx, &batch).await?;
 
         let updated_docs = sink
             .collection
@@ -415,8 +435,13 @@ async fn test_handle_invalidate_in_entity_mode() -> Result<(), SinkMongoError> {
             json!({ "entity": { "address": "0x1", "token_id": "2" }, "update": { "$set": { "v0": "a", "v1": "a"} } }),
         ]);
 
-        sink.handle_data(&cursor, &end_cursor, &finality, &batch)
-            .await?;
+        let ctx = Context {
+            cursor,
+            end_cursor,
+            finality,
+        };
+
+        sink.handle_data(&ctx, &batch).await?;
     }
 
     {
@@ -426,8 +451,13 @@ async fn test_handle_invalidate_in_entity_mode() -> Result<(), SinkMongoError> {
             json!({ "entity": { "address": "0x1", "token_id": "2" }, "update": { "$set": { "v1": "b" } } }),
         ]);
 
-        sink.handle_data(&cursor, &end_cursor, &finality, &batch)
-            .await?;
+        let ctx = Context {
+            cursor,
+            end_cursor,
+            finality,
+        };
+
+        sink.handle_data(&ctx, &batch).await?;
 
         let new_docs = sink
             .collection

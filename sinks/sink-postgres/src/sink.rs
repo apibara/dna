@@ -1,7 +1,7 @@
 use std::fmt;
 
-use apibara_core::node::v1alpha2::{Cursor, DataFinality};
-use apibara_sink_common::{CursorAction, DisplayCursor, Sink, ValueExt};
+use apibara_core::node::v1alpha2::Cursor;
+use apibara_sink_common::{Context, CursorAction, DisplayCursor, Sink, ValueExt};
 use async_trait::async_trait;
 use error_stack::{Result, ResultExt};
 use native_tls::{Certificate, TlsConnector};
@@ -167,17 +167,10 @@ impl Sink for PostgresSink {
 
     async fn handle_data(
         &mut self,
-        cursor: &Option<Cursor>,
-        end_cursor: &Cursor,
-        finality: &DataFinality,
+        ctx: &Context,
         batch: &Value,
     ) -> Result<CursorAction, Self::Error> {
-        info!(
-            cursor = %DisplayCursor(cursor),
-            end_cursor = %end_cursor,
-            finality = ?finality,
-            "handling data"
-        );
+        info!(ctx = ?ctx, "handling data");
 
         let Some(batch) = batch.as_array_of_objects() else {
             warn!("data is not an array of objects, skipping");
@@ -193,7 +186,7 @@ impl Sink for PostgresSink {
             .map(|value| {
                 // Safety: we know that the batch is an array of objects
                 let mut value = value.as_object().expect("value is an object").clone();
-                value.insert("_cursor".into(), end_cursor.order_key.into());
+                value.insert("_cursor".into(), ctx.end_cursor.order_key.into());
                 value
             })
             .collect::<Vec<_>>();

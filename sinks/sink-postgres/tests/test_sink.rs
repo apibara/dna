@@ -1,5 +1,5 @@
 use apibara_core::node::v1alpha2::{Cursor, DataFinality};
-use apibara_sink_common::{CursorAction, Sink};
+use apibara_sink_common::{Context, CursorAction, Sink};
 use apibara_sink_postgres::{
     InvalidateColumn, PostgresSink, SinkPostgresError, SinkPostgresOptions,
 };
@@ -169,21 +169,21 @@ async fn test_handle_data() -> Result<(), SinkPostgresError> {
 
         all_rows.extend(new_rows(&cursor, &end_cursor));
 
-        let action = sink
-            .handle_data(&cursor, &end_cursor, &finality, &batch)
-            .await?;
+        let ctx = Context {
+            cursor,
+            end_cursor,
+            finality,
+        };
+
+        let action = sink.handle_data(&ctx, &batch).await?;
 
         assert_eq!(action, CursorAction::Persist);
 
-        let action = sink
-            .handle_data(&cursor, &end_cursor, &finality, &new_not_array_of_objects())
-            .await?;
+        let action = sink.handle_data(&ctx, &new_not_array_of_objects()).await?;
 
         assert_eq!(action, CursorAction::Persist);
 
-        let action = sink
-            .handle_data(&cursor, &end_cursor, &finality, &json!([]))
-            .await?;
+        let action = sink.handle_data(&ctx, &json!([])).await?;
 
         assert_eq!(action, CursorAction::Persist);
     }
@@ -219,9 +219,13 @@ async fn test_handle_invalidate_all(
 
         expected_rows.extend(new_rows(&cursor, &end_cursor));
 
-        let action = sink
-            .handle_data(&cursor, &end_cursor, &finality, &batch)
-            .await?;
+        let ctx = Context {
+            cursor,
+            end_cursor,
+            finality,
+        };
+
+        let action = sink.handle_data(&ctx, &batch).await?;
 
         assert_eq!(action, CursorAction::Persist);
     }
@@ -274,9 +278,13 @@ async fn test_handle_invalidate() -> Result<(), SinkPostgresError> {
 
         all_rows.extend(new_rows(&cursor, &end_cursor));
 
-        let action = sink
-            .handle_data(&cursor, &end_cursor, &finality, &batch)
-            .await?;
+        let ctx = Context {
+            cursor,
+            end_cursor,
+            finality,
+        };
+
+        let action = sink.handle_data(&ctx, &batch).await?;
 
         assert_eq!(action, CursorAction::Persist);
     }
@@ -333,9 +341,15 @@ async fn test_handle_invalidate_with_additional_condition() -> Result<(), SinkPo
             Some("a".into()),
             Some("b".into()),
         );
-        let action = sink
-            .handle_data(&cursor, &end_cursor, &finality, &batch)
-            .await?;
+
+        let ctx = Context {
+            cursor: cursor.clone(),
+            end_cursor: end_cursor.clone(),
+            finality,
+        };
+
+        let action = sink.handle_data(&ctx, &batch).await?;
+
         assert_eq!(action, CursorAction::Persist);
 
         let batch = new_batch_with_additional_columns(
@@ -344,9 +358,9 @@ async fn test_handle_invalidate_with_additional_condition() -> Result<(), SinkPo
             Some("a".into()),
             Some("a".into()),
         );
-        let action = sink
-            .handle_data(&cursor, &end_cursor, &finality, &batch)
-            .await?;
+
+        let action = sink.handle_data(&ctx, &batch).await?;
+
         assert_eq!(action, CursorAction::Persist);
     }
 
