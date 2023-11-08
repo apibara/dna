@@ -1,5 +1,5 @@
 use apibara_core::node::v1alpha2::{Cursor, DataFinality};
-use apibara_sink_common::Sink;
+use apibara_sink_common::{Context, Sink};
 use apibara_sink_webhook::{SinkWebhookConfiguration, SinkWebhookError, WebhookSink};
 use error_stack::{Result, ResultExt};
 use http::{HeaderMap, Uri};
@@ -56,8 +56,13 @@ async fn test_handle_data() -> Result<(), SinkWebhookError> {
         let finality = DataFinality::DataStatusFinalized;
         let batch = new_batch(&cursor, &end_cursor);
 
-        sink.handle_data(&cursor, &end_cursor, &finality, &batch)
-            .await?;
+        let ctx = Context {
+            cursor: cursor.clone(),
+            end_cursor: end_cursor.clone(),
+            finality,
+        };
+
+        sink.handle_data(&ctx, &batch).await?;
 
         let requests = server.received_requests().await.unwrap();
         assert_eq!(requests.len() as u64, order_key + 1);
@@ -146,9 +151,13 @@ async fn test_handle_data_raw() -> Result<(), SinkWebhookError> {
         let end_cursor = new_cursor((order_key + 1) * batch_size);
         let finality = DataFinality::DataStatusFinalized;
         let batch = new_batch(&cursor, &end_cursor);
+        let ctx = Context {
+            cursor,
+            end_cursor,
+            finality,
+        };
 
-        sink.handle_data(&cursor, &end_cursor, &finality, &batch)
-            .await?;
+        sink.handle_data(&ctx, &batch).await?;
 
         let batch_as_array = batch.as_array().unwrap();
         let requests = server.received_requests().await.unwrap();

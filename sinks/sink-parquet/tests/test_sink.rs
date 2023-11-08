@@ -1,7 +1,7 @@
 use std::{ffi::OsString, sync::Arc};
 
 use apibara_core::node::v1alpha2::{Cursor, DataFinality};
-use apibara_sink_common::{CursorAction, Sink};
+use apibara_sink_common::{Context, CursorAction, Sink};
 use apibara_sink_parquet::{ParquetSink, SinkParquetConfiguration, SinkParquetError};
 use arrow::{
     array::{ArrayRef, Int64Array, StringArray},
@@ -101,59 +101,60 @@ async fn test_handle_data() -> Result<(), SinkParquetError> {
 
     let finality = DataFinality::DataStatusFinalized;
 
-    let start_cursor = None;
+    let cursor = None;
     let end_cursor = new_cursor(5);
-    let batch = new_batch(&start_cursor, &end_cursor);
+    let batch = new_batch(&cursor, &end_cursor);
 
-    let action = sink
-        .handle_data(&start_cursor, &end_cursor, &finality, &batch)
-        .await?;
+    let ctx = Context {
+        cursor,
+        end_cursor,
+        finality,
+    };
+
+    let action = sink.handle_data(&ctx, &batch).await?;
 
     assert_eq!(action, CursorAction::Skip);
 
     let file_names: Vec<OsString> = get_file_names(&output_dir);
     assert_eq!(file_names.len(), 0);
 
-    let start_cursor = Some(new_cursor(5));
+    let cursor = Some(new_cursor(5));
     let end_cursor = new_cursor(10);
-    let batch = new_batch(&start_cursor, &end_cursor);
+    let batch = new_batch(&cursor, &end_cursor);
+    let ctx = Context {
+        cursor,
+        end_cursor,
+        finality,
+    };
 
-    let action = sink
-        .handle_data(&start_cursor, &end_cursor, &finality, &batch)
-        .await?;
+    let action = sink.handle_data(&ctx, &batch).await?;
 
     assert_eq!(action, CursorAction::Persist);
 
     let file_names: Vec<OsString> = get_file_names(&output_dir);
     assert_eq!(file_names, vec!["0000000000_0000000010.parquet"]);
 
-    let start_cursor = Some(new_cursor(10));
+    let cursor = Some(new_cursor(10));
     let end_cursor = new_cursor(15);
-    let batch = new_batch(&start_cursor, &end_cursor);
+    let batch = new_batch(&cursor, &end_cursor);
+    let ctx = Context {
+        cursor,
+        end_cursor,
+        finality,
+    };
 
-    let action = sink
-        .handle_data(&start_cursor, &end_cursor, &finality, &batch)
-        .await?;
+    let action = sink.handle_data(&ctx, &batch).await?;
 
     assert_eq!(action, CursorAction::Skip);
 
     let file_names: Vec<OsString> = get_file_names(&output_dir);
     assert_eq!(file_names, vec!["0000000000_0000000010.parquet"]);
 
-    let action = sink
-        .handle_data(
-            &start_cursor,
-            &end_cursor,
-            &finality,
-            &new_not_array_of_objects(),
-        )
-        .await?;
+    let action = sink.handle_data(&ctx, &new_not_array_of_objects()).await?;
 
     assert_eq!(action, CursorAction::Skip);
 
-    let action = sink
-        .handle_data(&start_cursor, &end_cursor, &finality, &json!([]))
-        .await?;
+    let action = sink.handle_data(&ctx, &json!([])).await?;
 
     assert_eq!(action, CursorAction::Skip);
 

@@ -1,8 +1,8 @@
 use std::fmt;
 use std::{fs::File, sync::Arc};
 
-use apibara_core::node::v1alpha2::{Cursor, DataFinality};
-use apibara_sink_common::{CursorAction, DisplayCursor, Sink, ValueExt};
+use apibara_core::node::v1alpha2::Cursor;
+use apibara_sink_common::{Context, CursorAction, Sink, ValueExt};
 use arrow::json::reader::{infer_json_schema_from_iterator, Decoder, ReaderBuilder};
 use arrow::record_batch::RecordBatch;
 use async_trait::async_trait;
@@ -98,12 +98,10 @@ impl Sink for ParquetSink {
         Ok(Self::new(config))
     }
 
-    #[instrument(skip(self, cursor, end_cursor, finality, batch), err(Debug))]
+    #[instrument(skip_all, err(Debug))]
     async fn handle_data(
         &mut self,
-        cursor: &Option<Cursor>,
-        end_cursor: &Cursor,
-        finality: &DataFinality,
+        ctx: &Context,
         batch: &Value,
     ) -> Result<CursorAction, Self::Error> {
         let Some(batch) = batch.as_array_of_objects() else {
@@ -117,21 +115,21 @@ impl Sink for ParquetSink {
             return Ok(CursorAction::Skip);
         }
 
-        info!(
-            cursor = %DisplayCursor(cursor),
-            end_cursor = %end_cursor,
-            finality = ?finality,
-            "handling data"
-        );
+        info!(ctx = ?ctx, "handling data");
 
         let mut state = match self.state.take() {
             Some(state) => state,
-            None => State::new_from_batch(self.config.batch_size, cursor, end_cursor, batch)?,
+            None => {
+                State::new_from_batch(self.config.batch_size, &ctx.cursor, &ctx.end_cursor, batch)?
+            }
         };
 
         let mut cursor_action = CursorAction::Skip;
 
-        if let Some((batch, filename)) = state.handle_batch(cursor, end_cursor, batch).await? {
+        if let Some((batch, filename)) = state
+            .handle_batch(&ctx.cursor, &ctx.end_cursor, batch)
+            .await?
+        {
             self.write_batch(batch, filename)?;
             cursor_action = CursorAction::Persist;
         }

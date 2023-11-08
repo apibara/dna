@@ -1,7 +1,7 @@
 use std::fmt;
 
-use apibara_core::node::v1alpha2::{Cursor, DataFinality};
-use apibara_sink_common::{CursorAction, DisplayCursor, Sink, ValueExt};
+use apibara_core::node::v1alpha2::Cursor;
+use apibara_sink_common::{Context, CursorAction, DisplayCursor, Sink, ValueExt};
 use async_trait::async_trait;
 use error_stack::{Result, ResultExt};
 use futures_util::TryStreamExt;
@@ -86,17 +86,10 @@ impl Sink for MongoSink {
 
     async fn handle_data(
         &mut self,
-        cursor: &Option<Cursor>,
-        end_cursor: &Cursor,
-        finality: &DataFinality,
+        ctx: &Context,
         batch: &Value,
     ) -> Result<CursorAction, Self::Error> {
-        info!(
-            cursor = %DisplayCursor(cursor),
-            end_cursor = %end_cursor,
-            finality = ?finality,
-            "mongo: inserting data"
-        );
+        info!(ctx = ?ctx, "inserting data");
 
         let Some(values) = batch.as_array_of_objects() else {
             warn!("data is not an array of objects, skipping");
@@ -107,7 +100,7 @@ impl Sink for MongoSink {
             return Ok(CursorAction::Persist);
         }
 
-        self.insert_data(end_cursor, values).await?;
+        self.insert_data(&ctx.end_cursor, values).await?;
 
         Ok(CursorAction::Persist)
     }

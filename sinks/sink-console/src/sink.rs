@@ -1,7 +1,7 @@
 use std::fmt;
 
-use apibara_core::node::v1alpha2::{Cursor, DataFinality};
-use apibara_sink_common::{CursorAction, DisplayCursor, Sink};
+use apibara_core::node::v1alpha2::Cursor;
+use apibara_sink_common::{Context, CursorAction, DisplayCursor, Sink};
 use async_trait::async_trait;
 use error_stack::{Result, ResultExt};
 use serde_json::Value;
@@ -36,17 +36,10 @@ impl Sink for ConsoleSink {
     #[instrument(skip(self, batch), err(Debug), level = "DEBUG")]
     async fn handle_data(
         &mut self,
-        cursor: &Option<Cursor>,
-        end_cursor: &Cursor,
-        finality: &DataFinality,
+        ctx: &Context,
         batch: &Value,
     ) -> Result<CursorAction, Self::Error> {
-        info!(
-            cursor = %DisplayCursor(cursor),
-            end_block = %end_cursor,
-            finality = ?finality,
-            "handle data"
-        );
+        info!(ctx = ?ctx, "handle data");
 
         let pretty = serde_json::to_string_pretty(batch)
             .change_context(SinkConsoleError)

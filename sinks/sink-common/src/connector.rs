@@ -30,6 +30,13 @@ pub enum CursorAction {
     Skip,
 }
 
+#[derive(Debug, Clone)]
+pub struct Context {
+    pub cursor: Option<Cursor>,
+    pub end_cursor: Cursor,
+    pub finality: DataFinality,
+}
+
 #[async_trait]
 pub trait Sink {
     type Options: SinkOptions;
@@ -41,9 +48,7 @@ pub trait Sink {
 
     async fn handle_data(
         &mut self,
-        cursor: &Option<Cursor>,
-        end_cursor: &Cursor,
-        finality: &DataFinality,
+        ctx: &Context,
         batch: &Value,
     ) -> Result<CursorAction, Self::Error>;
 
@@ -175,7 +180,7 @@ where
             configuration.starting_cursor = starting_cursor.clone();
 
             self.handle_invalidate(
-                starting_cursor.clone(),
+                &starting_cursor,
                 &status_client,
                 &mut persistence,
                 ct.clone(),
@@ -262,7 +267,7 @@ where
 
     async fn handle_invalidate<P>(
         &mut self,
-        cursor: Option<Cursor>,
+        cursor: &Option<Cursor>,
         status_client: &StatusServerClient,
         persistence: &mut P,
         ct: CancellationToken,
@@ -273,7 +278,7 @@ where
     {
         debug!(cursor = ?cursor, "received invalidate");
         for duration in &self.backoff {
-            match self.sink.handle_invalidate(&cursor).await {
+            match self.sink.handle_invalidate(cursor).await {
                 Ok(_) => {
                     // if the sink started streaming from the genesis block
                     // and if the genesis block has been reorged, delete the
@@ -295,7 +300,7 @@ where
                                 .await
                                 .change_context(SinkConnectorError::Temporary)?;
                             status_client
-                                .update_cursor(Some(cursor))
+                                .update_cursor(Some(cursor.clone()))
                                 .await
                                 .change_context(SinkConnectorError::Temporary)?;
                         }
@@ -325,9 +330,7 @@ where
     #[allow(clippy::too_many_arguments)]
     async fn handle_data<B, P>(
         &mut self,
-        cursor: Option<Cursor>,
-        end_cursor: Cursor,
-        finality: DataFinality,
+        context: Context,
         batch: Vec<B>,
         status_client: &StatusServerClient,
         persistence: &mut P,
@@ -337,7 +340,7 @@ where
         B: Message + Default + Serialize,
         P: PersistenceClient + Send,
     {
-        trace!(cursor = ?cursor, end_cursor = ?end_cursor, "received data");
+        trace!(context = ?context, "received data");
         // fatal error since if the sink is restarted it will receive the same data again.
         let json_batch = batch
             .into_iter()
@@ -352,27 +355,23 @@ where
             .attach_printable("failed to transform batch data")?;
 
         if self.needs_invalidation {
-            self.handle_invalidate(cursor.clone(), status_client, persistence, ct.clone())
+            self.handle_invalidate(&context.cursor, status_client, persistence, ct.clone())
                 .await?;
             self.needs_invalidation = false;
         }
 
         for duration in &self.backoff {
-            match self
-                .sink
-                .handle_data(&cursor, &end_cursor, &finality, &data)
-                .await
-            {
+            match self.sink.handle_data(&context, &data).await {
                 Ok(cursor_action) => {
-                    if finality == DataFinality::DataStatusPending {
+                    if context.finality == DataFinality::DataStatusPending {
                         self.needs_invalidation = true;
                     } else if let CursorAction::Persist = cursor_action {
                         persistence
-                            .put_cursor(end_cursor.clone())
+                            .put_cursor(context.end_cursor.clone())
                             .await
                             .change_context(SinkConnectorError::Temporary)?;
                         status_client
-                            .update_cursor(Some(end_cursor))
+                            .update_cursor(Some(context.end_cursor))
                             .await
                             .change_context(SinkConnectorError::Temporary)?;
                     }
@@ -417,19 +416,16 @@ where
                 finality,
                 batch,
             } => {
-                self.handle_data(
+                let context = Context {
                     cursor,
                     end_cursor,
                     finality,
-                    batch,
-                    status_client,
-                    persistence,
-                    ct,
-                )
-                .await
+                };
+                self.handle_data(context, batch, status_client, persistence, ct)
+                    .await
             }
             DataMessage::Invalidate { cursor } => {
-                self.handle_invalidate(cursor, status_client, persistence, ct)
+                self.handle_invalidate(&cursor, status_client, persistence, ct)
                     .await
             }
             DataMessage::Heartbeat => {

@@ -1,7 +1,7 @@
 use std::fmt;
 
-use apibara_core::node::v1alpha2::{Cursor, DataFinality};
-use apibara_sink_common::{CursorAction, DisplayCursor, Sink};
+use apibara_core::node::v1alpha2::Cursor;
+use apibara_sink_common::{Context, CursorAction, Sink};
 use async_trait::async_trait;
 use error_stack::{Result, ResultExt};
 use http::HeaderMap;
@@ -77,17 +77,10 @@ impl Sink for WebhookSink {
     #[instrument(skip(self, batch), err(Debug))]
     async fn handle_data(
         &mut self,
-        cursor: &Option<Cursor>,
-        end_cursor: &Cursor,
-        finality: &DataFinality,
+        ctx: &Context,
         batch: &Value,
     ) -> Result<CursorAction, Self::Error> {
-        info!(
-            cursor = %DisplayCursor(cursor),
-            end_block = %end_cursor,
-            finality = ?finality,
-            "calling with data"
-        );
+        info!(ctx = ?ctx, "calling with data");
 
         if self.raw {
             // Send each item returned by the transform script as a separate request
@@ -102,9 +95,9 @@ impl Sink for WebhookSink {
         } else {
             let body = &json!({
                 "data": {
-                    "cursor": cursor,
-                    "end_cursor": end_cursor,
-                    "finality": finality,
+                    "cursor": ctx.cursor,
+                    "end_cursor": ctx.end_cursor,
+                    "finality": ctx.finality,
                     "batch": batch,
                 },
             });
