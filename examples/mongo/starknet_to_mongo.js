@@ -13,6 +13,12 @@ export const config = {
     database: "example",
     collectionName: "transfers",
   },
+  // Restrict invalidate queries to the specified network and symbol.
+  // This is useful if you are running multiple indexers on the same database.
+  invalidate: {
+    network: "starknet-goerli",
+    symbol: "ETH",
+  },
 };
 
 // Transform each block using the function defined in starknet.js.

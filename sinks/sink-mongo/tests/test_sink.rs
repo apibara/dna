@@ -24,6 +24,10 @@ fn new_cursor(order_key: u64) -> Cursor {
 }
 
 fn new_batch(start_cursor: &Option<Cursor>, end_cursor: &Cursor) -> Value {
+    new_batch_with_extra(start_cursor, end_cursor, json!({}))
+}
+
+fn new_batch_with_extra(start_cursor: &Option<Cursor>, end_cursor: &Cursor, extra: Value) -> Value {
     let mut batch = Vec::new();
 
     let start_block_num = match start_cursor {
@@ -34,11 +38,18 @@ fn new_batch(start_cursor: &Option<Cursor>, end_cursor: &Cursor) -> Value {
     let end_block_num = end_cursor.order_key;
 
     for i in start_block_num..end_block_num {
-        batch.push(json!({
+        let mut doc = json!({
             "block_num": i,
             "block_str": format!("block_{}", i),
-        }));
+        });
+
+        doc.as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone().into_iter());
+
+        batch.push(doc);
     }
+
     json!(batch)
 }
 
@@ -265,6 +276,73 @@ async fn test_handle_invalidate() -> Result<(), SinkMongoError> {
 
 #[tokio::test]
 #[ignore]
+async fn test_handle_invalidate_with_extra_condition() -> Result<(), SinkMongoError> {
+    let docker = clients::Cli::default();
+    let mongo = docker.run(new_mongo_image());
+    let port = mongo.get_host_port_ipv4(27017);
+
+    let options = SinkMongoOptions {
+        connection_string: Some(format!("mongodb://localhost:{}", port)),
+        database: Some("test".into()),
+        collection_name: Some("test".into()),
+        invalidate: Some(doc! { "col1": "a", "col2": "a" }),
+        ..SinkMongoOptions::default()
+    };
+
+    let mut sink = MongoSink::from_options(options).await?;
+
+    let batch_size = 2;
+    let num_batches = 5;
+
+    let mut docs_count = 0;
+
+    for order_key in 0..num_batches {
+        let cursor = Some(new_cursor(order_key * batch_size));
+        let end_cursor = new_cursor((order_key + 1) * batch_size);
+        let finality = DataFinality::DataStatusFinalized;
+        let ctx = Context {
+            cursor: cursor.clone(),
+            end_cursor: end_cursor.clone(),
+            finality,
+        };
+
+        {
+            let batch =
+                new_batch_with_extra(&cursor, &end_cursor, json!({ "col1": "a", "col2": "a" }));
+            docs_count += batch_size;
+            let action = sink.handle_data(&ctx, &batch).await?;
+            assert_eq!(action, CursorAction::Persist);
+        }
+
+        {
+            let batch =
+                new_batch_with_extra(&cursor, &end_cursor, json!({ "col1": "a", "col2": "b" }));
+            docs_count += batch_size;
+            let action = sink.handle_data(&ctx, &batch).await?;
+            assert_eq!(action, CursorAction::Persist);
+        }
+    }
+
+    assert_eq!(docs_count, batch_size * num_batches * 2);
+
+    let invalidate_from = 2;
+
+    sink.handle_invalidate(&Some(new_cursor(invalidate_from)))
+        .await?;
+
+    // We expect all documents for `{col1: a, col2: b}`, but only
+    // one batch worth of data for `{col1: a, col2: a}`.
+    let expected_docs_count = (batch_size * num_batches) + (batch_size * (invalidate_from - 1));
+    assert_eq!(
+        expected_docs_count,
+        get_all_docs(&sink.collection).await.len() as u64
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore]
 async fn test_handle_data_in_entity_mode() -> Result<(), SinkMongoError> {
     let docker = clients::Cli::default();
     let mongo = docker.run(new_mongo_image());
@@ -275,6 +353,7 @@ async fn test_handle_data_in_entity_mode() -> Result<(), SinkMongoError> {
         database: Some("test".into()),
         collection_name: Some("test".into()),
         entity_mode: Some(true),
+        invalidate: None,
     };
 
     let mut sink = MongoSink::from_options(options).await?;
@@ -422,6 +501,7 @@ async fn test_handle_invalidate_in_entity_mode() -> Result<(), SinkMongoError> {
         database: Some("test".into()),
         collection_name: Some("test".into()),
         entity_mode: Some(true),
+        invalidate: None,
     };
 
     let mut sink = MongoSink::from_options(options).await?;
