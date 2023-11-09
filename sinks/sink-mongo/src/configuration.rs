@@ -1,5 +1,6 @@
 use apibara_sink_common::SinkOptions;
 use clap::Args;
+use mongodb::bson::Document;
 use serde::Deserialize;
 
 #[derive(Debug, Args, Default, SinkOptions)]
@@ -16,6 +17,8 @@ pub struct SinkMongoOptions {
     pub collection_name: Option<String>,
     /// Enable storing records as entities.
     pub entity_mode: Option<bool>,
+    #[clap(skip)]
+    pub invalidate: Option<Document>,
 }
 
 impl SinkOptions for SinkMongoOptions {
@@ -25,6 +28,7 @@ impl SinkOptions for SinkMongoOptions {
             database: self.database.or(other.database),
             collection_name: self.collection_name.or(other.collection_name),
             entity_mode: self.entity_mode.or(other.entity_mode),
+            invalidate: self.invalidate.or(other.invalidate),
         }
     }
 }

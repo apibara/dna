@@ -25,14 +25,15 @@ export const filter = {
       keys: [
         hash.getSelectorFromName("Transfer"),
       ],
+      includeReceipt: false,
     },
   ],
 };
 
 export function decodeTransfersInBlock({ header, events }) {
   const { blockNumber, blockHash, timestamp } = header;
-  return events.map(({ event, receipt }) => {
-    const { transactionHash } = receipt;
+  return events.map(({ event, transaction }) => {
+    const transactionHash = transaction.meta.hash;
     const transferId = `${transactionHash}_${event.index}`;
 
     const [fromAddress, toAddress, amountLow, amountHigh] = event.data;

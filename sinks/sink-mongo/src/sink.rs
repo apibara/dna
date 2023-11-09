@@ -28,6 +28,7 @@ impl fmt::Display for SinkMongoError {
 
 pub struct MongoSink {
     pub collection: Collection<Document>,
+    invalidate: Option<Document>,
     client: Client,
     mode: Mode,
 }
@@ -81,6 +82,7 @@ impl Sink for MongoSink {
             collection,
             client,
             mode,
+            invalidate: options.invalidate,
         })
     }
 
@@ -115,7 +117,7 @@ impl Sink for MongoSink {
             .change_context(SinkMongoError)
             .attach_printable("failed to create mongo session")?;
 
-        let (delete_query, unclamp_query) = if let Some(cursor) = cursor {
+        let (mut delete_query, mut unclamp_query) = if let Some(cursor) = cursor {
             // convert to u32 because that's the maximum bson can handle
             let block_number = u32::try_from(cursor.order_key).unwrap();
             let del = doc! { "_cursor.from": { "$gt": block_number } };
@@ -128,6 +130,11 @@ impl Sink for MongoSink {
         };
 
         let unset_cursor_to = doc! { "$set": { "_cursor.to": Bson::Null } };
+
+        if let Some(invalidate) = &self.invalidate {
+            delete_query.extend(invalidate.clone());
+            unclamp_query.extend(invalidate.clone());
+        }
 
         self.collection
             .delete_many_with_session(delete_query, None, &mut session)
