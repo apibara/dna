@@ -11,7 +11,7 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     crane = {
-      url = "github:ipetkov/crane";
+      url = "github:ipetkov/crane?rev=35110cccf28823320f4fd697fcafcb5038683982";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     pre-commit-hooks = {
@@ -116,15 +116,15 @@
           };
         };
 
-        native = pkgs.callPackage ./nix/native.nix {
+        builtCrates = pkgs.callPackage ./nix/crates.nix {
           inherit crane crates;
           pre-commit-hooks = pre-commit-hooks.lib.${system};
           workspaceDir = ./.;
         };
 
         ci = pkgs.callPackage ./nix/ci.nix {
-          tests = native.packages.tests;
-          binaries = native.binaries;
+          tests = builtCrates.packages.tests;
+          binaries = builtCrates.binaries;
         };
       in
       {
@@ -134,19 +134,15 @@
         formatter = pkgs.nixpkgs-fmt;
 
         # checks. run with `nix flake check`.
-        checks = native.checks;
+        checks = builtCrates.checks;
 
         # development shells. start with `nix develop`.
-        devShells = (native.shell // ci.shell);
+        devShells = (builtCrates.shell // ci.shell);
 
         # all packages.
         # show them with `nix flake show`.
-        # there's three packages for each crate:
-        #  - the binary compiled for the current nix system.
-        # - `-image`: a docker image with the binary.
-        # - `-universal`: a binary that runs on non-nix systems.
         # build with `nix build .#<name>`.
-        packages = (native.packages // { });
+        packages = (builtCrates.packages // { });
       }
     );
 
