@@ -6,6 +6,17 @@ The format is based on [Common Changelog](https://common-changelog.org/), and
 this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.5] - 2023-11-09
+
+_Write to the same collection from multiple indexers._
+
+### Added
+
+ - Add a new `invalidate` option used to add additional conditions to the
+   invalidate query. Developers can constrain which documents are delete by an
+   indexer on data invalidation, so that multiple indexers can write to the
+   same collection.
+
 ## [0.4.4] - 2023-11-07
 
 _Improve performance for data-heavy indexers._ 
