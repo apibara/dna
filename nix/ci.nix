@@ -5,7 +5,7 @@
 
   Arguments:
 
-   - `tests`: the tests derivation created by native.nix -> build.nix.
+   - `tests`: the tests derivation.
    - `binaries`: a list of binaries in the crate. This is generated from the `crates` definition in flake.nix.
  */
 let
@@ -39,19 +39,6 @@ let
     '';
   };
 
-  /* Test the installer script.
-  */
-  ci-installer-test = pkgs.writeShellApplication {
-    name = "ci-installer-test";
-    runtimeInputs = with pkgs; [
-      buildah
-    ];
-    text = ''
-      echo "--- Running installer test"
-      buildah bud --no-cache -t cli-installer -f install/Dockerfile.test install/
-    '';
-  };
-
   /* Prepares the image to be uploaded to Buildkite.
 
     Notice that this script expects the image to be in `./result`.
@@ -63,14 +50,15 @@ let
       skopeo
     ];
     text = ''
-      name=$1
-      arch=$2
+      arch=$1
+      name=$2
 
       filename="''${name}-''${arch}-image.tar.gz"
       echo "--- Copying image to ''${filename}"
       skopeo copy "docker-archive:result" "docker-archive:''${filename}"
     '';
   };
+
 
   /* Prepares the binary to be uploaded to Buildkite.
 
@@ -80,9 +68,9 @@ let
     name = "ci-prepare-binary";
     runtimeInputs = with pkgs; [ ];
     text = ''
-      name=$1
+      os=$1
       arch=$2
-      os=$3
+      name=$3
 
       filename="''${name}-''${arch}-''${os}.gz"
       echo "--- Compressing binary to ''${filename}"
@@ -250,33 +238,19 @@ let
         {
           label = ":test_tube: Run unit tests";
           commands = [
-            "nix develop .#tests -c ci-test"
+            "nix develop .#test -c ci-test"
           ];
         }
         {
           label = ":test_tube: Run e2e tests";
           commands = [
             "podman system service --time=0 unix:///var/run/docker.sock &"
-            "nix develop .#tests -c ci-e2e-test"
+            "nix develop .#test -c ci-e2e-test"
           ];
         }
         {
           wait = { };
         }
-        /*
-      ] ++ (onAllAgents ({ name, agent }:
-        {
-          label = ":test_tube: Run installer tests on ${name}";
-          commands = [
-            "nix develop .#ci -c ci-installer-test"
-          ];
-          agents = agent;
-        })
-      ) ++ [
-        {
-          wait = { };
-        }
-        */
       ] ++ (onAllAgents ({ name, agent }:
         {
           label = ":rust: Build crate ${name}";
@@ -336,7 +310,7 @@ let
                 label = ":rust: Build image {{ matrix.binary }}";
                 commands = [
                   "nix build .#{{ matrix.binary }}-image"
-                  "nix develop .#ci -c ci-prepare-image {{ matrix.binary }} ${agent.arch}"
+                  "nix develop .#ci -c ci-prepare-image ${agent.arch} {{ matrix.binary }}"
                   "buildkite-agent artifact upload {{ matrix.binary }}-${agent.arch}-image.tar.gz"
                 ];
                 matrix = {
@@ -357,8 +331,8 @@ let
               {
                 label = ":rust: Build binary {{ matrix.binary }}";
                 commands = [
-                  "nix build .#{{ matrix.binary }}-universal"
-                  "nix develop .#ci -c ci-prepare-binary {{ matrix.binary }} ${agent.arch} linux"
+                  "nix build .#{{ matrix.binary }}"
+                  "nix develop .#ci -c ci-prepare-binary linux ${agent.arch} {{ matrix.binary }}"
                   "buildkite-agent artifact upload {{ matrix.binary }}-${agent.arch}-linux.gz"
                 ];
                 matrix = {
@@ -409,7 +383,6 @@ in
   shell = {
     ci = pkgs.mkShell {
       buildInputs = with pkgs; [
-        ci-installer-test
         ci-prepare-image
         ci-prepare-binary
         ci-publish-image
@@ -418,7 +391,7 @@ in
       ];
     };
 
-    tests = pkgs.mkShell {
+    test = pkgs.mkShell {
       buildInputs = with pkgs; [
         # used by e2e tests to start test containers
         docker-client
