@@ -6,6 +6,15 @@ The format is based on [Common Changelog](https://common-changelog.org/), and
 this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2023-11-10
+
+_Update Starknet filter._
+
+### Changed
+
+ - Update the Starknet filter definition to support the new
+   `includeTransaction` and `includeReceipt` options.
+
 ## [0.3.3] - 2023-10-25
 
 _Minor quality of life improvements._
@@ -68,6 +77,7 @@ _Introduce sink status gRPC service._
 _First tagged release 🎉_
 
 
+[0.4.0]: https://github.com/apibara/dna/releases/tag/cli/v0.4.0
 [0.3.3]: https://github.com/apibara/dna/releases/tag/cli/v0.3.3
 [0.3.2]: https://github.com/apibara/dna/releases/tag/cli/v0.3.2
 [0.3.1]: https://github.com/apibara/dna/releases/tag/cli/v0.3.1
