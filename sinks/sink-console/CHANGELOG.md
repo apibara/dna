@@ -6,6 +6,15 @@ The format is based on [Common Changelog](https://common-changelog.org/), and
 this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.5] - 2023-11-11
+
+_Fix an issue on Linux._
+
+### Fixed
+
+ - Link against GLIBC 3.5. The most recent build was linking against GLIBC 3.8
+   which caused some issues on non-rolling release distributions.
+
 ## [0.3.4] - 2023-11-07
 
 _Improve performance for data-heavy indexers._ 
@@ -94,6 +103,7 @@ _This release improves the developer experience when running locally._
 _First tagged release 🎉_
 
 
+[0.3.5]: https://github.com/apibara/dna/releases/tag/sink-console/v0.3.5
 [0.3.4]: https://github.com/apibara/dna/releases/tag/sink-console/v0.3.4
 [0.3.3]: https://github.com/apibara/dna/releases/tag/sink-console/v0.3.3
 [0.3.2]: https://github.com/apibara/dna/releases/tag/sink-console/v0.3.2
