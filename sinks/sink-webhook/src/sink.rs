@@ -80,7 +80,7 @@ impl Sink for WebhookSink {
         ctx: &Context,
         batch: &Value,
     ) -> Result<CursorAction, Self::Error> {
-        info!(ctx = ?ctx, "calling with data");
+        info!(ctx = %ctx, "calling with data");
 
         if self.raw {
             // Send each item returned by the transform script as a separate request

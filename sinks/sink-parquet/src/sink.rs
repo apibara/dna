@@ -115,7 +115,7 @@ impl Sink for ParquetSink {
             return Ok(CursorAction::Skip);
         }
 
-        info!(ctx = ?ctx, "handling data");
+        info!(ctx = %ctx, "handling data");
 
         let mut state = match self.state.take() {
             Some(state) => state,

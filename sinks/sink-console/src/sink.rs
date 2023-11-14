@@ -39,7 +39,7 @@ impl Sink for ConsoleSink {
         ctx: &Context,
         batch: &Value,
     ) -> Result<CursorAction, Self::Error> {
-        info!(ctx = ?ctx, "handle data");
+        info!(ctx = %ctx, "handle data");
 
         let pretty = serde_json::to_string_pretty(batch)
             .change_context(SinkConsoleError)
