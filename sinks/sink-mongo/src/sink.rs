@@ -91,7 +91,7 @@ impl Sink for MongoSink {
         ctx: &Context,
         batch: &Value,
     ) -> Result<CursorAction, Self::Error> {
-        info!(ctx = ?ctx, "inserting data");
+        info!(ctx = %ctx, "inserting data");
 
         let Some(values) = batch.as_array_of_objects() else {
             warn!("data is not an array of objects, skipping");

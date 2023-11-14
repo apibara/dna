@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{fmt::Display, time::Duration};
 
 use apibara_core::node::v1alpha2::{Cursor, DataFinality};
 use apibara_script::Script;
@@ -16,8 +16,8 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, trace, warn};
 
 use crate::{
-    persistence::Persistence, status::StatusServer, PersistenceClient, SinkConnectorError,
-    StatusServerClient,
+    persistence::Persistence, status::StatusServer, DisplayCursor, PersistenceClient,
+    SinkConnectorError, StatusServerClient,
 };
 
 pub trait SinkOptions: DeserializeOwned {
@@ -442,5 +442,16 @@ where
                 Ok(())
             }
         }
+    }
+}
+
+impl Display for Context {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let start = DisplayCursor(&self.cursor);
+        write!(
+            f,
+            "Context(start={}, end={}, finality={:?})",
+            start, self.end_cursor, self.finality
+        )
     }
 }

@@ -170,7 +170,7 @@ impl Sink for PostgresSink {
         ctx: &Context,
         batch: &Value,
     ) -> Result<CursorAction, Self::Error> {
-        info!(ctx = ?ctx, "handling data");
+        info!(ctx = %ctx, "handling data");
 
         let Some(batch) = batch.as_array_of_objects() else {
             warn!("data is not an array of objects, skipping");
