@@ -12,7 +12,7 @@ use mongodb::options::{UpdateModifications, UpdateOptions};
 use mongodb::{options::ClientOptions, Client, Collection};
 
 use serde_json::Value;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use crate::configuration::SinkMongoOptions;
 
@@ -91,7 +91,7 @@ impl Sink for MongoSink {
         ctx: &Context,
         batch: &Value,
     ) -> Result<CursorAction, Self::Error> {
-        info!(ctx = %ctx, "inserting data");
+        debug!(ctx = %ctx, "inserting data");
 
         let Some(values) = batch.as_array_of_objects() else {
             warn!("data is not an array of objects, skipping");
@@ -108,7 +108,7 @@ impl Sink for MongoSink {
     }
 
     async fn handle_invalidate(&mut self, cursor: &Option<Cursor>) -> Result<(), Self::Error> {
-        info!(cursor = %DisplayCursor(cursor), "handling invalidate");
+        debug!(cursor = %DisplayCursor(cursor), "handling invalidate");
 
         let mut session = self
             .client

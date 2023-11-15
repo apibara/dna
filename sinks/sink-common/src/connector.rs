@@ -276,8 +276,8 @@ where
         P: PersistenceClient + Send,
         S: Sink + Sync + Send,
     {
-        debug!(cursor = ?cursor, "received invalidate");
         for duration in &self.backoff {
+            info!(cursor = ?cursor, "handle invalidate");
             match self.sink.handle_invalidate(cursor).await {
                 Ok(_) => {
                     // if the sink started streaming from the genesis block
@@ -361,6 +361,7 @@ where
         }
 
         for duration in &self.backoff {
+            info!(block = context.end_cursor.order_key, "handle data");
             match self.sink.handle_data(&context, &data).await {
                 Ok(cursor_action) => {
                     if context.finality == DataFinality::DataStatusPending {

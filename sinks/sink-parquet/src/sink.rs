@@ -10,7 +10,7 @@ use error_stack::{Result, ResultExt};
 use parquet::arrow::ArrowWriter;
 use serde_json::Value;
 use tokio::sync::Mutex;
-use tracing::{debug, info, instrument, warn};
+use tracing::{debug, instrument, warn};
 
 use crate::configuration::{SinkParquetConfiguration, SinkParquetOptions};
 
@@ -115,7 +115,7 @@ impl Sink for ParquetSink {
             return Ok(CursorAction::Skip);
         }
 
-        info!(ctx = %ctx, "handling data");
+        debug!(ctx = %ctx, "handling data");
 
         let mut state = match self.state.take() {
             Some(state) => state,
