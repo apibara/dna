@@ -30,5 +30,8 @@ tokio.workspace = true
 tokio-util.workspace = true
 tracing.workspace = true
 
+[target.'cfg(not(windows))'.dependencies]
+jemallocator.workspace = true
+
 [dev-dependencies]
 wiremock = "0.5.19"
