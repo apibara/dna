@@ -9,6 +9,10 @@ use clap::{Args, Parser, Subcommand};
 use error_stack::Result;
 use tokio_util::sync::CancellationToken;
 
+#[cfg(not(windows))]
+#[global_allocator]
+static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
+
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None, styles = apibara_cli_style())]
 struct Cli {

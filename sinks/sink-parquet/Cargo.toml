@@ -29,5 +29,8 @@ tokio.workspace = true
 tokio-util.workspace = true
 tracing.workspace = true
 
+[target.'cfg(not(windows))'.dependencies]
+jemallocator.workspace = true
+
 [dev-dependencies]
 tempdir.workspace = true
