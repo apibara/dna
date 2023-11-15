@@ -8,7 +8,7 @@ use http::HeaderMap;
 use reqwest::Client;
 use serde::ser::Serialize;
 use serde_json::{json, Value};
-use tracing::{debug, info, instrument, warn};
+use tracing::{debug, instrument, warn};
 
 use crate::{configuration::SinkWebhookOptions, SinkWebhookConfiguration};
 
@@ -80,7 +80,7 @@ impl Sink for WebhookSink {
         ctx: &Context,
         batch: &Value,
     ) -> Result<CursorAction, Self::Error> {
-        info!(ctx = %ctx, "calling with data");
+        debug!(ctx = %ctx, "calling with data");
 
         if self.raw {
             // Send each item returned by the transform script as a separate request
@@ -118,7 +118,7 @@ impl Sink for WebhookSink {
             .map(|c| c.to_string())
             .unwrap_or("genesis".into());
 
-        info!(cursor = %cursor_str, "calling with invalidate");
+        debug!(cursor = %cursor_str, "calling with invalidate");
         let body = json!({
             "invalidate": {
                 "cursor": cursor,

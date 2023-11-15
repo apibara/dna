@@ -9,7 +9,7 @@ use postgres_native_tls::MakeTlsConnector;
 use serde_json::Value;
 use tokio_postgres::types::Json;
 use tokio_postgres::{Client, NoTls, Statement};
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use crate::configuration::{InvalidateColumn, TlsConfiguration};
 use crate::SinkPostgresOptions;
@@ -170,7 +170,7 @@ impl Sink for PostgresSink {
         ctx: &Context,
         batch: &Value,
     ) -> Result<CursorAction, Self::Error> {
-        info!(ctx = %ctx, "handling data");
+        debug!(ctx = %ctx, "handling data");
 
         let Some(batch) = batch.as_array_of_objects() else {
             warn!("data is not an array of objects, skipping");
@@ -201,7 +201,7 @@ impl Sink for PostgresSink {
     }
 
     async fn handle_invalidate(&mut self, cursor: &Option<Cursor>) -> Result<(), Self::Error> {
-        info!(cursor = %DisplayCursor(cursor), "handling invalidate");
+        debug!(cursor = %DisplayCursor(cursor), "handling invalidate");
 
         if let Some(cursor) = cursor {
             // convert to i64 because that's the tokio_postgres type that maps to bigint

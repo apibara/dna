@@ -5,7 +5,7 @@ use apibara_sink_common::{Context, CursorAction, DisplayCursor, Sink};
 use async_trait::async_trait;
 use error_stack::{Result, ResultExt};
 use serde_json::Value;
-use tracing::{info, instrument};
+use tracing::{debug, info, instrument};
 
 use crate::configuration::SinkConsoleOptions;
 
@@ -39,7 +39,7 @@ impl Sink for ConsoleSink {
         ctx: &Context,
         batch: &Value,
     ) -> Result<CursorAction, Self::Error> {
-        info!(ctx = %ctx, "handle data");
+        debug!(ctx = %ctx, "handle data");
 
         let pretty = serde_json::to_string_pretty(batch)
             .change_context(SinkConsoleError)
