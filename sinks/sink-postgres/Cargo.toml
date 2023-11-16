@@ -1,6 +1,6 @@
 [package]
 name = "apibara-sink-postgres"
-version = "0.4.6"
+version = "0.4.7"
 edition.workspace = true
 authors.workspace = true
 repository.workspace = true

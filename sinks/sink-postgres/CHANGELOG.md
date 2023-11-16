@@ -6,6 +6,21 @@ The format is based on [Common Changelog](https://common-changelog.org/), and
 this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.7] - 2023-11-16
+
+_Add new environment-related options._
+
+### Added
+
+ - Add new `--allow-env-from-env` flag to allow the indexer script to access
+ the parent process environment variables. Users can pass a list of
+ comma-separated variables to this option.
+
+### Changed
+
+ - Cleanup the default logs to only show the current block number.
+ - To restore the previous, more detailed logs, set the log level to debug.
+
 ## [0.4.6] - 2023-11-11
 
 _Fix an issue on Linux._
@@ -133,6 +148,7 @@ _This release improves the developer experience when running locally._
 _First tagged release 🎉_
 
 
+[0.4.7]: https://github.com/apibara/dna/releases/tag/sink-postgres/v0.4.7
 [0.4.6]: https://github.com/apibara/dna/releases/tag/sink-postgres/v0.4.6
 [0.4.5]: https://github.com/apibara/dna/releases/tag/sink-postgres/v0.4.5
 [0.4.4]: https://github.com/apibara/dna/releases/tag/sink-postgres/v0.4.4
