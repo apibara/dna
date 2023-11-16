@@ -72,6 +72,9 @@ pub struct DotenvOptions {
     /// only from the ones specified in this file.
     #[arg(long, env)]
     pub allow_env: Option<PathBuf>,
+    /// Grant access to the specified environment variables.
+    #[arg(long, env, value_delimiter = ',')]
+    pub allow_env_from_env: Option<Vec<String>>,
 }
 
 #[derive(Args, Debug, Default, Serialize, Deserialize, Clone)]

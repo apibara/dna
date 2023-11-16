@@ -118,27 +118,32 @@ where
 pub fn load_environment_variables(
     options: &DotenvOptions,
 ) -> Result<Option<Vec<String>>, SinkConnectorError> {
-    let Some(allow_env) = options.allow_env.as_ref() else {
-        return Ok(None);
+    let mut allow_env = vec![];
+    if let Some(allow_env_file) = options.allow_env.as_ref() {
+        let env_iter = dotenvy::from_path_iter(allow_env_file)
+            .change_context(SinkConnectorError::Configuration)
+            .attach_printable_lazy(|| {
+                format!(
+                    "failed to load environment variables from path: {:?}",
+                    allow_env
+                )
+            })?;
+
+        for item in env_iter {
+            let (key, value) = item
+                .change_context(SinkConnectorError::Configuration)
+                .attach_printable("invalid environment variable")?;
+            allow_env.push(key.clone());
+            debug!(env = ?key, "allowing environment variable");
+            env::set_var(key, value);
+        }
     };
 
-    let env_iter = dotenvy::from_path_iter(allow_env)
-        .change_context(SinkConnectorError::Configuration)
-        .attach_printable_lazy(|| {
-            format!(
-                "failed to load environment variables from path: {:?}",
-                allow_env
-            )
-        })?;
-
-    let mut allow_env = vec![];
-    for item in env_iter {
-        let (key, value) = item
-            .change_context(SinkConnectorError::Configuration)
-            .attach_printable("invalid environment variable")?;
-        allow_env.push(key.clone());
-        debug!(env = ?key, "allowing environment variable");
-        env::set_var(key, value);
+    if let Some(env_from_env) = options.allow_env_from_env.as_ref() {
+        for key in env_from_env {
+            allow_env.push(key.clone());
+            debug!(env = ?key, "allowing environment variable");
+        }
     }
 
     if allow_env.is_empty() {
