@@ -49,6 +49,9 @@ tracing-futures.workspace = true
 url = "2.2.2"
 warp.workspace = true
 
+[target.'cfg(not(windows))'.dependencies]
+jemallocator.workspace = true
+
 [dev-dependencies]
 apibara-core = { path = "../core" }
 apibara-sdk = { path = "../sdk" }

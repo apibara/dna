@@ -540,6 +540,7 @@ dependencies = [
  "futures-util",
  "hex",
  "hyper 0.14.27",
+ "jemallocator",
  "lazy_static",
  "mockall",
  "pbjson-types",
