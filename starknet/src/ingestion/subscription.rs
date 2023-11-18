@@ -13,7 +13,6 @@ pub type IngestionStream = BroadcastStream<IngestionMessage>;
 #[derive(Clone)]
 pub struct IngestionStreamPublisher {
     tx: Arc<broadcast::Sender<IngestionMessage>>,
-    _rx: Arc<broadcast::Receiver<IngestionMessage>>,
 }
 
 #[derive(Clone)]
@@ -23,13 +22,11 @@ pub struct IngestionStreamClient {
 
 impl IngestionStreamPublisher {
     pub fn new() -> (IngestionStreamClient, IngestionStreamPublisher) {
-        let (tx, rx) = broadcast::channel(128);
+        let (tx, _rx) = broadcast::channel(128);
         let tx = Arc::new(tx);
-        let rx = Arc::new(rx);
 
         let manager = IngestionStreamPublisher {
             tx: tx.clone(),
-            _rx: rx,
         };
         let client = IngestionStreamClient { tx };
         (client, manager)
@@ -52,9 +49,21 @@ impl IngestionStreamPublisher {
     }
 
     fn publish(&self, message: IngestionMessage) -> Result<(), BlockIngestionError> {
+        if self.tx.receiver_count() == 0 {
+            debug!("no subscribers, skipping ingestion message");
+            return Ok(());
+        }
+
         self.tx
             .send(message)
             .map_err(|_| BlockIngestionError::IngestionStreamPublish)?;
+
+        debug!(
+            len = %self.tx.len(),
+            subscribers = self.tx.receiver_count(),
+            "published ingestion message"
+        );
+
         Ok(())
     }
 }
