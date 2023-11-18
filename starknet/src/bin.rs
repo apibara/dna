@@ -4,6 +4,10 @@ use clap::{Parser, Subcommand};
 use error_stack::{Result, ResultExt};
 use tokio_util::sync::CancellationToken;
 
+#[cfg(not(windows))]
+#[global_allocator]
+static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
+
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
