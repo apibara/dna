@@ -6,6 +6,21 @@ The format is based on [Common Changelog](https://common-changelog.org/), and
 this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.7] - 2023-11-18
+
+_Improve memory usage._
+
+### Changed
+
+ - Switch the memory allocator to jemalloc. This reduces memory usage to
+   between one half and a third.
+
+### Fixed
+
+ - Remove a memory leak in the block ingestion service. Ingestion messages were
+   queued but never consumed by some receivers, resulting in the process memory
+   usage growing linearly with the number of ingested blocks.
+
 ## [1.1.6] - 2023-11-06
 
 _Control the amount of data delivered to clients._
@@ -126,6 +141,7 @@ _Start publishing versioned Docker images._
 
 _First tagged release 🎉_
 
+[1.1.7]: https://github.com/apibara/dna/releases/tag/starknet/v1.1.7
 [1.1.6]: https://github.com/apibara/dna/releases/tag/starknet/v1.1.6
 [1.1.5]: https://github.com/apibara/dna/releases/tag/starknet/v1.1.5
 [1.1.4]: https://github.com/apibara/dna/releases/tag/starknet/v1.1.4
