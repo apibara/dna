@@ -12,7 +12,7 @@ use tokio_postgres::{Client, NoTls, Statement};
 use tracing::{debug, info, warn};
 
 use crate::configuration::{InvalidateColumn, TlsConfiguration};
-use crate::SinkPostgresOptions;
+use crate::{SinkPostgresConfiguration, SinkPostgresOptions};
 
 #[derive(Debug)]
 pub struct SinkPostgresError;
@@ -25,10 +25,21 @@ impl fmt::Display for SinkPostgresError {
 }
 
 pub struct PostgresSink {
-    pub client: Client,
-    insert_statement: Statement,
-    delete_statement: Statement,
-    delete_all_statement: Statement,
+    inner: PostgresSinkInner,
+}
+
+enum PostgresSinkInner {
+    Standard(StandardSink),
+    Entity(EntitySink),
+}
+
+impl PostgresSink {
+    pub fn client(&self) -> &Client {
+        match self.inner {
+            PostgresSinkInner::Standard(ref sink) => &sink.client,
+            PostgresSinkInner::Entity(ref sink) => &sink.client,
+        }
+    }
 }
 
 #[async_trait]
@@ -39,7 +50,6 @@ impl Sink for PostgresSink {
     async fn from_options(options: Self::Options) -> Result<Self, Self::Error> {
         info!("connecting to database");
         let config = options.to_postgres_configuration()?;
-        let table_name = config.table_name;
 
         // Notice that all `connector` and `connection` types are different, so it's easier/cleaner
         // to just connect and spawn a connection inside each branch.
@@ -56,7 +66,7 @@ impl Sink for PostgresSink {
                 client
             }
             TlsConfiguration::Tls {
-                certificate,
+                ref certificate,
                 accept_invalid_hostnames,
                 accept_invalid_certificates,
                 disable_system_roots,
@@ -112,6 +122,51 @@ impl Sink for PostgresSink {
 
         info!("client connected successfully");
 
+        if config.entity_mode {
+            let inner = EntitySink::new(client, &config).await?;
+            Ok(Self {
+                inner: PostgresSinkInner::Entity(inner),
+            })
+        } else {
+            let inner = StandardSink::new(client, &config).await?;
+            Ok(Self {
+                inner: PostgresSinkInner::Standard(inner),
+            })
+        }
+    }
+
+    async fn handle_data(
+        &mut self,
+        ctx: &Context,
+        batch: &Value,
+    ) -> Result<CursorAction, Self::Error> {
+        match self.inner {
+            PostgresSinkInner::Standard(ref mut sink) => sink.handle_data(ctx, batch).await,
+            PostgresSinkInner::Entity(ref mut sink) => sink.handle_data(ctx, batch).await,
+        }
+    }
+
+    async fn handle_invalidate(&mut self, cursor: &Option<Cursor>) -> Result<(), Self::Error> {
+        match self.inner {
+            PostgresSinkInner::Standard(ref mut sink) => sink.handle_invalidate(cursor).await,
+            PostgresSinkInner::Entity(ref mut sink) => sink.handle_invalidate(cursor).await,
+        }
+    }
+}
+
+struct StandardSink {
+    pub client: Client,
+    insert_statement: Statement,
+    delete_statement: Statement,
+    delete_all_statement: Statement,
+}
+
+impl StandardSink {
+    async fn new(
+        client: Client,
+        config: &SinkPostgresConfiguration,
+    ) -> Result<Self, SinkPostgresError> {
+        let table_name = &config.table_name;
         let query = format!(
             "INSERT INTO {} SELECT * FROM json_populate_recordset(NULL::{}, $1::json)",
             &table_name, &table_name
@@ -169,7 +224,7 @@ impl Sink for PostgresSink {
         &mut self,
         ctx: &Context,
         batch: &Value,
-    ) -> Result<CursorAction, Self::Error> {
+    ) -> Result<CursorAction, SinkPostgresError> {
         debug!(ctx = %ctx, "handling data");
 
         let Some(batch) = batch.as_array_of_objects() else {
@@ -200,7 +255,10 @@ impl Sink for PostgresSink {
         Ok(CursorAction::Persist)
     }
 
-    async fn handle_invalidate(&mut self, cursor: &Option<Cursor>) -> Result<(), Self::Error> {
+    async fn handle_invalidate(
+        &mut self,
+        cursor: &Option<Cursor>,
+    ) -> Result<(), SinkPostgresError> {
         debug!(cursor = %DisplayCursor(cursor), "handling invalidate");
 
         if let Some(cursor) = cursor {
@@ -218,6 +276,246 @@ impl Sink for PostgresSink {
                 .change_context(SinkPostgresError)
                 .attach_printable("failed to run invalidate all data query")?;
         }
+
+        Ok(())
+    }
+}
+
+struct EntitySink {
+    client: Client,
+    table_name: String,
+}
+
+impl EntitySink {
+    async fn new(
+        client: Client,
+        config: &SinkPostgresConfiguration,
+    ) -> Result<Self, SinkPostgresError> {
+        if !config.invalidate.is_empty() {
+            return Err(SinkPostgresError)
+                .attach_printable("invalidate option is not supported in entity mode")
+                .attach_printable("contact us on Discord to request this feature");
+        }
+
+        Ok(EntitySink {
+            client,
+            table_name: config.table_name.clone(),
+        })
+    }
+
+    async fn handle_data(
+        &mut self,
+        ctx: &Context,
+        batch: &Value,
+    ) -> Result<CursorAction, SinkPostgresError> {
+        debug!(ctx = %ctx, "handling data");
+
+        let Some(batch) = batch.as_array_of_objects() else {
+            warn!("data is not an array of objects, skipping");
+            return Ok(CursorAction::Persist);
+        };
+
+        if batch.is_empty() {
+            return Ok(CursorAction::Persist);
+        }
+
+        let txn = self
+            .client
+            .transaction()
+            .await
+            .change_context(SinkPostgresError)
+            .attach_printable("failed to create postgres transaction")?;
+
+        for item in batch {
+            let Some(item) = item.as_object() else {
+                warn!("item is not an object, skipping");
+                continue;
+            };
+
+            if let Some(mut new_data) = item.get("insert").cloned() {
+                if item.get("update").is_some() {
+                    warn!("insert data contains update key. ignoring update data");
+                }
+
+                let Some(new_data) = new_data.as_object_mut() else {
+                    warn!("insert data is not an object, skipping");
+                    continue;
+                };
+
+                new_data.insert(
+                    "_cursor".into(),
+                    format!("[{},)", ctx.end_cursor.order_key).into(),
+                );
+
+                let query = format!(
+                    "INSERT INTO {} SELECT * FROM json_populate_record(NULL::{}, $1::json)",
+                    &self.table_name, &self.table_name
+                );
+
+                txn.execute(&query, &[&Json(new_data)])
+                    .await
+                    .change_context(SinkPostgresError)
+                    .attach_printable("failed to run insert data query")?;
+            } else if let Some(update) = item.get("update").cloned() {
+                let Some(update) = update.as_object() else {
+                    warn!("update data is not an object, skipping");
+                    continue;
+                };
+
+                if item.get("insert").is_some() {
+                    warn!("update data contains insert key. ignoring insert data");
+                }
+
+                let Some(entity) = item.get("entity") else {
+                    warn!("update data does not contain entity key, skipping");
+                    continue;
+                };
+
+                let Some(entity) = entity.as_object() else {
+                    warn!("entity is not an object, skipping");
+                    continue;
+                };
+
+                // Since the `entity` is a json-object, we cannot use it directly in the query.
+                // We simulate filtering the records by joining with a single record.
+                let join_columns = entity
+                    .iter()
+                    .map(|(k, _)| format!("t.{} = f.{}", k, k))
+                    .collect::<Vec<_>>()
+                    .join(" AND ");
+
+                let query = format!(
+                    "
+                    SELECT row_to_json(x) AS value FROM (
+                        SELECT t.*
+                        FROM json_populate_record(NULL::{}, $1::json) f
+                        LEFT JOIN {} t ON {}
+                        WHERE upper_inf(t._cursor)
+                    ) x
+                    ",
+                    &self.table_name, &self.table_name, &join_columns
+                );
+
+                let row = txn
+                    .query_one(&query, &[&Json(entity)])
+                    .await
+                    .change_context(SinkPostgresError)
+                    .attach_printable("failed to select existing entity")
+                    .attach_printable("hint: do multiple entities with the same key exist?")?;
+
+                // Clamp old data validity by updating its _cursor.
+                {
+                    let clamping_cursor = format!("[,{})", ctx.end_cursor.order_key);
+                    let query = format!(
+                        "
+                        WITH f AS (
+                            SELECT * FROM json_populate_record(NULL::{}, $1::json)
+                        )
+                        UPDATE {} t
+                        SET _cursor = t._cursor * '{}'::int8range
+                        FROM f
+                        WHERE {} AND upper_inf(t._cursor)
+                        ",
+                        &self.table_name, &self.table_name, &clamping_cursor, &join_columns
+                    );
+
+                    txn.execute(&query, &[&Json(entity)])
+                        .await
+                        .change_context(SinkPostgresError)
+                        .attach_printable("failed to clamp entity data")?;
+                }
+
+                // Update the existing row with the new rows.
+                let mut duplicated = row
+                    .try_get::<_, serde_json::Value>(0)
+                    .change_context(SinkPostgresError)
+                    .attach_printable("failed to get existing entity")?;
+
+                {
+                    let data = duplicated.as_object_mut().ok_or(SinkPostgresError)?;
+
+                    for (k, v) in update {
+                        data.insert(k.clone(), v.clone());
+                    }
+
+                    // Update _cursor as well.
+                    data.insert(
+                        "_cursor".into(),
+                        format!("[{},)", ctx.end_cursor.order_key).into(),
+                    );
+                }
+
+                {
+                    let query = format!(
+                        "INSERT INTO {} SELECT * FROM json_populate_record(NULL::{}, $1::json)",
+                        &self.table_name, &self.table_name
+                    );
+
+                    // Insert duplicated + updated entity.
+                    txn.execute(&query, &[&Json(duplicated)])
+                        .await
+                        .change_context(SinkPostgresError)
+                        .attach_printable("failed to duplicate entity")?;
+                }
+            } else {
+                warn!("item does not contain insert or update key, skipping");
+            }
+        }
+
+        txn.commit()
+            .await
+            .change_context(SinkPostgresError)
+            .attach_printable("failed to commit transaction")?;
+
+        Ok(CursorAction::Persist)
+    }
+
+    async fn handle_invalidate(
+        &mut self,
+        cursor: &Option<Cursor>,
+    ) -> Result<(), SinkPostgresError> {
+        let cursor_lb = cursor
+            .as_ref()
+            .map(|c| c.order_key + 1) // add 1 because we compare with >=
+            .unwrap_or(0) as i64;
+
+        let txn = self
+            .client
+            .transaction()
+            .await
+            .change_context(SinkPostgresError)
+            .attach_printable("failed to create postgres transaction")?;
+
+        // delete data generated after the new head.
+        let delete_query = format!(
+            "DELETE FROM {} WHERE lower(_cursor) >= $1",
+            &self.table_name,
+        );
+
+        txn.execute(&delete_query, &[&cursor_lb])
+            .await
+            .change_context(SinkPostgresError)
+            .attach_printable("failed to run delete query on invalidate")?;
+
+        // restore _cursor for data updated after the new head.
+        let unclamp_query = format!(
+            "
+            UPDATE {}
+            SET _cursor = concat('[', lower(_cursor), ',)')::int8range
+            WHERE upper(_cursor) >= $1
+            ",
+            &self.table_name
+        );
+
+        txn.execute(&unclamp_query, &[&cursor_lb])
+            .await
+            .change_context(SinkPostgresError)
+            .attach_printable("failed to run unclamp query on invalidate")?;
+
+        txn.commit()
+            .await
+            .change_context(SinkPostgresError)
+            .attach_printable("failed to commit transaction")?;
 
         Ok(())
     }
