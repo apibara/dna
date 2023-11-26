@@ -26,17 +26,26 @@ apibara plugins install sink-postgres
 
 ### Configuration
 
+**General**
+
  - `connectionString: string`: URL used to connect to your PostgreSQL database.
  - `tableName: string`: table where data will be inserted. The table must exist and
    it must have a schema compatible with the data returned by the transform
    step.
+ - `invalidate: { column: string, value: string }[]`: additional conditions
+   used when invalidating data. You should use this option when running multiple
+   indexers writing data to the same table.
+ - `entityMode: boolean`: enable entity mode. See the next section to learn
+   more about entity mode.
+
+**TLS**
+
  - `noTls: boolean`: disable TLS when connecting to the server.
  - `tlsCertificate: string`: path to the PEM-formatted X509 TLS certificate.
  - `tlsDisableSystemRoots: boolean`: disable system root certificates.
  - `tlsAcceptInvalidCertificates: boolean`: accept invalid TLS certificates.
  - `tlsAcceptInvalidHostnames: boolean`: disable hostname validation.
  - `tlsUseSni: boolean`: use Server Name Identification (SNI).
-
 
 ### Table schema
 
@@ -45,7 +54,87 @@ transformation step.
 Batch data is converted to PostgreSQL records using the `json_populate_recordset`
 function. Additionally, the PostgreSQL integration **requires a `_cursor`
 column** in the table to keep track of each batch's cursor, so that data can be
-invalidated in case of chain reorganizations.
+invalidated in case of chain reorganizations. The type of `_cursor` is different
+between standard and entity mode.
+
+### Standard mode
+
+In standard mode (default), the data returned by the transform function is
+inserted into the target table.
+You should use standard mode if you're storing "a list of items," for example
+all transfer events of a token or the list of _position changes_ for your smart
+contract.
+
+In standard mode, the type of `_cursor` is `bigint`.
+
+### Entity mode
+
+Entity mode is used to store entities in the table. Entities represent the
+state of an object at a specific point in time.
+
+To enable entity mode, set the `entityMode` option to `true`. When using
+entity mode, the type of `_cursor` is `int8range` since the integration
+must track for which blocks an entity state is valid.
+
+In entity mode, the behaviour of the transform function changes. The transform
+function must return a list of operations:
+
+ - `{ insert: data }`: insert new data into the table.
+ - `{ update: data, entity: key }`: update the entity uniquely identified by
+   `key` with the new `data`.
+
+**Querying data**
+
+To query the latest state for an entity, add the `upper_inf(_cursor)` condition
+to the `WHERE` clause.
+
+```sql
+SELECT * FROM balances WHERE upper_inf(_cursor);
+```
+
+You can query for the state at a specific block using the `<@` operator.
+
+```sql
+SELECT * FROM balances WHERE 9123456::bigint <@ _cursor
+```
+
+**Example**
+
+Consider a smart contract for a game that emits a new `GameStarted(game_id)`
+event when a player starts a new game, and `GameEnded(game_id, score)` when
+the game ends.
+
+```ts
+export default function transform({ header, events }) {
+    const { timestamp } = header;
+    return events.flatMap(({ event }) => {
+        if (isGameStarted(event)) {
+            const { game_id } = decodeEvent(event);
+            return {
+                insert: {
+                    game_id,
+                    status: "STARTED",
+                    created_at: timestamp,
+                },
+            };
+        } else if (isGameEnded(event)) {
+            const { game_id, score } = decodeEvent(event);
+            return {
+                entity: {
+                    game_id,
+                },
+                update: {
+                    score,
+                    status: "ENDED",
+                    updated_at: timestamp,
+                },
+            };
+        } else {
+            return [];
+        }
+    });
+}
+```
 
 ### Provider-specific setup
 
