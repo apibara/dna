@@ -25,6 +25,7 @@ pub struct SinkPostgresConfiguration {
     pub pg: Config,
     pub table_name: String,
     pub tls: TlsConfiguration,
+    pub entity_mode: bool,
     pub invalidate: Vec<InvalidateColumn>,
 }
 
@@ -58,6 +59,9 @@ pub struct SinkPostgresOptions {
     /// Use Server Name Indication (SNI).
     #[arg(long, env = "POSTGRES_TLS_USE_SNI")]
     pub tls_use_sni: Option<bool>,
+    /// Enable storing rows as entities.
+    #[clap(skip)]
+    pub entity_mode: Option<bool>,
     /// Additional conditions for the invalidate query.
     #[clap(skip)]
     pub invalidate: Option<Vec<InvalidateColumn>>,
@@ -88,6 +92,7 @@ impl SinkOptions for SinkPostgresOptions {
                 .tls_accept_invalid_hostnames
                 .or(other.tls_accept_invalid_hostnames),
             tls_use_sni: self.tls_use_sni.or(other.tls_use_sni),
+            entity_mode: self.entity_mode.or(other.entity_mode),
             invalidate: self.invalidate.or(other.invalidate),
         }
     }
@@ -119,12 +124,14 @@ impl SinkPostgresOptions {
             }
         };
 
+        let entity_mode = self.entity_mode.unwrap_or(false);
         let invalidate = self.invalidate.unwrap_or_default();
 
         Ok(SinkPostgresConfiguration {
             pg,
             table_name,
             tls,
+            entity_mode,
             invalidate,
         })
     }

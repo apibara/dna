@@ -1,29 +1,13 @@
 use apibara_core::node::v1alpha2::{Cursor, DataFinality};
 use apibara_sink_common::{Context, CursorAction, Sink};
-use apibara_sink_postgres::{
-    InvalidateColumn, PostgresSink, SinkPostgresError, SinkPostgresOptions,
-};
+use apibara_sink_postgres::{InvalidateColumn, SinkPostgresError};
 use error_stack::Result;
 use serde_json::{json, Value};
-use testcontainers::{clients, core::WaitFor, GenericImage};
+use testcontainers::clients;
 use tokio_postgres::{Client, NoTls};
 
-fn new_postgres_image() -> GenericImage {
-    GenericImage::new("postgres", "15-alpine")
-        .with_exposed_port(5432)
-        .with_env_var("POSTGRES_DB", "postgres")
-        .with_env_var("POSTGRES_HOST_AUTH_METHOD", "trust")
-        .with_wait_for(WaitFor::message_on_stderr(
-            "database system is ready to accept connections",
-        ))
-}
-
-fn new_cursor(order_key: u64) -> Cursor {
-    Cursor {
-        order_key,
-        unique_key: order_key.to_be_bytes().to_vec(),
-    }
-}
+mod common;
+use crate::common::*;
 
 fn new_batch(start_cursor: &Option<Cursor>, end_cursor: &Cursor) -> Value {
     new_batch_with_additional_columns(start_cursor, end_cursor, None, None)
@@ -84,7 +68,7 @@ fn new_rows(start_cursor: &Option<Cursor>, end_cursor: &Cursor) -> Vec<TestRow> 
 }
 
 async fn get_all_rows(client: &Client) -> Vec<TestRow> {
-    let rows = client.query("SELECT * From test", &[]).await.unwrap();
+    let rows = client.query("SELECT * FROM test", &[]).await.unwrap();
 
     rows.into_iter()
         .map(|row| {
@@ -125,24 +109,6 @@ async fn create_test_table(port: u16) {
     });
 
     client.query(create_table_query, &[]).await.unwrap();
-}
-
-async fn new_sink(port: u16) -> PostgresSink {
-    new_sink_with_invalidate(port, None).await
-}
-
-async fn new_sink_with_invalidate(
-    port: u16,
-    invalidate: Option<Vec<InvalidateColumn>>,
-) -> PostgresSink {
-    let options = SinkPostgresOptions {
-        connection_string: Some(format!("postgresql://postgres@localhost:{}", port)),
-        table_name: Some("test".into()),
-        no_tls: Some(true),
-        invalidate,
-        ..Default::default()
-    };
-    PostgresSink::from_options(options).await.unwrap()
 }
 
 #[tokio::test]
@@ -188,7 +154,7 @@ async fn test_handle_data() -> Result<(), SinkPostgresError> {
         assert_eq!(action, CursorAction::Persist);
     }
 
-    assert_eq!(all_rows, get_all_rows(&sink.client).await);
+    assert_eq!(all_rows, get_all_rows(sink.client()).await);
 
     Ok(())
 }
@@ -230,14 +196,14 @@ async fn test_handle_invalidate_all(
         assert_eq!(action, CursorAction::Persist);
     }
 
-    assert_eq!(expected_rows, get_all_rows(&sink.client).await);
+    assert_eq!(expected_rows, get_all_rows(sink.client()).await);
 
-    let num_rows = get_num_rows(&sink.client).await as u64;
+    let num_rows = get_num_rows(sink.client()).await as u64;
     assert_eq!(num_rows, batch_size * num_batches);
 
     sink.handle_invalidate(invalidate_from).await?;
 
-    assert_eq!(get_num_rows(&sink.client).await, 0);
+    assert_eq!(get_num_rows(sink.client()).await, 0);
 
     Ok(())
 }
@@ -289,7 +255,7 @@ async fn test_handle_invalidate() -> Result<(), SinkPostgresError> {
         assert_eq!(action, CursorAction::Persist);
     }
 
-    assert_eq!(all_rows, get_all_rows(&sink.client).await);
+    assert_eq!(all_rows, get_all_rows(sink.client()).await);
 
     let invalidate_from = 2;
 
@@ -301,7 +267,7 @@ async fn test_handle_invalidate() -> Result<(), SinkPostgresError> {
         .filter(|row| row.cursor <= invalidate_from)
         .collect();
 
-    assert_eq!(expected_rows, get_all_rows(&sink.client).await);
+    assert_eq!(expected_rows, get_all_rows(sink.client()).await);
 
     Ok(())
 }
@@ -366,7 +332,7 @@ async fn test_handle_invalidate_with_additional_condition() -> Result<(), SinkPo
 
     sink.handle_invalidate(&Some(new_cursor(2))).await?;
 
-    let rows = get_all_rows(&sink.client).await;
+    let rows = get_all_rows(sink.client()).await;
     // 10 rows with col1 = "a" and col2 = "b"
     // 2 rows with col1 = "a" and col2 = "a"
     assert_eq!(rows.len(), 12);

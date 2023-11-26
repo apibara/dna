@@ -25,9 +25,7 @@ impl IngestionStreamPublisher {
         let (tx, _rx) = broadcast::channel(128);
         let tx = Arc::new(tx);
 
-        let manager = IngestionStreamPublisher {
-            tx: tx.clone(),
-        };
+        let manager = IngestionStreamPublisher { tx: tx.clone() };
         let client = IngestionStreamClient { tx };
         (client, manager)
     }
