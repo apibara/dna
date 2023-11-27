@@ -13,8 +13,14 @@ pub struct SinkMongoOptions {
     #[arg(long, env = "MONGO_DATABASE")]
     pub database: Option<String>,
     /// The collection where to store the data.
-    #[arg(long, env = "MONGO_COLLECTION_NAME")]
+    #[arg(
+        long,
+        env = "MONGO_COLLECTION_NAME",
+        conflicts_with = "collection_names"
+    )]
     pub collection_name: Option<String>,
+    #[arg(long, env = "MONGO_COLLECTION_NAMES", value_delimiter = ',')]
+    pub collection_names: Option<Vec<String>>,
     /// Enable storing records as entities.
     pub entity_mode: Option<bool>,
     #[clap(skip)]
@@ -27,6 +33,7 @@ impl SinkOptions for SinkMongoOptions {
             connection_string: self.connection_string.or(other.connection_string),
             database: self.database.or(other.database),
             collection_name: self.collection_name.or(other.collection_name),
+            collection_names: self.collection_names.or(other.collection_names),
             entity_mode: self.entity_mode.or(other.entity_mode),
             invalidate: self.invalidate.or(other.invalidate),
         }
