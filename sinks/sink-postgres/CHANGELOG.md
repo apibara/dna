@@ -6,6 +6,17 @@ The format is based on [Common Changelog](https://common-changelog.org/), and
 this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.8] - 2023-11-27
+
+_Store entities state._
+
+### Added
+
+ - Add a new `entityMode` option to enable entity mode. In entity mode,
+   indexers can insert and update stateful entities (like account balances or
+   token ownership). Please refer to the documentation and examples to learn
+   more about entity mode.
+
 ## [0.4.7] - 2023-11-16
 
 _Add new environment-related options._
@@ -148,6 +159,7 @@ _This release improves the developer experience when running locally._
 _First tagged release 🎉_
 
 
+[0.4.8]: https://github.com/apibara/dna/releases/tag/sink-postgres/v0.4.8
 [0.4.7]: https://github.com/apibara/dna/releases/tag/sink-postgres/v0.4.7
 [0.4.6]: https://github.com/apibara/dna/releases/tag/sink-postgres/v0.4.6
 [0.4.5]: https://github.com/apibara/dna/releases/tag/sink-postgres/v0.4.5
