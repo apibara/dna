@@ -3,25 +3,12 @@ use apibara_sink_common::{Context, CursorAction, Sink};
 use apibara_sink_mongo::{MongoSink, SinkMongoError, SinkMongoOptions};
 use error_stack::{Result, ResultExt};
 use futures_util::TryStreamExt;
-use mongodb::{
-    bson::{doc, to_document, Bson, Document},
-    options::FindOptions,
-    Collection,
-};
+use mongodb::bson::{doc, Bson, Document};
 use serde_json::{json, Value};
-use testcontainers::{clients, core::WaitFor, GenericImage};
+use testcontainers::clients;
 
-fn new_mongo_image() -> GenericImage {
-    GenericImage::new("mongo", "7.0.1")
-        .with_wait_for(WaitFor::message_on_stdout("Waiting for connections"))
-}
-
-fn new_cursor(order_key: u64) -> Cursor {
-    Cursor {
-        order_key,
-        unique_key: order_key.to_be_bytes().to_vec(),
-    }
-}
+mod common;
+use crate::common::*;
 
 fn new_batch(start_cursor: &Option<Cursor>, end_cursor: &Cursor) -> Value {
     new_batch_with_extra(start_cursor, end_cursor, json!({}))
@@ -51,52 +38,6 @@ fn new_batch_with_extra(start_cursor: &Option<Cursor>, end_cursor: &Cursor, extr
     }
 
     json!(batch)
-}
-
-fn new_not_array_of_objects() -> Value {
-    json!([0, { "key": "value" }, 1])
-}
-
-fn new_docs(start_cursor: &Option<Cursor>, end_cursor: &Cursor) -> Vec<Document> {
-    let mut batch = Vec::new();
-
-    let start_block_num = match start_cursor {
-        Some(cursor) => cursor.order_key,
-        None => 0,
-    };
-
-    let end_block_num = end_cursor.order_key;
-
-    for i in start_block_num..end_block_num {
-        batch.push(
-            // we have to convert first to a json then to a mongo document for
-            // the numbers to be handled as u64, doc! macro don't handle u64
-            // for some reason
-            to_document(&json!({
-                "block_num": i,
-                "block_str": format!("block_{}", i),
-                "_cursor": json!({"from": end_block_num}),
-            }))
-            .unwrap(),
-        );
-    }
-    batch
-}
-
-async fn get_all_docs(collection: &Collection<Document>) -> Vec<Document> {
-    let find_options = Some(
-        FindOptions::builder()
-            .projection(Some(doc! {"_id": 0}))
-            .build(),
-    );
-
-    collection
-        .find(None, find_options)
-        .await
-        .unwrap()
-        .try_collect::<Vec<_>>()
-        .await
-        .unwrap()
 }
 
 #[tokio::test]
@@ -147,7 +88,7 @@ async fn test_handle_data() -> Result<(), SinkMongoError> {
         assert_eq!(action, CursorAction::Persist);
     }
 
-    assert_eq!(all_docs, get_all_docs(sink.get_collection("test")?).await);
+    assert_eq!(all_docs, get_all_docs(sink.collection("test")?).await);
 
     Ok(())
 }
@@ -194,12 +135,12 @@ async fn test_handle_invalidate_all(
         all_docs.extend(new_docs(&cursor, &end_cursor));
     }
 
-    assert_eq!(all_docs, get_all_docs(sink.get_collection("test")?).await);
+    assert_eq!(all_docs, get_all_docs(sink.collection("test")?).await);
 
     sink.handle_invalidate(invalidate_from).await?;
     assert_eq!(
         Vec::<Document>::new(),
-        get_all_docs(sink.get_collection("test")?).await
+        get_all_docs(sink.collection("test")?).await
     );
 
     Ok(())
@@ -257,7 +198,7 @@ async fn test_handle_invalidate() -> Result<(), SinkMongoError> {
         assert_eq!(action, CursorAction::Persist);
     }
 
-    assert_eq!(all_docs, get_all_docs(sink.get_collection("test")?).await);
+    assert_eq!(all_docs, get_all_docs(sink.collection("test")?).await);
 
     let invalidate_from = 2;
 
@@ -277,7 +218,7 @@ async fn test_handle_invalidate() -> Result<(), SinkMongoError> {
 
     assert_eq!(
         expected_docs,
-        get_all_docs(sink.get_collection("test")?).await
+        get_all_docs(sink.collection("test")?).await
     );
 
     Ok(())
@@ -294,7 +235,7 @@ async fn test_handle_invalidate_with_extra_condition() -> Result<(), SinkMongoEr
         connection_string: Some(format!("mongodb://localhost:{}", port)),
         database: Some("test".into()),
         collection_name: Some("test".into()),
-        collection_names: Some(vec!["test".into(), "test2".into()]),
+        collection_names: None,
         invalidate: Some(doc! { "col1": "a", "col2": "a" }),
         ..SinkMongoOptions::default()
     };
@@ -345,7 +286,7 @@ async fn test_handle_invalidate_with_extra_condition() -> Result<(), SinkMongoEr
     let expected_docs_count = (batch_size * num_batches) + (batch_size * (invalidate_from - 1));
     assert_eq!(
         expected_docs_count,
-        get_all_docs(sink.get_collection("test")?).await.len() as u64
+        get_all_docs(sink.collection("test")?).await.len() as u64
     );
 
     Ok(())
@@ -413,7 +354,7 @@ async fn test_handle_data_in_entity_mode() -> Result<(), SinkMongoError> {
         // For example, we check that key v0 is still present.
 
         let new_docs = sink
-            .get_collection("test")?
+            .collection("test")?
             .find(
                 Some(doc! {"_cursor.to": Bson::Null, "address": "0x1", "token_id": "1" }),
                 None,
@@ -431,7 +372,7 @@ async fn test_handle_data_in_entity_mode() -> Result<(), SinkMongoError> {
         assert_eq!(new_doc.get_i64("v2").unwrap(), 7);
 
         let new_docs = sink
-            .get_collection("test")?
+            .collection("test")?
             .find(
                 Some(doc! {"_cursor.to": Bson::Null, "address": "0x1", "token_id": "2" }),
                 None,
@@ -463,7 +404,7 @@ async fn test_handle_data_in_entity_mode() -> Result<(), SinkMongoError> {
         sink.handle_data(&ctx, &batch).await?;
 
         let updated_docs = sink
-            .get_collection("test")?
+            .collection("test")?
             .find(
                 Some(doc! {"_cursor.to": Bson::Null, "address": "0x1", "token_id": "1" }),
                 None,
@@ -480,7 +421,7 @@ async fn test_handle_data_in_entity_mode() -> Result<(), SinkMongoError> {
         assert_eq!(updated_doc.get_str("v1").unwrap(), "c");
 
         let new_docs = sink
-            .get_collection("test")?
+            .collection("test")?
             .find(
                 Some(doc! {"_cursor.to": Bson::Null, "address": "0x1", "token_id": "4" }),
                 None,
@@ -552,7 +493,7 @@ async fn test_handle_invalidate_in_entity_mode() -> Result<(), SinkMongoError> {
         sink.handle_data(&ctx, &batch).await?;
 
         let new_docs = sink
-            .get_collection("test")?
+            .collection("test")?
             .find(
                 Some(doc! { "token_id": "2", "_cursor.to": Bson::Null }),
                 None,
@@ -576,7 +517,7 @@ async fn test_handle_invalidate_in_entity_mode() -> Result<(), SinkMongoError> {
         sink.handle_invalidate(&new_head).await?;
 
         let new_docs = sink
-            .get_collection("test")?
+            .collection("test")?
             .find(
                 Some(doc! { "token_id": "2", "_cursor.to": Bson::Null }),
                 None,
@@ -599,7 +540,7 @@ async fn test_handle_invalidate_in_entity_mode() -> Result<(), SinkMongoError> {
         sink.handle_invalidate(&new_head).await?;
 
         let new_docs = sink
-            .get_collection("test")?
+            .collection("test")?
             .find(
                 Some(doc! { "token_id": "2", "_cursor.to": Bson::Null }),
                 None,

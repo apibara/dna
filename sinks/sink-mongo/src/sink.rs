@@ -181,7 +181,7 @@ impl Sink for MongoSink {
 }
 
 impl MongoSink {
-    pub fn get_collection(
+    pub fn collection(
         &self,
         collection_name: &str,
     ) -> Result<&Collection<Document>, SinkMongoError> {
@@ -234,9 +234,9 @@ impl MongoSink {
                 // Safe unwrap because of the above if statement where we add the
                 // `collection_name` key if it doesn't exist
                 docs_map
-                    .get_mut(&collection_name)
-                    .unwrap()
-                    .push(doc.clone());
+                    .entry(collection_name)
+                    .or_default()
+                    .push(doc.clone())
             }
         } else {
             // Safe unwrap because we already made sure we have at least one collection
@@ -275,7 +275,7 @@ impl MongoSink {
 
         for (collection_name, mut docs) in docs_map {
             docs.iter_mut().for_each(|doc| doc.add_cursor(&cursor));
-            self.get_collection(&collection_name)?
+            self.collection(&collection_name)?
                 .insert_many_with_session(docs, None, session)
                 .await
                 .change_context(SinkMongoError)
@@ -374,7 +374,7 @@ impl MongoSink {
             };
 
             let mut existing_docs = self
-                .get_collection(&collection_name)?
+                .collection(&collection_name)?
                 .find_with_session(Some(existing_docs_query.clone()), None, session)
                 .await
                 .change_context(SinkMongoError)
@@ -393,7 +393,7 @@ impl MongoSink {
                     }
                 };
 
-                self.get_collection(&collection_name)?
+                self.collection(&collection_name)?
                     .update_many_with_session(existing_docs_query, clamp_cursor, None, session)
                     .await
                     .change_context(SinkMongoError)
@@ -404,7 +404,7 @@ impl MongoSink {
                     .iter_mut()
                     .for_each(|doc| doc.replace_cursor(&new_cursor));
 
-                self.get_collection(&collection_name)?
+                self.collection(&collection_name)?
                     .insert_many_with_session(existing_docs, None, session)
                     .await
                     .change_context(SinkMongoError)
@@ -416,7 +416,7 @@ impl MongoSink {
 
             for (mut doc_filter, update) in entities_with_updates {
                 doc_filter.insert("_cursor.to", Bson::Null);
-                self.get_collection(&collection_name)?
+                self.collection(&collection_name)?
                     .update_many_with_session(
                         doc_filter,
                         update,
