@@ -8,7 +8,7 @@ _Mirror onchain data to a PostgreSQL table._
 - Build internal dashboards with Retool or Illa.
 - Join offchain and onchain data.
 
-**Usage**
+## Usage
 
 You must set the `POSTGRES_CONNECTION_STRING` environment variable to the one
 provided by your PostgreSQL provider.
@@ -35,6 +35,8 @@ PostgreSQL).
 
 **Notice**: the `_cursor` column is REQUIRED by Apibara to automatically
 invalidate data following chain reorganizations.
+
+### Standard mode
 
 ```sql
 create table transfers(
@@ -72,3 +74,29 @@ query TransferCount {
 Refer to the
 [Hasura documentation to improve query
 performance](https://hasura.io/docs/latest/queries/postgres/performance/).
+
+### Entity mode
+
+The `entity_mode.js` script shows how to use _entity mode_.
+The script needs the following table. Notice that in this case the `_cursor` is
+a range of blocks.
+
+```sql
+create table if not exists vrf_requests(
+  request_id bigint,
+  status bigint,
+  created_at timestamp,
+  created_at_tx text,
+  updated_at timestamp,
+  updated_at_tx text,
+  _cursor int8range
+);
+```
+
+To get the most recent state of an entity, you must add the `upper_inf(_cursor)`
+condition to your query.
+
+```sql
+select * from vrf_requests where upper_inf(_cursor)
+```
+
