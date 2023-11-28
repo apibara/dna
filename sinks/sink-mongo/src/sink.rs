@@ -36,7 +36,7 @@ pub struct MongoSink {
 
 enum Mode {
     /// Store entities as immutable documents.
-    Logs,
+    Standard,
     /// Store entities as mutable documents (entities).
     Entity,
 }
@@ -87,7 +87,7 @@ impl Sink for MongoSink {
         let mode = if entity_mode {
             Mode::Entity
         } else {
-            Mode::Logs
+            Mode::Standard
         };
 
         Ok(Self {
@@ -216,7 +216,7 @@ impl MongoSink {
                     .attach_printable("collection is not a string")?
                     .to_string();
 
-                if let Mode::Logs = self.mode {
+                if let Mode::Standard = self.mode {
                     *doc = doc
                         .get("data")
                         .ok_or(SinkMongoError)
@@ -252,7 +252,7 @@ impl MongoSink {
             .attach_printable("failed to create mongo session")?;
 
         match &self.mode {
-            Mode::Logs => {
+            Mode::Standard => {
                 self.insert_logs_data(end_cursor, docs_map, &mut session)
                     .await
             }
