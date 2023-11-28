@@ -366,9 +366,7 @@ async fn test_handle_invalidate_with_extra_condition() -> Result<(), SinkMongoEr
         let expected_docs_count = (batch_size * num_batches) + (batch_size * (invalidate_from - 1));
         assert_eq!(
             expected_docs_count,
-            get_all_docs(sink.collection(collection_name)?)
-                .await
-                .len() as u64
+            get_all_docs(sink.collection(collection_name)?).await.len() as u64
         );
     }
 
@@ -403,10 +401,10 @@ async fn test_handle_data_in_entity_mode() -> Result<(), SinkMongoError> {
         let cursor = Some(new_cursor(0));
         let end_cursor = new_cursor(1);
         let batch = json!([
-            json!({"entity": { "address": "0x1", "token_id": "1", }, "update": { "$set": { "v0": "a", "v1": "a" } }, "collection": collection_name }),
-            json!({"entity": { "address": "0x1", "token_id": "2", }, "update": { "$set": { "v0": "b", "v1": "b" } }, "collection": collection_name }),
-            json!({"entity": { "address": "0x1", "token_id": "2", }, "update": [{ "$set": { "v0": "a", "v1": "a" } }], "collection": collection_name }),
-            json!({"entity": { "address": "0x1", "token_id": "3", }, "update": [{ "$set": { "v0": "a", "v1": "a" } }], "collection": collection_name }),
+            {"entity": { "address": "0x1", "token_id": "1", }, "update": { "$set": { "v0": "a", "v1": "a" } }, "collection": collection_name },
+            {"entity": { "address": "0x1", "token_id": "2", }, "update": { "$set": { "v0": "b", "v1": "b" } }, "collection": collection_name },
+            {"entity": { "address": "0x1", "token_id": "2", }, "update": [{ "$set": { "v0": "a", "v1": "a" } }], "collection": collection_name },
+            {"entity": { "address": "0x1", "token_id": "3", }, "update": [{ "$set": { "v0": "a", "v1": "a" } }], "collection": collection_name },
         ]);
 
         let ctx = Context {
@@ -423,8 +421,8 @@ async fn test_handle_data_in_entity_mode() -> Result<(), SinkMongoError> {
         let cursor = Some(new_cursor(1));
         let end_cursor = new_cursor(2);
         let batch = json!([
-            json!({"entity": { "address": "0x1", "token_id": "1", }, "update": { "$set": { "v1": "b"}, "$inc": { "v2": 7 } }, "collection": collection_name }),
-            json!({"entity": { "address": "0x1", "token_id": "2", }, "update": [{ "$set": { "v0": "b"} }], "collection": collection_name }),
+            {"entity": { "address": "0x1", "token_id": "1", }, "update": { "$set": { "v1": "b"}, "$inc": { "v2": 7 } }, "collection": collection_name },
+            {"entity": { "address": "0x1", "token_id": "2", }, "update": [{ "$set": { "v0": "b"} }], "collection": collection_name },
         ]);
 
         let ctx = Context {
@@ -478,8 +476,8 @@ async fn test_handle_data_in_entity_mode() -> Result<(), SinkMongoError> {
         let cursor = Some(new_cursor(2));
         let end_cursor = new_cursor(3);
         let batch = json!([
-            json!({ "entity": { "address": "0x1", "token_id": "1" }, "update": { "$set": { "v1": "c" } }, "collection": collection_name }),
-            json!({ "entity": { "address": "0x1", "token_id": "4" }, "update": { "$set": { "v0": "a", "v1": "a" } }, "collection": collection_name }),
+            { "entity": { "address": "0x1", "token_id": "1" }, "update": { "$set": { "v1": "c" } }, "collection": collection_name },
+            { "entity": { "address": "0x1", "token_id": "4" }, "update": { "$set": { "v0": "a", "v1": "a" } }, "collection": collection_name },
         ]);
 
         let ctx = Context {
@@ -555,8 +553,8 @@ async fn test_handle_invalidate_in_entity_mode() -> Result<(), SinkMongoError> {
         let cursor = Some(new_cursor(0));
         let end_cursor = new_cursor(1);
         let batch = json!([
-            json!({ "entity": { "address": "0x1", "token_id": "1" }, "update": { "$set": { "v0": "a", "v1": "a" } }, "collection": collection_name }),
-            json!({ "entity": { "address": "0x1", "token_id": "2" }, "update": { "$set": { "v0": "a", "v1": "a"} }, "collection": collection_name }),
+            { "entity": { "address": "0x1", "token_id": "1" }, "update": { "$set": { "v0": "a", "v1": "a" } }, "collection": collection_name },
+            { "entity": { "address": "0x1", "token_id": "2" }, "update": { "$set": { "v0": "a", "v1": "a"} }, "collection": collection_name },
         ]);
 
         let ctx = Context {
