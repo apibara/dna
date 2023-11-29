@@ -6,6 +6,16 @@ The format is based on [Common Changelog](https://common-changelog.org/), and
 this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2023-11-29
+
+_Use Starknet RPC v0.5._
+
+### Changed
+
+ - The ingestion service now uses Starknet RPC v0.5. To ensure that you're using
+ the right version, append `/rpc/v0.5` to the RPC url for Pathfinder nodes and
+ `/v0_5` for Juno nodes.
+
 ## [1.1.7] - 2023-11-18
 
 _Improve memory usage._
@@ -141,6 +151,7 @@ _Start publishing versioned Docker images._
 
 _First tagged release 🎉_
 
+[1.2.0]: https://github.com/apibara/dna/releases/tag/starknet/v1.2.0
 [1.1.7]: https://github.com/apibara/dna/releases/tag/starknet/v1.1.7
 [1.1.6]: https://github.com/apibara/dna/releases/tag/starknet/v1.1.6
 [1.1.5]: https://github.com/apibara/dna/releases/tag/starknet/v1.1.5
