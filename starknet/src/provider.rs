@@ -659,7 +659,6 @@ impl ToProto<v1alpha2::TransactionReceipt> for models::PendingTransactionReceipt
             PendingTransactionReceipt::Invoke(invoke) => invoke.to_proto(),
             PendingTransactionReceipt::L1Handler(l1_handler) => l1_handler.to_proto(),
             PendingTransactionReceipt::Declare(declare) => declare.to_proto(),
-            PendingTransactionReceipt::Deploy(deploy) => deploy.to_proto(),
             PendingTransactionReceipt::DeployAccount(deploy) => deploy.to_proto(),
         }
     }
@@ -722,28 +721,6 @@ impl ToProto<v1alpha2::TransactionReceipt> for models::PendingDeclareTransaction
             l2_to_l1_messages,
             events,
             contract_address: None,
-            execution_status: execution_status.into(),
-            revert_reason,
-        }
-    }
-}
-
-impl ToProto<v1alpha2::TransactionReceipt> for models::PendingDeployTransactionReceipt {
-    fn to_proto(&self) -> v1alpha2::TransactionReceipt {
-        let transaction_hash = self.transaction_hash.into();
-        let actual_fee = self.actual_fee.into();
-        let l2_to_l1_messages = messages_to_proto(&self.messages_sent);
-        let events = events_to_proto(&self.events);
-        let contract_address = self.contract_address.into();
-        let (execution_status, revert_reason) = execution_result_to_proto(&self.execution_result);
-
-        v1alpha2::TransactionReceipt {
-            transaction_index: 0,
-            transaction_hash: Some(transaction_hash),
-            actual_fee: Some(actual_fee),
-            l2_to_l1_messages,
-            events,
-            contract_address: Some(contract_address),
             execution_status: execution_status.into(),
             revert_reason,
         }
