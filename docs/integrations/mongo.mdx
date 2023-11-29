@@ -120,9 +120,15 @@ Notice that in reality the query is more complex, please refer to the next
 section to learn more about how the MongoDB integration stores data.
 
 ### Multiple Collections
-You can write to multiple collections at the same time using the `collectionNames` option, doing so the transform function should specify what collection to the write the data to:
-- For standard mode, put the returned data in a `data` key and add a `collection` key, the returned value will look like `{ data: any, collection: string }`
-- For entity mode, just add a `collection` key to the returned object, it should look like `{ entity: any, collection: string, update: any }`
+
+You can write to multiple collections at the same time using the
+`collectionNames` option, doing so the transform function should specify what
+collection to the write the data to:
+- For standard mode, put the returned data in a `data` key and add a
+  `collection` key, the returned value will look like `{ data: any, collection:
+  string }`
+- For entity mode, just add a `collection` key to the returned object, it
+  should look like `{ entity: any, collection: string, update: any }`
 
 ### Storage & Data Invalidation
 
