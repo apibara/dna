@@ -6,6 +6,20 @@ The format is based on [Common Changelog](https://common-changelog.org/), and
 this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.8] - 2023-11-29
+
+_Write to multiple collections from one indexer._
+
+### Added
+
+ - Add a new option to write to multiple collections from a single indexer.
+   Change `collectionName` to `collectionNames` and specify a list of
+   collections. When multi collection mode is enabled, the transform function
+   return value changes. The transform must return data with the following type
+   `{ collection: string, data: T }[]`, that is data together with the
+   collection where to insert it. Refer to the documentation to learn more about
+   multi collection mode.
+
 ## [0.4.7] - 2023-11-16
 
 _Add new environment-related options._
