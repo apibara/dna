@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use apibara_sink_common::{DotenvOptions, StreamOptions};
+use apibara_sink_common::{ScriptOptions, StreamOptions};
 use clap::Args;
 use error_stack::{Result, ResultExt};
 use tracing::warn;
@@ -32,7 +32,7 @@ pub struct TestArgs {
     #[clap(flatten)]
     stream_options: StreamOptions,
     #[clap(flatten)]
-    dotenv_options: DotenvOptions,
+    dotenv_options: ScriptOptions,
 }
 
 fn validate_args(args: &TestArgs) -> Result<(), CliError> {

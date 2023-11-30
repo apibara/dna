@@ -7,8 +7,8 @@ use tracing::warn;
 use walkdir::{DirEntry, WalkDir};
 
 use apibara_sink_common::{
-    load_environment_variables, load_script, DotenvOptions, NetworkFilterOptions,
-    OptionsFromScript, ScriptOptions, StreamConfigurationOptions, StreamOptions,
+    load_script, NetworkFilterOptions, OptionsFromScript, ScriptOptions,
+    StreamConfigurationOptions, StreamOptions,
 };
 use colored::*;
 use error_stack::{Result, ResultExt};
@@ -40,7 +40,7 @@ pub async fn run_single_test(
     snapshot_path: &Path,
     snapshot: Option<Snapshot>,
     script_path: Option<&Path>,
-    dotenv_options: &DotenvOptions,
+    dotenv_options: &ScriptOptions,
 ) -> Result<TestResult, CliError> {
     let snapshot_path_display = to_relative_path(snapshot_path).display();
 
@@ -76,7 +76,7 @@ pub async fn run_single_test(
 async fn run_test(
     snapshot: Snapshot,
     script_path: Option<&Path>,
-    dotenv_options: &DotenvOptions,
+    script_options: &ScriptOptions,
 ) -> Result<TestResult, CliError> {
     let hint =
         "rerun with --override to regenerate the snapshot or change the snapshot name with --name";
@@ -93,9 +93,13 @@ async fn run_test(
     }
 
     let script_path_str = snapshot.script_path.to_string_lossy().to_string();
-    let allow_env = load_environment_variables(dotenv_options).change_context(CliError)?;
-    let mut script =
-        load_script(&script_path_str, ScriptOptions { allow_env }).change_context(CliError)?;
+
+    let script_options = script_options
+        .load_environment_variables()
+        .change_context(CliError)?
+        .into_indexer_options();
+
+    let mut script = load_script(&script_path_str, script_options).change_context(CliError)?;
 
     let filter = &script
         .configuration::<OptionsFromScript>()
@@ -200,7 +204,7 @@ pub async fn run_generate_snapshot(
     starting_block: Option<u64>,
     num_batches: Option<usize>,
     cli_stream_options: &StreamOptions,
-    dotenv_options: &DotenvOptions,
+    script_options: &ScriptOptions,
 ) -> Result<(), CliError> {
     println!(
         "{} snapshot `{}` ...",
@@ -209,9 +213,12 @@ pub async fn run_generate_snapshot(
     );
 
     let script_path_str = script_path.to_string_lossy().to_string();
-    let allow_env = load_environment_variables(dotenv_options).change_context(CliError)?;
-    let mut script =
-        load_script(&script_path_str, ScriptOptions { allow_env }).change_context(CliError)?;
+    let script_options = script_options
+        .load_environment_variables()
+        .change_context(CliError)?
+        .into_indexer_options();
+
+    let mut script = load_script(&script_path_str, script_options).change_context(CliError)?;
 
     let script_options = script
         .configuration::<OptionsFromScript>()
@@ -283,7 +290,7 @@ pub async fn run_generate_snapshot(
 
 pub async fn run_all_tests(
     dir: impl AsRef<Path>,
-    dotenv_options: &DotenvOptions,
+    dotenv_options: &ScriptOptions,
     script_path: Option<&Path>,
 ) -> Result<(), CliError> {
     let for_script = if let Some(script_path) = script_path {
