@@ -6,6 +6,16 @@ The format is based on [Common Changelog](https://common-changelog.org/), and
 this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.7] - 2023-11-30
+
+_Control indexer timeouts._
+
+### Added
+
+ - Add new `--script-load-timeout-seconds` and
+   `--script-transform-timeout-seconds` options to control the maximum time the
+   indexer script has to initialize and transform data respectively.
+
 ## [0.3.6] - 2023-11-16
 
 _Add new environment-related options._
@@ -121,6 +131,7 @@ _This release improves the developer experience when running locally._
 _First tagged release 🎉_
 
 
+[0.3.7]: https://github.com/apibara/dna/releases/tag/sink-webhook/v0.3.7
 [0.3.6]: https://github.com/apibara/dna/releases/tag/sink-webhook/v0.3.6
 [0.3.5]: https://github.com/apibara/dna/releases/tag/sink-webhook/v0.3.5
 [0.3.4]: https://github.com/apibara/dna/releases/tag/sink-webhook/v0.3.4

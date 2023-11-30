@@ -6,6 +6,16 @@ The format is based on [Common Changelog](https://common-changelog.org/), and
 this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.9] - 2023-11-30
+
+_Control indexer timeouts._
+
+### Added
+
+ - Add new `--script-load-timeout-seconds` and
+   `--script-transform-timeout-seconds` options to control the maximum time the
+   indexer script has to initialize and transform data respectively.
+
 ## [0.4.8] - 2023-11-27
 
 _Store entities state._
@@ -159,6 +169,7 @@ _This release improves the developer experience when running locally._
 _First tagged release 🎉_
 
 
+[0.4.9]: https://github.com/apibara/dna/releases/tag/sink-postgres/v0.4.9
 [0.4.8]: https://github.com/apibara/dna/releases/tag/sink-postgres/v0.4.8
 [0.4.7]: https://github.com/apibara/dna/releases/tag/sink-postgres/v0.4.7
 [0.4.6]: https://github.com/apibara/dna/releases/tag/sink-postgres/v0.4.6
