@@ -1,11 +1,13 @@
-use std::{fmt, net::AddrParseError, path::PathBuf, str::FromStr, time::Duration};
+use std::{env, fmt, net::AddrParseError, path::PathBuf, str::FromStr, time::Duration};
 
 use apibara_core::{node::v1alpha2::DataFinality, starknet::v1alpha2};
+use apibara_script::ScriptOptions as IndexerOptions;
 use apibara_sdk::{Configuration, MetadataKey, MetadataMap, MetadataValue, Uri};
 use bytesize::ByteSize;
 use clap::Args;
 use error_stack::{Result, ResultExt};
 use serde::{Deserialize, Serialize};
+use tracing::debug;
 
 use crate::{connector::StreamConfiguration, status::StatusServer};
 
@@ -61,11 +63,11 @@ pub struct ConnectorOptions {
     #[command(flatten)]
     pub status_server: StatusServerOptions,
     #[command(flatten)]
-    pub dotenv: DotenvOptions,
+    pub script: ScriptOptions,
 }
 
 #[derive(Args, Debug, Default, Clone)]
-pub struct DotenvOptions {
+pub struct ScriptOptions {
     /// Load script environment variables from the specified file.
     ///
     /// Notice that by default the script doesn't have access to any environment variable,
@@ -75,6 +77,12 @@ pub struct DotenvOptions {
     /// Grant access to the specified environment variables.
     #[arg(long, env, value_delimiter = ',')]
     pub allow_env_from_env: Option<Vec<String>>,
+    /// Maximum time allowed to execute the transform function.
+    #[arg(long, env)]
+    pub script_transform_timeout_seconds: Option<u64>,
+    /// Maximum time allowed to load the indexer script.
+    #[arg(long, env)]
+    pub script_load_timeout_seconds: Option<u64>,
 }
 
 #[derive(Args, Debug, Default, Serialize, Deserialize, Clone)]
@@ -268,6 +276,74 @@ impl StreamConfigurationOptions {
             NetworkFilterOptions::Starknet(ref filter) => {
                 Some(configuration.with_filter(|_| filter.clone()))
             }
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct ScriptOptionsError;
+impl error_stack::Context for ScriptOptionsError {}
+
+impl fmt::Display for ScriptOptionsError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "invalid script options")
+    }
+}
+
+impl ScriptOptions {
+    /// Load environment variables from the specified dotenv file.
+    ///
+    /// Returns a copy of script options that inherits the environment variables from the
+    /// environment.
+    pub fn load_environment_variables(&self) -> Result<ScriptOptions, ScriptOptionsError> {
+        let mut allow_env = vec![];
+        if let Some(allow_env_file) = self.allow_env.as_ref() {
+            let env_iter = dotenvy::from_path_iter(allow_env_file)
+                .change_context(ScriptOptionsError)
+                .attach_printable_lazy(|| {
+                    format!(
+                        "failed to load environment variables from path: {:?}",
+                        allow_env
+                    )
+                })?;
+
+            for item in env_iter {
+                let (key, value) = item
+                    .change_context(ScriptOptionsError)
+                    .attach_printable("invalid environment variable")?;
+                allow_env.push(key.clone());
+                debug!(env = ?key, "allowing environment variable");
+                env::set_var(key, value);
+            }
+        };
+
+        if let Some(env_from_env) = self.allow_env_from_env.as_ref() {
+            for key in env_from_env {
+                allow_env.push(key.clone());
+                debug!(env = ?key, "allowing environment variable");
+            }
+        }
+
+        let allow_env_from_env = if allow_env.is_empty() {
+            None
+        } else {
+            Some(allow_env)
+        };
+
+        Ok(ScriptOptions {
+            allow_env: None,
+            allow_env_from_env,
+            ..self.clone()
+        })
+    }
+
+    pub fn into_indexer_options(self) -> IndexerOptions {
+        IndexerOptions {
+            allow_env: self.allow_env_from_env,
+            transform_timeout: self
+                .script_transform_timeout_seconds
+                .map(Duration::from_secs),
+            load_timeout: self.script_load_timeout_seconds.map(Duration::from_secs),
         }
     }
 }

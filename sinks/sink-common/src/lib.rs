@@ -7,14 +7,11 @@ mod json;
 mod persistence;
 mod status;
 
-use std::env;
-
 use apibara_core::starknet::v1alpha2;
 use error_stack::Result;
 use error_stack::ResultExt;
 use serde::Deserialize;
 use tokio_util::sync::CancellationToken;
-use tracing::debug;
 
 pub use self::cli::*;
 pub use self::configuration::*;
@@ -26,7 +23,7 @@ pub use self::persistence::*;
 pub use self::status::*;
 pub use apibara_sink_options_derive::SinkOptions;
 
-pub use apibara_script::ScriptOptions;
+pub use apibara_script::ScriptOptions as IndexerOptions;
 
 #[derive(Debug, Deserialize)]
 pub struct FullOptionsFromScript<SinkOptions> {
@@ -45,12 +42,13 @@ pub async fn run_sink_connector<S>(
 where
     S: Sink + Send + Sync,
 {
-    let script_allowed_env_vars =
-        load_environment_variables(&connector_cli_options.connector.dotenv)?;
-
-    let script_options = ScriptOptions {
-        allow_env: script_allowed_env_vars,
-    };
+    let script_options = connector_cli_options
+        .connector
+        .script
+        .load_environment_variables()
+        .change_context(SinkConnectorError::Configuration)
+        .attach_printable("failed to parse cli options")?
+        .into_indexer_options();
 
     let mut script = load_script(script, script_options)
         .change_context(SinkConnectorError::Configuration)
@@ -113,42 +111,4 @@ where
     };
 
     Ok(())
-}
-
-pub fn load_environment_variables(
-    options: &DotenvOptions,
-) -> Result<Option<Vec<String>>, SinkConnectorError> {
-    let mut allow_env = vec![];
-    if let Some(allow_env_file) = options.allow_env.as_ref() {
-        let env_iter = dotenvy::from_path_iter(allow_env_file)
-            .change_context(SinkConnectorError::Configuration)
-            .attach_printable_lazy(|| {
-                format!(
-                    "failed to load environment variables from path: {:?}",
-                    allow_env
-                )
-            })?;
-
-        for item in env_iter {
-            let (key, value) = item
-                .change_context(SinkConnectorError::Configuration)
-                .attach_printable("invalid environment variable")?;
-            allow_env.push(key.clone());
-            debug!(env = ?key, "allowing environment variable");
-            env::set_var(key, value);
-        }
-    };
-
-    if let Some(env_from_env) = options.allow_env_from_env.as_ref() {
-        for key in env_from_env {
-            allow_env.push(key.clone());
-            debug!(env = ?key, "allowing environment variable");
-        }
-    }
-
-    if allow_env.is_empty() {
-        return Ok(None);
-    }
-
-    Ok(Some(allow_env))
 }

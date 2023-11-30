@@ -17,7 +17,8 @@ pub use serde_json::Value;
 pub struct Script {
     worker: MainWorker,
     module: ModuleSpecifier,
-    timeout: Duration,
+    transform_timeout: Duration,
+    load_timeout: Duration,
 }
 
 #[derive(Debug)]
@@ -36,6 +37,15 @@ pub struct ScriptOptions {
     ///
     /// An empty list gives access to _ALL_ environment variables.
     pub allow_env: Option<Vec<String>>,
+    /// Maximum time allowed to execute the transform function.
+    pub transform_timeout: Option<Duration>,
+    /// Maximum time allowed to load the indexer script.
+    pub load_timeout: Option<Duration>,
+}
+
+enum ScriptTimeout {
+    Transform,
+    Load,
 }
 
 impl Script {
@@ -60,7 +70,7 @@ impl Script {
         options: ScriptOptions,
     ) -> Result<Self, ScriptError> {
         let module_loader = WorkerModuleLoader::new();
-        let permissions = Self::default_permissions(options)?;
+        let permissions = Self::default_permissions(&options)?;
         let worker = MainWorker::bootstrap_from_options(
             module.clone(),
             permissions,
@@ -72,10 +82,19 @@ impl Script {
             },
         );
 
+        let transform_timeout = options
+            .transform_timeout
+            .unwrap_or_else(|| Duration::from_secs(5));
+
+        let load_timeout = options
+            .load_timeout
+            .unwrap_or_else(|| Duration::from_secs(60));
+
         Ok(Script {
             worker,
             module,
-            timeout: Duration::from_secs(5),
+            transform_timeout,
+            load_timeout,
         })
     }
 
@@ -96,7 +115,9 @@ impl Script {
         )
         .into();
 
-        let result = self.execute_script(code, Vec::default()).await?;
+        let result = self
+            .execute_script_with_timeout(code, Vec::default(), ScriptTimeout::Load)
+            .await?;
 
         match result.as_u64() {
             Some(0) => Ok(()),
@@ -128,7 +149,9 @@ impl Script {
         )
         .into();
 
-        let configuration = self.execute_script(code, Vec::default()).await?;
+        let configuration = self
+            .execute_script_with_timeout(code, Vec::default(), ScriptTimeout::Load)
+            .await?;
 
         if Value::Null == configuration {
             return Err(ScriptError)
@@ -175,13 +198,15 @@ impl Script {
         )
         .into();
 
-        self.execute_script(code, data).await
+        self.execute_script_with_timeout(code, data, ScriptTimeout::Transform)
+            .await
     }
 
-    async fn execute_script(
+    async fn execute_script_with_timeout(
         &mut self,
         code: FastString,
         input: Vec<Value>,
+        timeout: ScriptTimeout,
     ) -> Result<Value, ScriptError> {
         let state = self.worker.js_runtime.op_state();
 
@@ -208,14 +233,19 @@ impl Script {
             }
         };
 
-        match tokio::time::timeout(self.timeout, future).await {
+        let timeout = match timeout {
+            ScriptTimeout::Transform => self.transform_timeout,
+            ScriptTimeout::Load => self.load_timeout,
+        };
+
+        match tokio::time::timeout(timeout, future).await {
             Ok(result) => {
                 result?;
             }
             Err(_) => {
                 return Err(ScriptError)
                     .attach_printable("indexer script timed out")
-                    .attach_printable_lazy(|| format!("timeout: {:?}", self.timeout));
+                    .attach_printable_lazy(|| format!("timeout: {:?}", timeout));
             }
         }
 
@@ -223,9 +253,9 @@ impl Script {
         Ok(state.output)
     }
 
-    fn default_permissions(options: ScriptOptions) -> Result<PermissionsContainer, ScriptError> {
+    fn default_permissions(options: &ScriptOptions) -> Result<PermissionsContainer, ScriptError> {
         match Permissions::from_options(&PermissionsOptions {
-            allow_env: options.allow_env,
+            allow_env: options.allow_env.clone(),
             allow_hrtime: true,
             prompt: false,
             ..PermissionsOptions::default()

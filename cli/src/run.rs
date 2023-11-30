@@ -1,8 +1,6 @@
 use std::{io::ErrorKind, process};
 
-use apibara_sink_common::{
-    load_environment_variables, load_script, DotenvOptions, FullOptionsFromScript, ScriptOptions,
-};
+use apibara_sink_common::{load_script, FullOptionsFromScript, ScriptOptions};
 use clap::Args;
 use colored::*;
 use error_stack::{Result, ResultExt};
@@ -16,7 +14,7 @@ pub struct RunArgs {
     /// The path to the indexer script.
     script: String,
     #[clap(flatten)]
-    dotenv: DotenvOptions,
+    transform: ScriptOptions,
     /// Arguments forwarded to the indexer.
     args: Vec<String>,
 }
@@ -30,8 +28,12 @@ struct DummyOptions {
 pub async fn run(args: RunArgs) -> Result<(), CliError> {
     // While not recommended, the script may return a different sink based on some env variable. We
     // need to load the environment variables before loading the script.
-    let allow_env = load_environment_variables(&args.dotenv).change_context(CliError)?;
-    let script_options = ScriptOptions { allow_env };
+    let script_options = args
+        .transform
+        .load_environment_variables()
+        .change_context(CliError)
+        .attach_printable("failed to parse script options")?
+        .into_indexer_options();
 
     let mut script = load_script(&args.script, script_options).change_context(CliError)?;
 
@@ -45,12 +47,25 @@ pub async fn run(args: RunArgs) -> Result<(), CliError> {
     let sink_type = configuration.sink.sink_type;
     let sink_command = get_sink_command(&sink_type);
 
-    // Add back the `--allow-env` argument if specified.
+    // Add back the script/transform arguments if specified.
+    // TODO: There must be a better way to do this.
     let mut extra_args = args.args;
-    if let Some(allow_env) = args.dotenv.allow_env {
+    if let Some(allow_env) = args.transform.allow_env {
         extra_args.push("--allow-env".to_string());
         extra_args.push(allow_env.to_string_lossy().to_string());
     };
+    if let Some(allow_env_from_env) = args.transform.allow_env_from_env {
+        extra_args.push("--allow-env-from-env".to_string());
+        extra_args.push(allow_env_from_env.join(",").to_string());
+    }
+    if let Some(transform_timeout) = args.transform.script_transform_timeout_seconds {
+        extra_args.push("--script-transform-timeout-seconds".to_string());
+        extra_args.push(transform_timeout.to_string());
+    }
+    if let Some(load_timeout) = args.transform.script_load_timeout_seconds {
+        extra_args.push("--script-load-timeout-seconds".to_string());
+        extra_args.push(load_timeout.to_string());
+    }
 
     let command_res = process::Command::new(sink_command)
         .arg("run")
