@@ -6,6 +6,15 @@ The format is based on [Common Changelog](https://common-changelog.org/), and
 this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.10] - 2023-12-02
+
+_Index data in a specific block range._
+
+### Added
+
+ - Add a new `--ending-block` (`endingBlock` if configured from the script)
+   option to stop the indexer at a specific block.
+
 ## [0.4.9] - 2023-11-30
 
 _Control indexer timeouts._
@@ -169,6 +178,7 @@ _This release improves the developer experience when running locally._
 _First tagged release 🎉_
 
 
+[0.4.10]: https://github.com/apibara/dna/releases/tag/sink-mongo/v0.4.10
 [0.4.9]: https://github.com/apibara/dna/releases/tag/sink-mongo/v0.4.9
 [0.4.8]: https://github.com/apibara/dna/releases/tag/sink-mongo/v0.4.8
 [0.4.7]: https://github.com/apibara/dna/releases/tag/sink-mongo/v0.4.7

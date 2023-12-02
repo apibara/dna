@@ -6,6 +6,15 @@ The format is based on [Common Changelog](https://common-changelog.org/), and
 this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.8] - 2023-12-02
+
+_Index data in a specific block range._
+
+### Added
+
+ - Add a new `--ending-block` (`endingBlock` if configured from the script)
+   option to stop the indexer at a specific block.
+
 ## [0.3.7] - 2023-11-30
 
 _Control indexer timeouts._
@@ -128,6 +137,7 @@ _This release improves the developer experience when running locally._
 _First tagged release 🎉_
 
 
+[0.3.8]: https://github.com/apibara/dna/releases/tag/sink-console/v0.3.8
 [0.3.7]: https://github.com/apibara/dna/releases/tag/sink-console/v0.3.7
 [0.3.6]: https://github.com/apibara/dna/releases/tag/sink-console/v0.3.6
 [0.3.5]: https://github.com/apibara/dna/releases/tag/sink-console/v0.3.5
