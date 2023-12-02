@@ -70,6 +70,7 @@ pub struct StreamConfiguration {
     pub metadata: MetadataMap,
     pub bearer_token: Option<String>,
     pub timeout_duration: Duration,
+    pub ending_block: Option<u64>,
 }
 
 pub struct SinkConnectorOptions {
@@ -89,6 +90,14 @@ where
     persistence: Persistence,
     status_server: StatusServer,
     needs_invalidation: bool,
+}
+
+/// Action to take after consuming a message.
+enum StreamAction {
+    /// Stop consuming the stream.
+    Stop,
+    /// Continue consuming the stream.
+    Continue,
 }
 
 impl<S> SinkConnector<S>
@@ -218,7 +227,12 @@ where
                             break;
                         }
                         Ok(Some(message)) => {
-                            self.handle_message(message, &status_client, &mut persistence, ct.clone()).await?;
+                            match self.handle_message(message, &status_client, &mut persistence, ct.clone()).await? {
+                                StreamAction::Stop => {
+                                    break;
+                                }
+                                StreamAction::Continue => {}
+                            }
                         }
                     }
                 }
@@ -271,7 +285,7 @@ where
         status_client: &StatusServerClient,
         persistence: &mut P,
         ct: CancellationToken,
-    ) -> Result<(), SinkConnectorError>
+    ) -> Result<StreamAction, SinkConnectorError>
     where
         P: PersistenceClient + Send,
         S: Sink + Sync + Send,
@@ -305,7 +319,7 @@ where
                                 .change_context(SinkConnectorError::Temporary)?;
                         }
                     }
-                    return Ok(());
+                    return Ok(StreamAction::Continue);
                 }
                 Err(err) => {
                     warn!(err = ?err, "handle_invalidate error");
@@ -317,7 +331,7 @@ where
                     tokio::select! {
                         _ = tokio::time::sleep(duration) => {},
                         _ = ct.cancelled() => {
-                            return Ok(())
+                            return Ok(StreamAction::Stop)
                         }
                     };
                 }
@@ -335,7 +349,7 @@ where
         status_client: &StatusServerClient,
         persistence: &mut P,
         ct: CancellationToken,
-    ) -> Result<(), SinkConnectorError>
+    ) -> Result<StreamAction, SinkConnectorError>
     where
         B: Message + Default + Serialize,
         P: PersistenceClient + Send,
@@ -361,7 +375,21 @@ where
         }
 
         for duration in &self.backoff {
-            info!(block = context.end_cursor.order_key, "handle data");
+            let block_end_cursor = context.end_cursor.order_key;
+
+            if let Some(ending_block) = self.stream_configuration.ending_block {
+                if block_end_cursor >= ending_block {
+                    info!(
+                        block = block_end_cursor,
+                        ending_block = ending_block,
+                        "ending block reached"
+                    );
+                    return Ok(StreamAction::Stop);
+                }
+            }
+
+            info!(block = block_end_cursor, "handle data");
+
             match self.sink.handle_data(&context, &data).await {
                 Ok(cursor_action) => {
                     if context.finality == DataFinality::DataStatusPending {
@@ -377,7 +405,7 @@ where
                             .change_context(SinkConnectorError::Temporary)?;
                     }
 
-                    return Ok(());
+                    return Ok(StreamAction::Continue);
                 }
                 Err(err) => {
                     warn!(err = ?err, "handle_data error");
@@ -389,7 +417,7 @@ where
                     tokio::select! {
                         _ = tokio::time::sleep(duration) => {},
                         _ = ct.cancelled() => {
-                            return Ok(())
+                            return Ok(StreamAction::Stop)
                         }
                     };
                 }
@@ -405,7 +433,7 @@ where
         status_client: &StatusServerClient,
         persistence: &mut P,
         ct: CancellationToken,
-    ) -> Result<(), SinkConnectorError>
+    ) -> Result<StreamAction, SinkConnectorError>
     where
         B: Message + Default + Serialize,
         P: PersistenceClient + Send,
@@ -440,7 +468,7 @@ where
                     .await
                     .change_context(SinkConnectorError::Temporary)
                     .attach_printable("failed to update status server after heartbeat")?;
-                Ok(())
+                Ok(StreamAction::Continue)
             }
         }
     }
