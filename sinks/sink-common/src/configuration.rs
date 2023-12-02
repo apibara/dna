@@ -109,6 +109,20 @@ pub struct StreamOptions {
     #[arg(long, env)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub timeout_duration_seconds: Option<u64>,
+    /// Stop streaming data at (before) the specified block (non inclusive).
+    ///
+    /// This option can be used to quickly backfill missing data. Notice that you must ensure that
+    /// `ending_block` has been finalized or you may end up with duplicate data.
+    ///
+    /// The `ending_block` is non inclusive so that you can use the same value as another's indexer
+    /// `starting_block` to avoid duplicate data.
+    ///
+    /// The `ending_block` must be greater than the `starting_block`.
+    ///
+    /// If not specified, the stream will continue indefinitely.
+    #[arg(long, env)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ending_block: Option<u64>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -184,6 +198,7 @@ impl StreamOptions {
             timeout_duration_seconds: self
                 .timeout_duration_seconds
                 .or(other.timeout_duration_seconds),
+            ending_block: self.ending_block.or(other.ending_block),
         }
     }
 
@@ -233,6 +248,7 @@ impl StreamOptions {
             metadata,
             bearer_token: self.auth_token,
             timeout_duration,
+            ending_block: self.ending_block,
         })
     }
 }
