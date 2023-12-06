@@ -6,6 +6,14 @@ The format is based on [Common Changelog](https://common-changelog.org/), and
 this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2023-12-06
+
+_Improve compatibility with new sinks._
+
+### Changed
+
+ - Forward all environment-related options to the sink.
+
 ## [0.4.0] - 2023-11-10
 
 _Update Starknet filter._
