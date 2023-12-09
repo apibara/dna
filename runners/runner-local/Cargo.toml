@@ -28,4 +28,5 @@ tokio-stream.workspace = true
 tokio-util.workspace = true
 clap.workspace = true
 ctrlc.workspace = true
+tempfile.workspace = true
 portpicker = "0.1.1"

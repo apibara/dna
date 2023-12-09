@@ -338,6 +338,7 @@ dependencies = [
  "ctrlc",
  "error-stack",
  "portpicker",
+ "tempfile",
  "tokio 1.33.0",
  "tokio-stream",
  "tokio-util",
