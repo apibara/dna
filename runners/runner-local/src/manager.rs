@@ -1,6 +1,5 @@
-use std::fs::{create_dir_all, File};
+use std::io::ErrorKind;
 
-use std::path::PathBuf;
 use std::process::Stdio;
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::Mutex;
@@ -11,7 +10,7 @@ use crate::error::{LocalRunnerError, LocalRunnerResult};
 
 use apibara_runner_common::runner::v1::Indexer;
 
-use error_stack::ResultExt;
+use error_stack::{Report, ResultExt};
 use tokio::process::Command;
 
 use crate::server::IndexerInfo;
@@ -62,48 +61,60 @@ impl IndexerManager {
         );
         info!("Starting indexer {} with command `{}`", indexer.name, cmd);
 
-        let logs_dir = "logs";
-
-        let (stdout, stderr) = create_dir_all(logs_dir)
-            .change_context(LocalRunnerError::Internal)
-            .attach_printable("cannot create logs folder")
-            .and_then(|_| {
-                let stdout_path = PathBuf::from(format!("{logs_dir}/{}-stdout.log", indexer.name));
-                let stderr_path = PathBuf::from(format!("{logs_dir}/{}-stderr.log", indexer.name));
-
-                let stdout_file = File::create(&stdout_path)
+        let stdout = tempfile::Builder::new()
+            .prefix("apibara-local-runner-")
+            .suffix(&format!("-{}-stdout.log", &indexer.name))
+            .tempfile()
+            .map_err(|err| {
+                Report::new(err)
                     .change_context(LocalRunnerError::Internal)
-                    .attach_printable(format!(
-                        "cannot create stdout file `{}`",
-                        stdout_path.display()
-                    ))?;
-
-                let stderr_file = File::create(&stderr_path)
+                    .attach_printable("cannot get temporary file for stdout")
+            })
+            .and_then(|keep| {
+                keep.keep()
                     .change_context(LocalRunnerError::Internal)
-                    .attach_printable(format!(
-                        "cannot create stderr file `{}`",
-                        stderr_path.display()
-                    ))?;
-
-                let stdout = Stdio::from(stdout_file);
-                let stderr = Stdio::from(stderr_file);
-
+                    .attach_printable("failed to keep temporary file for stdout")
+            })
+            .map(|(file, path)| {
                 info!(
                     "Writing indexer {} stdout to `{}`",
                     indexer.name,
-                    &stdout_path.display()
+                    &path.display()
                 );
+
+                Stdio::from(file)
+            })
+            .unwrap_or_else(|err| {
+                warn!(err =? err, "failed to write indexer stdout in temporary file");
+                Stdio::piped()
+            });
+
+        let stderr = tempfile::Builder::new()
+            .prefix("apibara-local-runner-")
+            .suffix(&format!("-{}-stderr.log", &indexer.name))
+            .tempfile()
+            .map_err(|err| {
+                Report::new(err)
+                    .change_context(LocalRunnerError::Internal)
+                    .attach_printable("cannot get temporary file for stderr")
+            })
+            .and_then(|keep| {
+                keep.keep()
+                    .change_context(LocalRunnerError::Internal)
+                    .attach_printable("failed to keep temporary file for stderr")
+            })
+            .map(|(file, path)| {
                 info!(
                     "Writing indexer {} stderr to `{}`",
                     indexer.name,
-                    &stderr_path.display()
+                    &path.display()
                 );
 
-                Ok((stdout, stderr))
+                Stdio::from(file)
             })
             .unwrap_or_else(|err| {
-                warn!(err =? err, "failed to write indexer logs in directory `{}`", logs_dir);
-                (Stdio::piped(), Stdio::piped())
+                warn!(err =? err, "failed to write indexer stderr in temporary file");
+                Stdio::piped()
             });
 
         let child = Command::new(command.program)
@@ -114,11 +125,18 @@ impl IndexerManager {
             .stdout(stdout)
             .stderr(stderr)
             .spawn()
-            .change_context(LocalRunnerError::Internal)
-            .attach_printable("failed to spawn indexer")?;
+            .map_err(|err| {
+                let sink_type = &indexer.sink_type;
 
-        // TODO: handle NotFound command which means the plugin is not installed separately from other errors
-        // TODO: check first that it really started, like a wrong or missing cli argument
+                if let ErrorKind::NotFound = err.kind() {
+                    let error_message = format!(
+                        "Sink {sink_type} is not installed\nInstall it with `apibara plugins install sink-{sink_type}` or by adding it to your $PATH",
+                    );
+                    Report::new(err).change_context(LocalRunnerError::NotFound(sink_type.to_string())).attach_printable(error_message)
+                } else {
+                    Report::new(err).change_context(LocalRunnerError::Internal).attach_printable("failed to spawn indexer")
+                }
+            })?;
 
         let indexer_name = indexer.name.clone();
 

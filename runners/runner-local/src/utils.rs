@@ -78,17 +78,12 @@ pub async fn refresh_status(indexer_info: &mut IndexerInfo) -> LocalRunnerResult
         .change_context(LocalRunnerError::Internal)
         .attach_printable("failed to check status of indexer process")?
     {
-        Some(status) => {
-            match status.code() {
-                Some(78) => (78, "indexer failed: configuration"),
-                Some(75) => (75, "indexer failed: temporary"),
-                Some(code) => (code, "indexer failed: fatal"),
-                // TODO: is it ok to give so much information to the client ?
-                // Probably yes, since it's a dev environment, if so why do
-                // we even have an Internal variant ?
-                None => (-1, "indexer exit by signal"),
-            }
-        }
+        Some(status) => match status.code() {
+            Some(78) => (78, "indexer failed: configuration"),
+            Some(75) => (75, "indexer failed: temporary"),
+            Some(code) => (code, "indexer failed: fatal"),
+            None => (-1, "indexer exit by signal"),
+        },
         None => (-2, "indexer running"),
     };
 
