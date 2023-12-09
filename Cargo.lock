@@ -328,6 +328,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "apibara-runner-local"
+version = "0.1.0"
+dependencies = [
+ "apibara-observability",
+ "apibara-runner-common",
+ "apibara-sink-common",
+ "clap",
+ "ctrlc",
+ "error-stack",
+ "portpicker",
+ "tokio 1.33.0",
+ "tokio-stream",
+ "tokio-util",
+ "tonic 0.9.2",
+ "tonic-health",
+ "tonic-reflection",
+ "tracing",
+]
+
+[[package]]
 name = "apibara-script"
 version = "0.1.0"
 dependencies = [
@@ -5812,6 +5832,15 @@ dependencies = [
  "cpufeatures",
  "opaque-debug",
  "universal-hash",
+]
+
+[[package]]
+name = "portpicker"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "be97d76faf1bfab666e1375477b23fde79eccf0276e9b63b92a39d676a889ba9"
+dependencies = [
+ "rand 0.8.5",
 ]
 
 [[package]]

@@ -1,7 +1,8 @@
 pub mod configuration;
 pub mod error;
-pub mod kube_resources;
+pub mod manager;
 pub mod server;
+pub mod utils;
 
 use apibara_runner_common::runner::v1::{indexer_runner_server, runner_file_descriptor_set};
 use error_stack::{Result, ResultExt};
@@ -12,32 +13,28 @@ use tonic::transport::Server as TonicServer;
 use tracing::info;
 
 use crate::{
-    configuration::Configuration, error::KubeRunnerError, server::RunnerServiceOptions,
-    server::RunnnerService,
+    configuration::Configuration, error::LocalRunnerError, manager::IndexerManager,
+    server::RunnerService,
 };
 
 pub async fn start_server(
-    client: kube::Client,
     config: Configuration,
     ct: CancellationToken,
-) -> Result<(), KubeRunnerError> {
-    let options = RunnerServiceOptions {
-        target_namespace: "".to_string(),
-    };
-
-    let runner_service = RunnnerService::new(client, options);
+) -> Result<(), LocalRunnerError> {
+    let indexer_manager = IndexerManager::new();
+    let runner_service = RunnerService::new(indexer_manager);
 
     let (mut health_reporter, health_service) = tonic_health::server::health_reporter();
 
     let listener = TcpListener::bind(config.address)
         .await
-        .change_context(KubeRunnerError)
+        .change_context(LocalRunnerError::Internal)
         .attach_printable("failed to bind server address")
         .attach_printable_lazy(|| format!("address: {}", config.address))?;
 
     let local_address = listener
         .local_addr()
-        .change_context(KubeRunnerError)
+        .change_context(LocalRunnerError::Internal)
         .attach_printable("failed to get local address")?;
 
     info!("server listening on {}", local_address);
@@ -48,7 +45,7 @@ pub async fn start_server(
         .register_encoded_file_descriptor_set(runner_file_descriptor_set())
         .register_encoded_file_descriptor_set(tonic_health::pb::FILE_DESCRIPTOR_SET)
         .build()
-        .change_context(KubeRunnerError)
+        .change_context(LocalRunnerError::Internal)
         .attach_printable("failed to create gRPC reflection service")?;
 
     let server_fut = TonicServer::builder()
@@ -61,13 +58,13 @@ pub async fn start_server(
         });
 
     health_reporter
-        .set_serving::<indexer_runner_server::IndexerRunnerServer<RunnnerService>>()
+        .set_serving::<indexer_runner_server::IndexerRunnerServer<RunnerService>>()
         .await;
 
     server_fut
         .await
-        .change_context(KubeRunnerError)
-        .attach_printable("error while running kubernetes runner service")?;
+        .change_context(LocalRunnerError::Internal)
+        .attach_printable("error while running local runner service")?;
 
     Ok(())
 }

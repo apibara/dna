@@ -19,6 +19,7 @@ use self::{
 };
 
 pub use self::client::StatusServerClient;
+pub use self::server::proto::{status_client::StatusClient, GetStatusRequest, GetStatusResponse};
 
 #[derive(Clone)]
 pub struct StatusServer {
