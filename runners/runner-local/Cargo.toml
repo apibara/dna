@@ -1,0 +1,31 @@
+[package]
+name = "apibara-runner-local"
+version = "0.1.0"
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[lib]
+name = "apibara_runner_local"
+path = "src/lib.rs"
+
+[[bin]]
+name = "apibara-runner-local"
+path = "src/bin.rs"
+
+[dependencies]
+apibara-runner-common = { path = "../runner-common" }
+apibara-observability = { path = "../../observability" }
+apibara-sink-common = { path = "../../sinks/sink-common" }
+tokio.workspace = true
+tonic.workspace = true
+error-stack.workspace = true
+tracing.workspace = true
+tonic-health.workspace = true
+tonic-reflection.workspace = true
+tokio-stream.workspace = true
+tokio-util.workspace = true
+clap.workspace = true
+ctrlc.workspace = true
+portpicker = "0.1.1"
