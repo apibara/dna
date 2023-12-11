@@ -6,11 +6,13 @@ use tokio::sync::Mutex;
 
 use tracing::{info, warn};
 
-use crate::error::{LocalRunnerError, LocalRunnerResult};
+use crate::error::{
+    LocalRunnerError, LocalRunnerReportExt, LocalRunnerResult, LocalRunnerResultExt,
+};
 
 use apibara_runner_common::runner::v1::Indexer;
 
-use error_stack::{Report, ResultExt};
+use error_stack::{report, ResultExt};
 use tokio::process::Command;
 
 use crate::server::IndexerInfo;
@@ -40,9 +42,9 @@ impl IndexerManager {
     ) -> LocalRunnerResult<()> {
         let command = build_indexer_command(&indexer_id, &indexer)?;
 
-        let port = portpicker::pick_unused_port()
-            .ok_or(LocalRunnerError::Internal)
-            .attach_printable("Can't pick a port for the status server")?;
+        let port = portpicker::pick_unused_port().ok_or(LocalRunnerError::internal(
+            "Can't pick a port for the status server",
+        ))?;
 
         let status_server_address = format!("0.0.0.0:{port}");
 
@@ -65,15 +67,10 @@ impl IndexerManager {
             .prefix("apibara-local-runner-")
             .suffix(&format!("-{}-stdout.log", &indexer.name))
             .tempfile()
-            .map_err(|err| {
-                Report::new(err)
-                    .change_context(LocalRunnerError::Internal)
-                    .attach_printable("cannot get temporary file for stdout")
-            })
+            .map_err(|err| report!(err).internal("cannot get temporary file for stdout"))
             .and_then(|keep| {
                 keep.keep()
-                    .change_context(LocalRunnerError::Internal)
-                    .attach_printable("failed to keep temporary file for stdout")
+                    .internal("failed to keep temporary file for stdout")
             })
             .map(|(file, path)| {
                 info!(
@@ -93,15 +90,10 @@ impl IndexerManager {
             .prefix("apibara-local-runner-")
             .suffix(&format!("-{}-stderr.log", &indexer.name))
             .tempfile()
-            .map_err(|err| {
-                Report::new(err)
-                    .change_context(LocalRunnerError::Internal)
-                    .attach_printable("cannot get temporary file for stderr")
-            })
+            .map_err(|err| report!(err).internal("cannot get temporary file for stderr"))
             .and_then(|keep| {
                 keep.keep()
-                    .change_context(LocalRunnerError::Internal)
-                    .attach_printable("failed to keep temporary file for stderr")
+                    .internal("failed to keep temporary file for stderr")
             })
             .map(|(file, path)| {
                 info!(
@@ -132,9 +124,9 @@ impl IndexerManager {
                     let error_message = format!(
                         "Sink {sink_type} is not installed\nInstall it with `apibara plugins install sink-{sink_type}` or by adding it to your $PATH",
                     );
-                    Report::new(err).change_context(LocalRunnerError::NotFound(sink_type.to_string())).attach_printable(error_message)
+                    report!(err).change_context(LocalRunnerError::NotFound(sink_type.to_string())).attach_printable(error_message)
                 } else {
-                    Report::new(err).change_context(LocalRunnerError::Internal).attach_printable("failed to spawn indexer")
+                    report!(err).internal("failed to spawn indexer")
                 }
             })?;
 
@@ -199,8 +191,7 @@ impl IndexerManager {
         let indexer_running = indexer_info
             .child
             .try_wait()
-            .change_context(LocalRunnerError::Internal)
-            .attach_printable("failed to check status of indexer process")?
+            .internal("failed to check status of indexer process")?
             .is_none();
 
         if indexer_running {
@@ -208,8 +199,7 @@ impl IndexerManager {
                 .child
                 .kill()
                 .await
-                .change_context(LocalRunnerError::Internal)
-                .attach_printable("failed to kill process")?;
+                .internal("failed to kill process")?;
         }
 
         indexers.remove(name);
