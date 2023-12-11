@@ -48,12 +48,16 @@ pub struct GitHubSource {
     pub owner: String,
     /// GitHub repository name, e.g. `my-indexer`.
     pub repo: String,
-    /// GitHub repository branch name, e.g. `main`.
-    pub branch: String,
+    /// Git revision, e.g. `main` or `a746ab`.
+    pub revision: String,
     /// Run the indexer from the specified subpath of the repository, e.g. `/packages/indexer`.
     pub subpath: Option<String>,
+    /// Environment variable containing the GitHub access token.
+    pub access_token_env_var: Option<String>,
     /// Additional flags to pass to `git clone`.
-    pub git_flags: Option<Vec<String>>,
+    pub git_clone_flags: Option<String>,
+    /// Additional flags to pass to `git clean`.
+    pub git_clean_flags: Option<String>,
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug, Default, JsonSchema, PartialEq)]

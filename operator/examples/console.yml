@@ -8,7 +8,7 @@ spec:
     gitHub:
       repo: dna
       owner: apibara
-      branch: main
+      revision: main
       subpath: examples/console
   sink:
     script: starknet_to_console.js

@@ -95,7 +95,7 @@ pub async fn test_controller() -> Result<(), OperatorError> {
         source: IndexerSource::GitHub(GitHubSource {
             owner: "apibara".to_string(),
             repo: "dna".to_string(),
-            branch: "main".to_string(),
+            revision: "main".to_string(),
             subpath: Some("examples/console".to_string()),
             ..Default::default()
         }),
