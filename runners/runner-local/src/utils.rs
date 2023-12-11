@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use tokio::time::timeout;
 
-use crate::error::{LocalRunnerError, LocalRunnerResult};
+use crate::error::{LocalRunnerError, LocalRunnerResult, LocalRunnerResultExt};
 
 use apibara_runner_common::runner::v1::{source::Source, Filesystem, Indexer, State};
 use apibara_sink_common::{GetStatusRequest, StatusClient};
@@ -75,8 +75,7 @@ pub async fn refresh_status(indexer_info: &mut IndexerInfo) -> LocalRunnerResult
     let (status, message) = match indexer_info
         .child
         .try_wait()
-        .change_context(LocalRunnerError::Internal)
-        .attach_printable("failed to check status of indexer process")?
+        .internal("failed to check status of indexer process")?
     {
         Some(status) => match status.code() {
             Some(78) => (78, "indexer failed: configuration"),
@@ -111,16 +110,13 @@ pub async fn refresh_status(indexer_info: &mut IndexerInfo) -> LocalRunnerResult
         StatusClient::connect(indexer_info.status_server_address.clone()),
     )
     .await
-    .change_context(LocalRunnerError::Internal)
-    .attach_printable("failed to connect to status server: timeout")?
-    .change_context(LocalRunnerError::Internal)
-    .attach_printable("failed to connect to status server")?;
+    .internal("failed to connect to status server: timeout")?
+    .internal("failed to connect to status server")?;
 
     let response = status_client
         .get_status(GetStatusRequest {})
         .await
-        .change_context(LocalRunnerError::Internal)
-        .attach_printable("failed to get status")?;
+        .internal("failed to get status")?;
 
     let response = response.into_inner();
     let current_block = response.current_block();

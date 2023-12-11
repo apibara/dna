@@ -13,7 +13,9 @@ use tonic::transport::Server as TonicServer;
 use tracing::info;
 
 use crate::{
-    configuration::Configuration, error::LocalRunnerError, manager::IndexerManager,
+    configuration::Configuration,
+    error::{LocalRunnerError, LocalRunnerResultExt},
+    manager::IndexerManager,
     server::RunnerService,
 };
 
@@ -28,14 +30,12 @@ pub async fn start_server(
 
     let listener = TcpListener::bind(config.address)
         .await
-        .change_context(LocalRunnerError::Internal)
-        .attach_printable("failed to bind server address")
+        .internal("failed to bind server address")
         .attach_printable_lazy(|| format!("address: {}", config.address))?;
 
     let local_address = listener
         .local_addr()
-        .change_context(LocalRunnerError::Internal)
-        .attach_printable("failed to get local address")?;
+        .internal("failed to get local address")?;
 
     info!("server listening on {}", local_address);
 
@@ -45,8 +45,7 @@ pub async fn start_server(
         .register_encoded_file_descriptor_set(runner_file_descriptor_set())
         .register_encoded_file_descriptor_set(tonic_health::pb::FILE_DESCRIPTOR_SET)
         .build()
-        .change_context(LocalRunnerError::Internal)
-        .attach_printable("failed to create gRPC reflection service")?;
+        .internal("failed to create gRPC reflection service")?;
 
     let server_fut = TonicServer::builder()
         .add_service(reflection_service)
@@ -63,8 +62,7 @@ pub async fn start_server(
 
     server_fut
         .await
-        .change_context(LocalRunnerError::Internal)
-        .attach_printable("error while running local runner service")?;
+        .internal("error while running local runner service")?;
 
     Ok(())
 }
