@@ -411,17 +411,43 @@ impl Indexer {
         match &self.spec.source {
             IndexerSource::GitHub(github) => {
                 // This init container clones the indexer source code from GitHub.
-                let mut args = vec!["clone".to_string(), "--depth=1".to_string()];
+                // It's a 5 step process:
+                //
+                // 1. Clone the repository, maybe authenticating with GitHub.
+                // 2. Clean files.
+                // 3. Fetch the specified revision.
+                // 4. Checkout the specified revision.
+                // 5. Clean files again.
+                let mut args = "cd /code".to_string();
 
-                if let Some(flags) = &github.git_flags {
-                    args.extend_from_slice(flags);
-                }
+                let clone_args = github
+                    .git_clone_flags
+                    .clone()
+                    .unwrap_or_else(|| "-v".to_string());
 
-                args.extend_from_slice(&[
-                    format!("--branch={}", github.branch),
-                    format!("https://github.com/{}/{}.git", github.owner, github.repo),
-                    "/code".to_string(),
-                ]);
+                let url = if let Some(token) = &github.access_token_env_var {
+                    format!(
+                        "https://x-access-token:$({})@github.com/{}/{}.git",
+                        token, github.owner, github.repo
+                    )
+                } else {
+                    format!("https://github.com/{}/{}.git", github.owner, github.repo)
+                };
+
+                args.push_str(&format!("&& git clone {clone_args} -- {url} ."));
+
+                let clean_flags = github
+                    .git_clean_flags
+                    .clone()
+                    .unwrap_or_else(|| "-ffxdq".to_string());
+
+                args.push_str(&format!("&& git clean {clean_flags}"));
+                args.push_str(&format!(
+                    "&& git fetch -v --prune --tags -- origin {}",
+                    github.revision
+                ));
+                args.push_str(&format!("&& git checkout -f {}", github.revision));
+                args.push_str(&format!("&& git clean {clean_flags}"));
 
                 // Create an emptyDir volume where the source code will be cloned.
                 volumes.push(Volume {
@@ -444,7 +470,8 @@ impl Indexer {
                 let container = Container {
                     name: "clone-github-repo".to_string(),
                     image: Some(GIT_CLONE_IMAGE.to_string()),
-                    args: Some(args),
+                    command: Some(vec!["/bin/sh".to_string()]),
+                    args: Some(vec!["-c".to_string(), args]),
                     volume_mounts: Some(volume_mounts.clone()),
                     env: Some(env.to_owned()),
                     ..Container::default()
