@@ -6,7 +6,6 @@ use crate::error::{LocalRunnerError, LocalRunnerResult, LocalRunnerResultExt};
 
 use apibara_runner_common::runner::v1::{source::Source, Filesystem, Indexer, State};
 use apibara_sink_common::{GetStatusRequest, StatusClient};
-use error_stack::ResultExt;
 
 use crate::server::IndexerInfo;
 
@@ -32,20 +31,16 @@ pub fn build_indexer_command(
         .source
         .clone()
         .and_then(|source| source.source)
-        .ok_or(LocalRunnerError::MissingArgument(
-            "indexer.source".to_string(),
-        ))
-        .attach_printable("missing indexer source in the request")?;
+        .ok_or(LocalRunnerError::missing_argument("indexer.source"))?;
 
     let (current_dir, script_path) = if let Source::Filesystem(Filesystem { path, script }) = source
     {
         (path, script)
     } else {
-        return Err(LocalRunnerError::InvalidArgument {
-            argument: "indexer.source".to_string(),
-            reason: "only Filesystem is supported".to_string(),
-        })
-        .attach_printable("only Filesystem source is supported");
+        return Err(LocalRunnerError::invalid_argument(
+            "indexer.source",
+            "only Filesystem is supported",
+        ));
     };
 
     let args = vec![

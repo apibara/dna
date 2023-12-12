@@ -9,7 +9,7 @@ use apibara_runner_local::{
 use clap::{Args, Parser};
 use error_stack::Result;
 
-use tokio_util::sync::CancellationToken; // Add missing import
+use tokio_util::sync::CancellationToken;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]

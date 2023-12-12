@@ -8,7 +8,6 @@ use apibara_runner_common::runner::v1::{
     ListIndexersRequest, ListIndexersResponse, UpdateIndexerRequest,
 };
 
-use error_stack::{Report, ResultExt};
 use tokio::process::Child;
 use tonic::{Request, Response};
 
@@ -42,16 +41,14 @@ impl indexer_runner_server::IndexerRunner for RunnerService {
         let request = request.into_inner();
         let indexer = request
             .indexer
-            .ok_or(LocalRunnerError::MissingArgument("indexer".to_string()))
-            .attach_printable("missing indexer in the request")
+            .ok_or(LocalRunnerError::missing_argument("indexer"))
             .map_err(|err| {
                 warn!(err = ?err, "failed to create indexer");
                 err.current_context().to_tonic_status()
             })?;
 
         if self.indexer_manager.has_indexer(&indexer.name).await {
-            let err = Report::new(LocalRunnerError::AlreadyExists(indexer.name.clone()))
-                .attach_printable("indexer already exists");
+            let err = LocalRunnerError::already_exists(&indexer.name);
             warn!(err = ?err, "failed to create indexer");
             return Err(err.current_context().to_tonic_status());
         }
