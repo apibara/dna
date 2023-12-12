@@ -299,7 +299,7 @@ dependencies = [
 
 [[package]]
 name = "apibara-operator"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "apibara-observability",
  "clap",
