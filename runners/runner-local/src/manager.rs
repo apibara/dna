@@ -12,7 +12,7 @@ use crate::error::{
 
 use apibara_runner_common::runner::v1::Indexer;
 
-use error_stack::{report, ResultExt};
+use error_stack::report;
 use tokio::process::Command;
 
 use crate::server::IndexerInfo;
@@ -124,9 +124,9 @@ impl IndexerManager {
                     let error_message = format!(
                         "Sink {sink_type} is not installed\nInstall it with `apibara plugins install sink-{sink_type}` or by adding it to your $PATH",
                     );
-                    report!(err).change_context(LocalRunnerError::NotFound(sink_type.to_string())).attach_printable(error_message)
+                    LocalRunnerError::not_found(sink_type).attach_printable(error_message)
                 } else {
-                    report!(err).internal("failed to spawn indexer")
+                    LocalRunnerError::internal("failed to spawn indexer")
                 }
             })?;
 
@@ -151,8 +151,7 @@ impl IndexerManager {
 
         let indexer_info = indexers
             .get_mut(name)
-            .ok_or(LocalRunnerError::NotFound(name.to_string()))
-            .attach_printable(format!("indexer {name} not found"))?;
+            .ok_or(LocalRunnerError::not_found(name))?;
 
         refresh_status(indexer_info).await?;
 
@@ -175,8 +174,7 @@ impl IndexerManager {
 
         let indexer_info = indexers
             .get_mut(name)
-            .ok_or(LocalRunnerError::NotFound(name.to_string()))
-            .attach_printable(format!("indexer {name} not found"))?;
+            .ok_or(LocalRunnerError::not_found(name))?;
 
         Ok(indexer_info.indexer.clone())
     }
@@ -185,8 +183,7 @@ impl IndexerManager {
         let mut indexers = self.indexers.lock().await;
         let indexer_info = indexers
             .get_mut(name)
-            .ok_or(LocalRunnerError::NotFound(name.to_string()))
-            .attach_printable(format!("indexer {} not found", name))?;
+            .ok_or(LocalRunnerError::not_found(name))?;
 
         let indexer_running = indexer_info
             .child
