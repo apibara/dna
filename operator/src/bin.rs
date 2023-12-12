@@ -34,6 +34,9 @@ struct GenerateCrdArgs {}
 struct StartArgs {
     #[clap(flatten)]
     pub sink: SinkArgs,
+    /// Limit the namespace the operator watches.
+    #[arg(long, env)]
+    pub namespace: Option<String>,
 }
 
 #[derive(Args, Debug)]
@@ -101,7 +104,10 @@ async fn main() -> Result<(), OperatorError> {
 
 impl StartArgs {
     pub fn into_configuration(self) -> Result<Configuration, OperatorError> {
-        let mut configuration = Configuration::default();
+        let mut configuration = Configuration {
+            namespace: self.namespace,
+            ..Configuration::default()
+        };
 
         if let Some(sink_images) = self.sink.sink_images {
             let mut sinks = HashMap::new();

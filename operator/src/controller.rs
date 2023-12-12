@@ -33,12 +33,17 @@ pub async fn create(
 ) -> Result<impl Stream<Item = ReconcileItem<Indexer>>, OperatorError> {
     info!("Creating controller");
 
+    let namespace = configuration.namespace.clone();
     let ctx = Context {
         client,
         configuration,
     };
 
-    let indexers = Api::<Indexer>::all(ctx.client.clone());
+    let indexers = if let Some(namespace) = &namespace {
+        Api::<Indexer>::namespaced(ctx.client.clone(), namespace)
+    } else {
+        Api::<Indexer>::all(ctx.client.clone())
+    };
 
     if indexers.list(&ListParams::default()).await.is_err() {
         error!("Indexer CRD not installed");
