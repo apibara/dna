@@ -43,6 +43,7 @@ pub enum IndexerSource {
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug, Default, JsonSchema, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct GitHubSource {
     /// GitHub repository owner, e.g. `my-org`.
     pub owner: String,
@@ -61,6 +62,7 @@ pub struct GitHubSource {
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug, Default, JsonSchema, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct VolumeSource {
     /// Path to the indexer source code, e.g. `/myvolume`.
     ///
@@ -70,6 +72,7 @@ pub struct VolumeSource {
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug, JsonSchema, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct Sink {
     /// Container image with the sink.
     #[serde(flatten)]
@@ -88,6 +91,7 @@ pub enum SinkType {
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug, Default, JsonSchema, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct IndexerVolume {
     /// Volume to mount.
     pub volume: Volume,
