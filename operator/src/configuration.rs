@@ -12,6 +12,8 @@ pub struct Configuration {
     pub sinks: HashMap<String, SinkConfiguration>,
     /// Sink status port.
     pub status_port: i32,
+    /// Limit the namespace the operator watches.
+    pub namespace: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -56,6 +58,7 @@ impl Default for Configuration {
         Configuration {
             sinks,
             status_port: 8118,
+            namespace: None,
         }
     }
 }
