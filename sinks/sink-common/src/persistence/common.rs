@@ -2,7 +2,7 @@ use std::fmt;
 
 use apibara_core::node::v1alpha2::Cursor;
 use async_trait::async_trait;
-use error_stack::Result;
+use error_stack::{Report, Result, ResultExt};
 
 /// Client used to interact with the persistence backend.
 #[async_trait]
@@ -31,6 +31,23 @@ impl error_stack::Context for PersistenceClientError {}
 impl fmt::Display for PersistenceClientError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("persistence client operation failed")
+    }
+}
+
+pub trait PersistenceClientResultExt {
+    type Ok;
+    fn persistence_client_error(self, reason: &str) -> Result<Self::Ok, PersistenceClientError>;
+}
+
+impl<T, C> PersistenceClientResultExt for core::result::Result<T, C>
+where
+    C: error_stack::Context,
+{
+    type Ok = T;
+
+    fn persistence_client_error(self, reason: &str) -> Result<T, PersistenceClientError> {
+        self.change_context(PersistenceClientError)
+            .attach_printable(format!("persistence client operation failed: {reason}"))
     }
 }
 

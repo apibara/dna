@@ -7,7 +7,7 @@ use prost::Message;
 use std::time::{Duration, Instant};
 use tracing::{debug, instrument};
 
-use super::common::{PersistenceClient, PersistenceClientError};
+use super::common::{PersistenceClient, PersistenceClientError, PersistenceClientResultExt};
 
 pub struct EtcdPersistence {
     client: Client,
@@ -30,8 +30,8 @@ impl EtcdPersistence {
     ) -> Result<EtcdPersistence, PersistenceClientError> {
         let client = Client::connect([url], None)
             .await
-            .change_context(PersistenceClientError)
-            .attach_printable_lazy(|| format!("failed to connect to etcd server at {url}"))?;
+            .persistence_client_error(&format!("failed to connect to etcd server at {url}"))?;
+
         Ok(EtcdPersistence {
             client,
             sink_id: sink_id.into(),
@@ -48,23 +48,20 @@ impl PersistenceClient for EtcdPersistence {
             .client
             .lease_grant(60, None)
             .await
-            .change_context(PersistenceClientError)
-            .attach_printable("failed lease grant")?;
+            .persistence_client_error("failed lease grant")?;
         debug!(lease_id = %lease.id(), "acquired lease for lock");
         let (keeper, _) = self
             .client
             .lease_keep_alive(lease.id())
             .await
-            .change_context(PersistenceClientError)
-            .attach_printable("failed lease keep alive")?;
+            .persistence_client_error("failed lease keep alive")?;
 
         let lock_options = LockOptions::new().with_lease(lease.id());
         let inner = self
             .client
             .lock(self.sink_id.as_str(), Some(lock_options))
             .await
-            .change_context(PersistenceClientError)
-            .attach_printable_lazy(|| format!("failed lock {}", self.sink_id.as_str()))?;
+            .persistence_client_error(&format!("failed lock {}", self.sink_id.as_str()))?;
 
         let last_lock_renewal = Instant::now();
         let min_lock_refresh_interval = Duration::from_secs(30);
@@ -87,8 +84,7 @@ impl PersistenceClient for EtcdPersistence {
             self.client
                 .unlock(lock.inner.key())
                 .await
-                .change_context(PersistenceClientError)
-                .attach_printable("failed unlock")?;
+                .persistence_client_error("failed unlock")?;
         }
 
         Ok(())
@@ -100,15 +96,13 @@ impl PersistenceClient for EtcdPersistence {
             .client
             .get(self.sink_id.as_str(), None)
             .await
-            .change_context(PersistenceClientError)
-            .attach_printable_lazy(|| format!("failed get cursor {}", self.sink_id.as_str()))?;
+            .persistence_client_error(&format!("failed get cursor {}", self.sink_id.as_str()))?;
 
         match response.kvs().iter().next() {
             None => Ok(None),
             Some(kv) => {
                 let cursor = Cursor::decode(kv.value())
-                    .change_context(PersistenceClientError)
-                    .attach_printable("failed to decode cursor")?;
+                    .persistence_client_error("failed to decode cursor")?;
                 Ok(Some(cursor))
             }
         }
@@ -119,13 +113,11 @@ impl PersistenceClient for EtcdPersistence {
         self.client
             .put(self.sink_id.as_str(), cursor.encode_to_vec(), None)
             .await
-            .change_context(PersistenceClientError)
-            .attach_printable_lazy(|| format!("failed put cursor {}", self.sink_id.as_str()))?;
+            .persistence_client_error(&format!("failed put cursor {}", self.sink_id.as_str()))?;
 
         if let Some(lock) = self.lock.as_mut() {
             lock.keep_alive()
                 .await
-                .change_context(PersistenceClientError)
                 .attach_printable("failed to keep lock alive")?;
         }
 
@@ -137,8 +129,7 @@ impl PersistenceClient for EtcdPersistence {
         self.client
             .delete(self.sink_id.as_str(), None)
             .await
-            .change_context(PersistenceClientError)
-            .attach_printable_lazy(|| format!("failed delete cursor {}", self.sink_id.as_str()))?;
+            .persistence_client_error(&format!("failed delete cursor {}", self.sink_id.as_str()))?;
         Ok(())
     }
 }
