@@ -1,18 +1,15 @@
-use std::{
-    fmt,
-    time::{Duration, Instant},
-};
+use std::time::{Duration, Instant};
 
 use apibara_core::node;
 use apibara_observability::ObservableGauge;
 use apibara_sdk::StreamClient;
-use error_stack::{Result, ResultExt};
+use error_stack::Result;
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 use tonic_health::pb::health_server::{Health, HealthServer};
 use tracing::info;
 
-use crate::status::server::StatusServer;
+use crate::{status::server::StatusServer, StatusServerError, StatusServerResultExt};
 
 use super::client::{StatusMessage, StatusServerClient};
 
@@ -41,16 +38,6 @@ pub struct StatusService {
     stream_client: StreamClient,
     request_rx: mpsc::Receiver<RequestMessage>,
     status_rx: mpsc::Receiver<StatusMessage>,
-}
-
-#[derive(Debug)]
-pub struct StatusServiceError;
-impl error_stack::Context for StatusServiceError {}
-
-impl fmt::Display for StatusServiceError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("status service operation failed")
-    }
 }
 
 /// Request data from the status service.
@@ -91,7 +78,7 @@ impl StatusService {
         )
     }
 
-    pub async fn start(mut self, ct: CancellationToken) -> Result<(), StatusServiceError> {
+    pub async fn start(mut self, ct: CancellationToken) -> Result<(), StatusServerError> {
         // This loop:
         //
         //  - Tracks the most recently processed cursor.
@@ -109,7 +96,7 @@ impl StatusService {
                 biased;
 
                 msg = self.request_rx.recv() => {
-                    let msg = msg.ok_or(StatusServiceError).attach_printable("client request channel closed")?;
+                    let msg = msg.ok_or(StatusServerError::new("client request channel closed"))?;
                     match msg {
                         RequestMessage::GetCursor(tx) => {
                             let head = self.get_dna_head().await?;
@@ -121,14 +108,13 @@ impl StatusService {
                             };
 
                             tx.send(cursors)
-                                .map_err(|_| StatusServiceError)
-                                .attach_printable("failed to reply with cursor")?;
+                                .map_err(|_| StatusServerError::new("failed to reply with cursor"))?;
                         }
                     }
                 }
 
                 msg = self.status_rx.recv() => {
-                    let msg = msg.ok_or(StatusServiceError).attach_printable("status channel closed")?;
+                    let msg = msg.ok_or(StatusServerError::new("status channel closed"))?;
                     match msg {
                         StatusMessage::Heartbeat => {},
                         StatusMessage::UpdateCursor(new_cursor) => {
@@ -167,42 +153,29 @@ impl StatusService {
         Ok(())
     }
 
-    async fn get_dna_head(&self) -> Result<Option<node::v1alpha2::Cursor>, StatusServiceError> {
+    async fn get_dna_head(&self) -> Result<Option<node::v1alpha2::Cursor>, StatusServerError> {
         let dna_status = self
             .stream_client
             .clone()
             .status()
             .await
-            .map_err(|_| StatusServiceError)
-            .attach_printable("failed to get dna status")?;
+            .map_err(|_| StatusServerError::new("failed to get dna status"))?;
 
         Ok(dna_status.current_head)
     }
 }
 
-#[derive(Debug)]
-pub struct StatusServiceClientError;
-impl error_stack::Context for StatusServiceClientError {}
-
-impl fmt::Display for StatusServiceClientError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("failed to communicate with status service")
-    }
-}
-
 impl StatusServiceClient {
     /// Request the current cursor from the status service.
-    pub async fn get_cursors(&self) -> Result<Cursors, StatusServiceClientError> {
+    pub async fn get_cursors(&self) -> Result<Cursors, StatusServerError> {
         let (tx, rx) = oneshot::channel();
         self.tx
             .send(RequestMessage::GetCursor(tx))
             .await
-            .change_context(StatusServiceClientError)
-            .attach_printable("failed to send get cursor request")?;
+            .status_server_error("failed to send get cursor request")?;
         let cursors = rx
             .await
-            .change_context(StatusServiceClientError)
-            .attach_printable("failed to receive cursor response")?;
+            .status_server_error("failed to receive cursor response")?;
         Ok(cursors)
     }
 }
