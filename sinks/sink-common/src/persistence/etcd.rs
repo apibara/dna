@@ -147,7 +147,7 @@ impl Lock {
         self.keeper
             .keep_alive()
             .await
-            .change_context(PersistenceClientError)?;
+            .persistence_client_error("")?;
         self.last_lock_renewal = Instant::now();
 
         Ok(())

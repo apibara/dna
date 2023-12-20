@@ -1,18 +1,8 @@
-use std::fmt;
-
 use apibara_core::node;
-use error_stack::{Result, ResultExt};
+use error_stack::Result;
 use tokio::sync::mpsc::{self, error::TrySendError};
 
-#[derive(Debug)]
-pub struct StatusServerClientError;
-impl error_stack::Context for StatusServerClientError {}
-
-impl fmt::Display for StatusServerClientError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("failed to communicate with status server")
-    }
-}
+use crate::{StatusServerError, StatusServerResultExt};
 
 /// Message between the connector and the status service.
 #[derive(Debug)]
@@ -36,12 +26,11 @@ impl StatusServerClient {
     }
 
     /// Send heartbeat message to status server.
-    pub async fn heartbeat(&self) -> Result<(), StatusServerClientError> {
+    pub async fn heartbeat(&self) -> Result<(), StatusServerError> {
         self.tx
             .send(StatusMessage::Heartbeat)
             .await
-            .change_context(StatusServerClientError)
-            .attach_printable("failed to send heartbeat request")?;
+            .status_server_error("failed to send heartbeat request")?;
         Ok(())
     }
 
@@ -49,12 +38,11 @@ impl StatusServerClient {
     pub async fn set_starting_cursor(
         &self,
         cursor: Option<node::v1alpha2::Cursor>,
-    ) -> Result<(), StatusServerClientError> {
+    ) -> Result<(), StatusServerError> {
         self.tx
             .send(StatusMessage::SetStartingCursor(cursor))
             .await
-            .change_context(StatusServerClientError)
-            .attach_printable("failed to send starting cursor request")?;
+            .status_server_error("failed to send starting cursor request")?;
         Ok(())
     }
 
@@ -62,15 +50,15 @@ impl StatusServerClient {
     pub async fn update_cursor(
         &self,
         cursor: Option<node::v1alpha2::Cursor>,
-    ) -> Result<(), StatusServerClientError> {
+    ) -> Result<(), StatusServerError> {
         match self.tx.try_send(StatusMessage::UpdateCursor(cursor)) {
             Ok(_) => Ok(()),
             // If the channel is full, we don't care.
             // This happens when the indexer is resyncing since it publishes hundreds of messages per second.
             Err(TrySendError::Full(_)) => Ok(()),
-            Err(TrySendError::Closed(_)) => {
-                Err(StatusServerClientError).attach_printable("status server client closed")
-            }
+            Err(TrySendError::Closed(_)) => Err(StatusServerError::new(
+                "failed to send update cursor request",
+            )),
         }
     }
 }

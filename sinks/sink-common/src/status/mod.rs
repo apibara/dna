@@ -5,7 +5,7 @@ mod service;
 use std::{fmt, net::SocketAddr, pin::Pin};
 
 use apibara_sdk::StreamClient;
-use error_stack::{Result, ResultExt};
+use error_stack::{report, Context, Report, Result, ResultExt};
 use futures::Future;
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
@@ -30,9 +30,47 @@ pub struct StatusServer {
 pub struct StatusServerError;
 impl error_stack::Context for StatusServerError {}
 
+impl StatusServerError {
+    pub fn new(reason: &str) -> Report<StatusServerError> {
+        report!(StatusServerError)
+            .attach_printable(format!("status server operation failed: {reason}"))
+    }
+}
+
 impl fmt::Display for StatusServerError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("status server operation failed")
+    }
+}
+
+pub trait StatusServerResultExt {
+    type Ok;
+    fn status_server_error(self, reason: &str) -> Result<Self::Ok, StatusServerError>;
+}
+
+pub trait StatusServerReportExt {
+    type Ok;
+    fn status_server_error(self, reason: &str) -> Report<StatusServerError>;
+}
+
+impl<T, C> StatusServerResultExt for core::result::Result<T, C>
+where
+    C: Context,
+{
+    type Ok = T;
+
+    fn status_server_error(self, reason: &str) -> Result<T, StatusServerError> {
+        self.change_context(StatusServerError)
+            .attach_printable(format!("status server operation failed: {reason}"))
+    }
+}
+
+impl<C> StatusServerReportExt for Report<C> {
+    type Ok = ();
+
+    fn status_server_error(self, reason: &str) -> Report<StatusServerError> {
+        self.change_context(StatusServerError)
+            .attach_printable(format!("status server operation failed: {reason}"))
     }
 }
 
@@ -64,21 +102,18 @@ impl StatusServer {
 
                 let listener = TcpListener::bind(address)
                     .await
-                    .change_context(StatusServerError)
-                    .attach_printable("failed to bind status server")?;
+                    .status_server_error("failed to bind status server")?;
 
                 let local_addr = listener
                     .local_addr()
-                    .change_context(StatusServerError)
-                    .attach_printable("failed to get local address")?;
+                    .status_server_error("failed to get local address")?;
                 info!("status server listening on {}", local_addr);
                 let listener = TcpListenerStream::new(listener);
 
                 let reflection_service = tonic_reflection::server::Builder::configure()
                     .register_encoded_file_descriptor_set(sink_file_descriptor_set())
                     .build()
-                    .change_context(StatusServerError)
-                    .attach_printable("failed to register to gRPC reflection service")?;
+                    .status_server_error("failed to register to gRPC reflection service")?;
 
                 let server_fut = TonicServer::builder()
                     .add_service(health_server)
@@ -94,9 +129,7 @@ impl StatusServer {
                         match server_ret {
                             Ok(_) => {},
                             Err(err) => {
-                                return Err(err)
-                                    .change_context(StatusServerError)
-                                    .attach_printable("status server stopped: grpc");
+                                return Err(err).status_server_error("status server stopped: grpc");
                             }
                         }
                     }
@@ -104,9 +137,7 @@ impl StatusServer {
                         match status_ret {
                             Ok(_) => {},
                             Err(err) => {
-                                return Err(err)
-                                    .change_context(StatusServerError)
-                                    .attach_printable("status server stopped: status service");
+                                return Err(err.status_server_error("status server stopped: status service"));
                             }
                         }
                     }

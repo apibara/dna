@@ -2,7 +2,7 @@ use std::fmt;
 
 use apibara_core::node::v1alpha2::Cursor;
 use async_trait::async_trait;
-use error_stack::{Report, Result, ResultExt};
+use error_stack::{Result, ResultExt};
 
 /// Client used to interact with the persistence backend.
 #[async_trait]
