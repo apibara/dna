@@ -112,6 +112,8 @@ message TransactionMeta {
   DataAvailabilityMode nonce_data_availability_mode = 9;
   // The storage domain of the account's balance from which fee will be charged.
   DataAvailabilityMode fee_data_availability_mode = 10;
+  // Index of the transaction in the block.
+  uint64 transaction_index = 11;
 }
 
 // Transaction invoking a smart contract, V0.
