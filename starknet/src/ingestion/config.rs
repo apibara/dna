@@ -15,7 +15,7 @@ pub struct BlockIngestionConfig {
 impl Default for BlockIngestionConfig {
     fn default() -> Self {
         BlockIngestionConfig {
-            rpc_concurrency: 16,
+            rpc_concurrency: 64,
             head_refresh_interval: Duration::from_secs(3),
             ingestion_starting_block: None,
         }

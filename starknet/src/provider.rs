@@ -4,8 +4,7 @@ use starknet::{
     core::types::{self as models, FieldElement, FromByteArrayError, StarknetError},
     providers::{
         jsonrpc::{HttpTransport, JsonRpcClient},
-        MaybeUnknownErrorCode, Provider as StarknetProvider,
-        ProviderError as StarknetProviderError,
+        Provider as StarknetProvider, ProviderError as StarknetProviderError,
     },
 };
 use url::Url;
@@ -131,13 +130,8 @@ impl ProviderError for HttpProviderError {
 impl HttpProviderError {
     pub fn from_provider_error(error: StarknetProviderError) -> HttpProviderError {
         match error {
-            StarknetProviderError::StarknetError(ref starknet_error) => {
-                if let MaybeUnknownErrorCode::Known(code) = starknet_error.code {
-                    if code == StarknetError::BlockNotFound {
-                        return HttpProviderError::BlockNotFound;
-                    }
-                }
-                HttpProviderError::Provider(Box::new(error))
+            StarknetProviderError::StarknetError(StarknetError::BlockNotFound) => {
+                HttpProviderError::BlockNotFound
             }
             // TODO: this is a good place to handle rate limiting.
             _ => HttpProviderError::Provider(Box::new(error)),
@@ -262,12 +256,14 @@ impl ToProto<v1alpha2::BlockHeader> for models::BlockWithTxs {
         let block_hash = self.block_hash.into();
         let parent_block_hash = self.parent_hash.into();
         let block_number = self.block_number;
-        let sequencer_address = self.sequencer_address.into();
         let new_root = self.new_root.into();
         let timestamp = pbjson_types::Timestamp {
             nanos: 0,
             seconds: self.timestamp as i64,
         };
+        let sequencer_address = self.sequencer_address.into();
+        let starknet_version = self.starknet_version.clone();
+        let l1_gas_price = self.l1_gas_price.to_proto();
 
         v1alpha2::BlockHeader {
             block_hash: Some(block_hash),
@@ -276,6 +272,8 @@ impl ToProto<v1alpha2::BlockHeader> for models::BlockWithTxs {
             sequencer_address: Some(sequencer_address),
             new_root: Some(new_root),
             timestamp: Some(timestamp),
+            starknet_version,
+            l1_gas_price: Some(l1_gas_price),
         }
     }
 }
@@ -284,11 +282,13 @@ impl ToProto<v1alpha2::BlockHeader> for models::PendingBlockWithTxs {
     fn to_proto(&self) -> v1alpha2::BlockHeader {
         let block_hash = FieldElement::ZERO.into();
         let parent_block_hash = self.parent_hash.into();
-        let sequencer_address = self.sequencer_address.into();
         let timestamp = pbjson_types::Timestamp {
             nanos: 0,
             seconds: self.timestamp as i64,
         };
+        let sequencer_address = self.sequencer_address.into();
+        let starknet_version = self.starknet_version.clone();
+        let l1_gas_price = self.l1_gas_price.to_proto();
 
         v1alpha2::BlockHeader {
             block_hash: Some(block_hash),
@@ -297,6 +297,20 @@ impl ToProto<v1alpha2::BlockHeader> for models::PendingBlockWithTxs {
             sequencer_address: Some(sequencer_address),
             new_root: None,
             timestamp: Some(timestamp),
+            starknet_version,
+            l1_gas_price: Some(l1_gas_price),
+        }
+    }
+}
+
+impl ToProto<v1alpha2::ResourcePrice> for models::ResourcePrice {
+    fn to_proto(&self) -> v1alpha2::ResourcePrice {
+        let price_in_fri = self.price_in_fri.into();
+        let price_in_wei = self.price_in_wei.into();
+
+        v1alpha2::ResourcePrice {
+            price_in_fri: Some(price_in_fri),
+            price_in_wei: Some(price_in_wei),
         }
     }
 }
@@ -349,6 +363,7 @@ impl ToProto<v1alpha2::Transaction> for models::InvokeTransaction {
         match self {
             InvokeTransaction::V0(v0) => v0.to_proto(),
             InvokeTransaction::V1(v1) => v1.to_proto(),
+            InvokeTransaction::V3(v3) => v3.to_proto(),
         }
     }
 }
@@ -367,6 +382,7 @@ impl ToProto<v1alpha2::Transaction> for models::InvokeTransactionV0 {
             signature,
             nonce: None,
             version: 0,
+            ..v1alpha2::TransactionMeta::default()
         };
 
         let contract_address = self.contract_address.into();
@@ -401,6 +417,7 @@ impl ToProto<v1alpha2::Transaction> for models::InvokeTransactionV1 {
             signature,
             nonce: Some(nonce),
             version: 1,
+            ..v1alpha2::TransactionMeta::default()
         };
 
         let sender_address = self.sender_address.into();
@@ -417,6 +434,53 @@ impl ToProto<v1alpha2::Transaction> for models::InvokeTransactionV1 {
     }
 }
 
+impl ToProto<v1alpha2::Transaction> for models::InvokeTransactionV3 {
+    fn to_proto(&self) -> v1alpha2::Transaction {
+        use v1alpha2::transaction::Transaction;
+
+        let hash = self.transaction_hash.into();
+        let signature = self.signature.iter().map(|fe| fe.into()).collect();
+        let nonce = self.nonce.into();
+        let resource_bounds = self.resource_bounds.to_proto();
+        let tip = self.tip;
+        let paymaster_data = self.paymaster_data.iter().map(|fe| fe.into()).collect();
+        let nonce_data_availability_mode = self.nonce_data_availability_mode.to_proto();
+        let fee_data_availability_mode = self.fee_data_availability_mode.to_proto();
+
+        let meta = v1alpha2::TransactionMeta {
+            hash: Some(hash),
+            max_fee: None,
+            signature,
+            nonce: Some(nonce),
+            version: 3,
+            resource_bounds: Some(resource_bounds),
+            tip,
+            paymaster_data,
+            nonce_data_availability_mode: nonce_data_availability_mode as i32,
+            fee_data_availability_mode: fee_data_availability_mode as i32,
+        };
+
+        let sender_address = self.sender_address.into();
+        let calldata = self.calldata.iter().map(|fe| fe.into()).collect();
+        let account_deployment_data = self
+            .account_deployment_data
+            .iter()
+            .map(|fe| fe.into())
+            .collect();
+
+        let invoke_v3 = v1alpha2::InvokeTransactionV3 {
+            sender_address: Some(sender_address),
+            calldata,
+            account_deployment_data,
+        };
+
+        v1alpha2::Transaction {
+            meta: Some(meta),
+            transaction: Some(Transaction::InvokeV3(invoke_v3)),
+        }
+    }
+}
+
 impl ToProto<v1alpha2::Transaction> for models::DeployTransaction {
     fn to_proto(&self) -> v1alpha2::Transaction {
         use v1alpha2::transaction::Transaction;
@@ -425,7 +489,7 @@ impl ToProto<v1alpha2::Transaction> for models::DeployTransaction {
 
         let meta = v1alpha2::TransactionMeta {
             hash: Some(hash),
-            version: self.version,
+            version: self.version.as_u64(),
             ..v1alpha2::TransactionMeta::default()
         };
 
@@ -457,6 +521,7 @@ impl ToProto<v1alpha2::Transaction> for models::DeclareTransaction {
             DeclareTransaction::V0(v0) => v0.to_proto(),
             DeclareTransaction::V1(v1) => v1.to_proto(),
             DeclareTransaction::V2(v2) => v2.to_proto(),
+            DeclareTransaction::V3(v3) => v3.to_proto(),
         }
     }
 }
@@ -475,6 +540,7 @@ impl ToProto<v1alpha2::Transaction> for models::DeclareTransactionV0 {
             signature,
             nonce: None,
             version: 1,
+            ..v1alpha2::TransactionMeta::default()
         };
 
         let class_hash = self.class_hash.into();
@@ -508,6 +574,7 @@ impl ToProto<v1alpha2::Transaction> for models::DeclareTransactionV1 {
             signature,
             nonce: Some(nonce),
             version: 1,
+            ..v1alpha2::TransactionMeta::default()
         };
 
         let class_hash = self.class_hash.into();
@@ -541,6 +608,7 @@ impl ToProto<v1alpha2::Transaction> for models::DeclareTransactionV2 {
             signature,
             nonce: Some(nonce),
             version: 2,
+            ..v1alpha2::TransactionMeta::default()
         };
 
         let class_hash = self.class_hash.into();
@@ -560,12 +628,61 @@ impl ToProto<v1alpha2::Transaction> for models::DeclareTransactionV2 {
     }
 }
 
+impl ToProto<v1alpha2::Transaction> for models::DeclareTransactionV3 {
+    fn to_proto(&self) -> v1alpha2::Transaction {
+        use v1alpha2::transaction::Transaction;
+
+        let hash = self.transaction_hash.into();
+        let signature = self.signature.iter().map(|fe| fe.into()).collect();
+        let nonce = self.nonce.into();
+        let resource_bounds = self.resource_bounds.to_proto();
+        let tip = self.tip;
+        let paymaster_data = self.paymaster_data.iter().map(|fe| fe.into()).collect();
+        let nonce_data_availability_mode = self.nonce_data_availability_mode.to_proto();
+        let fee_data_availability_mode = self.fee_data_availability_mode.to_proto();
+
+        let meta = v1alpha2::TransactionMeta {
+            hash: Some(hash),
+            max_fee: None,
+            signature,
+            nonce: Some(nonce),
+            version: 3,
+            resource_bounds: Some(resource_bounds),
+            tip,
+            paymaster_data,
+            nonce_data_availability_mode: nonce_data_availability_mode as i32,
+            fee_data_availability_mode: fee_data_availability_mode as i32,
+        };
+
+        let class_hash = self.class_hash.into();
+        let sender_address = self.sender_address.into();
+        let compiled_class_hash = self.compiled_class_hash.into();
+        let account_deployment_data = self
+            .account_deployment_data
+            .iter()
+            .map(|fe| fe.into())
+            .collect();
+
+        let declare = v1alpha2::DeclareTransactionV3 {
+            class_hash: Some(class_hash),
+            sender_address: Some(sender_address),
+            compiled_class_hash: Some(compiled_class_hash),
+            account_deployment_data,
+        };
+
+        v1alpha2::Transaction {
+            meta: Some(meta),
+            transaction: Some(Transaction::DeclareV3(declare)),
+        }
+    }
+}
+
 impl ToProto<v1alpha2::Transaction> for models::L1HandlerTransaction {
     fn to_proto(&self) -> v1alpha2::Transaction {
         use v1alpha2::transaction::Transaction;
 
         let hash = self.transaction_hash.into();
-        let version = self.version;
+        let version = self.version.as_u64();
         let nonce = v1alpha2::FieldElement::from_u64(self.nonce);
 
         let meta = v1alpha2::TransactionMeta {
@@ -594,6 +711,15 @@ impl ToProto<v1alpha2::Transaction> for models::L1HandlerTransaction {
 
 impl ToProto<v1alpha2::Transaction> for models::DeployAccountTransaction {
     fn to_proto(&self) -> v1alpha2::Transaction {
+        match self {
+            models::DeployAccountTransaction::V1(v1) => v1.to_proto(),
+            models::DeployAccountTransaction::V3(v3) => v3.to_proto(),
+        }
+    }
+}
+
+impl ToProto<v1alpha2::Transaction> for models::DeployAccountTransactionV1 {
+    fn to_proto(&self) -> v1alpha2::Transaction {
         use v1alpha2::transaction::Transaction;
 
         let hash = self.transaction_hash.into();
@@ -607,6 +733,7 @@ impl ToProto<v1alpha2::Transaction> for models::DeployAccountTransaction {
             signature,
             nonce: Some(nonce),
             version: 0,
+            ..v1alpha2::TransactionMeta::default()
         };
 
         let contract_address_salt = self.contract_address_salt.into();
@@ -626,6 +753,53 @@ impl ToProto<v1alpha2::Transaction> for models::DeployAccountTransaction {
         v1alpha2::Transaction {
             meta: Some(meta),
             transaction: Some(Transaction::DeployAccount(deploy_account)),
+        }
+    }
+}
+
+impl ToProto<v1alpha2::Transaction> for models::DeployAccountTransactionV3 {
+    fn to_proto(&self) -> v1alpha2::Transaction {
+        use v1alpha2::transaction::Transaction;
+
+        let hash = self.transaction_hash.into();
+        let signature = self.signature.iter().map(|fe| fe.into()).collect();
+        let nonce = self.nonce.into();
+        let resource_bounds = self.resource_bounds.to_proto();
+        let tip = self.tip;
+        let paymaster_data = self.paymaster_data.iter().map(|fe| fe.into()).collect();
+        let nonce_data_availability_mode = self.nonce_data_availability_mode.to_proto();
+        let fee_data_availability_mode = self.fee_data_availability_mode.to_proto();
+
+        let meta = v1alpha2::TransactionMeta {
+            hash: Some(hash),
+            max_fee: None,
+            signature,
+            nonce: Some(nonce),
+            version: 3,
+            resource_bounds: Some(resource_bounds),
+            tip,
+            paymaster_data,
+            nonce_data_availability_mode: nonce_data_availability_mode as i32,
+            fee_data_availability_mode: fee_data_availability_mode as i32,
+        };
+
+        let contract_address_salt = self.contract_address_salt.into();
+        let class_hash = self.class_hash.into();
+        let constructor_calldata = self
+            .constructor_calldata
+            .iter()
+            .map(|fe| fe.into())
+            .collect();
+
+        let deploy = v1alpha2::DeployAccountTransactionV3 {
+            contract_address_salt: Some(contract_address_salt),
+            class_hash: Some(class_hash),
+            constructor_calldata,
+        };
+
+        v1alpha2::Transaction {
+            meta: Some(meta),
+            transaction: Some(Transaction::DeployAccountV3(deploy)),
         }
     }
 }
@@ -667,7 +841,8 @@ impl ToProto<v1alpha2::TransactionReceipt> for models::PendingTransactionReceipt
 impl ToProto<v1alpha2::TransactionReceipt> for models::PendingInvokeTransactionReceipt {
     fn to_proto(&self) -> v1alpha2::TransactionReceipt {
         let transaction_hash = self.transaction_hash.into();
-        let actual_fee = self.actual_fee.into();
+        let actual_fee_paid = self.actual_fee.to_proto();
+        let actual_fee = actual_fee_paid.amount.clone();
         let l2_to_l1_messages = messages_to_proto(&self.messages_sent);
         let events = events_to_proto(&self.events);
         let (execution_status, revert_reason) = execution_result_to_proto(&self.execution_result);
@@ -675,7 +850,8 @@ impl ToProto<v1alpha2::TransactionReceipt> for models::PendingInvokeTransactionR
         v1alpha2::TransactionReceipt {
             transaction_index: 0,
             transaction_hash: Some(transaction_hash),
-            actual_fee: Some(actual_fee),
+            actual_fee,
+            actual_fee_paid: Some(actual_fee_paid),
             l2_to_l1_messages,
             events,
             contract_address: None,
@@ -688,7 +864,8 @@ impl ToProto<v1alpha2::TransactionReceipt> for models::PendingInvokeTransactionR
 impl ToProto<v1alpha2::TransactionReceipt> for models::PendingL1HandlerTransactionReceipt {
     fn to_proto(&self) -> v1alpha2::TransactionReceipt {
         let transaction_hash = self.transaction_hash.into();
-        let actual_fee = self.actual_fee.into();
+        let actual_fee_paid = self.actual_fee.to_proto();
+        let actual_fee = actual_fee_paid.amount.clone();
         let l2_to_l1_messages = messages_to_proto(&self.messages_sent);
         let events = events_to_proto(&self.events);
         let (execution_status, revert_reason) = execution_result_to_proto(&self.execution_result);
@@ -696,7 +873,8 @@ impl ToProto<v1alpha2::TransactionReceipt> for models::PendingL1HandlerTransacti
         v1alpha2::TransactionReceipt {
             transaction_index: 0,
             transaction_hash: Some(transaction_hash),
-            actual_fee: Some(actual_fee),
+            actual_fee,
+            actual_fee_paid: Some(actual_fee_paid),
             l2_to_l1_messages,
             events,
             contract_address: None,
@@ -709,7 +887,8 @@ impl ToProto<v1alpha2::TransactionReceipt> for models::PendingL1HandlerTransacti
 impl ToProto<v1alpha2::TransactionReceipt> for models::PendingDeclareTransactionReceipt {
     fn to_proto(&self) -> v1alpha2::TransactionReceipt {
         let transaction_hash = self.transaction_hash.into();
-        let actual_fee = self.actual_fee.into();
+        let actual_fee_paid = self.actual_fee.to_proto();
+        let actual_fee = actual_fee_paid.amount.clone();
         let l2_to_l1_messages = messages_to_proto(&self.messages_sent);
         let events = events_to_proto(&self.events);
         let (execution_status, revert_reason) = execution_result_to_proto(&self.execution_result);
@@ -717,7 +896,8 @@ impl ToProto<v1alpha2::TransactionReceipt> for models::PendingDeclareTransaction
         v1alpha2::TransactionReceipt {
             transaction_index: 0,
             transaction_hash: Some(transaction_hash),
-            actual_fee: Some(actual_fee),
+            actual_fee,
+            actual_fee_paid: Some(actual_fee_paid),
             l2_to_l1_messages,
             events,
             contract_address: None,
@@ -730,7 +910,8 @@ impl ToProto<v1alpha2::TransactionReceipt> for models::PendingDeclareTransaction
 impl ToProto<v1alpha2::TransactionReceipt> for models::PendingDeployAccountTransactionReceipt {
     fn to_proto(&self) -> v1alpha2::TransactionReceipt {
         let transaction_hash = self.transaction_hash.into();
-        let actual_fee = self.actual_fee.into();
+        let actual_fee_paid = self.actual_fee.to_proto();
+        let actual_fee = actual_fee_paid.amount.clone();
         let l2_to_l1_messages = messages_to_proto(&self.messages_sent);
         let events = events_to_proto(&self.events);
         let (execution_status, revert_reason) = execution_result_to_proto(&self.execution_result);
@@ -738,7 +919,8 @@ impl ToProto<v1alpha2::TransactionReceipt> for models::PendingDeployAccountTrans
         v1alpha2::TransactionReceipt {
             transaction_index: 0,
             transaction_hash: Some(transaction_hash),
-            actual_fee: Some(actual_fee),
+            actual_fee,
+            actual_fee_paid: Some(actual_fee_paid),
             l2_to_l1_messages,
             events,
             contract_address: None,
@@ -765,7 +947,8 @@ impl ToProto<v1alpha2::TransactionReceipt> for models::TransactionReceipt {
 impl ToProto<v1alpha2::TransactionReceipt> for models::InvokeTransactionReceipt {
     fn to_proto(&self) -> v1alpha2::TransactionReceipt {
         let transaction_hash = self.transaction_hash.into();
-        let actual_fee = self.actual_fee.into();
+        let actual_fee_paid = self.actual_fee.to_proto();
+        let actual_fee = actual_fee_paid.amount.clone();
         let l2_to_l1_messages = messages_to_proto(&self.messages_sent);
         let events = events_to_proto(&self.events);
         let (execution_status, revert_reason) = execution_result_to_proto(&self.execution_result);
@@ -773,7 +956,8 @@ impl ToProto<v1alpha2::TransactionReceipt> for models::InvokeTransactionReceipt 
         v1alpha2::TransactionReceipt {
             transaction_index: 0,
             transaction_hash: Some(transaction_hash),
-            actual_fee: Some(actual_fee),
+            actual_fee,
+            actual_fee_paid: Some(actual_fee_paid),
             l2_to_l1_messages,
             events,
             contract_address: None,
@@ -786,7 +970,8 @@ impl ToProto<v1alpha2::TransactionReceipt> for models::InvokeTransactionReceipt 
 impl ToProto<v1alpha2::TransactionReceipt> for models::L1HandlerTransactionReceipt {
     fn to_proto(&self) -> v1alpha2::TransactionReceipt {
         let transaction_hash = self.transaction_hash.into();
-        let actual_fee = self.actual_fee.into();
+        let actual_fee_paid = self.actual_fee.to_proto();
+        let actual_fee = actual_fee_paid.amount.clone();
         let l2_to_l1_messages = messages_to_proto(&self.messages_sent);
         let events = events_to_proto(&self.events);
         let (execution_status, revert_reason) = execution_result_to_proto(&self.execution_result);
@@ -794,7 +979,8 @@ impl ToProto<v1alpha2::TransactionReceipt> for models::L1HandlerTransactionRecei
         v1alpha2::TransactionReceipt {
             transaction_index: 0,
             transaction_hash: Some(transaction_hash),
-            actual_fee: Some(actual_fee),
+            actual_fee,
+            actual_fee_paid: Some(actual_fee_paid),
             l2_to_l1_messages,
             events,
             contract_address: None,
@@ -807,7 +993,8 @@ impl ToProto<v1alpha2::TransactionReceipt> for models::L1HandlerTransactionRecei
 impl ToProto<v1alpha2::TransactionReceipt> for models::DeclareTransactionReceipt {
     fn to_proto(&self) -> v1alpha2::TransactionReceipt {
         let transaction_hash = self.transaction_hash.into();
-        let actual_fee = self.actual_fee.into();
+        let actual_fee_paid = self.actual_fee.to_proto();
+        let actual_fee = actual_fee_paid.amount.clone();
         let l2_to_l1_messages = messages_to_proto(&self.messages_sent);
         let events = events_to_proto(&self.events);
         let (execution_status, revert_reason) = execution_result_to_proto(&self.execution_result);
@@ -815,7 +1002,8 @@ impl ToProto<v1alpha2::TransactionReceipt> for models::DeclareTransactionReceipt
         v1alpha2::TransactionReceipt {
             transaction_index: 0,
             transaction_hash: Some(transaction_hash),
-            actual_fee: Some(actual_fee),
+            actual_fee,
+            actual_fee_paid: Some(actual_fee_paid),
             l2_to_l1_messages,
             events,
             contract_address: None,
@@ -828,7 +1016,8 @@ impl ToProto<v1alpha2::TransactionReceipt> for models::DeclareTransactionReceipt
 impl ToProto<v1alpha2::TransactionReceipt> for models::DeployTransactionReceipt {
     fn to_proto(&self) -> v1alpha2::TransactionReceipt {
         let transaction_hash = self.transaction_hash.into();
-        let actual_fee = self.actual_fee.into();
+        let actual_fee_paid = self.actual_fee.to_proto();
+        let actual_fee = actual_fee_paid.amount.clone();
         let l2_to_l1_messages = messages_to_proto(&self.messages_sent);
         let events = events_to_proto(&self.events);
         let contract_address = self.contract_address.into();
@@ -837,7 +1026,8 @@ impl ToProto<v1alpha2::TransactionReceipt> for models::DeployTransactionReceipt 
         v1alpha2::TransactionReceipt {
             transaction_index: 0,
             transaction_hash: Some(transaction_hash),
-            actual_fee: Some(actual_fee),
+            actual_fee,
+            actual_fee_paid: Some(actual_fee_paid),
             l2_to_l1_messages,
             events,
             contract_address: Some(contract_address),
@@ -850,7 +1040,8 @@ impl ToProto<v1alpha2::TransactionReceipt> for models::DeployTransactionReceipt 
 impl ToProto<v1alpha2::TransactionReceipt> for models::DeployAccountTransactionReceipt {
     fn to_proto(&self) -> v1alpha2::TransactionReceipt {
         let transaction_hash = self.transaction_hash.into();
-        let actual_fee = self.actual_fee.into();
+        let actual_fee_paid = self.actual_fee.to_proto();
+        let actual_fee = actual_fee_paid.amount.clone();
         let l2_to_l1_messages = messages_to_proto(&self.messages_sent);
         let events = events_to_proto(&self.events);
         let contract_address = self.contract_address.into();
@@ -859,12 +1050,35 @@ impl ToProto<v1alpha2::TransactionReceipt> for models::DeployAccountTransactionR
         v1alpha2::TransactionReceipt {
             transaction_index: 0,
             transaction_hash: Some(transaction_hash),
-            actual_fee: Some(actual_fee),
+            actual_fee,
+            actual_fee_paid: Some(actual_fee_paid),
             l2_to_l1_messages,
             events,
             contract_address: Some(contract_address),
             execution_status: execution_status.into(),
             revert_reason,
+        }
+    }
+}
+
+impl ToProto<v1alpha2::FeePayment> for models::FeePayment {
+    fn to_proto(&self) -> v1alpha2::FeePayment {
+        let amount = self.amount.into();
+        let unit = self.unit.to_proto();
+        v1alpha2::FeePayment {
+            amount: Some(amount),
+            unit: unit as i32,
+        }
+    }
+}
+
+impl ToProto<v1alpha2::PriceUnit> for models::PriceUnit {
+    fn to_proto(&self) -> v1alpha2::PriceUnit {
+        use models::PriceUnit;
+
+        match self {
+            PriceUnit::Fri => v1alpha2::PriceUnit::Fri,
+            PriceUnit::Wei => v1alpha2::PriceUnit::Wei,
         }
     }
 }
@@ -1050,6 +1264,53 @@ impl ToProto<v1alpha2::NonceUpdate> for models::NonceUpdate {
     }
 }
 
+impl ToProto<v1alpha2::ResourceBoundsMapping> for models::ResourceBoundsMapping {
+    fn to_proto(&self) -> v1alpha2::ResourceBoundsMapping {
+        let l1_gas = self.l1_gas.to_proto();
+        let l2_gas = self.l2_gas.to_proto();
+        v1alpha2::ResourceBoundsMapping {
+            l1_gas: Some(l1_gas),
+            l2_gas: Some(l2_gas),
+        }
+    }
+}
+
+impl ToProto<v1alpha2::ResourceBounds> for models::ResourceBounds {
+    fn to_proto(&self) -> v1alpha2::ResourceBounds {
+        let max_amount = self.max_amount;
+        let max_price_per_unit = self.max_price_per_unit.to_proto();
+        v1alpha2::ResourceBounds {
+            max_amount,
+            max_price_per_unit: Some(max_price_per_unit),
+        }
+    }
+}
+
+impl ToProto<v1alpha2::Uint128> for u128 {
+    fn to_proto(&self) -> v1alpha2::Uint128 {
+        let bytes = self.to_be_bytes();
+        let mut buf = [0; 8];
+
+        buf.copy_from_slice(&bytes[..8]);
+        let low = u64::from_be_bytes(buf);
+
+        buf.copy_from_slice(&bytes[8..]);
+        let high = u64::from_be_bytes(buf);
+
+        v1alpha2::Uint128 { low, high }
+    }
+}
+
+impl ToProto<v1alpha2::DataAvailabilityMode> for models::DataAvailabilityMode {
+    fn to_proto(&self) -> v1alpha2::DataAvailabilityMode {
+        use models::DataAvailabilityMode;
+        match self {
+            DataAvailabilityMode::L1 => v1alpha2::DataAvailabilityMode::L1,
+            DataAvailabilityMode::L2 => v1alpha2::DataAvailabilityMode::L2,
+        }
+    }
+}
+
 /// Converts jsonrpc events to protobuf events.
 fn events_to_proto(events: &[models::Event]) -> Vec<v1alpha2::Event> {
     events
@@ -1086,5 +1347,34 @@ fn execution_result_to_proto(
         models::ExecutionResult::Reverted { reason } => {
             (v1alpha2::ExecutionStatus::Reverted, reason.clone())
         }
+    }
+}
+
+trait FieldElementExt {
+    /// Convert the field element to u64.
+    ///
+    /// Panics if the field element is not a u64.
+    fn as_u64(&self) -> u64;
+}
+
+impl FieldElementExt for FieldElement {
+    fn as_u64(&self) -> u64 {
+        let bytes = self.to_bytes_be();
+        let mut buf = [0; 8];
+        buf.copy_from_slice(&bytes[24..]);
+        u64::from_be_bytes(buf)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::FieldElementExt;
+    use starknet::core::types::FieldElement;
+
+    #[test]
+    fn test_field_element_to_u64() {
+        assert_eq!(FieldElement::ONE.as_u64(), 1);
+        assert_eq!(FieldElement::TWO.as_u64(), 2);
+        assert_eq!(FieldElement::THREE.as_u64(), 3);
     }
 }

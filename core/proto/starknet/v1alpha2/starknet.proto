@@ -36,6 +36,10 @@ message BlockHeader {
   FieldElement new_root = 5;
   // Timestamp when block  was produced.
   google.protobuf.Timestamp timestamp = 6;
+  // Starknet version.
+  string starknet_version = 7;
+  // Price of L1 gas in the block.
+  ResourcePrice l1_gas_price = 8;
 }
 
 // Status of a block.
@@ -69,7 +73,7 @@ message Transaction {
     InvokeTransactionV0 invoke_v0 = 2;
     // Transaction invoking a smart contract, V1.
     InvokeTransactionV1 invoke_v1 = 3;
-    // Transaction deploying a new smart contract.
+    // Transaction deploying a new smart contract, V1.
     DeployTransaction deploy = 4;
     // Transaction declaring a smart contract.
     DeclareTransaction declare = 5;
@@ -77,6 +81,12 @@ message Transaction {
     L1HandlerTransaction l1_handler = 6;
     // Transaction deploying a new account.
     DeployAccountTransaction deploy_account = 7;
+    // Transaction deploying a new smart contract, V3.
+    DeployAccountTransactionV3 deploy_account_v3 = 8;
+    // Transaction invoking a smart contract, V3.
+    InvokeTransactionV3 invoke_v3 = 9;
+    // Transaction declaring a smart contract, V3.
+    DeclareTransactionV3 declare_v3 = 10;
   }
 }
 
@@ -92,6 +102,16 @@ message TransactionMeta {
   FieldElement nonce = 4;
   // Version.
   uint64 version = 5;
+  // Transaction resources.
+  ResourceBoundsMapping resource_bounds = 6;
+  // Tip to the sequencer.
+  uint64 tip = 7;
+  // Data passed to the paymaster.
+  repeated FieldElement paymaster_data = 8;
+  // The storage domain of the account's nonce.
+  DataAvailabilityMode nonce_data_availability_mode = 9;
+  // The storage domain of the account's balance from which fee will be charged.
+  DataAvailabilityMode fee_data_availability_mode = 10;
 }
 
 // Transaction invoking a smart contract, V0.
@@ -112,7 +132,17 @@ message InvokeTransactionV1 {
   repeated FieldElement calldata = 2;
 }
 
-// Transaction deploying a new smart contract.
+// Transaction invoking a smart contract, V3.
+message InvokeTransactionV3 {
+  // Address sending the transaction.
+  FieldElement sender_address = 1;
+  // Raw calldata.
+  repeated FieldElement calldata = 2;
+  // Data passed to the account deployment.
+  repeated FieldElement account_deployment_data = 3;
+}
+
+// Transaction deploying a new smart contract, V1.
 message DeployTransaction {
   // Raw calldata passed to the constructor.
   repeated FieldElement constructor_calldata = 2;
@@ -130,6 +160,18 @@ message DeclareTransaction {
   FieldElement sender_address = 2;
   // The hash of the cairo assembly resulting from the sierra compilation.
   FieldElement compiled_class_hash = 3;
+}
+
+// Transaction declaring a smart contract.
+message DeclareTransactionV3 {
+  // Class hash.
+  FieldElement class_hash = 1;
+  // Address of the account declaring the class.
+  FieldElement sender_address = 2;
+  // The hash of the cairo assembly resulting from the sierra compilation.
+  FieldElement compiled_class_hash = 3;
+  // Data passed to the account deployment.
+  repeated FieldElement account_deployment_data = 4;
 }
 
 // Transaction handling a message from L1.
@@ -152,6 +194,16 @@ message DeployAccountTransaction {
   FieldElement class_hash = 4;
 }
 
+// Transaction deploying a new smart contract, V3.
+message DeployAccountTransactionV3 {
+  // Raw calldata passed to the constructor.
+  repeated FieldElement constructor_calldata = 1;
+  // Salt used when computing the contract's address.
+  FieldElement contract_address_salt = 2;
+  // Hash of the class being deployed.
+  FieldElement class_hash = 3;
+}
+
 // Transaction execution status.
 enum ExecutionStatus {
   // Unknown execution status.
@@ -172,7 +224,7 @@ message TransactionReceipt {
   // Transaction's indexe in the list of transactions in a block.
   uint64 transaction_index = 2;
   // Feed paid.
-  FieldElement actual_fee = 3;
+  FieldElement actual_fee = 3 [ deprecated = true ];
   // Messages sent to L1 in the transactions.
   repeated L2ToL1Message l2_to_l1_messages = 4;
   // Events emitted in the transaction.
@@ -183,6 +235,8 @@ message TransactionReceipt {
   ExecutionStatus execution_status = 7;
   // The reason why the transaction reverted.
   string revert_reason = 8;
+  // Feed paid.
+  FeePayment actual_fee_paid = 9;
 }
 
 // Message sent from L2 to L1 together with its transaction and receipt.
@@ -307,4 +361,61 @@ message NonceUpdate {
   FieldElement contract_address = 1;
   // New nonce value.
   FieldElement nonce = 2;
+}
+
+// Price of a unit of a resource.
+message ResourcePrice {
+  // Price in fri (10^-18 strk).
+  FieldElement price_in_fri = 1;
+  // Price in wei (10^-18 eth).
+  FieldElement price_in_wei = 2;
+}
+
+// A Starknet fee payment.
+message FeePayment {
+  // Amount paid.
+  FieldElement amount = 1;
+  // Unit of the amount.
+  PriceUnit unit = 2;
+}
+
+// Price unit.
+enum PriceUnit {
+  // Unknown price unit.
+  PRICE_UNIT_UNSPECIFIED = 0;
+  // WEI.
+  PRICE_UNIT_WEI = 1;
+  // FRI.
+  PRICE_UNIT_FRI = 2;
+}
+
+message ResourceBoundsMapping {
+  // Maximum amount and price of L1 gas.
+  ResourceBounds l1_gas = 1;
+  // Maximum amount and price of L2 gas.
+  ResourceBounds l2_gas = 2;
+}
+
+message ResourceBounds {
+  // The maximum amount of resources that can be consumed by a transaction.
+  uint64 max_amount = 1;
+  /// The max price per unit of resource.
+  Uint128 max_price_per_unit = 2;
+}
+
+message Uint128 {
+  // The low 64 bits of the number.
+  uint64 low = 1;
+  // The high 64 bits of the number.
+  uint64 high = 2;
+}
+
+// DA mode.
+enum DataAvailabilityMode {
+  // Unknown DA.
+  DATA_AVAILABILITY_MODE_UNSPECIFIED = 0;
+  // L1.
+  DATA_AVAILABILITY_MODE_L1 = 1;
+  // L2.
+  DATA_AVAILABILITY_MODE_L2 = 2;
 }
