@@ -317,14 +317,40 @@ impl ToProto<v1alpha2::ResourcePrice> for models::ResourcePrice {
 
 impl ToProto<BlockBody> for models::BlockWithTxs {
     fn to_proto(&self) -> BlockBody {
-        let transactions = self.transactions.iter().map(|tx| tx.to_proto()).collect();
+        let transactions = self
+            .transactions
+            .iter()
+            .enumerate()
+            .map(|(idx, tx)| {
+                let mut proto = tx.to_proto();
+                proto
+                    .meta
+                    .as_mut()
+                    .expect("transaction meta")
+                    .transaction_index = idx as u64;
+                proto
+            })
+            .collect();
         BlockBody { transactions }
     }
 }
 
 impl ToProto<BlockBody> for models::PendingBlockWithTxs {
     fn to_proto(&self) -> BlockBody {
-        let transactions = self.transactions.iter().map(|tx| tx.to_proto()).collect();
+        let transactions = self
+            .transactions
+            .iter()
+            .enumerate()
+            .map(|(idx, tx)| {
+                let mut proto = tx.to_proto();
+                proto
+                    .meta
+                    .as_mut()
+                    .expect("transaction meta")
+                    .transaction_index = idx as u64;
+                proto
+            })
+            .collect();
         BlockBody { transactions }
     }
 }
@@ -458,6 +484,7 @@ impl ToProto<v1alpha2::Transaction> for models::InvokeTransactionV3 {
             paymaster_data,
             nonce_data_availability_mode: nonce_data_availability_mode as i32,
             fee_data_availability_mode: fee_data_availability_mode as i32,
+            transaction_index: 0,
         };
 
         let sender_address = self.sender_address.into();
@@ -652,6 +679,7 @@ impl ToProto<v1alpha2::Transaction> for models::DeclareTransactionV3 {
             paymaster_data,
             nonce_data_availability_mode: nonce_data_availability_mode as i32,
             fee_data_availability_mode: fee_data_availability_mode as i32,
+            transaction_index: 0,
         };
 
         let class_hash = self.class_hash.into();
@@ -781,6 +809,7 @@ impl ToProto<v1alpha2::Transaction> for models::DeployAccountTransactionV3 {
             paymaster_data,
             nonce_data_availability_mode: nonce_data_availability_mode as i32,
             fee_data_availability_mode: fee_data_availability_mode as i32,
+            transaction_index: 0,
         };
 
         let contract_address_salt = self.contract_address_salt.into();
