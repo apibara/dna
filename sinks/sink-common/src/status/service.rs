@@ -1,6 +1,7 @@
 use std::{fmt, time::Duration};
 
 use apibara_core::node;
+use apibara_sdk::StreamClient;
 use error_stack::{Result, ResultExt};
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
@@ -22,12 +23,17 @@ enum RequestMessage {
 
 #[derive(Debug)]
 pub struct Cursors {
+    /// Indexer's starting cursor.
     pub starting: Option<node::v1alpha2::Cursor>,
+    /// Indexer's current cursor.
     pub current: Option<node::v1alpha2::Cursor>,
+    /// Chain's head cursor.
+    pub head: Option<node::v1alpha2::Cursor>,
 }
 
 pub struct StatusService {
     health_reporter: tonic_health::server::HealthReporter,
+    stream_client: StreamClient,
     request_rx: mpsc::Receiver<RequestMessage>,
     status_rx: mpsc::Receiver<StatusMessage>,
 }
@@ -49,7 +55,9 @@ pub struct StatusServiceClient {
 }
 
 impl StatusService {
-    pub fn new() -> (
+    pub fn new(
+        stream_client: StreamClient,
+    ) -> (
         Self,
         StatusServerClient,
         StatusServiceClient,
@@ -65,6 +73,7 @@ impl StatusService {
 
         let service = StatusService {
             health_reporter,
+            stream_client,
             status_rx,
             request_rx,
         };
@@ -88,6 +97,33 @@ impl StatusService {
         let mut cursor = None;
         loop {
             tokio::select! {
+                biased;
+
+                msg = self.request_rx.recv() => {
+                    let msg = msg.ok_or(StatusServiceError).attach_printable("client request channel closed")?;
+                    match msg {
+                        RequestMessage::GetCursor(tx) => {
+                            let dna_status = self
+                                .stream_client
+                                .clone()
+                                .status()
+                                .await
+                                .map_err(|_| StatusServiceError)
+                                .attach_printable("failed to get dna status")?;
+
+                            let cursors = Cursors {
+                                starting: starting_cursor.clone(),
+                                current: cursor.clone(),
+                                head: dna_status.current_head,
+                            };
+
+                            tx.send(cursors)
+                                .map_err(|_| StatusServiceError)
+                                .attach_printable("failed to reply with cursor")?;
+                        }
+                    }
+                }
+
                 msg = self.status_rx.recv() => {
                     let msg = msg.ok_or(StatusServiceError).attach_printable("status channel closed")?;
                     match msg {
@@ -102,23 +138,11 @@ impl StatusService {
                         }
                     }
                 }
-                msg = self.request_rx.recv() => {
-                    let msg = msg.ok_or(StatusServiceError).attach_printable("client request channel closed")?;
-                    match msg {
-                        RequestMessage::GetCursor(tx) => {
-                            let cursors = Cursors {
-                                starting: starting_cursor.clone(),
-                                current: cursor.clone(),
-                            };
-                            tx.send(cursors)
-                                .map_err(|_| StatusServiceError)
-                                .attach_printable("failed to reply with cursor")?;
-                        }
-                    }
-                }
+
                 _ = tokio::time::sleep(MESSAGE_TIMEOUT) => {
                     self.health_reporter.set_not_serving::<StatusServer>().await;
                 }
+
                 _ = ct.cancelled() => {
                     info!("status server stopped: cancelled");
                     break;

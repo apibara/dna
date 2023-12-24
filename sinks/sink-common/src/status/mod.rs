@@ -54,8 +54,8 @@ impl StatusServer {
         StatusServerError,
     > {
         let (status_service, status_client, status_service_client, health_server) =
-            StatusService::new();
-        let status_server = Server::new(status_service_client, stream_client);
+            StatusService::new(stream_client);
+        let status_server = Server::new(status_service_client);
 
         let status_fut = Box::pin({
             let address = self.address;

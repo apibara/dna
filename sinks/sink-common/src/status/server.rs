@@ -1,4 +1,3 @@
-use apibara_sdk::StreamClient;
 use tonic::async_trait;
 
 use super::service::StatusServiceClient;
@@ -17,15 +16,11 @@ pub type StatusServer = proto::status_server::StatusServer<Server>;
 
 pub struct Server {
     client: StatusServiceClient,
-    stream_client: StreamClient,
 }
 
 impl Server {
-    pub fn new(client: StatusServiceClient, stream_client: StreamClient) -> Self {
-        Self {
-            client,
-            stream_client,
-        }
+    pub fn new(client: StatusServiceClient) -> Self {
+        Self { client }
     }
 
     pub fn into_service(self) -> proto::status_server::StatusServer<Self> {
@@ -45,18 +40,11 @@ impl proto::status_server::Status for Server {
             .await
             .map_err(|_| tonic::Status::internal("failed to get sink cursors"))?;
 
-        let dna_status = self
-            .stream_client
-            .clone()
-            .status()
-            .await
-            .map_err(|_| tonic::Status::internal("failed to get status from dna server"))?;
-
         let response = proto::GetStatusResponse {
             status: proto::SinkStatus::Running as i32,
             starting_block: cursors.starting.map(|cursor| cursor.order_key),
             current_block: cursors.current.map(|cursor| cursor.order_key),
-            head_block: dna_status.current_head.map(|cursor| cursor.order_key),
+            head_block: cursors.head.map(|cursor| cursor.order_key),
             reason: None,
         };
 
