@@ -142,13 +142,15 @@ where
 
         let stream_client = self.new_stream_client().await?;
 
-        let (status_client, mut status_server) = self
+        let (status_client, status_server) = self
             .status_server
             .clone()
             .start(stream_client.clone(), ct.clone())
             .await
             .change_context(SinkConnectorError::Temporary)
             .attach_printable("failed to start status server")?;
+
+        let mut status_server = tokio::spawn(status_server);
 
         // Set starting cursor now, before it's modified.
         status_client
