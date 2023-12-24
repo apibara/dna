@@ -293,7 +293,7 @@ where
         S: Sink + Sync + Send,
     {
         for duration in &self.backoff {
-            info!(cursor = ?cursor, "handle invalidate");
+            info!(cursor = %DisplayCursor(cursor), "handle invalidate");
             match self.sink.handle_invalidate(cursor).await {
                 Ok(_) => {
                     // if the sink started streaming from the genesis block

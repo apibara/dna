@@ -33,7 +33,7 @@ impl Sink for ConsoleSink {
         Ok(ConsoleSink::default())
     }
 
-    #[instrument(skip(self, batch), err(Debug), level = "DEBUG")]
+    #[instrument(skip_all, err(Debug), level = "DEBUG")]
     async fn handle_data(
         &mut self,
         ctx: &Context,
@@ -50,7 +50,7 @@ impl Sink for ConsoleSink {
         Ok(CursorAction::Persist)
     }
 
-    #[instrument(skip(self), err(Debug))]
+    #[instrument(skip_all, err(Debug), level = "DEBUG")]
     async fn handle_invalidate(&mut self, cursor: &Option<Cursor>) -> Result<(), Self::Error> {
         info!(cursor = %DisplayCursor(cursor), "invalidating cursor");
         Ok(())
