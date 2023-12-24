@@ -6,9 +6,7 @@ use tokio::sync::Mutex;
 
 use tracing::{info, warn};
 
-use crate::error::{
-    LocalRunnerError, LocalRunnerReportExt, LocalRunnerResult, LocalRunnerResultExt,
-};
+use apibara_runner_common::error::{RunnerError, RunnerReportExt, RunnerResult, RunnerResultExt};
 
 use apibara_runner_common::runner::v1::Indexer;
 
@@ -35,14 +33,10 @@ impl IndexerManager {
         }
     }
 
-    pub async fn create_indexer(
-        &self,
-        indexer_id: String,
-        indexer: Indexer,
-    ) -> LocalRunnerResult<()> {
+    pub async fn create_indexer(&self, indexer_id: String, indexer: Indexer) -> RunnerResult<()> {
         let command = build_indexer_command(&indexer_id, &indexer)?;
 
-        let port = portpicker::pick_unused_port().ok_or(LocalRunnerError::internal(
+        let port = portpicker::pick_unused_port().ok_or(RunnerError::internal(
             "Can't pick a port for the status server",
         ))?;
 
@@ -124,9 +118,9 @@ impl IndexerManager {
                     let error_message = format!(
                         "Sink {sink_type} is not installed\nInstall it with `apibara plugins install sink-{sink_type}` or by adding it to your $PATH",
                     );
-                    LocalRunnerError::not_found(sink_type).attach_printable(error_message)
+                    RunnerError::not_found(sink_type).attach_printable(error_message)
                 } else {
-                    LocalRunnerError::internal("failed to spawn indexer")
+                    RunnerError::internal("failed to spawn indexer")
                 }
             })?;
 
@@ -146,19 +140,17 @@ impl IndexerManager {
         Ok(())
     }
 
-    pub async fn refresh_status(&self, name: &str) -> LocalRunnerResult<()> {
+    pub async fn refresh_status(&self, name: &str) -> RunnerResult<()> {
         let mut indexers = self.indexers.lock().await;
 
-        let indexer_info = indexers
-            .get_mut(name)
-            .ok_or(LocalRunnerError::not_found(name))?;
+        let indexer_info = indexers.get_mut(name).ok_or(RunnerError::not_found(name))?;
 
         refresh_status(indexer_info).await?;
 
         Ok(())
     }
 
-    pub async fn refresh_status_all(&self) -> LocalRunnerResult<()> {
+    pub async fn refresh_status_all(&self) -> RunnerResult<()> {
         let mut indexers = self.indexers.lock().await;
 
         let mut results = Vec::new();
@@ -169,21 +161,17 @@ impl IndexerManager {
         results.into_iter().collect()
     }
 
-    pub async fn get_indexer(&self, name: &str) -> LocalRunnerResult<Indexer> {
+    pub async fn get_indexer(&self, name: &str) -> RunnerResult<Indexer> {
         let mut indexers = self.indexers.lock().await;
 
-        let indexer_info = indexers
-            .get_mut(name)
-            .ok_or(LocalRunnerError::not_found(name))?;
+        let indexer_info = indexers.get_mut(name).ok_or(RunnerError::not_found(name))?;
 
         Ok(indexer_info.indexer.clone())
     }
 
-    pub async fn delete_indexer(&self, name: &str) -> LocalRunnerResult<()> {
+    pub async fn delete_indexer(&self, name: &str) -> RunnerResult<()> {
         let mut indexers = self.indexers.lock().await;
-        let indexer_info = indexers
-            .get_mut(name)
-            .ok_or(LocalRunnerError::not_found(name))?;
+        let indexer_info = indexers.get_mut(name).ok_or(RunnerError::not_found(name))?;
 
         let indexer_running = indexer_info
             .child
@@ -204,7 +192,7 @@ impl IndexerManager {
         Ok(())
     }
 
-    pub async fn list_indexers(&self) -> LocalRunnerResult<Vec<Indexer>> {
+    pub async fn list_indexers(&self) -> RunnerResult<Vec<Indexer>> {
         let indexers = self.indexers.lock().await;
 
         Ok(indexers

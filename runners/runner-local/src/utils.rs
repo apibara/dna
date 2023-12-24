@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use tokio::time::timeout;
 
-use crate::error::{LocalRunnerError, LocalRunnerResult, LocalRunnerResultExt};
+use apibara_runner_common::error::{RunnerError, RunnerResult, RunnerResultExt};
 
 use apibara_runner_common::runner::v1::{source::Source, Filesystem, Indexer, State};
 use apibara_sink_common::{GetStatusRequest, StatusClient};
@@ -16,10 +16,7 @@ pub struct CommandWrapper {
     pub envs: HashMap<String, String>,
 }
 
-pub fn build_indexer_command(
-    indexer_id: &str,
-    indexer: &Indexer,
-) -> LocalRunnerResult<CommandWrapper> {
+pub fn build_indexer_command(indexer_id: &str, indexer: &Indexer) -> RunnerResult<CommandWrapper> {
     let envs_list = indexer
         .environment
         .keys()
@@ -31,13 +28,13 @@ pub fn build_indexer_command(
         .source
         .clone()
         .and_then(|source| source.source)
-        .ok_or(LocalRunnerError::missing_argument("indexer.source"))?;
+        .ok_or(RunnerError::missing_argument("indexer.source"))?;
 
     let (current_dir, script_path) = if let Source::Filesystem(Filesystem { path, script }) = source
     {
         (path, script)
     } else {
-        return Err(LocalRunnerError::invalid_argument(
+        return Err(RunnerError::invalid_argument(
             "indexer.source",
             "only Filesystem source is supported",
         ));
@@ -66,7 +63,7 @@ pub fn build_indexer_command(
     Ok(command)
 }
 
-pub async fn refresh_status(indexer_info: &mut IndexerInfo) -> LocalRunnerResult<()> {
+pub async fn refresh_status(indexer_info: &mut IndexerInfo) -> RunnerResult<()> {
     let (status, message) = match indexer_info
         .child
         .try_wait()

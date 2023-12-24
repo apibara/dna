@@ -20,7 +20,6 @@ apibara-observability = { path = "../../observability" }
 apibara-sink-common = { path = "../../sinks/sink-common" }
 tokio.workspace = true
 tonic.workspace = true
-error-stack.workspace = true
 tracing.workspace = true
 tonic-health.workspace = true
 tonic-reflection.workspace = true
@@ -30,3 +29,4 @@ clap.workspace = true
 ctrlc.workspace = true
 tempfile.workspace = true
 portpicker = "0.1.1"
+error-stack.workspace = true
