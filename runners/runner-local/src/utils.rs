@@ -39,7 +39,7 @@ pub fn build_indexer_command(
     } else {
         return Err(LocalRunnerError::invalid_argument(
             "indexer.source",
-            "only Filesystem is supported",
+            "only Filesystem source is supported",
         ));
     };
 
