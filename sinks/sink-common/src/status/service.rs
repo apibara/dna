@@ -1,6 +1,10 @@
-use std::{fmt, time::Duration};
+use std::{
+    fmt,
+    time::{Duration, Instant},
+};
 
 use apibara_core::node;
+use apibara_observability::ObservableGauge;
 use apibara_sdk::StreamClient;
 use error_stack::{Result, ResultExt};
 use tokio::sync::{mpsc, oneshot};
@@ -13,6 +17,7 @@ use crate::status::server::StatusServer;
 use super::client::{StatusMessage, StatusServerClient};
 
 const MESSAGE_TIMEOUT: Duration = Duration::from_secs(60);
+const METRICS_PUBLISH_INTERVAL: Duration = Duration::from_secs(10);
 
 /// Message between the grpc service and the status service.
 #[derive(Debug)]
@@ -95,6 +100,10 @@ impl StatusService {
         //  - Sets the health status to serving if a message is received.
         let mut starting_cursor = None;
         let mut cursor = None;
+
+        let metrics = SinkMetrics::default();
+        let mut last_metrics_published = Instant::now();
+
         loop {
             tokio::select! {
                 biased;
@@ -103,18 +112,12 @@ impl StatusService {
                     let msg = msg.ok_or(StatusServiceError).attach_printable("client request channel closed")?;
                     match msg {
                         RequestMessage::GetCursor(tx) => {
-                            let dna_status = self
-                                .stream_client
-                                .clone()
-                                .status()
-                                .await
-                                .map_err(|_| StatusServiceError)
-                                .attach_printable("failed to get dna status")?;
+                            let head = self.get_dna_head().await?;
 
                             let cursors = Cursors {
                                 starting: starting_cursor.clone(),
                                 current: cursor.clone(),
-                                head: dna_status.current_head,
+                                head,
                             };
 
                             tx.send(cursors)
@@ -129,10 +132,21 @@ impl StatusService {
                     match msg {
                         StatusMessage::Heartbeat => {},
                         StatusMessage::UpdateCursor(new_cursor) => {
+                            // Publish metrics every interval.
+                            if last_metrics_published.elapsed() > METRICS_PUBLISH_INTERVAL {
+                                let head = self.get_dna_head().await?;
+                                metrics.sync_current(&new_cursor);
+                                metrics.sync_head(&head);
+                                last_metrics_published = Instant::now();
+                            }
+
                             self.health_reporter.set_serving::<StatusServer>().await;
                             cursor = new_cursor;
                         }
                         StatusMessage::SetStartingCursor(new_starting_cursor) => {
+                            // Always publish starting cursor.
+                            metrics.sync_start(&new_starting_cursor);
+
                             self.health_reporter.set_serving::<StatusServer>().await;
                             starting_cursor = new_starting_cursor;
                         }
@@ -151,6 +165,18 @@ impl StatusService {
         }
 
         Ok(())
+    }
+
+    async fn get_dna_head(&self) -> Result<Option<node::v1alpha2::Cursor>, StatusServiceError> {
+        let dna_status = self
+            .stream_client
+            .clone()
+            .status()
+            .await
+            .map_err(|_| StatusServiceError)
+            .attach_printable("failed to get dna status")?;
+
+        Ok(dna_status.current_head)
     }
 }
 
@@ -178,5 +204,60 @@ impl StatusServiceClient {
             .change_context(StatusServiceClientError)
             .attach_printable("failed to receive cursor response")?;
         Ok(cursors)
+    }
+}
+
+struct SinkMetrics {
+    sync_start: ObservableGauge<u64>,
+    sync_current: ObservableGauge<u64>,
+    sync_head: ObservableGauge<u64>,
+}
+
+impl Default for SinkMetrics {
+    fn default() -> Self {
+        let meter = apibara_observability::meter("sink");
+        let sync_start = meter
+            .u64_observable_gauge("sync_start")
+            .with_description("Starting block number")
+            .init();
+
+        let sync_current = meter
+            .u64_observable_gauge("sync_current")
+            .with_description("Current (most recently indexed) block number")
+            .init();
+
+        let sync_head = meter
+            .u64_observable_gauge("sync_head")
+            .with_description("DNA stream head block number")
+            .init();
+
+        SinkMetrics {
+            sync_start,
+            sync_current,
+            sync_head,
+        }
+    }
+}
+
+impl SinkMetrics {
+    pub fn sync_start(&self, cursor: &Option<node::v1alpha2::Cursor>) {
+        if let Some(cursor) = cursor {
+            let cx = apibara_observability::Context::current();
+            self.sync_start.observe(&cx, cursor.order_key, &[]);
+        }
+    }
+
+    pub fn sync_current(&self, cursor: &Option<node::v1alpha2::Cursor>) {
+        if let Some(cursor) = cursor {
+            let cx = apibara_observability::Context::current();
+            self.sync_current.observe(&cx, cursor.order_key, &[]);
+        }
+    }
+
+    pub fn sync_head(&self, cursor: &Option<node::v1alpha2::Cursor>) {
+        if let Some(cursor) = cursor {
+            let cx = apibara_observability::Context::current();
+            self.sync_head.observe(&cx, cursor.order_key, &[]);
+        }
     }
 }
