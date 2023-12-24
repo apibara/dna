@@ -1,11 +1,8 @@
 use std::net::SocketAddr;
 
 use apibara_observability::init_opentelemetry;
-use apibara_runner_local::{
-    configuration::Configuration,
-    error::{LocalRunnerError, LocalRunnerReportExt, LocalRunnerResultExt},
-    start_server,
-};
+use apibara_runner_common::error::{RunnerError, RunnerReportExt, RunnerResultExt};
+use apibara_runner_local::{configuration::Configuration, start_server};
 use clap::{Args, Parser};
 use error_stack::Result;
 
@@ -25,7 +22,7 @@ pub struct StartArgs {
     pub address: Option<String>,
 }
 
-async fn start(args: StartArgs) -> Result<(), LocalRunnerError> {
+async fn start(args: StartArgs) -> Result<(), RunnerError> {
     let config = args.into_configuration()?;
 
     let ct = CancellationToken::new();
@@ -41,7 +38,7 @@ async fn start(args: StartArgs) -> Result<(), LocalRunnerError> {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), LocalRunnerError> {
+async fn main() -> Result<(), RunnerError> {
     init_opentelemetry().map_err(|err| err.internal("failed to initialize opentelemetry"))?;
 
     let args = Cli::parse();
@@ -54,7 +51,7 @@ async fn main() -> Result<(), LocalRunnerError> {
 }
 
 impl StartArgs {
-    pub fn into_configuration(self) -> Result<Configuration, LocalRunnerError> {
+    pub fn into_configuration(self) -> Result<Configuration, RunnerError> {
         let address = self.address.unwrap_or_else(|| "0.0.0.0:8080".to_string());
         let address = address
             .parse::<SocketAddr>()

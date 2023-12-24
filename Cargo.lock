@@ -322,6 +322,7 @@ dependencies = [
 name = "apibara-runner-common"
 version = "0.1.0"
 dependencies = [
+ "error-stack",
  "prost",
  "tonic 0.9.2",
  "tonic-build 0.9.2",

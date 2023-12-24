@@ -1,5 +1,4 @@
 pub mod configuration;
-pub mod error;
 pub mod manager;
 pub mod server;
 pub mod utils;
@@ -12,17 +11,11 @@ use tokio_util::sync::CancellationToken;
 use tonic::transport::Server as TonicServer;
 use tracing::info;
 
-use crate::{
-    configuration::Configuration,
-    error::{LocalRunnerError, LocalRunnerResultExt},
-    manager::IndexerManager,
-    server::RunnerService,
-};
+use crate::{configuration::Configuration, manager::IndexerManager, server::RunnerService};
 
-pub async fn start_server(
-    config: Configuration,
-    ct: CancellationToken,
-) -> Result<(), LocalRunnerError> {
+use apibara_runner_common::error::{RunnerError, RunnerResultExt};
+
+pub async fn start_server(config: Configuration, ct: CancellationToken) -> Result<(), RunnerError> {
     let indexer_manager = IndexerManager::new();
     let runner_service = RunnerService::new(indexer_manager);
 

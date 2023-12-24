@@ -1,7 +1,7 @@
 use tracing::warn;
 
-use crate::error::LocalRunnerError;
 use crate::manager::IndexerManager;
+use apibara_runner_common::error::RunnerError;
 
 use apibara_runner_common::runner::v1::{
     indexer_runner_server, CreateIndexerRequest, DeleteIndexerRequest, GetIndexerRequest, Indexer,
@@ -41,14 +41,14 @@ impl indexer_runner_server::IndexerRunner for RunnerService {
         let request = request.into_inner();
         let indexer = request
             .indexer
-            .ok_or(LocalRunnerError::missing_argument("indexer"))
+            .ok_or(RunnerError::missing_argument("indexer"))
             .map_err(|err| {
                 warn!(err = ?err, "failed to create indexer");
                 err.current_context().to_tonic_status()
             })?;
 
         if self.indexer_manager.has_indexer(&indexer.name).await {
-            let err = LocalRunnerError::already_exists(&indexer.name);
+            let err = RunnerError::already_exists(&indexer.name);
             warn!(err = ?err, "failed to create indexer");
             return Err(err.current_context().to_tonic_status());
         }
