@@ -2,7 +2,7 @@ use std::fmt;
 
 use apibara_core::node;
 use error_stack::{Result, ResultExt};
-use tokio::sync::mpsc;
+use tokio::sync::mpsc::{self, error::TrySendError};
 
 #[derive(Debug)]
 pub struct StatusServerClientError;
@@ -63,11 +63,14 @@ impl StatusServerClient {
         &self,
         cursor: Option<node::v1alpha2::Cursor>,
     ) -> Result<(), StatusServerClientError> {
-        self.tx
-            .send(StatusMessage::UpdateCursor(cursor))
-            .await
-            .change_context(StatusServerClientError)
-            .attach_printable("failed to send update cursor request")?;
-        Ok(())
+        match self.tx.try_send(StatusMessage::UpdateCursor(cursor)) {
+            Ok(_) => Ok(()),
+            // If the channel is full, we don't care.
+            // This happens when the indexer is resyncing since it publishes hundreds of messages per second.
+            Err(TrySendError::Full(_)) => Ok(()),
+            Err(TrySendError::Closed(_)) => {
+                Err(StatusServerClientError).attach_printable("status server client closed")
+            }
+        }
     }
 }
