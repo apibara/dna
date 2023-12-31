@@ -10,7 +10,7 @@ use async_trait::async_trait;
 use error_stack::Result;
 use tracing::info;
 
-use crate::{SinkConnectorErrorResultExt, SinkConnectorError};
+use crate::{SinkError, SinkErrorResultExt};
 
 use super::common::PersistenceClient;
 
@@ -23,7 +23,7 @@ impl DirPersistence {
     pub fn initialize(
         path: impl AsRef<Path>,
         sink_id: impl Into<String>,
-    ) -> Result<Self, SinkConnectorError> {
+    ) -> Result<Self, SinkError> {
         let path = path.as_ref();
 
         fs::create_dir_all(path)
@@ -42,16 +42,16 @@ impl DirPersistence {
 
 #[async_trait]
 impl PersistenceClient for DirPersistence {
-    async fn lock(&mut self) -> Result<(), SinkConnectorError> {
+    async fn lock(&mut self) -> Result<(), SinkError> {
         info!("Persistence to directory is not recommended for production usage.");
         Ok(())
     }
 
-    async fn unlock(&mut self) -> Result<(), SinkConnectorError> {
+    async fn unlock(&mut self) -> Result<(), SinkError> {
         Ok(())
     }
 
-    async fn get_cursor(&mut self) -> Result<Option<Cursor>, SinkConnectorError> {
+    async fn get_cursor(&mut self) -> Result<Option<Cursor>, SinkError> {
         let path = self.cursor_file_path();
         if path.exists() {
             let content = fs::read_to_string(&path)
@@ -64,7 +64,7 @@ impl PersistenceClient for DirPersistence {
         }
     }
 
-    async fn put_cursor(&mut self, cursor: Cursor) -> Result<(), SinkConnectorError> {
+    async fn put_cursor(&mut self, cursor: Cursor) -> Result<(), SinkError> {
         let serialized = serde_json::to_string(&cursor)
             .persistence_client_error("failed to serialize cursor")?;
         let path = self.cursor_file_path();
@@ -73,7 +73,7 @@ impl PersistenceClient for DirPersistence {
         Ok(())
     }
 
-    async fn delete_cursor(&mut self) -> Result<(), SinkConnectorError> {
+    async fn delete_cursor(&mut self) -> Result<(), SinkError> {
         let path = self.cursor_file_path();
         fs::remove_file(&path)
             .persistence_client_error(&format!("failed to delete cursor file {:?}", path))?;

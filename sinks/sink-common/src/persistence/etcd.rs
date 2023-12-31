@@ -7,7 +7,7 @@ use prost::Message;
 use std::time::{Duration, Instant};
 use tracing::{debug, instrument};
 
-use crate::{SinkConnectorError, SinkConnectorErrorResultExt};
+use crate::{SinkError, SinkErrorResultExt};
 
 use super::common::PersistenceClient;
 
@@ -29,7 +29,7 @@ impl EtcdPersistence {
     pub async fn connect(
         url: &str,
         sink_id: impl Into<String>,
-    ) -> Result<EtcdPersistence, SinkConnectorError> {
+    ) -> Result<EtcdPersistence, SinkError> {
         let client = Client::connect([url], None)
             .await
             .persistence_client_error(&format!("failed to connect to etcd server at {url}"))?;
@@ -45,7 +45,7 @@ impl EtcdPersistence {
 #[async_trait]
 impl PersistenceClient for EtcdPersistence {
     #[instrument(skip(self), level = "debug")]
-    async fn lock(&mut self) -> Result<(), SinkConnectorError> {
+    async fn lock(&mut self) -> Result<(), SinkError> {
         let lease = self
             .client
             .lease_grant(60, None)
@@ -81,7 +81,7 @@ impl PersistenceClient for EtcdPersistence {
     }
 
     #[instrument(skip(self), level = "debug")]
-    async fn unlock(&mut self) -> Result<(), SinkConnectorError> {
+    async fn unlock(&mut self) -> Result<(), SinkError> {
         if let Some(lock) = self.lock.take() {
             self.client
                 .unlock(lock.inner.key())
@@ -93,7 +93,7 @@ impl PersistenceClient for EtcdPersistence {
     }
 
     #[instrument(skip(self), level = "debug")]
-    async fn get_cursor(&mut self) -> Result<Option<Cursor>, SinkConnectorError> {
+    async fn get_cursor(&mut self) -> Result<Option<Cursor>, SinkError> {
         let response = self
             .client
             .get(self.sink_id.as_str(), None)
@@ -111,7 +111,7 @@ impl PersistenceClient for EtcdPersistence {
     }
 
     #[instrument(skip(self), level = "trace")]
-    async fn put_cursor(&mut self, cursor: Cursor) -> Result<(), SinkConnectorError> {
+    async fn put_cursor(&mut self, cursor: Cursor) -> Result<(), SinkError> {
         self.client
             .put(self.sink_id.as_str(), cursor.encode_to_vec(), None)
             .await
@@ -127,7 +127,7 @@ impl PersistenceClient for EtcdPersistence {
     }
 
     #[instrument(skip(self), level = "trace")]
-    async fn delete_cursor(&mut self) -> Result<(), SinkConnectorError> {
+    async fn delete_cursor(&mut self) -> Result<(), SinkError> {
         self.client
             .delete(self.sink_id.as_str(), None)
             .await
@@ -139,7 +139,7 @@ impl PersistenceClient for EtcdPersistence {
 impl Lock {
     /// Sends a keep alive request.
     #[instrument(skip(self), level = "debug")]
-    pub async fn keep_alive(&mut self) -> Result<(), SinkConnectorError> {
+    pub async fn keep_alive(&mut self) -> Result<(), SinkError> {
         // Renew the lock every 30 seconds to avoid hammering etcd.
         if self.last_lock_renewal.elapsed() <= self.min_lock_refresh_interval {
             return Ok(());

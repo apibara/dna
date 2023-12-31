@@ -7,7 +7,7 @@ use clap::builder::Styles;
 use error_stack::{Result, ResultExt};
 use tokio_util::sync::CancellationToken;
 
-use crate::SinkConnectorError;
+use crate::SinkError;
 
 #[derive(Debug)]
 pub struct LoadScriptError;
@@ -46,13 +46,13 @@ pub fn load_script(path: &str, options: ScriptOptions) -> Result<Script, LoadScr
 }
 
 /// Initialize opentelemetry and the sigint (ctrl-c) handler.
-pub fn initialize_sink(ct: CancellationToken) -> Result<(), SinkConnectorError> {
+pub fn initialize_sink(ct: CancellationToken) -> Result<(), SinkError> {
     init_opentelemetry()
-        .change_context(SinkConnectorError::Configuration)
+        .change_context(SinkError::Configuration)
         .attach_printable("failed to initialize opentelemetry")?;
 
     set_ctrlc_handler(ct)
-        .change_context(SinkConnectorError::Fatal)
+        .change_context(SinkError::Fatal)
         .attach_printable("failed to setup ctrl-cc handler")?;
 
     Ok(())

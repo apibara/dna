@@ -8,7 +8,7 @@ use error_stack::{report, Context, Report, Result, ResultExt};
 /// `SinkError::Configuration` should be returned for configuration-related errors.
 /// `SinkError::Fatal` should only be returned from `Sink::handle_data` and `Sink::handle_invalidate`.
 #[derive(Debug)]
-pub enum SinkConnectorError {
+pub enum SinkError {
     /// Configuration error. Should not retry.
     Configuration,
     /// Temporary error. Should retry.
@@ -25,31 +25,31 @@ pub trait ReportExt {
     fn to_exit_code(&self) -> ExitCode;
 }
 
-impl error_stack::Context for SinkConnectorError {}
+impl error_stack::Context for SinkError {}
 
-impl fmt::Display for SinkConnectorError {
+impl fmt::Display for SinkError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // match self {
-        //     SinkConnectorError::Configuration => f.write_str("sink configuration error"),
-        //     SinkConnectorError::Temporary => f.write_str("temporary sink error"),
-        //     SinkConnectorError::Fatal => f.write_str("fatal sink error"),
+        //     SinkError::Configuration => f.write_str("sink configuration error"),
+        //     SinkError::Temporary => f.write_str("temporary sink error"),
+        //     SinkError::Fatal => f.write_str("fatal sink error"),
         //     _ => f.write_str("sink error"),
         // }
         f.write_str("sink error")
     }
 }
 
-impl<T> ReportExt for Result<T, SinkConnectorError> {
+impl<T> ReportExt for Result<T, SinkError> {
     fn to_exit_code(&self) -> ExitCode {
         match self {
             Ok(_) => ExitCode::SUCCESS,
             Err(err) => {
                 eprintln!("{:?}", err);
                 // Exit codes based on sysexits.h
-                match err.downcast_ref::<SinkConnectorError>() {
-                    Some(SinkConnectorError::Configuration) => ExitCode::from(78),
-                    Some(SinkConnectorError::Temporary) => ExitCode::from(75),
-                    Some(SinkConnectorError::Fatal) => ExitCode::FAILURE,
+                match err.downcast_ref::<SinkError>() {
+                    Some(SinkError::Configuration) => ExitCode::from(78),
+                    Some(SinkError::Temporary) => ExitCode::from(75),
+                    Some(SinkError::Fatal) => ExitCode::FAILURE,
                     Some(_) => ExitCode::FAILURE,
                     None => ExitCode::FAILURE,
                 }
@@ -58,46 +58,46 @@ impl<T> ReportExt for Result<T, SinkConnectorError> {
     }
 }
 
-impl SinkConnectorError {
-    pub fn status_server_error(reason: &str) -> Report<SinkConnectorError> {
-        report!(SinkConnectorError::Status)
+impl SinkError {
+    pub fn status_server_error(reason: &str) -> Report<SinkError> {
+        report!(SinkError::Status)
             .attach_printable(format!("status server operation failed: {reason}"))
     }
 }
 
-pub trait SinkConnectorErrorResultExt {
+pub trait SinkErrorResultExt {
     type Ok;
-    fn status_server_error(self, reason: &str) -> Result<Self::Ok, SinkConnectorError>;
-    fn persistence_client_error(self, reason: &str) -> Result<Self::Ok, SinkConnectorError>;
+    fn status_server_error(self, reason: &str) -> Result<Self::Ok, SinkError>;
+    fn persistence_client_error(self, reason: &str) -> Result<Self::Ok, SinkError>;
 }
 
-impl<T, C> SinkConnectorErrorResultExt for core::result::Result<T, C>
+impl<T, C> SinkErrorResultExt for core::result::Result<T, C>
 where
     C: Context,
 {
     type Ok = T;
 
-    fn status_server_error(self, reason: &str) -> Result<T, SinkConnectorError> {
-        self.change_context(SinkConnectorError::Status)
+    fn status_server_error(self, reason: &str) -> Result<T, SinkError> {
+        self.change_context(SinkError::Status)
             .attach_printable(format!("status server operation failed: {reason}"))
     }
 
-    fn persistence_client_error(self, reason: &str) -> Result<T, SinkConnectorError> {
-        self.change_context(SinkConnectorError::Persistence)
+    fn persistence_client_error(self, reason: &str) -> Result<T, SinkError> {
+        self.change_context(SinkError::Persistence)
             .attach_printable(format!("persistence client operation failed: {reason}"))
     }
 }
 
-pub trait SinkConnectorErrorReportExt {
+pub trait SinkErrorReportExt {
     type Ok;
-    fn status_server_error(self, reason: &str) -> Report<SinkConnectorError>;
+    fn status_server_error(self, reason: &str) -> Report<SinkError>;
 }
 
-impl<C> SinkConnectorErrorReportExt for Report<C> {
+impl<C> SinkErrorReportExt for Report<C> {
     type Ok = ();
 
-    fn status_server_error(self, reason: &str) -> Report<SinkConnectorError> {
-        self.change_context(SinkConnectorError::Status)
+    fn status_server_error(self, reason: &str) -> Report<SinkError> {
+        self.change_context(SinkError::Status)
             .attach_printable(format!("status server operation failed: {reason}"))
     }
 }

@@ -9,7 +9,7 @@ use tokio_util::sync::CancellationToken;
 use tonic_health::pb::health_server::{Health, HealthServer};
 use tracing::info;
 
-use crate::{status::server::StatusServer, SinkConnectorError, SinkConnectorErrorResultExt};
+use crate::{status::server::StatusServer, SinkError, SinkErrorResultExt};
 
 use super::client::{StatusMessage, StatusServerClient};
 
@@ -78,7 +78,7 @@ impl StatusService {
         )
     }
 
-    pub async fn start(mut self, ct: CancellationToken) -> Result<(), SinkConnectorError> {
+    pub async fn start(mut self, ct: CancellationToken) -> Result<(), SinkError> {
         // This loop:
         //
         //  - Tracks the most recently processed cursor.
@@ -96,7 +96,7 @@ impl StatusService {
                 biased;
 
                 msg = self.request_rx.recv() => {
-                    let msg = msg.ok_or(SinkConnectorError::status_server_error("client request channel closed"))?;
+                    let msg = msg.ok_or(SinkError::status_server_error("client request channel closed"))?;
                     match msg {
                         RequestMessage::GetCursor(tx) => {
                             let head = self.get_dna_head().await?;
@@ -108,13 +108,13 @@ impl StatusService {
                             };
 
                             tx.send(cursors)
-                                .map_err(|_| SinkConnectorError::status_server_error("failed to reply with cursor"))?;
+                                .map_err(|_| SinkError::status_server_error("failed to reply with cursor"))?;
                         }
                     }
                 }
 
                 msg = self.status_rx.recv() => {
-                    let msg = msg.ok_or(SinkConnectorError::status_server_error("status channel closed"))?;
+                    let msg = msg.ok_or(SinkError::status_server_error("status channel closed"))?;
                     match msg {
                         StatusMessage::Heartbeat => {},
                         StatusMessage::UpdateCursor(new_cursor) => {
@@ -153,13 +153,13 @@ impl StatusService {
         Ok(())
     }
 
-    async fn get_dna_head(&self) -> Result<Option<node::v1alpha2::Cursor>, SinkConnectorError> {
+    async fn get_dna_head(&self) -> Result<Option<node::v1alpha2::Cursor>, SinkError> {
         let dna_status = self
             .stream_client
             .clone()
             .status()
             .await
-            .map_err(|_| SinkConnectorError::status_server_error("failed to get dna status"))?;
+            .map_err(|_| SinkError::status_server_error("failed to get dna status"))?;
 
         Ok(dna_status.current_head)
     }
@@ -167,7 +167,7 @@ impl StatusService {
 
 impl StatusServiceClient {
     /// Request the current cursor from the status service.
-    pub async fn get_cursors(&self) -> Result<Cursors, SinkConnectorError> {
+    pub async fn get_cursors(&self) -> Result<Cursors, SinkError> {
         let (tx, rx) = oneshot::channel();
         self.tx
             .send(RequestMessage::GetCursor(tx))

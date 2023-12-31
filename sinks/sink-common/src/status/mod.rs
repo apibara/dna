@@ -5,7 +5,7 @@ mod service;
 use std::{net::SocketAddr, pin::Pin};
 
 use apibara_sdk::StreamClient;
-use error_stack::{Result};
+use error_stack::Result;
 use futures::Future;
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
@@ -13,7 +13,7 @@ use tokio_util::sync::CancellationToken;
 use tonic::transport::Server as TonicServer;
 use tracing::info;
 
-use crate::{SinkConnectorError, SinkConnectorErrorReportExt, SinkConnectorErrorResultExt};
+use crate::{SinkError, SinkErrorReportExt, SinkErrorResultExt};
 
 use self::{
     server::{proto::sink_file_descriptor_set, Server},
@@ -41,9 +41,9 @@ impl StatusServer {
     ) -> Result<
         (
             StatusServerClient,
-            Pin<Box<impl Future<Output = Result<(), SinkConnectorError>>>>,
+            Pin<Box<impl Future<Output = Result<(), SinkError>>>>,
         ),
-        SinkConnectorError,
+        SinkError,
     > {
         let (status_service, status_client, status_service_client, health_server) =
             StatusService::new(stream_client);
