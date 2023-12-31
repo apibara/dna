@@ -10,7 +10,9 @@ use async_trait::async_trait;
 use error_stack::Result;
 use tracing::info;
 
-use super::common::{PersistenceClient, PersistenceClientError, PersistenceClientResultExt};
+use crate::{SinkConnectorErrorResultExt, SinkConnectorError};
+
+use super::common::PersistenceClient;
 
 pub struct DirPersistence {
     path: PathBuf,
@@ -21,7 +23,7 @@ impl DirPersistence {
     pub fn initialize(
         path: impl AsRef<Path>,
         sink_id: impl Into<String>,
-    ) -> Result<Self, PersistenceClientError> {
+    ) -> Result<Self, SinkConnectorError> {
         let path = path.as_ref();
 
         fs::create_dir_all(path)
@@ -40,16 +42,16 @@ impl DirPersistence {
 
 #[async_trait]
 impl PersistenceClient for DirPersistence {
-    async fn lock(&mut self) -> Result<(), PersistenceClientError> {
+    async fn lock(&mut self) -> Result<(), SinkConnectorError> {
         info!("Persistence to directory is not recommended for production usage.");
         Ok(())
     }
 
-    async fn unlock(&mut self) -> Result<(), PersistenceClientError> {
+    async fn unlock(&mut self) -> Result<(), SinkConnectorError> {
         Ok(())
     }
 
-    async fn get_cursor(&mut self) -> Result<Option<Cursor>, PersistenceClientError> {
+    async fn get_cursor(&mut self) -> Result<Option<Cursor>, SinkConnectorError> {
         let path = self.cursor_file_path();
         if path.exists() {
             let content = fs::read_to_string(&path)
@@ -62,7 +64,7 @@ impl PersistenceClient for DirPersistence {
         }
     }
 
-    async fn put_cursor(&mut self, cursor: Cursor) -> Result<(), PersistenceClientError> {
+    async fn put_cursor(&mut self, cursor: Cursor) -> Result<(), SinkConnectorError> {
         let serialized = serde_json::to_string(&cursor)
             .persistence_client_error("failed to serialize cursor")?;
         let path = self.cursor_file_path();
@@ -71,7 +73,7 @@ impl PersistenceClient for DirPersistence {
         Ok(())
     }
 
-    async fn delete_cursor(&mut self) -> Result<(), PersistenceClientError> {
+    async fn delete_cursor(&mut self) -> Result<(), SinkConnectorError> {
         let path = self.cursor_file_path();
         fs::remove_file(&path)
             .persistence_client_error(&format!("failed to delete cursor file {:?}", path))?;

@@ -2,7 +2,7 @@ use apibara_core::node;
 use error_stack::Result;
 use tokio::sync::mpsc::{self, error::TrySendError};
 
-use crate::{StatusServerError, StatusServerResultExt};
+use crate::{SinkConnectorError, SinkConnectorErrorResultExt};
 
 /// Message between the connector and the status service.
 #[derive(Debug)]
@@ -26,7 +26,7 @@ impl StatusServerClient {
     }
 
     /// Send heartbeat message to status server.
-    pub async fn heartbeat(&self) -> Result<(), StatusServerError> {
+    pub async fn heartbeat(&self) -> Result<(), SinkConnectorError> {
         self.tx
             .send(StatusMessage::Heartbeat)
             .await
@@ -38,7 +38,7 @@ impl StatusServerClient {
     pub async fn set_starting_cursor(
         &self,
         cursor: Option<node::v1alpha2::Cursor>,
-    ) -> Result<(), StatusServerError> {
+    ) -> Result<(), SinkConnectorError> {
         self.tx
             .send(StatusMessage::SetStartingCursor(cursor))
             .await
@@ -50,13 +50,13 @@ impl StatusServerClient {
     pub async fn update_cursor(
         &self,
         cursor: Option<node::v1alpha2::Cursor>,
-    ) -> Result<(), StatusServerError> {
+    ) -> Result<(), SinkConnectorError> {
         match self.tx.try_send(StatusMessage::UpdateCursor(cursor)) {
             Ok(_) => Ok(()),
             // If the channel is full, we don't care.
             // This happens when the indexer is resyncing since it publishes hundreds of messages per second.
             Err(TrySendError::Full(_)) => Ok(()),
-            Err(TrySendError::Closed(_)) => Err(StatusServerError::new(
+            Err(TrySendError::Closed(_)) => Err(SinkConnectorError::status_server_error(
                 "failed to send update cursor request",
             )),
         }

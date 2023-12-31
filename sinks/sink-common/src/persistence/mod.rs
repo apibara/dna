@@ -3,7 +3,7 @@ mod default;
 mod etcd;
 mod fs;
 
-pub use self::common::{PersistenceClient, PersistenceClientError};
+pub use self::common::PersistenceClient;
 pub use self::default::NoPersistence;
 pub use self::etcd::EtcdPersistence;
 pub use self::fs::DirPersistence;
@@ -11,6 +11,7 @@ pub use self::fs::DirPersistence;
 use error_stack::Result;
 
 use crate::configuration::PersistenceOptions;
+use crate::SinkConnectorError;
 
 /// Persistence client factory.
 pub struct Persistence {
@@ -24,7 +25,7 @@ impl Persistence {
 
     pub async fn connect(
         &mut self,
-    ) -> Result<Box<dyn PersistenceClient + Send>, PersistenceClientError> {
+    ) -> Result<Box<dyn PersistenceClient + Send>, SinkConnectorError> {
         let sink_id = self
             .options
             .sink_id
