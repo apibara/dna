@@ -2,16 +2,18 @@ mod client;
 mod server;
 mod service;
 
-use std::{fmt, net::SocketAddr, pin::Pin};
+use std::{net::SocketAddr, pin::Pin};
 
 use apibara_sdk::StreamClient;
-use error_stack::{report, Context, Report, Result, ResultExt};
+use error_stack::{Result};
 use futures::Future;
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
 use tokio_util::sync::CancellationToken;
 use tonic::transport::Server as TonicServer;
 use tracing::info;
+
+use crate::{SinkConnectorError, SinkConnectorErrorReportExt, SinkConnectorErrorResultExt};
 
 use self::{
     server::{proto::sink_file_descriptor_set, Server},
@@ -24,54 +26,6 @@ pub use self::server::proto::{status_client::StatusClient, GetStatusRequest, Get
 #[derive(Clone)]
 pub struct StatusServer {
     address: SocketAddr,
-}
-
-#[derive(Debug)]
-pub struct StatusServerError;
-impl error_stack::Context for StatusServerError {}
-
-impl StatusServerError {
-    pub fn new(reason: &str) -> Report<StatusServerError> {
-        report!(StatusServerError)
-            .attach_printable(format!("status server operation failed: {reason}"))
-    }
-}
-
-impl fmt::Display for StatusServerError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("status server operation failed")
-    }
-}
-
-pub trait StatusServerResultExt {
-    type Ok;
-    fn status_server_error(self, reason: &str) -> Result<Self::Ok, StatusServerError>;
-}
-
-pub trait StatusServerReportExt {
-    type Ok;
-    fn status_server_error(self, reason: &str) -> Report<StatusServerError>;
-}
-
-impl<T, C> StatusServerResultExt for core::result::Result<T, C>
-where
-    C: Context,
-{
-    type Ok = T;
-
-    fn status_server_error(self, reason: &str) -> Result<T, StatusServerError> {
-        self.change_context(StatusServerError)
-            .attach_printable(format!("status server operation failed: {reason}"))
-    }
-}
-
-impl<C> StatusServerReportExt for Report<C> {
-    type Ok = ();
-
-    fn status_server_error(self, reason: &str) -> Report<StatusServerError> {
-        self.change_context(StatusServerError)
-            .attach_printable(format!("status server operation failed: {reason}"))
-    }
 }
 
 impl StatusServer {
@@ -87,9 +41,9 @@ impl StatusServer {
     ) -> Result<
         (
             StatusServerClient,
-            Pin<Box<impl Future<Output = Result<(), StatusServerError>>>>,
+            Pin<Box<impl Future<Output = Result<(), SinkConnectorError>>>>,
         ),
-        StatusServerError,
+        SinkConnectorError,
     > {
         let (status_service, status_client, status_service_client, health_server) =
             StatusService::new(stream_client);
