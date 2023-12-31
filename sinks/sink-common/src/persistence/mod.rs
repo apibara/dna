@@ -11,7 +11,7 @@ pub use self::fs::DirPersistence;
 use error_stack::Result;
 
 use crate::configuration::PersistenceOptions;
-use crate::SinkConnectorError;
+use crate::SinkError;
 
 /// Persistence client factory.
 pub struct Persistence {
@@ -23,9 +23,7 @@ impl Persistence {
         Self { options }
     }
 
-    pub async fn connect(
-        &mut self,
-    ) -> Result<Box<dyn PersistenceClient + Send>, SinkConnectorError> {
+    pub async fn connect(&mut self) -> Result<Box<dyn PersistenceClient + Send>, SinkError> {
         let sink_id = self
             .options
             .sink_id

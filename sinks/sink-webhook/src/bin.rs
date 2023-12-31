@@ -1,8 +1,7 @@
 use std::process::ExitCode;
 
 use apibara_sink_common::{
-    apibara_cli_style, initialize_sink, run_sink_connector, OptionsFromCli, ReportExt,
-    SinkConnectorError,
+    apibara_cli_style, initialize_sink, run_sink_connector, OptionsFromCli, ReportExt, SinkError,
 };
 use apibara_sink_webhook::{SinkWebhookOptions, WebhookSink};
 use clap::{Args, Parser, Subcommand};
@@ -41,7 +40,7 @@ async fn main() -> ExitCode {
     run_with_args(args).await.to_exit_code()
 }
 
-async fn run_with_args(args: Cli) -> Result<(), SinkConnectorError> {
+async fn run_with_args(args: Cli) -> Result<(), SinkError> {
     let ct = CancellationToken::new();
     initialize_sink(ct.clone())?;
 

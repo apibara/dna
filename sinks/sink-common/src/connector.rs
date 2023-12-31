@@ -16,8 +16,8 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, trace, warn};
 
 use crate::{
-    persistence::Persistence, status::StatusServer, DisplayCursor, PersistenceClient,
-    SinkConnectorError, StatusServerClient,
+    persistence::Persistence, status::StatusServer, DisplayCursor, PersistenceClient, SinkError,
+    StatusServerClient,
 };
 
 pub trait SinkOptions: DeserializeOwned {
@@ -128,7 +128,7 @@ where
         mut self,
         mut configuration: Configuration<F>,
         ct: CancellationToken,
-    ) -> Result<(), SinkConnectorError>
+    ) -> Result<(), SinkError>
     where
         F: Message + Default,
         B: Message + Default + Serialize,
@@ -137,7 +137,7 @@ where
             .persistence
             .connect()
             .await
-            .change_context(SinkConnectorError::Temporary)
+            .change_context(SinkError::Temporary)
             .attach_printable("failed to connect to persistence")?;
 
         let stream_client = self.new_stream_client().await?;
@@ -147,7 +147,7 @@ where
             .clone()
             .start(stream_client.clone(), ct.clone())
             .await
-            .change_context(SinkConnectorError::Temporary)
+            .change_context(SinkError::Temporary)
             .attach_printable("failed to start status server")?;
 
         let mut status_server = tokio::spawn(status_server);
@@ -156,7 +156,7 @@ where
         status_client
             .set_starting_cursor(configuration.starting_cursor.clone())
             .await
-            .change_context(SinkConnectorError::Temporary)
+            .change_context(SinkError::Temporary)
             .attach_printable("failed to initialize status server")?;
 
         info!("acquiring persistence lock");
@@ -167,12 +167,12 @@ where
         // is not held by us.
         tokio::select! {
             ret = persistence.lock() => {
-                ret.change_context(SinkConnectorError::Temporary)?;
+                ret.change_context(SinkError::Temporary)?;
                 info!("lock acquired");
             }
             _ = tokio::time::sleep(Duration::from_secs(30)) => {
                 info!("failed to acquire persistence lock within 30 seconds");
-                return Err(SinkConnectorError::Configuration)
+                return Err(SinkError::Configuration)
                     .attach_printable("failed to acquire persistence lock within 30 seconds");
             }
             _ = ct.cancelled() => {
@@ -183,7 +183,7 @@ where
         let starting_cursor = persistence
             .get_cursor()
             .await
-            .change_context(SinkConnectorError::Temporary)
+            .change_context(SinkError::Temporary)
             .attach_printable("failed to get starting cursor")?;
 
         if starting_cursor.is_some() {
@@ -203,7 +203,7 @@ where
         let mut data_stream = stream_client
             .start_stream_immutable::<F, B>(configuration)
             .await
-            .change_context(SinkConnectorError::Temporary)
+            .change_context(SinkError::Temporary)
             .attach_printable("failed to start stream")?;
 
         let mut ret = Ok(());
@@ -219,12 +219,12 @@ where
                     match maybe_message {
                         Err(err) => {
                             ret = Err(err)
-                                .change_context(SinkConnectorError::Temporary)
+                                .change_context(SinkError::Temporary)
                                 .attach_printable("data stream error");
                             break;
                         }
                         Ok(None) => {
-                            ret = Err(SinkConnectorError::Temporary)
+                            ret = Err(SinkError::Temporary)
                                 .attach_printable("data stream closed");
                             break;
                         }
@@ -244,20 +244,20 @@ where
         self.sink
             .cleanup()
             .await
-            .change_context(SinkConnectorError::Temporary)
+            .change_context(SinkError::Temporary)
             .attach_printable("failed to cleanup sink")?;
 
         // unlock the lock, if any.
         persistence
             .unlock()
             .await
-            .change_context(SinkConnectorError::Temporary)
+            .change_context(SinkError::Temporary)
             .attach_printable("failed to unlock persistence")?;
 
         ret
     }
 
-    async fn new_stream_client(&self) -> Result<StreamClient, SinkConnectorError> {
+    async fn new_stream_client(&self) -> Result<StreamClient, SinkError> {
         let mut stream_builder = ClientBuilder::default()
             .with_max_message_size(
                 self.stream_configuration.max_message_size_bytes.as_u64() as usize
@@ -275,7 +275,7 @@ where
         let client = stream_builder
             .connect(self.stream_configuration.stream_url.clone())
             .await
-            .change_context(SinkConnectorError::Temporary)
+            .change_context(SinkError::Temporary)
             .attach_printable("failed to connect to stream")?;
 
         Ok(client)
@@ -287,7 +287,7 @@ where
         status_client: &StatusServerClient,
         persistence: &mut P,
         ct: CancellationToken,
-    ) -> Result<StreamAction, SinkConnectorError>
+    ) -> Result<StreamAction, SinkError>
     where
         P: PersistenceClient + Send,
         S: Sink + Sync + Send,
@@ -304,21 +304,21 @@ where
                             persistence
                                 .delete_cursor()
                                 .await
-                                .change_context(SinkConnectorError::Temporary)?;
+                                .change_context(SinkError::Temporary)?;
                             status_client
                                 .update_cursor(None)
                                 .await
-                                .change_context(SinkConnectorError::Temporary)?;
+                                .change_context(SinkError::Temporary)?;
                         }
                         Some(cursor) => {
                             persistence
                                 .put_cursor(cursor.clone())
                                 .await
-                                .change_context(SinkConnectorError::Temporary)?;
+                                .change_context(SinkError::Temporary)?;
                             status_client
                                 .update_cursor(Some(cursor.clone()))
                                 .await
-                                .change_context(SinkConnectorError::Temporary)?;
+                                .change_context(SinkError::Temporary)?;
                         }
                     }
                     return Ok(StreamAction::Continue);
@@ -327,7 +327,7 @@ where
                     warn!(err = ?err, "handle_invalidate error");
                     if ct.is_cancelled() {
                         return Err(err)
-                            .change_context(SinkConnectorError::Fatal)
+                            .change_context(SinkError::Fatal)
                             .attach_printable("handle invalidate failed and cancelled");
                     }
                     tokio::select! {
@@ -340,7 +340,7 @@ where
             }
         }
 
-        Err(SinkConnectorError::Fatal).attach_printable("handle invalidate failed after retry")
+        Err(SinkError::Fatal).attach_printable("handle invalidate failed after retry")
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -351,7 +351,7 @@ where
         status_client: &StatusServerClient,
         persistence: &mut P,
         ct: CancellationToken,
-    ) -> Result<StreamAction, SinkConnectorError>
+    ) -> Result<StreamAction, SinkError>
     where
         B: Message + Default + Serialize,
         P: PersistenceClient + Send,
@@ -360,14 +360,14 @@ where
         // fatal error since if the sink is restarted it will receive the same data again.
         let json_batch = batch
             .into_iter()
-            .map(|b| serde_json::to_value(b).change_context(SinkConnectorError::Fatal))
+            .map(|b| serde_json::to_value(b).change_context(SinkError::Fatal))
             .collect::<Result<Vec<Value>, _>>()
             .attach_printable("failed to serialize batch data")?;
         let data = self
             .script
             .transform(json_batch)
             .await
-            .change_context(SinkConnectorError::Fatal)
+            .change_context(SinkError::Fatal)
             .attach_printable("failed to transform batch data")?;
 
         if self.needs_invalidation {
@@ -400,11 +400,11 @@ where
                         persistence
                             .put_cursor(context.end_cursor.clone())
                             .await
-                            .change_context(SinkConnectorError::Temporary)?;
+                            .change_context(SinkError::Temporary)?;
                         status_client
                             .update_cursor(Some(context.end_cursor))
                             .await
-                            .change_context(SinkConnectorError::Temporary)?;
+                            .change_context(SinkError::Temporary)?;
                     }
 
                     return Ok(StreamAction::Continue);
@@ -413,7 +413,7 @@ where
                     warn!(err = ?err, "handle_data error");
                     if ct.is_cancelled() {
                         return Err(err)
-                            .change_context(SinkConnectorError::Fatal)
+                            .change_context(SinkError::Fatal)
                             .attach_printable("handle data failed and cancelled");
                     }
                     tokio::select! {
@@ -426,7 +426,7 @@ where
             }
         }
 
-        Err(SinkConnectorError::Fatal).attach_printable("handle data failed after retry")
+        Err(SinkError::Fatal).attach_printable("handle data failed after retry")
     }
 
     async fn handle_message<B, P>(
@@ -435,7 +435,7 @@ where
         status_client: &StatusServerClient,
         persistence: &mut P,
         ct: CancellationToken,
-    ) -> Result<StreamAction, SinkConnectorError>
+    ) -> Result<StreamAction, SinkError>
     where
         B: Message + Default + Serialize,
         P: PersistenceClient + Send,
@@ -463,12 +463,12 @@ where
                 self.sink
                     .handle_heartbeat()
                     .await
-                    .change_context(SinkConnectorError::Fatal)
+                    .change_context(SinkError::Fatal)
                     .attach_printable("handle heartbeat failed")?;
                 status_client
                     .heartbeat()
                     .await
-                    .change_context(SinkConnectorError::Temporary)
+                    .change_context(SinkError::Temporary)
                     .attach_printable("failed to update status server after heartbeat")?;
                 Ok(StreamAction::Continue)
             }
