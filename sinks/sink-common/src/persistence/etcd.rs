@@ -32,7 +32,7 @@ impl EtcdPersistence {
     ) -> Result<EtcdPersistence, SinkError> {
         let client = Client::connect([url], None)
             .await
-            .persistence_client_error(&format!("failed to connect to etcd server at {url}"))?;
+            .persistence(&format!("failed to connect to etcd server at {url}"))?;
 
         Ok(EtcdPersistence {
             client,
@@ -50,20 +50,20 @@ impl PersistenceClient for EtcdPersistence {
             .client
             .lease_grant(60, None)
             .await
-            .persistence_client_error("failed lease grant")?;
+            .persistence("failed lease grant")?;
         debug!(lease_id = %lease.id(), "acquired lease for lock");
         let (keeper, _) = self
             .client
             .lease_keep_alive(lease.id())
             .await
-            .persistence_client_error("failed lease keep alive")?;
+            .persistence("failed lease keep alive")?;
 
         let lock_options = LockOptions::new().with_lease(lease.id());
         let inner = self
             .client
             .lock(self.sink_id.as_str(), Some(lock_options))
             .await
-            .persistence_client_error(&format!("failed lock {}", self.sink_id.as_str()))?;
+            .persistence(&format!("failed lock {}", self.sink_id.as_str()))?;
 
         let last_lock_renewal = Instant::now();
         let min_lock_refresh_interval = Duration::from_secs(30);
@@ -86,7 +86,7 @@ impl PersistenceClient for EtcdPersistence {
             self.client
                 .unlock(lock.inner.key())
                 .await
-                .persistence_client_error("failed unlock")?;
+                .persistence("failed unlock")?;
         }
 
         Ok(())
@@ -98,13 +98,13 @@ impl PersistenceClient for EtcdPersistence {
             .client
             .get(self.sink_id.as_str(), None)
             .await
-            .persistence_client_error(&format!("failed get cursor {}", self.sink_id.as_str()))?;
+            .persistence(&format!("failed get cursor {}", self.sink_id.as_str()))?;
 
         match response.kvs().iter().next() {
             None => Ok(None),
             Some(kv) => {
                 let cursor = Cursor::decode(kv.value())
-                    .persistence_client_error("failed to decode cursor")?;
+                    .persistence("failed to decode cursor")?;
                 Ok(Some(cursor))
             }
         }
@@ -115,7 +115,7 @@ impl PersistenceClient for EtcdPersistence {
         self.client
             .put(self.sink_id.as_str(), cursor.encode_to_vec(), None)
             .await
-            .persistence_client_error(&format!("failed put cursor {}", self.sink_id.as_str()))?;
+            .persistence(&format!("failed put cursor {}", self.sink_id.as_str()))?;
 
         if let Some(lock) = self.lock.as_mut() {
             lock.keep_alive()
@@ -131,7 +131,7 @@ impl PersistenceClient for EtcdPersistence {
         self.client
             .delete(self.sink_id.as_str(), None)
             .await
-            .persistence_client_error(&format!("failed delete cursor {}", self.sink_id.as_str()))?;
+            .persistence(&format!("failed delete cursor {}", self.sink_id.as_str()))?;
         Ok(())
     }
 }
@@ -149,7 +149,7 @@ impl Lock {
         self.keeper
             .keep_alive()
             .await
-            .persistence_client_error("")?;
+            .persistence("")?;
         self.last_lock_renewal = Instant::now();
 
         Ok(())

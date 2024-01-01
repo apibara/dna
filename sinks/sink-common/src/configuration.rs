@@ -9,7 +9,7 @@ use error_stack::{Result, ResultExt};
 use serde::{Deserialize, Serialize};
 use tracing::debug;
 
-use crate::{connector::StreamConfiguration, status::StatusServer};
+use crate::{connector::StreamConfiguration, status::StatusServer, SinkErrorResultExt};
 
 #[derive(Debug, Deserialize)]
 pub struct OptionsFromScript {

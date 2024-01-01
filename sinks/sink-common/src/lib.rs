@@ -46,32 +46,27 @@ where
         .connector
         .script
         .load_environment_variables()
-        .change_context(SinkError::Configuration)
-        .attach_printable("failed to parse cli options")?
+        .map_err(|err| err.configuration("failed to parse cli options"))?
         .into_indexer_options();
 
     let mut script = load_script(script, script_options)
-        .change_context(SinkError::Configuration)
-        .attach_printable("failed to load script")?;
+        .map_err(|err| err.configuration("failed to load script"))?;
 
     let options_from_script = script
         .configuration::<FullOptionsFromScript<S::Options>>()
         .await
-        .change_context(SinkError::Configuration)
-        .attach_printable("failed to load configuration from script")?;
+        .map_err(|err| err.configuration("failed to load configuration from script"))?;
 
     script
         .check_transform_is_exported()
         .await
-        .change_context(SinkError::Configuration)
-        .attach_printable("missing or invalid transform function")?;
+        .map_err(|err| err.configuration("missing or invalid transform function"))?;
 
     // Setup sink.
     let sink_options = sink_cli_options.merge(options_from_script.sink);
     let sink = S::from_options(sink_options)
         .await
-        .change_context(SinkError::Configuration)
-        .attach_printable("invalid sink options")?;
+        .map_err(|err| err.configuration("invalid sink options"))?;
 
     // Setup connector.
     let connector_options_from_script = options_from_script.connector;
@@ -82,16 +77,14 @@ where
 
     let stream = stream_options
         .to_stream_configuration()
-        .change_context(SinkError::Configuration)
-        .attach_printable("invalid stream options")?;
+        .map_err(|err| err.configuration("invalid stream options"))?;
 
     let persistence = Persistence::new_from_options(connector_cli_options.connector.persistence);
     let status_server = connector_cli_options
         .connector
         .status_server
         .to_status_server()
-        .change_context(SinkError::Configuration)
-        .attach_printable("invalid status server options")?;
+        .map_err(|err| err.configuration("invalid status server options"))?;
 
     let sink_connector_options = SinkConnectorOptions {
         stream,

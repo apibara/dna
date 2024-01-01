@@ -56,18 +56,18 @@ impl StatusServer {
 
                 let listener = TcpListener::bind(address)
                     .await
-                    .status_server_error("failed to bind status server")?;
+                    .status("failed to bind status server")?;
 
                 let local_addr = listener
                     .local_addr()
-                    .status_server_error("failed to get local address")?;
+                    .status("failed to get local address")?;
                 info!("status server listening on {}", local_addr);
                 let listener = TcpListenerStream::new(listener);
 
                 let reflection_service = tonic_reflection::server::Builder::configure()
                     .register_encoded_file_descriptor_set(sink_file_descriptor_set())
                     .build()
-                    .status_server_error("failed to register to gRPC reflection service")?;
+                    .status("failed to register to gRPC reflection service")?;
 
                 let server_fut = TonicServer::builder()
                     .add_service(health_server)
@@ -83,7 +83,7 @@ impl StatusServer {
                         match server_ret {
                             Ok(_) => {},
                             Err(err) => {
-                                return Err(err).status_server_error("status server stopped: grpc");
+                                return Err(err).status("status server stopped: grpc");
                             }
                         }
                     }
@@ -91,7 +91,7 @@ impl StatusServer {
                         match status_ret {
                             Ok(_) => {},
                             Err(err) => {
-                                return Err(err.status_server_error("status server stopped: status service"));
+                                return Err(err.status("status server stopped: status service"));
                             }
                         }
                     }

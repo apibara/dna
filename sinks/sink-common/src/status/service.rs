@@ -96,7 +96,7 @@ impl StatusService {
                 biased;
 
                 msg = self.request_rx.recv() => {
-                    let msg = msg.ok_or(SinkError::status_server_error("client request channel closed"))?;
+                    let msg = msg.ok_or(SinkError::status("client request channel closed"))?;
                     match msg {
                         RequestMessage::GetCursor(tx) => {
                             let head = self.get_dna_head().await?;
@@ -108,13 +108,13 @@ impl StatusService {
                             };
 
                             tx.send(cursors)
-                                .map_err(|_| SinkError::status_server_error("failed to reply with cursor"))?;
+                                .map_err(|_| SinkError::status("failed to reply with cursor"))?;
                         }
                     }
                 }
 
                 msg = self.status_rx.recv() => {
-                    let msg = msg.ok_or(SinkError::status_server_error("status channel closed"))?;
+                    let msg = msg.ok_or(SinkError::status("status channel closed"))?;
                     match msg {
                         StatusMessage::Heartbeat => {},
                         StatusMessage::UpdateCursor(new_cursor) => {
@@ -159,7 +159,7 @@ impl StatusService {
             .clone()
             .status()
             .await
-            .map_err(|_| SinkError::status_server_error("failed to get dna status"))?;
+            .map_err(|_| SinkError::status("failed to get dna status"))?;
 
         Ok(dna_status.current_head)
     }
@@ -172,10 +172,10 @@ impl StatusServiceClient {
         self.tx
             .send(RequestMessage::GetCursor(tx))
             .await
-            .status_server_error("failed to send get cursor request")?;
+            .status("failed to send get cursor request")?;
         let cursors = rx
             .await
-            .status_server_error("failed to receive cursor response")?;
+            .status("failed to receive cursor response")?;
         Ok(cursors)
     }
 }
