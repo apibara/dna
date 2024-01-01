@@ -4,43 +4,31 @@ use anstyle::{AnsiColor, Style};
 use apibara_observability::init_opentelemetry;
 use apibara_script::{Script, ScriptOptions};
 use clap::builder::Styles;
-use error_stack::{Result, ResultExt};
+use error_stack::{report, Result, ResultExt};
 use tokio_util::sync::CancellationToken;
 
-use crate::SinkError;
+use crate::{SinkError, SinkErrorReportExt, SinkErrorResultExt};
 
-#[derive(Debug)]
-pub struct LoadScriptError;
-impl error_stack::Context for LoadScriptError {}
-
-impl fmt::Display for LoadScriptError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("failed to load script")
-    }
-}
-
-pub fn load_script_from_path(
-    path: &Path,
-    options: ScriptOptions,
-) -> Result<Script, LoadScriptError> {
+pub fn load_script_from_path(path: &Path, options: ScriptOptions) -> Result<Script, SinkError> {
     let path = path.to_string_lossy();
     load_script(&path, options)
 }
 
 /// Load a script from a file.
-pub fn load_script(path: &str, options: ScriptOptions) -> Result<Script, LoadScriptError> {
+pub fn load_script(path: &str, options: ScriptOptions) -> Result<Script, SinkError> {
     let Ok(_) = fs::metadata(path) else {
-        return Err(LoadScriptError)
-            .attach_printable_lazy(|| format!("script file not found: {}", path));
+        return Err(SinkError::load_script(&format!(
+            "script file not found: {}",
+            path
+        )));
     };
 
-    let current_dir = std::env::current_dir()
-        .change_context(LoadScriptError)
-        .attach_printable("failed to get current directory")?;
+    let current_dir =
+        std::env::current_dir().load_script("failed to get current directory")?;
 
-    let script = Script::from_file(path, current_dir, options)
-        .change_context(LoadScriptError)
-        .attach_printable_lazy(|| format!("failed to load script at path: {}", path))?;
+    let script = Script::from_file(path, current_dir, options).map_err(|err| {
+        report!(err).load_script(&format!("failed to load script at path: {}", path))
+    })?;
 
     Ok(script)
 }
@@ -48,12 +36,9 @@ pub fn load_script(path: &str, options: ScriptOptions) -> Result<Script, LoadScr
 /// Initialize opentelemetry and the sigint (ctrl-c) handler.
 pub fn initialize_sink(ct: CancellationToken) -> Result<(), SinkError> {
     init_opentelemetry()
-        .change_context(SinkError::Configuration)
-        .attach_printable("failed to initialize opentelemetry")?;
+        .map_err(|err| report!(err).configuration("failed to initialize opentelemetry"))?;
 
-    set_ctrlc_handler(ct)
-        .change_context(SinkError::Fatal)
-        .attach_printable("failed to setup ctrl-cc handler")?;
+    set_ctrlc_handler(ct).map_err(|err| report!(err).fatal("failed to setup ctrl-c handler"))?;
 
     Ok(())
 }
