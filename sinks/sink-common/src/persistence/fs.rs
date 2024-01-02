@@ -5,14 +5,13 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use apibara_core::node::v1alpha2::Cursor;
 use async_trait::async_trait;
 use error_stack::Result;
 use tracing::info;
 
 use crate::{SinkError, SinkErrorResultExt};
 
-use super::common::PersistenceClient;
+use super::common::{PersistedState, PersistenceClient};
 
 pub struct DirPersistence {
     path: PathBuf,
@@ -34,8 +33,8 @@ impl DirPersistence {
         })
     }
 
-    pub fn cursor_file_path(&self) -> PathBuf {
-        self.path.join(format!("{}.cursor", self.sink_id))
+    pub fn state_file_path(&self) -> PathBuf {
+        self.path.join(format!("{}.state", self.sink_id))
     }
 }
 
@@ -50,31 +49,30 @@ impl PersistenceClient for DirPersistence {
         Ok(())
     }
 
-    async fn get_cursor(&mut self) -> Result<Option<Cursor>, SinkError> {
-        let path = self.cursor_file_path();
+    async fn get_state(&mut self) -> Result<PersistedState, SinkError> {
+        let path = self.state_file_path();
         if path.exists() {
             let content = fs::read_to_string(&path)
-                .persistence(&format!("failed to read cursor file {:?}", path))?;
-            let cursor =
-                serde_json::from_str(&content).persistence("failed to deserialize cursor")?;
-            Ok(Some(cursor))
+                .persistence(&format!("failed to read state file {:?}", path))?;
+            let state =
+                serde_json::from_str(&content).persistence("failed to deserialize state")?;
+            Ok(state)
         } else {
-            Ok(None)
+            Ok(PersistedState::default())
         }
     }
 
-    async fn put_cursor(&mut self, cursor: Cursor) -> Result<(), SinkError> {
-        let serialized =
-            serde_json::to_string(&cursor).persistence("failed to serialize cursor")?;
-        let path = self.cursor_file_path();
+    async fn put_state(&mut self, state: PersistedState) -> Result<(), SinkError> {
+        let serialized = serde_json::to_string(&state).persistence("failed to serialize state")?;
+        let path = self.state_file_path();
         fs::write(&path, serialized)
-            .persistence(&format!("failed to write cursor file {:?}", path))?;
+            .persistence(&format!("failed to write state file {:?}", path))?;
         Ok(())
     }
 
-    async fn delete_cursor(&mut self) -> Result<(), SinkError> {
-        let path = self.cursor_file_path();
-        fs::remove_file(&path).persistence(&format!("failed to delete cursor file {:?}", path))?;
+    async fn delete_state(&mut self) -> Result<(), SinkError> {
+        let path = self.state_file_path();
+        fs::remove_file(&path).persistence(&format!("failed to delete state file {:?}", path))?;
         Ok(())
     }
 }
@@ -85,29 +83,33 @@ mod tests {
     use tempdir::TempDir;
 
     use super::DirPersistence;
-    use crate::persistence::PersistenceClient;
+    use crate::persistence::{PersistedState, PersistenceClient};
 
     #[tokio::test]
-    pub async fn test_get_put_delete_cursor() {
+    pub async fn test_get_put_delete_state() {
         let dir = TempDir::new("fs-persistence").unwrap();
         let sink_id = "test-sink".to_string();
         let mut persistence = DirPersistence::initialize(dir.path(), sink_id).unwrap();
 
-        let cursor = persistence.get_cursor().await.unwrap();
-        assert!(cursor.is_none());
+        let state = persistence.get_state().await.unwrap();
+        assert!(state.cursor.is_none());
 
         let new_cursor = Cursor {
             order_key: 123,
             unique_key: vec![1, 2, 3],
         };
-        persistence.put_cursor(new_cursor.clone()).await.unwrap();
+        let new_state = PersistedState {
+            cursor: Some(new_cursor.clone()),
+        };
 
-        let cursor = persistence.get_cursor().await.unwrap();
-        assert_eq!(cursor, Some(new_cursor));
+        persistence.put_state(new_state).await.unwrap();
 
-        persistence.delete_cursor().await.unwrap();
-        let cursor = persistence.get_cursor().await.unwrap();
-        assert!(cursor.is_none());
+        let state = persistence.get_state().await.unwrap();
+        assert_eq!(state.cursor, Some(new_cursor));
+
+        persistence.delete_state().await.unwrap();
+        let state = persistence.get_state().await.unwrap();
+        assert!(state.cursor.is_none());
     }
 
     #[tokio::test]
@@ -125,32 +127,40 @@ mod tests {
         let dir = TempDir::new("fs-persistence").unwrap();
         let first_sink = "first-sink".to_string();
         let second_sink = "second-sink".to_string();
+
         let first_cursor = Cursor {
             order_key: 123,
             unique_key: vec![1, 2, 3],
         };
+        let first_state = PersistedState {
+            cursor: Some(first_cursor.clone()),
+        };
+
         let second_cursor = Cursor {
             order_key: 789,
             unique_key: vec![7, 8, 9],
+        };
+        let second_state = PersistedState {
+            cursor: Some(second_cursor.clone()),
         };
 
         let mut first = DirPersistence::initialize(dir.path(), first_sink).unwrap();
         let mut second = DirPersistence::initialize(dir.path(), second_sink).unwrap();
 
-        first.put_cursor(first_cursor.clone()).await.unwrap();
-        let cursor = second.get_cursor().await.unwrap();
-        assert!(cursor.is_none());
+        first.put_state(first_state).await.unwrap();
+        let state = second.get_state().await.unwrap();
+        assert!(state.cursor.is_none());
 
-        second.put_cursor(second_cursor.clone()).await.unwrap();
-        let cursor = first.get_cursor().await.unwrap();
-        assert_eq!(cursor, Some(first_cursor));
+        second.put_state(second_state).await.unwrap();
+        let state = first.get_state().await.unwrap();
+        assert_eq!(state.cursor, Some(first_cursor));
 
-        first.delete_cursor().await.unwrap();
-        let cursor = second.get_cursor().await.unwrap();
-        assert_eq!(cursor, Some(second_cursor));
+        first.delete_state().await.unwrap();
+        let state = second.get_state().await.unwrap();
+        assert_eq!(state.cursor, Some(second_cursor));
 
-        second.delete_cursor().await.unwrap();
-        let cursor = second.get_cursor().await.unwrap();
-        assert!(cursor.is_none());
+        second.delete_state().await.unwrap();
+        let state = second.get_state().await.unwrap();
+        assert!(state.cursor.is_none());
     }
 }

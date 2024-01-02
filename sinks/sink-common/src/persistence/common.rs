@@ -1,8 +1,16 @@
 use apibara_core::node::v1alpha2::Cursor;
 use async_trait::async_trait;
 use error_stack::Result;
+use prost::Message;
+use serde::{Deserialize, Serialize};
 
 use crate::SinkError;
+
+#[derive(Clone, PartialEq, Message, Deserialize, Serialize)]
+pub struct PersistedState {
+    #[prost(message, tag = "1")]
+    pub cursor: Option<Cursor>,
+}
 
 /// Client used to interact with the persistence backend.
 #[async_trait]
@@ -13,14 +21,22 @@ pub trait PersistenceClient {
     /// Unlock the previously acquired lock.
     async fn unlock(&mut self) -> Result<(), SinkError>;
 
-    /// Reads the currently stored cursor value.
-    async fn get_cursor(&mut self) -> Result<Option<Cursor>, SinkError>;
+    /// Reads the currently stored state.
+    async fn get_state(&mut self) -> Result<PersistedState, SinkError>;
 
-    /// Updates the sink cursor value.
-    async fn put_cursor(&mut self, cursor: Cursor) -> Result<(), SinkError>;
+    /// Updates the sink state.
+    async fn put_state(&mut self, state: PersistedState) -> Result<(), SinkError>;
 
-    /// Deletes any stored value for the sink cursor.
-    async fn delete_cursor(&mut self) -> Result<(), SinkError>;
+    /// Deletes any stored sink state.
+    async fn delete_state(&mut self) -> Result<(), SinkError>;
+}
+
+impl PersistedState {
+    pub fn with_cursor(cursor: Cursor) -> Self {
+        Self {
+            cursor: Some(cursor),
+        }
+    }
 }
 
 #[async_trait]
@@ -36,15 +52,15 @@ where
         (**self).unlock().await
     }
 
-    async fn get_cursor(&mut self) -> Result<Option<Cursor>, SinkError> {
-        (**self).get_cursor().await
+    async fn get_state(&mut self) -> Result<PersistedState, SinkError> {
+        (**self).get_state().await
     }
 
-    async fn put_cursor(&mut self, cursor: Cursor) -> Result<(), SinkError> {
-        (**self).put_cursor(cursor).await
+    async fn put_state(&mut self, state: PersistedState) -> Result<(), SinkError> {
+        (**self).put_state(state).await
     }
 
-    async fn delete_cursor(&mut self) -> Result<(), SinkError> {
-        (**self).delete_cursor().await
+    async fn delete_state(&mut self) -> Result<(), SinkError> {
+        (**self).delete_state().await
     }
 }

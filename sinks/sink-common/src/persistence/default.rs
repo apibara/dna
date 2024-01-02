@@ -1,8 +1,7 @@
-use apibara_core::node::v1alpha2::Cursor;
 use async_trait::async_trait;
 use error_stack::Result;
 
-use crate::SinkError;
+use crate::{PersistedState, SinkError};
 
 use super::common::PersistenceClient;
 
@@ -19,15 +18,15 @@ impl PersistenceClient for NoPersistence {
         Ok(())
     }
 
-    async fn get_cursor(&mut self) -> Result<Option<Cursor>, SinkError> {
-        Ok(None)
+    async fn get_state(&mut self) -> Result<PersistedState, SinkError> {
+        Ok(PersistedState::default())
     }
 
-    async fn put_cursor(&mut self, _cursor: Cursor) -> Result<(), SinkError> {
+    async fn put_state(&mut self, _state: PersistedState) -> Result<(), SinkError> {
         Ok(())
     }
 
-    async fn delete_cursor(&mut self) -> Result<(), SinkError> {
+    async fn delete_state(&mut self) -> Result<(), SinkError> {
         Ok(())
     }
 }
