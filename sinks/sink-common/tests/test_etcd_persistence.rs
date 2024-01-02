@@ -6,7 +6,7 @@ use std::future::Future;
 use std::time::Duration;
 
 use apibara_core::node::v1alpha2::Cursor;
-use apibara_sink_common::{EtcdPersistence, PersistenceClient};
+use apibara_sink_common::{EtcdPersistence, PersistedState, PersistenceClient};
 use common::Etcd;
 use testcontainers::clients;
 use tokio::time::{timeout as tokio_timeout, Timeout};
@@ -30,21 +30,22 @@ async fn test_single_indexer() {
         .await
         .unwrap();
 
-    let cursor = persistence.get_cursor().await.unwrap();
-    assert!(cursor.is_none());
+    let state = persistence.get_state().await.unwrap();
+    assert!(state.cursor.is_none());
 
     let new_cursor = Cursor {
         order_key: 123,
         unique_key: vec![1, 2, 3],
     };
+    let new_state = PersistedState::with_cursor(new_cursor.clone());
 
-    persistence.put_cursor(new_cursor.clone()).await.unwrap();
-    let cursor = persistence.get_cursor().await.unwrap();
-    assert_eq!(cursor, Some(new_cursor));
+    persistence.put_state(new_state).await.unwrap();
+    let state = persistence.get_state().await.unwrap();
+    assert_eq!(state.cursor, Some(new_cursor));
 
-    persistence.delete_cursor().await.unwrap();
-    let cursor = persistence.get_cursor().await.unwrap();
-    assert!(cursor.is_none());
+    persistence.delete_state().await.unwrap();
+    let state = persistence.get_state().await.unwrap();
+    assert!(state.cursor.is_none());
 }
 
 #[tokio::test]
@@ -66,26 +67,29 @@ async fn test_multiple_indexers() {
         order_key: 123,
         unique_key: vec![1, 2, 3],
     };
+    let first_state = PersistedState::with_cursor(first_cursor.clone());
+
     let second_cursor = Cursor {
         order_key: 789,
         unique_key: vec![7, 8, 9],
     };
+    let second_state = PersistedState::with_cursor(second_cursor.clone());
 
-    first.put_cursor(first_cursor.clone()).await.unwrap();
-    let cursor = second.get_cursor().await.unwrap();
-    assert!(cursor.is_none());
+    first.put_state(first_state).await.unwrap();
+    let state = second.get_state().await.unwrap();
+    assert!(state.cursor.is_none());
 
-    second.put_cursor(second_cursor.clone()).await.unwrap();
-    let cursor = first.get_cursor().await.unwrap();
-    assert_eq!(cursor, Some(first_cursor));
+    second.put_state(second_state).await.unwrap();
+    let state = first.get_state().await.unwrap();
+    assert_eq!(state.cursor, Some(first_cursor));
 
-    first.delete_cursor().await.unwrap();
-    let cursor = second.get_cursor().await.unwrap();
-    assert_eq!(cursor, Some(second_cursor));
+    first.delete_state().await.unwrap();
+    let state = second.get_state().await.unwrap();
+    assert_eq!(state.cursor, Some(second_cursor));
 
-    second.delete_cursor().await.unwrap();
-    let cursor = second.get_cursor().await.unwrap();
-    assert!(cursor.is_none());
+    second.delete_state().await.unwrap();
+    let state = second.get_state().await.unwrap();
+    assert!(state.cursor.is_none());
 }
 
 // Flaky test

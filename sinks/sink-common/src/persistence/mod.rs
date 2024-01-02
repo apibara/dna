@@ -3,7 +3,7 @@ mod default;
 mod etcd;
 mod fs;
 
-pub use self::common::PersistenceClient;
+pub use self::common::{PersistedState, PersistenceClient};
 pub use self::default::NoPersistence;
 pub use self::etcd::EtcdPersistence;
 pub use self::fs::DirPersistence;

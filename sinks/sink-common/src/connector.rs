@@ -16,8 +16,10 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, trace, warn};
 
 use crate::{
-    persistence::Persistence, status::StatusServer, DisplayCursor, PersistenceClient, SinkError,
-    SinkErrorReportExt, SinkErrorResultExt, StatusServerClient,
+    persistence::{PersistedState, Persistence},
+    status::StatusServer,
+    DisplayCursor, PersistenceClient, SinkError, SinkErrorReportExt, SinkErrorResultExt,
+    StatusServerClient,
 };
 
 pub trait SinkOptions: DeserializeOwned {
@@ -176,10 +178,12 @@ where
             }
         }
 
-        let starting_cursor = persistence
-            .get_cursor()
+        let starting_state = persistence
+            .get_state()
             .await
             .map_err(|err| err.temporary("failed to get starting cursor"))?;
+
+        let starting_cursor = starting_state.cursor;
 
         if starting_cursor.is_some() {
             info!(cursor = ?starting_cursor, "restarting from last cursor");
@@ -290,7 +294,7 @@ where
                     match cursor {
                         None => {
                             persistence
-                                .delete_cursor()
+                                .delete_state()
                                 .await
                                 .change_context(SinkError::Temporary)?;
                             status_client
@@ -299,8 +303,9 @@ where
                                 .change_context(SinkError::Temporary)?;
                         }
                         Some(cursor) => {
+                            let state = PersistedState::with_cursor(cursor.clone());
                             persistence
-                                .put_cursor(cursor.clone())
+                                .put_state(state)
                                 .await
                                 .change_context(SinkError::Temporary)?;
                             status_client
@@ -382,8 +387,9 @@ where
                     if context.finality == DataFinality::DataStatusPending {
                         self.needs_invalidation = true;
                     } else if let CursorAction::Persist = cursor_action {
+                        let state = PersistedState::with_cursor(context.end_cursor.clone());
                         persistence
-                            .put_cursor(context.end_cursor.clone())
+                            .put_state(state)
                             .await
                             .change_context(SinkError::Temporary)?;
                         status_client

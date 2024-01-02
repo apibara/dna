@@ -1,5 +1,4 @@
 //! Persist state to etcd.
-use apibara_core::node::v1alpha2::Cursor;
 use async_trait::async_trait;
 use error_stack::{Result, ResultExt};
 use etcd_client::{Client, LeaseKeeper, LockOptions, LockResponse};
@@ -7,7 +6,7 @@ use prost::Message;
 use std::time::{Duration, Instant};
 use tracing::{debug, instrument};
 
-use crate::{SinkError, SinkErrorResultExt};
+use crate::{PersistedState, SinkError, SinkErrorResultExt};
 
 use super::common::PersistenceClient;
 
@@ -93,28 +92,29 @@ impl PersistenceClient for EtcdPersistence {
     }
 
     #[instrument(skip(self), level = "debug")]
-    async fn get_cursor(&mut self) -> Result<Option<Cursor>, SinkError> {
+    async fn get_state(&mut self) -> Result<PersistedState, SinkError> {
         let response = self
             .client
             .get(self.sink_id.as_str(), None)
             .await
-            .persistence(&format!("failed get cursor {}", self.sink_id.as_str()))?;
+            .persistence(&format!("failed get state {}", self.sink_id.as_str()))?;
 
         match response.kvs().iter().next() {
-            None => Ok(None),
+            None => Ok(PersistedState::default()),
             Some(kv) => {
-                let cursor = Cursor::decode(kv.value()).persistence("failed to decode cursor")?;
-                Ok(Some(cursor))
+                let state =
+                    PersistedState::decode(kv.value()).persistence("failed to decode state")?;
+                Ok(state)
             }
         }
     }
 
     #[instrument(skip(self), level = "trace")]
-    async fn put_cursor(&mut self, cursor: Cursor) -> Result<(), SinkError> {
+    async fn put_state(&mut self, state: PersistedState) -> Result<(), SinkError> {
         self.client
-            .put(self.sink_id.as_str(), cursor.encode_to_vec(), None)
+            .put(self.sink_id.as_str(), state.encode_to_vec(), None)
             .await
-            .persistence(&format!("failed put cursor {}", self.sink_id.as_str()))?;
+            .persistence(&format!("failed put state {}", self.sink_id.as_str()))?;
 
         if let Some(lock) = self.lock.as_mut() {
             lock.keep_alive()
@@ -126,11 +126,11 @@ impl PersistenceClient for EtcdPersistence {
     }
 
     #[instrument(skip(self), level = "trace")]
-    async fn delete_cursor(&mut self) -> Result<(), SinkError> {
+    async fn delete_state(&mut self) -> Result<(), SinkError> {
         self.client
             .delete(self.sink_id.as_str(), None)
             .await
-            .persistence(&format!("failed delete cursor {}", self.sink_id.as_str()))?;
+            .persistence(&format!("failed delete state {}", self.sink_id.as_str()))?;
         Ok(())
     }
 }
