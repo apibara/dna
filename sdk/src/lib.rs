@@ -239,6 +239,52 @@ impl StreamClient {
             starting_cursor: configuration.starting_cursor,
             finality: configuration.finality.map(|f| f as i32),
             filter: configuration.filter.encode_to_vec(),
+            multi_filter: Vec::default(),
+        };
+
+        let inner_stream = self
+            .inner
+            .stream_data_immutable(stream_data_request)
+            .await
+            .change_context(ClientError)?
+            .into_inner()
+            .timeout(self.timeout);
+
+        let inner_stream = Box::pin(inner_stream);
+
+        let stream = ImmutableDataStream {
+            inner: inner_stream,
+            _data: PhantomData,
+        };
+
+        Ok(stream)
+    }
+
+    /// Start streaming data sending the provided configuration and the additional filters.
+    pub async fn start_stream_immutable_with_additional_filters<F, D>(
+        mut self,
+        configuration: Configuration<F>,
+        filters: Vec<F>,
+    ) -> Result<ImmutableDataStream<D>, ClientError>
+    where
+        F: Message + Default,
+        D: Message + Default,
+    {
+        let mut multi_filter = vec![configuration.filter.encode_to_vec()];
+        multi_filter.extend(filters.into_iter().map(|f| f.encode_to_vec()));
+
+        if configuration.batch_size != 1 {
+            return Err(ClientError)
+                .attach_printable("batch size must be 1 when using multi-filter");
+        }
+
+        let stream_data_request = StreamDataRequest {
+            stream_id: Some(0),
+            batch_size: Some(1),
+            starting_cursor: configuration.starting_cursor,
+            finality: configuration.finality.map(|f| f as i32),
+            filter: Vec::default(),
+            multi_filter,
         };
 
         let inner_stream = self
@@ -291,6 +337,7 @@ where
                     starting_cursor: configuration.starting_cursor,
                     finality: configuration.finality.map(|f| f as i32),
                     filter: configuration.filter.encode_to_vec(),
+                    multi_filter: Vec::default(),
                 };
 
                 this.inner_tx

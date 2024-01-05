@@ -20,6 +20,8 @@ message Block {
   repeated EventWithTransaction events = 5;
   // Messages to L1 sent in the block.
   repeated L2ToL1MessageWithTransaction l2_to_l1_messages = 6;
+  // Whether the block contains data.
+  bool empty = 7;
 }
 
 // Block header.

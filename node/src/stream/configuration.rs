@@ -27,7 +27,7 @@ where
     pub stream_id: u64,
     pub finality: DataFinality,
     pub starting_cursor: Option<C>,
-    pub filter: F,
+    pub filter: Vec<F>,
 }
 
 #[derive(Default)]
@@ -86,9 +86,34 @@ where
 
         let stream_id = request.stream_id.unwrap_or_default();
 
-        let filter = F::decode(request.filter.as_ref()).map_err(|_| {
-            StreamError::invalid_request("invalid filter configuration".to_string())
-        })?;
+        let filter: Vec<F> = if request.filter.is_empty() {
+            if request.multi_filter.is_empty() {
+                return Err(StreamError::invalid_request(
+                    "missing filter configuration".to_string(),
+                ));
+            }
+
+            if batch_size != 1 {
+                return Err(StreamError::invalid_request(
+                    "multi-filter configuration is only supported with batch size 1".to_string(),
+                ));
+            }
+
+            request
+                .multi_filter
+                .iter()
+                .map(|v| F::decode(v.as_ref()))
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|_| {
+                    StreamError::invalid_request("invalid multi-filter configuration".to_string())
+                })?
+        } else {
+            let filter = F::decode(request.filter.as_ref()).map_err(|_| {
+                StreamError::invalid_request("invalid filter configuration".to_string())
+            })?;
+
+            vec![filter]
+        };
 
         let starting_cursor = match request.starting_cursor {
             None => None,
