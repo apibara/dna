@@ -7,7 +7,8 @@ service Stream {
   // Stream data from the node (bi-directional).
   rpc StreamData(stream StreamDataRequest) returns (stream StreamDataResponse);
   // Stream data from the node.
-  rpc StreamDataImmutable(StreamDataRequest) returns (stream StreamDataResponse);
+  rpc StreamDataImmutable(StreamDataRequest)
+      returns (stream StreamDataResponse);
   // Get DNA service status.
   rpc Status(StatusRequest) returns (StatusResponse);
 }
@@ -26,6 +27,8 @@ message StreamDataRequest {
   optional DataFinality finality = 4;
   // Return data according to the stream-specific filter.
   bytes filter = 5;
+  // Combine multiple filters in the same stream.
+  repeated bytes multi_filter = 6;
 }
 
 // Contains the data requested from the client.
@@ -80,8 +83,7 @@ message Data {
 message Heartbeat {}
 
 // Request for the `Status` method.
-message StatusRequest {
-}
+message StatusRequest {}
 
 // Response for the `Status` method.
 message StatusResponse {

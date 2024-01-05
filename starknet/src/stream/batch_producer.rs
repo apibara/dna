@@ -16,7 +16,7 @@ where
     R: StorageReader + Send + Sync + 'static,
 {
     storage: Arc<R>,
-    inner: Option<InnerProducer<R>>,
+    inner: Vec<InnerProducer<R>>,
 }
 
 struct InnerProducer<R>
@@ -33,7 +33,7 @@ where
 {
     pub fn new(storage: Arc<R>) -> Self {
         DbBatchProducer {
-            inner: None,
+            inner: Vec::default(),
             storage,
         }
     }
@@ -42,10 +42,29 @@ where
         &self,
         block_id: &GlobalBlockId,
         meter: &M,
-    ) -> Result<Option<v1alpha2::Block>, R::Error> {
-        match self.inner {
-            None => Ok(None),
-            Some(ref inner) => inner.block_data(block_id, meter),
+    ) -> Result<Vec<v1alpha2::Block>, R::Error> {
+        let mut blocks = Vec::default();
+        let is_multi_filter = self.inner.len() > 1;
+        let mut all_empty = true;
+        for inner in &self.inner {
+            if let Some(block) = inner.block_data(block_id, meter)? {
+                all_empty = false;
+                blocks.push(block);
+            } else if is_multi_filter {
+                // push an empty block to keep the order of the blocks.
+                let empty = v1alpha2::Block {
+                    empty: true,
+                    ..Default::default()
+                };
+                blocks.push(empty);
+            }
+        }
+
+        // If all blocks are empty, return an empty vector to skip this batch.
+        if all_empty {
+            Ok(Vec::default())
+        } else {
+            Ok(blocks)
         }
     }
 }
@@ -89,6 +108,7 @@ where
             transactions,
             events,
             l2_to_l1_messages,
+            empty: false,
         };
 
         if has_data {
@@ -504,11 +524,15 @@ where
         &mut self,
         configuration: &StreamConfiguration<Self::Cursor, Self::Filter>,
     ) -> Result<(), StreamError> {
-        let new_inner = InnerProducer {
-            storage: self.storage.clone(),
-            filter: configuration.filter.clone(),
-        };
-        self.inner = Some(new_inner);
+        let mut new_inner = Vec::default();
+        for filter in &configuration.filter {
+            let inner = InnerProducer {
+                storage: self.storage.clone(),
+                filter: filter.clone(),
+            };
+            new_inner.push(inner);
+        }
+        self.inner = new_inner;
         Ok(())
     }
 
@@ -517,10 +541,13 @@ where
         cursors: impl Iterator<Item = Self::Cursor> + Send + Sync,
         meter: &M,
     ) -> Result<Vec<Self::Block>, StreamError> {
-        let batch: Vec<_> = cursors
-            .flat_map(|cursor| self.block_data(&cursor, meter).transpose())
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(StreamError::internal)?;
+        let mut batch = Vec::default();
+        for cursor in cursors {
+            let blocks = self
+                .block_data(&cursor, meter)
+                .map_err(StreamError::internal)?;
+            batch.extend(blocks);
+        }
         Ok(batch)
     }
 }

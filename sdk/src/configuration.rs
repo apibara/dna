@@ -62,6 +62,7 @@ where
             starting_cursor: self.starting_cursor,
             finality: self.finality.map(Into::into),
             filter,
+            multi_filter: Vec::default(),
         })
     }
 

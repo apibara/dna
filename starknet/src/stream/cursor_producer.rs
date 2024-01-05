@@ -460,7 +460,7 @@ mod tests {
             stream_id: 0,
             finality,
             starting_cursor,
-            filter: Filter::default(),
+            filter: vec![Filter::default()],
         }
     }
 

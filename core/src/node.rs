@@ -106,6 +106,20 @@ pub mod v1alpha2 {
             deserializer.deserialize_struct("Cursor", FIELDS, CursorVisitor)
         }
     }
+
+    impl DataFinality {
+        pub fn is_pending(&self) -> bool {
+            matches!(self, DataFinality::DataStatusPending)
+        }
+
+        pub fn is_accepted(&self) -> bool {
+            matches!(self, DataFinality::DataStatusAccepted)
+        }
+
+        pub fn is_finalized(&self) -> bool {
+            matches!(self, DataFinality::DataStatusFinalized)
+        }
+    }
 }
 
 #[cfg(test)]
