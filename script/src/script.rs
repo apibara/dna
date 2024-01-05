@@ -21,6 +21,11 @@ pub struct Script {
     load_timeout: Duration,
 }
 
+#[derive(Debug, serde::Deserialize)]
+pub struct FactoryResult<F> {
+    pub filter: Option<F>,
+}
+
 #[derive(Debug)]
 pub struct ScriptError;
 impl error_stack::Context for ScriptError {}
@@ -176,12 +181,22 @@ impl Script {
             if (t.constructor.name === 'AsyncFunction') {{
               let promises = Array(batchSize);
               for (let i = 0; i < batchSize; i++) {{
-                promises[i] = await t(globalThis.Script.batch_get(i));
+                const block = globalThis.Script.batch_get(i);
+                if (block.empty) {{
+                  promises[i] = undefined;
+                }} else {{
+                  promises[i] = await t(block);
+                }}
               }}
               output = await Promise.all(promises);
             }} else {{
               for (let i = 0; i < batchSize; i++) {{
-                output[i] = t(globalThis.Script.batch_get(i));
+                const block = globalThis.Script.batch_get(i);
+                if (block.empty) {{
+                  output[i] = undefined;
+                }} else {{
+                  output[i] = t(block);
+                }}
               }}
             }}
 
@@ -200,6 +215,83 @@ impl Script {
 
         self.execute_script_with_timeout(code, data, ScriptTimeout::Transform)
             .await
+    }
+
+    /// Returns true if the script is a factory script.
+    pub async fn has_factory(&mut self) -> Result<bool, ScriptError> {
+        let code: FastString = format!(
+            r#"(async (globalThis) => {{
+                const module = await import("{0}");
+                __script_result = 0;
+                const hasFactory = typeof module.factory === 'function';
+                const hasOneArgument = hasFactory && module.factory.length === 1;
+                if (hasFactory && hasOneArgument) {{
+                    __script_result = 1;
+                }}
+                globalThis.Script.output_set(__script_result);
+            }})(globalThis)"#,
+            self.module
+        )
+        .into();
+
+        let result = self
+            .execute_script_with_timeout(code, Vec::default(), ScriptTimeout::Load)
+            .await?;
+
+        match result.as_u64() {
+            Some(0) => Ok(false),
+            Some(1) => Ok(true),
+            Some(n) => Err(ScriptError)
+                .attach_printable("internal error: script returned an invalid number")
+                .attach_printable_lazy(|| format!("error code: {}", n)),
+            None => {
+                Err(ScriptError).attach_printable("internal error: script did not return a number")
+            }
+        }
+    }
+
+    /// Returns the configuration object exported by the script.
+    pub async fn factory<F>(&mut self, data: Value) -> Result<FactoryResult<F>, ScriptError>
+    where
+        F: serde::de::DeserializeOwned,
+    {
+        let code: FastString = format!(
+            r#"(async (globalThis) => {{
+            const module = await import("{0}");
+            const t = module.factory;
+            const block = globalThis.Script.batch_get(0);
+            if (block.empty) {{
+              output = undefined;
+            }} else if (t.constructor.name === 'AsyncFunction') {{
+              output = await t(globalThis.Script.batch_get(0));
+            }} else {{
+              output = t(globalThis.Script.batch_get(0));
+            }}
+            let __script_result = output;
+
+            if (typeof __script_result === 'undefined') {{
+              __script_result = null;
+            }}
+
+            globalThis.Script.output_set(__script_result);
+        }})(globalThis)"#,
+            self.module,
+        )
+        .into();
+
+        let result = self
+            .execute_script_with_timeout(code, vec![data], ScriptTimeout::Transform)
+            .await?;
+
+        if Value::Null == result {
+            return Ok(FactoryResult { filter: None });
+        }
+
+        let result = serde_json::from_value(result)
+            .change_context(ScriptError)
+            .attach_printable("failed to deserialize factory result")?;
+
+        Ok(result)
     }
 
     async fn execute_script_with_timeout(

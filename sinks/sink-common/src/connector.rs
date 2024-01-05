@@ -102,6 +102,16 @@ enum StreamAction {
     Continue,
 }
 
+/// Action to take after consuming a message (factory).
+enum FactoryStreamAction<F> {
+    /// Stop consuming the stream.
+    Stop,
+    /// Continue consuming the stream.
+    Continue,
+    /// Add the filter to the main stream.
+    AddFilter(Option<Cursor>, F),
+}
+
 impl<S> SinkConnector<S>
 where
     S: Sink + Send + Sync,
@@ -124,9 +134,30 @@ where
             needs_invalidation: false,
         }
     }
-
     /// Start consuming the stream, calling the configured callback for each message.
     pub async fn consume_stream<F, B>(
+        mut self,
+        configuration: Configuration<F>,
+        ct: CancellationToken,
+    ) -> Result<(), SinkError>
+    where
+        F: Message + Default + DeserializeOwned + Clone,
+        B: Message + Default + Serialize,
+    {
+        if self
+            .script
+            .has_factory()
+            .await
+            .map_err(|err| err.configuration("failed to check if script has factory"))?
+        {
+            self.consume_stream_factory::<F, B>(configuration, ct).await
+        } else {
+            self.consume_stream_default::<F, B>(configuration, ct).await
+        }
+    }
+
+    /// Start consuming the stream, calling the configured callback for each message.
+    pub async fn consume_stream_default<F, B>(
         mut self,
         mut configuration: Configuration<F>,
         ct: CancellationToken,
@@ -250,6 +281,147 @@ where
         ret
     }
 
+    /// Start consuming the stream, calling the configured callback for each message.
+    pub async fn consume_stream_factory<F, B>(
+        mut self,
+        mut configuration: Configuration<F>,
+        ct: CancellationToken,
+    ) -> Result<(), SinkError>
+    where
+        F: Message + Default + DeserializeOwned + Clone,
+        B: Message + Default + Serialize,
+    {
+        let mut persistence = self
+            .persistence
+            .connect()
+            .await
+            .map_err(|err| err.temporary("failed to connect to persistence"))?;
+
+        let stream_client = self.new_stream_client().await?;
+
+        let (status_client, status_server) = self
+            .status_server
+            .clone()
+            .start(stream_client.clone(), ct.clone())
+            .await
+            .map_err(|err| err.temporary("failed to start status server"))?;
+
+        let mut status_server = tokio::spawn(status_server);
+
+        // Set starting cursor now, before it's modified.
+        status_client
+            .set_starting_cursor(configuration.starting_cursor.clone())
+            .await
+            .map_err(|err| err.temporary("failed to initialize status server"))?;
+
+        info!("acquiring persistence lock");
+        // lock will block until it's acquired.
+        // limit the time we wait for the lock to 30 seconds or until the cancellation token is
+        // cancelled.
+        // notice we can straight exit if the cancellation token is cancelled, since the lock
+        // is not held by us.
+        tokio::select! {
+            ret = persistence.lock() => {
+                ret.change_context(SinkError::Temporary)?;
+                info!("lock acquired");
+            }
+            _ = tokio::time::sleep(Duration::from_secs(30)) => {
+                info!("failed to acquire persistence lock within 30 seconds");
+                return Err(SinkError::configuration("failed to acquire persistence lock within 30 seconds"));
+            }
+            _ = ct.cancelled() => {
+                return Ok(())
+            }
+        }
+
+        let starting_state = persistence
+            .get_state()
+            .await
+            .map_err(|err| err.temporary("failed to get starting cursor"))?;
+
+        let starting_cursor = starting_state.cursor;
+
+        if starting_cursor.is_some() {
+            info!(cursor = ?starting_cursor, "restarting from last cursor");
+            configuration.starting_cursor = starting_cursor.clone();
+
+            self.handle_invalidate(
+                &starting_cursor,
+                &status_client,
+                &mut persistence,
+                ct.clone(),
+            )
+            .await?;
+        }
+        debug!("start consume stream");
+
+        let mut ret = Ok(());
+        let mut skip_factory = false;
+
+        let mut data_stream = stream_client
+            .start_stream_immutable::<F, B>(configuration.clone())
+            .await
+            .map_err(|err| err.temporary("failed to start stream"))?;
+
+        loop {
+            tokio::select! {
+                _ = ct.cancelled() => {
+                    break;
+                }
+                _ = &mut status_server => {
+                    break;
+                }
+                maybe_message = data_stream.try_next() => {
+                    match maybe_message {
+                        Err(err) => {
+                            ret = Err(err.temporary("data stream error"));
+                            break;
+                        }
+                        Ok(None) => {
+                            ret = Err(SinkError::temporary("data stream closed"));
+                            break;
+                        }
+                        Ok(Some(message)) => {
+                            match self.handle_factory_message::<F, B, _>(message, skip_factory, &status_client, &mut persistence, ct.clone()).await? {
+                                FactoryStreamAction::Stop => {
+                                    break;
+                                }
+                                FactoryStreamAction::Continue => {
+                                    skip_factory = false;
+                                }
+                                FactoryStreamAction::AddFilter(cursor, new_filter) => {
+                                    let stream_client = self.new_stream_client().await?;
+                                    skip_factory = true;
+                                    let conf = Configuration {
+                                        starting_cursor: cursor,
+                                        ..configuration.clone()
+                                    };
+                                    data_stream = stream_client
+                                        .start_stream_immutable_with_additional_filters::<F, B>(conf, vec![new_filter])
+                                        .await
+                                        .map_err(|err| err.temporary("failed to start stream"))?;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        self.sink
+            .cleanup()
+            .await
+            .map_err(|err| err.temporary("failed to cleanup sink"))?;
+
+        // unlock the lock, if any.
+        persistence
+            .unlock()
+            .await
+            .map_err(|err| err.temporary("reason to unlock persistence"))?;
+
+        ret
+    }
+
     async fn new_stream_client(&self) -> Result<StreamClient, SinkError> {
         let mut stream_builder = ClientBuilder::default()
             .with_max_message_size(
@@ -282,7 +454,6 @@ where
     ) -> Result<StreamAction, SinkError>
     where
         P: PersistenceClient + Send,
-        S: Sink + Sync + Send,
     {
         for duration in &self.backoff {
             info!(cursor = %DisplayCursor(cursor), "handle invalidate");
@@ -418,6 +589,38 @@ where
         Err(SinkError::fatal("handle data failed after retry"))
     }
 
+    #[allow(clippy::too_many_arguments)]
+    async fn handle_factory<F, B>(
+        &mut self,
+        context: Context,
+        data: B,
+    ) -> Result<Option<F>, SinkError>
+    where
+        F: Message + Default + DeserializeOwned,
+        B: Message + Default + Serialize,
+    {
+        trace!(context = ?context, "received factory data");
+
+        // Run factories only on accepted and finalized data.
+        if context.finality.is_pending() {
+            return Ok(None);
+        }
+
+        // fatal error since if the sink is restarted it will receive the same data again.
+        let json_data = serde_json::to_value(data)
+            .change_context(SinkError::Fatal)
+            .attach_printable("failed to serialize factory data")?;
+
+        let result = self
+            .script
+            .factory::<F>(json_data)
+            .await
+            .change_context(SinkError::Fatal)
+            .attach_printable("failed to transform batch data")?;
+
+        Ok(result.filter)
+    }
+
     async fn handle_message<B, P>(
         &mut self,
         message: DataMessage<B>,
@@ -457,6 +660,81 @@ where
                     err.temporary("failed to update status server after heartbeat")
                 })?;
                 Ok(StreamAction::Continue)
+            }
+        }
+    }
+
+    async fn handle_factory_message<F, B, P>(
+        &mut self,
+        message: DataMessage<B>,
+        skip_factory: bool,
+        status_client: &StatusServerClient,
+        persistence: &mut P,
+        ct: CancellationToken,
+    ) -> Result<FactoryStreamAction<F>, SinkError>
+    where
+        F: Message + Default + DeserializeOwned,
+        B: Message + Default + Serialize,
+        P: PersistenceClient + Send,
+    {
+        match message {
+            DataMessage::Data {
+                cursor,
+                end_cursor,
+                finality,
+                batch,
+            } => {
+                let context = Context {
+                    cursor,
+                    end_cursor,
+                    finality,
+                };
+                let mut batch = batch.into_iter();
+                if let Some(factory_data) = batch.next() {
+                    if !skip_factory {
+                        if let Some(new_filter) = self
+                            .handle_factory::<F, B>(context.clone(), factory_data)
+                            .await?
+                        {
+                            info!(
+                                block = context.end_cursor.order_key,
+                                "adding filter from factory"
+                            );
+                            return Ok(FactoryStreamAction::AddFilter(context.cursor, new_filter));
+                        }
+                    }
+                }
+
+                if let Some(main_data) = batch.next() {
+                    match self
+                        .handle_data(context, vec![main_data], status_client, persistence, ct)
+                        .await?
+                    {
+                        StreamAction::Stop => Ok(FactoryStreamAction::Stop),
+                        StreamAction::Continue => Ok(FactoryStreamAction::Continue),
+                    }
+                } else {
+                    Ok(FactoryStreamAction::Continue)
+                }
+            }
+            DataMessage::Invalidate { cursor } => {
+                match self
+                    .handle_invalidate(&cursor, status_client, persistence, ct)
+                    .await?
+                {
+                    StreamAction::Continue => Ok(FactoryStreamAction::Continue),
+                    StreamAction::Stop => Ok(FactoryStreamAction::Stop),
+                }
+            }
+            DataMessage::Heartbeat => {
+                self.sink
+                    .handle_heartbeat()
+                    .await
+                    .map_err(|err| err.fatal("handle heartbeat failed"))?;
+                status_client.heartbeat().await.map_err(|err| {
+                    err.temporary("failed to update status server after heartbeat")
+                })?;
+                Ok(FactoryStreamAction::Continue)
             }
         }
     }
