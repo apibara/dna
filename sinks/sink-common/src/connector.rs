@@ -1,6 +1,9 @@
 use std::{fmt::Display, time::Duration};
 
-use apibara_core::node::v1alpha2::{Cursor, DataFinality};
+use apibara_core::{
+    filter::Filter,
+    node::v1alpha2::{Cursor, DataFinality},
+};
 use apibara_script::Script;
 use apibara_sdk::{ClientBuilder, Configuration, DataMessage, MetadataMap, StreamClient, Uri};
 use async_trait::async_trait;
@@ -141,7 +144,7 @@ where
         ct: CancellationToken,
     ) -> Result<(), SinkError>
     where
-        F: Message + Default + DeserializeOwned + Clone,
+        F: Filter,
         B: Message + Default + Serialize,
     {
         if self
@@ -163,7 +166,7 @@ where
         ct: CancellationToken,
     ) -> Result<(), SinkError>
     where
-        F: Message + Default,
+        F: Filter,
         B: Message + Default + Serialize,
     {
         let mut persistence = self
@@ -288,7 +291,7 @@ where
         ct: CancellationToken,
     ) -> Result<(), SinkError>
     where
-        F: Message + Default + DeserializeOwned + Clone,
+        F: Filter,
         B: Message + Default + Serialize,
     {
         let mut persistence = self
@@ -356,6 +359,7 @@ where
         debug!("start consume stream");
 
         let mut ret = Ok(());
+        let mut main_filter: Option<F> = None;
         let mut skip_factory = false;
 
         let mut data_stream = stream_client
@@ -390,7 +394,14 @@ where
                                     skip_factory = false;
                                 }
                                 FactoryStreamAction::AddFilter(cursor, new_filter) => {
+                                    let new_filter = if let Some(mut main_filter) = main_filter.take() {
+                                        main_filter.merge_filter(new_filter);
+                                        main_filter
+                                    } else {
+                                        new_filter
+                                    };
                                     let stream_client = self.new_stream_client().await?;
+                                    main_filter = Some(new_filter.clone());
                                     skip_factory = true;
                                     let conf = Configuration {
                                         starting_cursor: cursor,
@@ -596,7 +607,7 @@ where
         data: B,
     ) -> Result<Option<F>, SinkError>
     where
-        F: Message + Default + DeserializeOwned,
+        F: Filter,
         B: Message + Default + Serialize,
     {
         trace!(context = ?context, "received factory data");
@@ -673,7 +684,7 @@ where
         ct: CancellationToken,
     ) -> Result<FactoryStreamAction<F>, SinkError>
     where
-        F: Message + Default + DeserializeOwned,
+        F: Filter,
         B: Message + Default + Serialize,
         P: PersistenceClient + Send,
     {
