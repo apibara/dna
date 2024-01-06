@@ -1,4 +1,5 @@
 use super::proto::v1alpha2::*;
+use crate::filter::Filter as FilterTrait;
 
 impl HeaderFilter {
     /// Create an header filter that always matches an header.
@@ -559,5 +560,111 @@ impl ReplacedClassFilter {
 impl NonceUpdateFilter {
     pub fn matches(&self, nonce: &NonceUpdate) -> bool {
         self.contract_address.matches(&nonce.contract_address) && self.nonce.matches(&nonce.nonce)
+    }
+}
+
+impl FilterTrait for Filter {
+    fn merge_filter(&mut self, other: Self) {
+        if let Some(header) = self.header.as_mut() {
+            if let Some(other) = other.header {
+                header.merge(other);
+            }
+        } else {
+            self.header = other.header;
+        }
+
+        self.events.extend(other.events);
+        self.transactions.extend(other.transactions);
+        self.messages.extend(other.messages);
+
+        if let Some(state) = self.state_update.as_mut() {
+            if let Some(other) = other.state_update {
+                state.merge(other);
+            }
+        } else {
+            self.state_update = other.state_update;
+        }
+    }
+}
+
+impl HeaderFilter {
+    fn merge(&mut self, other: Self) {
+        self.weak = self.weak && other.weak;
+    }
+}
+
+impl StateUpdateFilter {
+    fn merge(&mut self, other: Self) {
+        self.storage_diffs.extend(other.storage_diffs);
+        self.declared_contracts.extend(other.declared_contracts);
+        self.deployed_contracts.extend(other.deployed_contracts);
+        self.nonces.extend(other.nonces);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Filter, HeaderFilter};
+    use crate::filter::Filter as FilterTrait;
+
+    #[test]
+    fn test_merge_header() {
+        {
+            let mut a = Filter::default().with_header(HeaderFilter::weak()).build();
+            let b = Filter::default().with_header(HeaderFilter::weak()).build();
+            a.merge_filter(b);
+            assert!(a.header.unwrap().weak);
+        }
+        {
+            let mut a = Filter::default().with_header(HeaderFilter::new()).build();
+            let b = Filter::default().with_header(HeaderFilter::weak()).build();
+            a.merge_filter(b);
+            assert!(!a.header.unwrap().weak);
+        }
+        {
+            let mut a = Filter::default().with_header(HeaderFilter::weak()).build();
+            let b = Filter::default().with_header(HeaderFilter::new()).build();
+            a.merge_filter(b);
+            assert!(!a.header.unwrap().weak);
+        }
+        {
+            let mut a = Filter::default().with_header(HeaderFilter::new()).build();
+            let b = Filter::default().with_header(HeaderFilter::new()).build();
+            a.merge_filter(b);
+            assert!(!a.header.unwrap().weak);
+        }
+    }
+
+    #[test]
+    fn test_merge_events() {
+        let mut a = Filter::default().add_event(|ev| ev).build();
+        let b = Filter::default()
+            .add_event(|ev| ev)
+            .add_event(|ev| ev)
+            .build();
+        a.merge_filter(b);
+        assert_eq!(a.events.len(), 3);
+    }
+
+    #[test]
+    fn test_merge_transactions() {
+        let mut a = Filter::default().add_transaction(|tx| tx).build();
+        let b = Filter::default()
+            .add_transaction(|tx| tx)
+            .add_transaction(|tx| tx)
+            .build();
+        a.merge_filter(b);
+        assert_eq!(a.transactions.len(), 3);
+    }
+
+    #[test]
+    fn test_merge_messages() {
+        let mut a = Filter::default().add_message(|msg| msg).build();
+        let b = Filter::default()
+            .add_message(|msg| msg)
+            .add_message(|msg| msg)
+            .build();
+        a.merge_filter(b);
+        assert_eq!(a.messages.len(), 3);
     }
 }
