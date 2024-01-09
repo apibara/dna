@@ -9,7 +9,7 @@ use tokio_util::sync::CancellationToken;
 use tonic_health::pb::health_server::{Health, HealthServer};
 use tracing::info;
 
-use crate::{status::server::StatusServer, SinkError, SinkErrorResultExt};
+use crate::{status::server::StatusServer, SinkError, SinkErrorReportExt, SinkErrorResultExt};
 
 use super::client::{StatusMessage, StatusServerClient};
 
@@ -159,7 +159,7 @@ impl StatusService {
             .clone()
             .status()
             .await
-            .map_err(|_| SinkError::status("failed to get dna status"))?;
+            .map_err(|err| err.status("failed to get dna status"))?;
 
         Ok(dna_status.current_head)
     }
@@ -173,9 +173,7 @@ impl StatusServiceClient {
             .send(RequestMessage::GetCursor(tx))
             .await
             .status("failed to send get cursor request")?;
-        let cursors = rx
-            .await
-            .status("failed to receive cursor response")?;
+        let cursors = rx.await.status("failed to receive cursor response")?;
         Ok(cursors)
     }
 }

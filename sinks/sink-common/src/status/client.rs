@@ -56,9 +56,9 @@ impl StatusServerClient {
             // If the channel is full, we don't care.
             // This happens when the indexer is resyncing since it publishes hundreds of messages per second.
             Err(TrySendError::Full(_)) => Ok(()),
-            Err(TrySendError::Closed(_)) => Err(SinkError::status(
-                "failed to send update cursor request",
-            )),
+            Err(TrySendError::Closed(_)) => {
+                Err(SinkError::status("failed to send update cursor request"))
+            }
         }
     }
 }

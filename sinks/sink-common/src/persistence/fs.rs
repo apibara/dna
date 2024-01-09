@@ -26,8 +26,7 @@ impl DirPersistence {
     ) -> Result<Self, SinkError> {
         let path = path.as_ref();
 
-        fs::create_dir_all(path)
-            .persistence(&format!("failed to create directory {:?}", path))?;
+        fs::create_dir_all(path).persistence(&format!("failed to create directory {:?}", path))?;
 
         Ok(Self {
             path: path.into(),
@@ -56,8 +55,8 @@ impl PersistenceClient for DirPersistence {
         if path.exists() {
             let content = fs::read_to_string(&path)
                 .persistence(&format!("failed to read cursor file {:?}", path))?;
-            let cursor = serde_json::from_str(&content)
-                .persistence("failed to deserialize cursor")?;
+            let cursor =
+                serde_json::from_str(&content).persistence("failed to deserialize cursor")?;
             Ok(Some(cursor))
         } else {
             Ok(None)
@@ -65,8 +64,8 @@ impl PersistenceClient for DirPersistence {
     }
 
     async fn put_cursor(&mut self, cursor: Cursor) -> Result<(), SinkError> {
-        let serialized = serde_json::to_string(&cursor)
-            .persistence("failed to serialize cursor")?;
+        let serialized =
+            serde_json::to_string(&cursor).persistence("failed to serialize cursor")?;
         let path = self.cursor_file_path();
         fs::write(&path, serialized)
             .persistence(&format!("failed to write cursor file {:?}", path))?;
@@ -75,8 +74,7 @@ impl PersistenceClient for DirPersistence {
 
     async fn delete_cursor(&mut self) -> Result<(), SinkError> {
         let path = self.cursor_file_path();
-        fs::remove_file(&path)
-            .persistence(&format!("failed to delete cursor file {:?}", path))?;
+        fs::remove_file(&path).persistence(&format!("failed to delete cursor file {:?}", path))?;
         Ok(())
     }
 }

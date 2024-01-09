@@ -1,4 +1,4 @@
-use std::{fmt, fs, path::Path};
+use std::{fs, path::Path};
 
 use anstyle::{AnsiColor, Style};
 use apibara_observability::init_opentelemetry;
@@ -23,8 +23,7 @@ pub fn load_script(path: &str, options: ScriptOptions) -> Result<Script, SinkErr
         )));
     };
 
-    let current_dir =
-        std::env::current_dir().load_script("failed to get current directory")?;
+    let current_dir = std::env::current_dir().load_script("failed to get current directory")?;
 
     let script = Script::from_file(path, current_dir, options).map_err(|err| {
         report!(err).load_script(&format!("failed to load script at path: {}", path))

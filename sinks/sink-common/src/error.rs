@@ -76,8 +76,7 @@ impl SinkError {
             .attach_printable(format!("status server operation failed: {reason}"))
     }
     pub fn load_script(reason: &str) -> Report<SinkError> {
-        report!(SinkError::LoadScript)
-            .attach_printable(format!("load script failed: {reason}"))
+        report!(SinkError::LoadScript).attach_printable(format!("load script failed: {reason}"))
     }
 }
 
@@ -131,6 +130,7 @@ where
 pub trait SinkErrorReportExt {
     type Ok;
     fn configuration(self, reason: &str) -> Report<SinkError>;
+    fn temporary(self, reason: &str) -> Report<SinkError>;
     fn fatal(self, reason: &str) -> Report<SinkError>;
     fn status(self, reason: &str) -> Report<SinkError>;
     fn load_script(self, reason: &str) -> Report<SinkError>;
@@ -142,6 +142,11 @@ impl<C> SinkErrorReportExt for Report<C> {
     fn configuration(self, reason: &str) -> Report<SinkError> {
         self.change_context(SinkError::Configuration)
             .attach_printable(format!("sink configuration error: {reason}"))
+    }
+
+    fn temporary(self, reason: &str) -> Report<SinkError> {
+        self.change_context(SinkError::Temporary)
+            .attach_printable(format!("temporary sink error: {reason}"))
     }
 
     fn fatal(self, reason: &str) -> Report<SinkError> {
