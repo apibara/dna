@@ -103,8 +103,7 @@ impl PersistenceClient for EtcdPersistence {
         match response.kvs().iter().next() {
             None => Ok(None),
             Some(kv) => {
-                let cursor = Cursor::decode(kv.value())
-                    .persistence("failed to decode cursor")?;
+                let cursor = Cursor::decode(kv.value()).persistence("failed to decode cursor")?;
                 Ok(Some(cursor))
             }
         }
@@ -149,7 +148,7 @@ impl Lock {
         self.keeper
             .keep_alive()
             .await
-            .persistence("")?;
+            .persistence("failed to renew lock")?;
         self.last_lock_renewal = Instant::now();
 
         Ok(())
