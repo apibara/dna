@@ -5,8 +5,10 @@ mod common;
 use std::future::Future;
 use std::time::Duration;
 
-use apibara_core::node::v1alpha2::Cursor;
-use apibara_sink_common::{EtcdPersistence, PersistedState, PersistenceClient};
+use apibara_core::{node::v1alpha2::Cursor, starknet::v1alpha2::Filter};
+use apibara_sink_common::{
+    persistence::common::PersistenceClient, EtcdPersistence, PersistedState,
+};
 use common::Etcd;
 use testcontainers::clients;
 use tokio::time::{timeout as tokio_timeout, Timeout};
@@ -30,21 +32,21 @@ async fn test_single_indexer() {
         .await
         .unwrap();
 
-    let state = persistence.get_state().await.unwrap();
+    let state = persistence.get_state::<Filter>().await.unwrap();
     assert!(state.cursor.is_none());
 
     let new_cursor = Cursor {
         order_key: 123,
         unique_key: vec![1, 2, 3],
     };
-    let new_state = PersistedState::with_cursor(new_cursor.clone());
+    let new_state = PersistedState::<Filter>::with_cursor(new_cursor.clone());
 
     persistence.put_state(new_state).await.unwrap();
-    let state = persistence.get_state().await.unwrap();
+    let state = persistence.get_state::<Filter>().await.unwrap();
     assert_eq!(state.cursor, Some(new_cursor));
 
     persistence.delete_state().await.unwrap();
-    let state = persistence.get_state().await.unwrap();
+    let state = persistence.get_state::<Filter>().await.unwrap();
     assert!(state.cursor.is_none());
 }
 
@@ -67,28 +69,28 @@ async fn test_multiple_indexers() {
         order_key: 123,
         unique_key: vec![1, 2, 3],
     };
-    let first_state = PersistedState::with_cursor(first_cursor.clone());
+    let first_state = PersistedState::<Filter>::with_cursor(first_cursor.clone());
 
     let second_cursor = Cursor {
         order_key: 789,
         unique_key: vec![7, 8, 9],
     };
-    let second_state = PersistedState::with_cursor(second_cursor.clone());
+    let second_state = PersistedState::<Filter>::with_cursor(second_cursor.clone());
 
     first.put_state(first_state).await.unwrap();
-    let state = second.get_state().await.unwrap();
+    let state = second.get_state::<Filter>().await.unwrap();
     assert!(state.cursor.is_none());
 
     second.put_state(second_state).await.unwrap();
-    let state = first.get_state().await.unwrap();
+    let state = first.get_state::<Filter>().await.unwrap();
     assert_eq!(state.cursor, Some(first_cursor));
 
     first.delete_state().await.unwrap();
-    let state = second.get_state().await.unwrap();
+    let state = second.get_state::<Filter>().await.unwrap();
     assert_eq!(state.cursor, Some(second_cursor));
 
     second.delete_state().await.unwrap();
-    let state = second.get_state().await.unwrap();
+    let state = second.get_state::<Filter>().await.unwrap();
     assert!(state.cursor.is_none());
 }
 

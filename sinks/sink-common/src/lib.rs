@@ -4,7 +4,8 @@ mod connector;
 mod cursor;
 mod error;
 mod json;
-mod persistence;
+pub mod persistence;
+mod sink;
 mod status;
 
 use apibara_core::starknet::v1alpha2;
@@ -20,6 +21,7 @@ pub use self::cursor::DisplayCursor;
 pub use self::error::*;
 pub use self::json::ValueExt;
 pub use self::persistence::*;
+pub use self::sink::*;
 pub use self::status::*;
 pub use apibara_sink_options_derive::SinkOptions;
 

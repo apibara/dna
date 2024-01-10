@@ -59,7 +59,7 @@ export function factory({ header, events }) {
       createdAt: header.timestamp,
       createdAtBlockNumber: +header.blockNumber,
       createdAtTxHash: transaction.meta.hash,
-      poolId: pairAddress,
+      pairId: pairAddress,
       token0Id: token0,
       token1Id: token1,
     };

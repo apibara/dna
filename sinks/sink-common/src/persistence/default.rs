@@ -1,3 +1,4 @@
+use apibara_core::filter::Filter;
 use async_trait::async_trait;
 use error_stack::Result;
 
@@ -18,11 +19,11 @@ impl PersistenceClient for NoPersistence {
         Ok(())
     }
 
-    async fn get_state(&mut self) -> Result<PersistedState, SinkError> {
+    async fn get_state<F: Filter>(&mut self) -> Result<PersistedState<F>, SinkError> {
         Ok(PersistedState::default())
     }
 
-    async fn put_state(&mut self, _state: PersistedState) -> Result<(), SinkError> {
+    async fn put_state<F: Filter>(&mut self, _state: PersistedState<F>) -> Result<(), SinkError> {
         Ok(())
     }
 

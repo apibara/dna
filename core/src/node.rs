@@ -1,5 +1,5 @@
 pub mod v1alpha2 {
-    use std::fmt;
+    use std::fmt::{self, Display};
 
     use serde::{
         de::{self, Deserialize, Deserializer, Visitor},
@@ -118,6 +118,17 @@ pub mod v1alpha2 {
 
         pub fn is_finalized(&self) -> bool {
             matches!(self, DataFinality::DataStatusFinalized)
+        }
+    }
+
+    impl Display for DataFinality {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            match self {
+                DataFinality::DataStatusUnknown => write!(f, "unknown"),
+                DataFinality::DataStatusPending => write!(f, "pending"),
+                DataFinality::DataStatusAccepted => write!(f, "accepted"),
+                DataFinality::DataStatusFinalized => write!(f, "finalized"),
+            }
         }
     }
 }
