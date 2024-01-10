@@ -1,4 +1,5 @@
 //! Persist state to etcd.
+use apibara_core::filter::Filter;
 use async_trait::async_trait;
 use error_stack::{Result, ResultExt};
 use etcd_client::{Client, LeaseKeeper, LockOptions, LockResponse};
@@ -92,7 +93,7 @@ impl PersistenceClient for EtcdPersistence {
     }
 
     #[instrument(skip(self), level = "debug")]
-    async fn get_state(&mut self) -> Result<PersistedState, SinkError> {
+    async fn get_state<F: Filter>(&mut self) -> Result<PersistedState<F>, SinkError> {
         let response = self
             .client
             .get(self.sink_id.as_str(), None)
@@ -110,7 +111,7 @@ impl PersistenceClient for EtcdPersistence {
     }
 
     #[instrument(skip(self), level = "trace")]
-    async fn put_state(&mut self, state: PersistedState) -> Result<(), SinkError> {
+    async fn put_state<F: Filter>(&mut self, state: PersistedState<F>) -> Result<(), SinkError> {
         self.client
             .put(self.sink_id.as_str(), state.encode_to_vec(), None)
             .await

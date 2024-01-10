@@ -24,6 +24,7 @@ pub struct Script {
 #[derive(Debug, serde::Deserialize)]
 pub struct FactoryResult<F> {
     pub filter: Option<F>,
+    pub data: Option<Value>,
 }
 
 #[derive(Debug)]
@@ -284,7 +285,10 @@ impl Script {
             .await?;
 
         if Value::Null == result {
-            return Ok(FactoryResult { filter: None });
+            return Ok(FactoryResult {
+                filter: None,
+                data: None,
+            });
         }
 
         let result = serde_json::from_value(result)
