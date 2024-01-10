@@ -31,13 +31,14 @@ impl error_stack::Context for SinkError {}
 
 impl fmt::Display for SinkError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // match self {
-        //     SinkError::Configuration => f.write_str("sink configuration error"),
-        //     SinkError::Temporary => f.write_str("temporary sink error"),
-        //     SinkError::Fatal => f.write_str("fatal sink error"),
-        //     _ => f.write_str("sink error"),
-        // }
-        f.write_str("sink error")
+        match self {
+            SinkError::Configuration => f.write_str("sink configuration error"),
+            SinkError::Temporary => f.write_str("temporary sink error"),
+            SinkError::Fatal => f.write_str("fatal sink error"),
+            SinkError::Persistence => f.write_str("persistence client operation failed"),
+            SinkError::Status => f.write_str("status server operation failed"),
+            SinkError::LoadScript => f.write_str("load script failed"),
+        }
     }
 }
 
@@ -62,21 +63,19 @@ impl<T> ReportExt for Result<T, SinkError> {
 
 impl SinkError {
     pub fn configuration(reason: &str) -> Report<SinkError> {
-        report!(SinkError::Configuration)
-            .attach_printable(format!("sink configuration error: {reason}"))
+        report!(SinkError::Configuration).attach_printable(reason.to_string())
     }
     pub fn temporary(reason: &str) -> Report<SinkError> {
-        report!(SinkError::Temporary).attach_printable(format!("temporary sink error: {reason}"))
+        report!(SinkError::Temporary).attach_printable(reason.to_string())
     }
     pub fn fatal(reason: &str) -> Report<SinkError> {
-        report!(SinkError::Fatal).attach_printable(format!("fatal sink error: {reason}"))
+        report!(SinkError::Fatal).attach_printable(reason.to_string())
     }
     pub fn status(reason: &str) -> Report<SinkError> {
-        report!(SinkError::Status)
-            .attach_printable(format!("status server operation failed: {reason}"))
+        report!(SinkError::Status).attach_printable(reason.to_string())
     }
     pub fn load_script(reason: &str) -> Report<SinkError> {
-        report!(SinkError::LoadScript).attach_printable(format!("load script failed: {reason}"))
+        report!(SinkError::LoadScript).attach_printable(reason.to_string())
     }
 }
 
@@ -98,32 +97,32 @@ where
 
     fn configuration(self, reason: &str) -> Result<T, SinkError> {
         self.change_context(SinkError::Configuration)
-            .attach_printable(format!("sink configuration error: {reason}"))
+            .attach_printable(reason.to_string())
     }
 
     fn temporary(self, reason: &str) -> Result<T, SinkError> {
         self.change_context(SinkError::Temporary)
-            .attach_printable(format!("temporary sink error: {reason}"))
+            .attach_printable(reason.to_string())
     }
 
     fn fatal(self, reason: &str) -> Result<T, SinkError> {
         self.change_context(SinkError::Fatal)
-            .attach_printable(format!("fatal sink error: {reason}"))
+            .attach_printable(reason.to_string())
     }
 
     fn status(self, reason: &str) -> Result<T, SinkError> {
         self.change_context(SinkError::Status)
-            .attach_printable(format!("status server operation failed: {reason}"))
+            .attach_printable(reason.to_string())
     }
 
     fn persistence(self, reason: &str) -> Result<T, SinkError> {
         self.change_context(SinkError::Persistence)
-            .attach_printable(format!("persistence client operation failed: {reason}"))
+            .attach_printable(reason.to_string())
     }
 
     fn load_script(self, reason: &str) -> Result<T, SinkError> {
         self.change_context(SinkError::LoadScript)
-            .attach_printable(format!("load script failed: {reason}"))
+            .attach_printable(reason.to_string())
     }
 }
 
@@ -141,26 +140,26 @@ impl<C> SinkErrorReportExt for Report<C> {
 
     fn configuration(self, reason: &str) -> Report<SinkError> {
         self.change_context(SinkError::Configuration)
-            .attach_printable(format!("sink configuration error: {reason}"))
+            .attach_printable(reason.to_string())
     }
 
     fn temporary(self, reason: &str) -> Report<SinkError> {
         self.change_context(SinkError::Temporary)
-            .attach_printable(format!("temporary sink error: {reason}"))
+            .attach_printable(reason.to_string())
     }
 
     fn fatal(self, reason: &str) -> Report<SinkError> {
         self.change_context(SinkError::Fatal)
-            .attach_printable(format!("fatal sink error: {reason}"))
+            .attach_printable(reason.to_string())
     }
 
     fn status(self, reason: &str) -> Report<SinkError> {
         self.change_context(SinkError::Status)
-            .attach_printable(format!("status server operation failed: {reason}"))
+            .attach_printable(reason.to_string())
     }
 
     fn load_script(self, reason: &str) -> Report<SinkError> {
         self.change_context(SinkError::LoadScript)
-            .attach_printable(format!("load script failed: {reason}"))
+            .attach_printable(reason.to_string())
     }
 }
