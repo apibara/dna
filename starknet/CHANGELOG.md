@@ -6,6 +6,14 @@ The format is based on [Common Changelog](https://common-changelog.org/), and
 this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2024-01-11
+
+_Support multiple filters in the same stream._
+
+### Added
+
+-   Add support for "multi filter" mode. Clients can optionally include multiple filters in the same stream request. In this case, the server will match each filter individually and return each filter's data separately. Notice that multi filter mode requires that the batch size is set to 1.
+
 ## [1.3.0] - 2023-12-21
 
 _Support RPC v0.6 and Starknet 0.13._
