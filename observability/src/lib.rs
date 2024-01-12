@@ -124,7 +124,7 @@ where
     } else {
         tracing_subscriber::fmt::layer()
             .with_ansi(true)
-            .with_target(true)
+            .with_target(false)
             .with_filter(log_env_filter)
             .boxed()
     }

@@ -96,6 +96,7 @@ where
         loop {
             tokio::select! {
                 _ = ct.cancelled() => {
+                    info!("sink stopped: cancelled");
                     break;
                 }
                 maybe_message = data_stream.try_next() => {
@@ -204,8 +205,6 @@ where
                 return Ok((CursorAction::Persist, StreamAction::Stop));
             }
         }
-
-        info!(block = block_end_cursor, "handle data");
 
         let mut action = self.sink.handle_data(&context, &data, ct).await?;
 
