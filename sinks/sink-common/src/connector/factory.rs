@@ -85,6 +85,7 @@ where
         loop {
             tokio::select! {
                 _ = ct.cancelled() => {
+                    info!("sink stopped: cancelled");
                     break;
                 }
                 maybe_message = data_stream.try_next() => {
@@ -291,7 +292,6 @@ where
             .await
             .map_err(|err| err.fatal("failed to transform batch data"))?;
 
-        info!(block = context.end_cursor.order_key, "handle data");
         let mut action = self.sink.handle_data(&context, &data, ct).await?;
 
         // If it's pending, don't store the cursor.
