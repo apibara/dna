@@ -139,11 +139,28 @@ where
                             break;
                         }
                         Err(err) => {
-                            warn!(err = ?err, "connector failed. restarting.");
+                            match err.downcast_ref::<SinkError>() {
+                                Some(SinkError::Temporary) => {
+                                    warn!(err = ?err, "connector failed. restarting.");
+                                }
+                                _ => {
+                                    return Err(err);
+                                }
+                            };
                         }
                     }
                 }
             };
+
+            // Wait before restarting.
+            tokio::select! {
+                _ = ct.cancelled() => {
+                    break;
+                }
+                _ = tokio::time::sleep(Duration::from_secs(10)) => {
+                    // continue
+                }
+            }
         }
 
         Ok(())
@@ -213,10 +230,10 @@ where
 }
 
 fn default_backoff() -> Backoff {
-    let retries = 8;
-    let min_delay = Duration::from_secs(10);
-    let max_delay = Duration::from_secs(15 * 60);
+    let retries = 10;
+    let min_delay = Duration::from_secs(3);
+    let max_delay = Duration::from_secs(60);
     let mut backoff = Backoff::new(retries, min_delay, Some(max_delay));
-    backoff.set_factor(5);
+    backoff.set_factor(3);
     backoff
 }
