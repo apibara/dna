@@ -6,6 +6,15 @@ The format is based on [Common Changelog](https://common-changelog.org/), and
 this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2024-01-14
+
+_Reconnect client on disconnect._
+
+### Fixed
+
+-   Ensure that the client is connected before running any query. If the client
+    is not connected, reconnects to it.
+
 ## [0.5.0] - 2024-01-13
 
 _Introduce factory mode to dynamically update the stream filter._
