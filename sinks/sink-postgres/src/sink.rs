@@ -25,6 +25,7 @@ impl fmt::Display for SinkPostgresError {
 }
 
 pub struct PostgresSink {
+    config: SinkPostgresConfiguration,
     inner: PostgresSinkInner,
 }
 
@@ -40,6 +41,34 @@ impl PostgresSink {
             PostgresSinkInner::Entity(ref sink) => &sink.client,
         }
     }
+
+    ///  Ensures that the client is connected to the database.
+    ///
+    /// If the client is not connected, it will reconnect and recreate the prepared statements.
+    async fn ensure_client(&mut self) -> Result<(), SinkPostgresError> {
+        match self.inner {
+            PostgresSinkInner::Standard(ref sink) => {
+                if sink.client.is_closed() {
+                    info!("reconnecting to database");
+                    let client = client_from_config(&self.config).await?;
+                    let inner = StandardSink::new(client, &self.config).await?;
+                    self.inner = PostgresSinkInner::Standard(inner);
+                    info!("client reconnected successfully");
+                }
+            }
+            PostgresSinkInner::Entity(ref sink) => {
+                if sink.client.is_closed() {
+                    info!("reconnecting to database");
+                    let client = client_from_config(&self.config).await?;
+                    let inner = EntitySink::new(client, &self.config).await?;
+                    self.inner = PostgresSinkInner::Entity(inner);
+                    info!("client reconnected successfully");
+                }
+            }
+        }
+
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -51,85 +80,20 @@ impl Sink for PostgresSink {
         info!("connecting to database");
         let config = options.to_postgres_configuration()?;
 
-        // Notice that all `connector` and `connection` types are different, so it's easier/cleaner
-        // to just connect and spawn a connection inside each branch.
-        let client = match config.tls {
-            TlsConfiguration::NoTls => {
-                info!("Using insecure connection");
-                let (client, connection) = config
-                    .pg
-                    .connect(NoTls)
-                    .await
-                    .change_context(SinkPostgresError)
-                    .attach_printable("failed to connect to postgres (no tls)")?;
-                tokio::spawn(connection);
-                client
-            }
-            TlsConfiguration::Tls {
-                ref certificate,
-                accept_invalid_hostnames,
-                accept_invalid_certificates,
-                disable_system_roots,
-                use_sni,
-            } => {
-                info!("Configure TLS connection");
-                let mut builder = TlsConnector::builder();
-
-                if let Some(ref certificate) = certificate {
-                    let certificate = tokio::fs::read(certificate)
-                        .await
-                        .change_context(SinkPostgresError)
-                        .attach_printable_lazy(|| {
-                            format!("failed to read tls certificate at {certificate:?}")
-                        })?;
-                    let certificate = Certificate::from_pem(&certificate)
-                        .change_context(SinkPostgresError)
-                        .attach_printable("failed to build certificate from PEM file")?;
-                    builder.add_root_certificate(certificate);
-                }
-
-                if let Some(accept_invalid_certificates) = accept_invalid_certificates {
-                    builder.danger_accept_invalid_certs(accept_invalid_certificates);
-                }
-
-                if let Some(disable_system_roots) = disable_system_roots {
-                    builder.disable_built_in_roots(disable_system_roots);
-                }
-
-                if let Some(accept_invalid_hostnames) = accept_invalid_hostnames {
-                    builder.danger_accept_invalid_hostnames(accept_invalid_hostnames);
-                }
-
-                if let Some(use_sni) = use_sni {
-                    builder.use_sni(use_sni);
-                }
-
-                let connector = builder
-                    .build()
-                    .change_context(SinkPostgresError)
-                    .attach_printable("failed to build tls connector")?;
-                let connector = MakeTlsConnector::new(connector);
-                let (client, connection) = config
-                    .pg
-                    .connect(connector)
-                    .await
-                    .change_context(SinkPostgresError)
-                    .attach_printable("failed to connect to postgres (tls)")?;
-                tokio::spawn(connection);
-                client
-            }
-        };
+        let client = client_from_config(&config).await?;
 
         info!("client connected successfully");
 
         if config.entity_mode {
             let inner = EntitySink::new(client, &config).await?;
             Ok(Self {
+                config,
                 inner: PostgresSinkInner::Entity(inner),
             })
         } else {
             let inner = StandardSink::new(client, &config).await?;
             Ok(Self {
+                config,
                 inner: PostgresSinkInner::Standard(inner),
             })
         }
@@ -140,6 +104,8 @@ impl Sink for PostgresSink {
         ctx: &Context,
         batch: &Value,
     ) -> Result<CursorAction, Self::Error> {
+        self.ensure_client().await?;
+
         match self.inner {
             PostgresSinkInner::Standard(ref mut sink) => sink.handle_data(ctx, batch).await,
             PostgresSinkInner::Entity(ref mut sink) => sink.handle_data(ctx, batch).await,
@@ -147,6 +113,8 @@ impl Sink for PostgresSink {
     }
 
     async fn handle_invalidate(&mut self, cursor: &Option<Cursor>) -> Result<(), Self::Error> {
+        self.ensure_client().await?;
+
         match self.inner {
             PostgresSinkInner::Standard(ref mut sink) => sink.handle_invalidate(cursor).await,
             PostgresSinkInner::Entity(ref mut sink) => sink.handle_invalidate(cursor).await,
@@ -297,10 +265,8 @@ impl EntitySink {
                 .attach_printable("contact us on Discord to request this feature");
         }
 
-        Ok(EntitySink {
-            client,
-            table_name: config.table_name.clone(),
-        })
+        let table_name = config.table_name.clone();
+        Ok(EntitySink { client, table_name })
     }
 
     async fn handle_data(
@@ -518,5 +484,78 @@ impl EntitySink {
             .attach_printable("failed to commit transaction")?;
 
         Ok(())
+    }
+}
+
+async fn client_from_config(
+    config: &SinkPostgresConfiguration,
+) -> Result<Client, SinkPostgresError> {
+    // Notice that all `connector` and `connection` types are different, so it's easier/cleaner
+    // to just connect and spawn a connection inside each branch.
+    match config.tls {
+        TlsConfiguration::NoTls => {
+            info!("Using insecure connection");
+            let (client, connection) = config
+                .pg
+                .connect(NoTls)
+                .await
+                .change_context(SinkPostgresError)
+                .attach_printable("failed to connect to postgres (no tls)")?;
+            tokio::spawn(connection);
+            Ok(client)
+        }
+        TlsConfiguration::Tls {
+            ref certificate,
+            accept_invalid_hostnames,
+            accept_invalid_certificates,
+            disable_system_roots,
+            use_sni,
+        } => {
+            info!("Configure TLS connection");
+            let mut builder = TlsConnector::builder();
+
+            if let Some(ref certificate) = certificate {
+                let certificate = tokio::fs::read(certificate)
+                    .await
+                    .change_context(SinkPostgresError)
+                    .attach_printable_lazy(|| {
+                        format!("failed to read tls certificate at {certificate:?}")
+                    })?;
+                let certificate = Certificate::from_pem(&certificate)
+                    .change_context(SinkPostgresError)
+                    .attach_printable("failed to build certificate from PEM file")?;
+                builder.add_root_certificate(certificate);
+            }
+
+            if let Some(accept_invalid_certificates) = accept_invalid_certificates {
+                builder.danger_accept_invalid_certs(accept_invalid_certificates);
+            }
+
+            if let Some(disable_system_roots) = disable_system_roots {
+                builder.disable_built_in_roots(disable_system_roots);
+            }
+
+            if let Some(accept_invalid_hostnames) = accept_invalid_hostnames {
+                builder.danger_accept_invalid_hostnames(accept_invalid_hostnames);
+            }
+
+            if let Some(use_sni) = use_sni {
+                builder.use_sni(use_sni);
+            }
+
+            let connector = builder
+                .build()
+                .change_context(SinkPostgresError)
+                .attach_printable("failed to build tls connector")?;
+            let connector = MakeTlsConnector::new(connector);
+            let (client, connection) = config
+                .pg
+                .connect(connector)
+                .await
+                .change_context(SinkPostgresError)
+                .attach_printable("failed to connect to postgres (tls)")?;
+            tokio::spawn(connection);
+            Ok(client)
+        }
     }
 }
