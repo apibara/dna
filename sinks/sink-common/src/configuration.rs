@@ -77,6 +77,11 @@ pub struct ScriptOptions {
     /// Grant access to the specified environment variables.
     #[arg(long, env, value_delimiter = ',')]
     pub allow_env_from_env: Option<Vec<String>>,
+    /// Grant network access to the hosts.
+    ///
+    /// Leave empty to allow all hosts, i.e. by specifying `--allow-net`.
+    #[arg(long, env, value_delimiter = ',', num_args = 0..)]
+    pub allow_net: Option<Vec<String>>,
     /// Maximum time allowed to execute the transform function.
     #[arg(long, env)]
     pub script_transform_timeout_seconds: Option<u64>,
@@ -356,6 +361,7 @@ impl ScriptOptions {
     pub fn into_indexer_options(self) -> IndexerOptions {
         IndexerOptions {
             allow_env: self.allow_env_from_env,
+            allow_net: self.allow_net,
             transform_timeout: self
                 .script_transform_timeout_seconds
                 .map(Duration::from_secs),

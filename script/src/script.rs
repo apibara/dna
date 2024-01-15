@@ -43,6 +43,10 @@ pub struct ScriptOptions {
     ///
     /// An empty list gives access to _ALL_ environment variables.
     pub allow_env: Option<Vec<String>>,
+    /// Allow network access to the given hosts.
+    ///
+    /// An empty list gives access to _ALL_ hosts.
+    pub allow_net: Option<Vec<String>>,
     /// Maximum time allowed to execute the transform function.
     pub transform_timeout: Option<Duration>,
     /// Maximum time allowed to load the indexer script.
@@ -353,6 +357,7 @@ impl Script {
         match Permissions::from_options(&PermissionsOptions {
             allow_env: options.allow_env.clone(),
             allow_hrtime: true,
+            allow_net: options.allow_net.clone(),
             prompt: false,
             ..PermissionsOptions::default()
         }) {
