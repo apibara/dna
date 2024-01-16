@@ -7,11 +7,18 @@ license = "Apache-2.0"
 [workspace]
 resolver = "2"
 members = [
+    # Legacy. Remove once upgraded to DNA V2.
     "core",
-    "observability",
     "node",
     "sdk",
     "starknet",
+    # Common
+    "observability",
+    # DNA
+    "dna/common",
+    "dna/evm",
+    "dna/starknet",
+    # Sink and indexers
     "script",
     "sinks/sink-common",
     "sinks/sink-options-derive",
@@ -21,10 +28,12 @@ members = [
     "sinks/sink-mongo",
     "sinks/sink-parquet",
     "sinks/sink-postgres",
+    "cli",
+    # Runners
     "runners/runner-common",
     "runners/runner-local",
+    # Operator
     "operator",
-    "cli",
 ]
 
 [workspace.dependencies]

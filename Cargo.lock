@@ -250,6 +250,42 @@ dependencies = [
 ]
 
 [[package]]
+name = "apibara-dna-common"
+version = "0.0.0"
+dependencies = [
+ "error-stack",
+ "futures-util",
+ "jemallocator",
+ "tokio 1.33.0",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
+name = "apibara-dna-evm"
+version = "0.0.0"
+dependencies = [
+ "error-stack",
+ "futures-util",
+ "jemallocator",
+ "tokio 1.33.0",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
+name = "apibara-dna-starknet"
+version = "0.0.0"
+dependencies = [
+ "error-stack",
+ "futures-util",
+ "jemallocator",
+ "tokio 1.33.0",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
 name = "apibara-node"
 version = "0.1.0"
 dependencies = [
