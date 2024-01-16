@@ -1,0 +1,25 @@
+[package]
+name = "apibara-dna-starknet"
+version = "0.0.0"
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[lib]
+name = "apibara_dna_starknet"
+path = "src/lib.rs"
+
+[[bin]]
+name = "apibara-dna-starknet"
+path = "src/bin.rs"
+
+[dependencies]
+error-stack.workspace = true
+futures-util.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+tracing.workspace = true
+
+[target.'cfg(not(windows))'.dependencies]
+jemallocator.workspace = true
