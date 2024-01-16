@@ -10,6 +10,7 @@ use crate::sink::SinkParquetError;
 pub struct SinkParquetConfiguration {
     pub output_dir: PathBuf,
     pub batch_size: usize,
+    pub datasets: Option<Vec<String>>,
 }
 
 #[derive(Debug, Args, Default, SinkOptions)]
@@ -21,6 +22,11 @@ pub struct SinkParquetOptions {
     /// The batch size to use when writing parquet files.
     #[arg(long, env = "PARQUET_BATCH_SIZE")]
     pub batch_size: Option<usize>,
+    /// Output multiple datasets.
+    ///
+    /// Datasets are organized in subdirectories of the output directory.
+    #[arg(long, env = "PARQUET_DATASETS", value_delimiter = ',')]
+    pub datasets: Option<Vec<String>>,
 }
 
 impl SinkOptions for SinkParquetOptions {
@@ -28,6 +34,7 @@ impl SinkOptions for SinkParquetOptions {
         Self {
             output_dir: self.output_dir.or(other.output_dir),
             batch_size: self.batch_size.or(other.batch_size),
+            datasets: self.datasets.or(other.datasets),
         }
     }
 }
@@ -46,6 +53,7 @@ impl SinkParquetOptions {
         Ok(SinkParquetConfiguration {
             output_dir,
             batch_size,
+            datasets: self.datasets,
         })
     }
 }
