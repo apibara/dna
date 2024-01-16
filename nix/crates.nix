@@ -23,6 +23,7 @@ let
       llvmPackages.libclang.lib
       pkg-config
       protobuf
+      flatbuffers
       rustToolchain
       openssl
       jq
