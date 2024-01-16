@@ -6,6 +6,17 @@ The format is based on [Common Changelog](https://common-changelog.org/), and
 this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.2] - 2024-01-16
+
+_Enable network access._
+
+### Added
+
+-   Indexers can now access the network to make HTTP/TCP calls. Use the
+    `--allow-net` flag without arguments to allow connecting to any address, or
+    restrict access to selected domains by specifying the domains as comma-separated
+    values.
+
 ## [0.5.1] - 2024-01-14
 
 _Reconnect client on disconnect._
@@ -203,6 +214,9 @@ _This release improves the developer experience when running locally._
 
 _First tagged release 🎉_
 
+[0.5.2]: https://github.com/apibara/dna/releases/tag/sink-postgres/v0.5.2
+[0.5.1]: https://github.com/apibara/dna/releases/tag/sink-postgres/v0.5.1
+[0.5.0]: https://github.com/apibara/dna/releases/tag/sink-postgres/v0.5.0
 [0.4.10]: https://github.com/apibara/dna/releases/tag/sink-postgres/v0.4.10
 [0.4.9]: https://github.com/apibara/dna/releases/tag/sink-postgres/v0.4.9
 [0.4.8]: https://github.com/apibara/dna/releases/tag/sink-postgres/v0.4.8
