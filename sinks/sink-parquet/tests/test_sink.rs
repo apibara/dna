@@ -26,6 +26,7 @@ fn new_sink(batch_size: usize) -> (TempDir, ParquetSink) {
 
     let config = SinkParquetConfiguration {
         output_dir: output_dir.path().to_path_buf(),
+        datasets: None,
         batch_size,
     };
 
@@ -86,11 +87,15 @@ fn new_cursor(order_key: u64) -> Cursor {
     }
 }
 
-fn get_file_names(output_dir: &TempDir) -> Vec<OsString> {
-    std::fs::read_dir(output_dir)
+fn get_file_names(output_dir: &TempDir, path: &str) -> Option<Vec<OsString>> {
+    if !output_dir.as_ref().join(path).exists() {
+        return None;
+    }
+    let files = std::fs::read_dir(output_dir.as_ref().join(path))
         .unwrap()
         .map(|entry| entry.unwrap().file_name())
-        .collect()
+        .collect();
+    Some(files)
 }
 
 #[tokio::test]
@@ -115,8 +120,8 @@ async fn test_handle_data() -> Result<(), SinkParquetError> {
 
     assert_eq!(action, CursorAction::Skip);
 
-    let file_names: Vec<OsString> = get_file_names(&output_dir);
-    assert_eq!(file_names.len(), 0);
+    let file_names = get_file_names(&output_dir, "default");
+    assert!(file_names.is_none());
 
     let cursor = Some(new_cursor(5));
     let end_cursor = new_cursor(10);
@@ -131,7 +136,7 @@ async fn test_handle_data() -> Result<(), SinkParquetError> {
 
     assert_eq!(action, CursorAction::Persist);
 
-    let file_names: Vec<OsString> = get_file_names(&output_dir);
+    let file_names: Vec<OsString> = get_file_names(&output_dir, "default").unwrap();
     assert_eq!(file_names, vec!["0000000000_0000000010.parquet"]);
 
     let cursor = Some(new_cursor(10));
@@ -147,7 +152,7 @@ async fn test_handle_data() -> Result<(), SinkParquetError> {
 
     assert_eq!(action, CursorAction::Skip);
 
-    let file_names: Vec<OsString> = get_file_names(&output_dir);
+    let file_names: Vec<OsString> = get_file_names(&output_dir, "default").unwrap();
     assert_eq!(file_names, vec!["0000000000_0000000010.parquet"]);
 
     let action = sink.handle_data(&ctx, &new_not_array_of_objects()).await?;
@@ -158,7 +163,7 @@ async fn test_handle_data() -> Result<(), SinkParquetError> {
 
     assert_eq!(action, CursorAction::Skip);
 
-    let record_batch = read_parquet(&output_dir, "0000000000_0000000010.parquet");
+    let record_batch = read_parquet(&output_dir, "default/0000000000_0000000010.parquet");
     let expected_record_batch = new_record_batch(&None, &new_cursor(10));
     assert_eq!(record_batch, expected_record_batch);
 
