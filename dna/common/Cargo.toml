@@ -1,0 +1,21 @@
+[package]
+name = "apibara-dna-common"
+version = "0.0.0"
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[lib]
+name = "apibara_dna_common"
+path = "src/lib.rs"
+
+[dependencies]
+error-stack.workspace = true
+futures-util.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+tracing.workspace = true
+
+[target.'cfg(not(windows))'.dependencies]
+jemallocator.workspace = true
