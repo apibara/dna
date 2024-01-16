@@ -43,6 +43,7 @@ arrayvec = "0.7.2"
 async-compression = "0.4"
 async-stream = "0.3.5"
 async-trait = "0.1.57"
+bytes = "1.5.0"
 byteorder = "1.4.3"
 byte-unit = "4.0.14"
 clap = { version = "4.3.3", features = [
@@ -57,6 +58,8 @@ ctrlc = { version = "3.2.3", features = ["termination"] }
 dirs = "4.0.0"
 dotenvy = "0.15.7"
 error-stack = "0.4.1"
+flate2 = "1.0"
+flatbuffers = { version = "23.5.26", features = ["serialize"] }
 futures = "0.3.23"
 futures-util = "0.3.26"
 governor = "0.6.0"
