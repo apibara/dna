@@ -6,6 +6,17 @@ The format is based on [Common Changelog](https://common-changelog.org/), and
 this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2024-01-16
+
+_Enable network access._
+
+### Added
+
+-   Indexers can now access the network to make HTTP/TCP calls. Use the
+    `--allow-net` flag without arguments to allow connecting to any address, or
+    restrict access to selected domains by specifying the domains as comma-separated
+    values.
+
 ## [0.4.0] - 2024-01-13
 
 _Introduce factory mode to dynamically update the stream filter._
@@ -156,6 +167,8 @@ _This release improves the developer experience when running locally._
 
 _First tagged release 🎉_
 
+[0.4.1]: https://github.com/apibara/dna/releases/tag/sink-webhook/v0.4.1
+[0.4.0]: https://github.com/apibara/dna/releases/tag/sink-webhook/v0.4.0
 [0.3.8]: https://github.com/apibara/dna/releases/tag/sink-webhook/v0.3.8
 [0.3.7]: https://github.com/apibara/dna/releases/tag/sink-webhook/v0.3.7
 [0.3.6]: https://github.com/apibara/dna/releases/tag/sink-webhook/v0.3.6
