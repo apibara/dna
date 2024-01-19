@@ -58,6 +58,10 @@ pub async fn run(args: RunArgs) -> Result<(), CliError> {
         extra_args.push("--allow-env-from-env".to_string());
         extra_args.push(allow_env_from_env.join(",").to_string());
     }
+    if let Some(allow_net) = args.transform.allow_net {
+        extra_args.push("--allow-net".to_string());
+        extra_args.push(allow_net.join(",").to_string());
+    };
     if let Some(transform_timeout) = args.transform.script_transform_timeout_seconds {
         extra_args.push("--script-transform-timeout-seconds".to_string());
         extra_args.push(transform_timeout.to_string());
