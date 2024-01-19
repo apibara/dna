@@ -200,7 +200,7 @@ checksum = "a4668cab20f66d8d020e1fbc0ebe47217433c1b6c8f2040faf858554e394ace6"
 
 [[package]]
 name = "apibara-cli"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "apibara-core",
  "apibara-observability",
@@ -429,7 +429,7 @@ dependencies = [
 
 [[package]]
 name = "apibara-sink-console"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "apibara-core",
  "apibara-observability",
@@ -448,7 +448,7 @@ dependencies = [
 
 [[package]]
 name = "apibara-sink-mongo"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "apibara-core",
  "apibara-observability",
@@ -489,7 +489,7 @@ dependencies = [
 
 [[package]]
 name = "apibara-sink-parquet"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "apibara-core",
  "apibara-observability",
@@ -510,7 +510,7 @@ dependencies = [
 
 [[package]]
 name = "apibara-sink-postgres"
-version = "0.5.2"
+version = "0.5.3"
 dependencies = [
  "apibara-core",
  "apibara-observability",
@@ -532,7 +532,7 @@ dependencies = [
 
 [[package]]
 name = "apibara-sink-webhook"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "apibara-core",
  "apibara-observability",

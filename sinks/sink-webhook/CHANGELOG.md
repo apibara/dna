@@ -6,6 +6,16 @@ The format is based on [Common Changelog](https://common-changelog.org/), and
 this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.2] - 2024-01-19
+
+_Improve `--allow-net` flag usage._
+
+### Changed
+
+-   When the `--allow-net` flag is used and the value passed to it is an empty
+    string, treat it as equivalent to allowing any host. This is especially useful
+    if you're setting the flag with the `ALLOW_NET` environment variable.
+
 ## [0.4.1] - 2024-01-16
 
 _Enable network access._
@@ -167,6 +177,7 @@ _This release improves the developer experience when running locally._
 
 _First tagged release 🎉_
 
+[0.4.2]: https://github.com/apibara/dna/releases/tag/sink-webhook/v0.4.2
 [0.4.1]: https://github.com/apibara/dna/releases/tag/sink-webhook/v0.4.1
 [0.4.0]: https://github.com/apibara/dna/releases/tag/sink-webhook/v0.4.0
 [0.3.8]: https://github.com/apibara/dna/releases/tag/sink-webhook/v0.3.8
