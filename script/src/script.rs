@@ -354,10 +354,23 @@ impl Script {
     }
 
     fn default_permissions(options: &ScriptOptions) -> Result<PermissionsContainer, ScriptError> {
+        // If users use an empty hostname, allow all hosts.
+        let allow_net = options.allow_net.clone().map(|hosts| {
+            if hosts.len() == 1 {
+                if hosts[0].is_empty() {
+                    vec![]
+                } else {
+                    hosts
+                }
+            } else {
+                hosts
+            }
+        });
+
         match Permissions::from_options(&PermissionsOptions {
             allow_env: options.allow_env.clone(),
             allow_hrtime: true,
-            allow_net: options.allow_net.clone(),
+            allow_net,
             prompt: false,
             ..PermissionsOptions::default()
         }) {
