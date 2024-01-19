@@ -6,6 +6,16 @@ The format is based on [Common Changelog](https://common-changelog.org/), and
 this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.3] - 2024-01-19
+
+_Improve `--allow-net` flag usage._
+
+### Changed
+
+-   When the `--allow-net` flag is used and the value passed to it is an empty
+    string, treat it as equivalent to allowing any host. This is especially useful
+    if you're setting the flag with the `ALLOW_NET` environment variable.
+
 ## [0.5.2] - 2024-01-16
 
 _Enable network access._
@@ -214,6 +224,7 @@ _This release improves the developer experience when running locally._
 
 _First tagged release 🎉_
 
+[0.5.3]: https://github.com/apibara/dna/releases/tag/sink-postgres/v0.5.3
 [0.5.2]: https://github.com/apibara/dna/releases/tag/sink-postgres/v0.5.2
 [0.5.1]: https://github.com/apibara/dna/releases/tag/sink-postgres/v0.5.1
 [0.5.0]: https://github.com/apibara/dna/releases/tag/sink-postgres/v0.5.0
