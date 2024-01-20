@@ -2,6 +2,8 @@
 // @generated
 mod snapshot_generated;
 pub use self::snapshot_generated::*;
+mod segment_group_generated;
+pub use self::segment_group_generated::*;
 mod block_header_segment_generated;
 pub use self::block_header_segment_generated::*;
 mod event_segment_generated;

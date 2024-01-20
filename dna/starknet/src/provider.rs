@@ -113,8 +113,9 @@ impl RpcProvider {
 
         match response {
             Receipt(receipt) => Ok(receipt),
-            PendingReceipt(_) => Err(DnaError::Fatal)
-                .attach_printable_lazy(|| format!("expected receipt, got pending receipt")),
+            PendingReceipt(_) => {
+                Err(DnaError::Fatal).attach_printable("expected receipt, got pending receipt")
+            }
         }
     }
 }
