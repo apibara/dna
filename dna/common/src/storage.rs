@@ -1,4 +1,4 @@
-use std::{fmt::Display, path::PathBuf};
+use std::{fmt::Display, io::Cursor, path::PathBuf};
 
 use async_trait::async_trait;
 use byte_unit::Byte;
@@ -20,14 +20,21 @@ impl Display for FormattedSize {
 /// Backend for storing and retrieving data.
 #[async_trait]
 pub trait StorageBackend {
+    type Reader: StorageReader;
     type Writer: StorageWriter;
 
+    async fn reader(&mut self, prefix: &str) -> Result<Self::Reader>;
     async fn writer(&mut self, prefix: &str) -> Result<Self::Writer>;
 }
 
 #[async_trait]
 pub trait StorageWriter {
     async fn put(&mut self, key: &str, value: &[u8]) -> Result<()>;
+}
+
+#[async_trait]
+pub trait StorageReader {
+    async fn copy_to_slice(&mut self, key: &str, target: &mut [u8]) -> Result<usize>;
 }
 
 #[derive(Clone)]
@@ -39,6 +46,10 @@ pub struct LocalStorageWriter {
     root: PathBuf,
 }
 
+pub struct LocalStorageReader {
+    root: PathBuf,
+}
+
 impl LocalStorageBackend {
     pub fn new(root: impl Into<PathBuf>) -> Self {
         Self { root: root.into() }
@@ -47,6 +58,7 @@ impl LocalStorageBackend {
 
 #[async_trait]
 impl StorageBackend for LocalStorageBackend {
+    type Reader = LocalStorageReader;
     type Writer = LocalStorageWriter;
 
     async fn writer(&mut self, prefix: &str) -> Result<Self::Writer> {
@@ -57,6 +69,11 @@ impl StorageBackend for LocalStorageBackend {
             .attach_printable("failed to create storage directory")
             .attach_printable_lazy(|| format!("dir: {:?}", target_dir))?;
         Ok(LocalStorageWriter::new(target_dir))
+    }
+
+    async fn reader(&mut self, prefix: &str) -> Result<Self::Reader> {
+        let target_dir = self.root.join(prefix);
+        Ok(LocalStorageReader::new(target_dir))
     }
 }
 
@@ -77,5 +94,28 @@ impl StorageWriter for LocalStorageWriter {
             .attach_printable("failed to write file")
             .attach_printable_lazy(|| format!("path: {:?}", target_path))?;
         Ok(())
+    }
+}
+
+impl LocalStorageReader {
+    fn new(root: impl Into<PathBuf>) -> Self {
+        Self { root: root.into() }
+    }
+}
+
+#[async_trait]
+impl StorageReader for LocalStorageReader {
+    async fn copy_to_slice(&mut self, key: &str, target: &mut [u8]) -> Result<usize> {
+        let target_path = self.root.join(key);
+        debug!(target_path = ?target_path, "reading file from storage");
+        let mut file = std::fs::File::open(&target_path)
+            .change_context(DnaError::Fatal)
+            .attach_printable("failed to open file")
+            .attach_printable_lazy(|| format!("path: {:?}", target_path))?;
+        let mut cursor = Cursor::new(target);
+        let count = std::io::copy(&mut file, &mut cursor)
+            .change_context(DnaError::Fatal)
+            .attach_printable("failed to read file")?;
+        Ok(count as usize)
     }
 }

@@ -23,6 +23,7 @@ clap.workspace = true
 error-stack.workspace = true
 flatbuffers.workspace = true
 governor.workspace = true
+hex.workspace = true
 futures-util.workspace = true
 roaring.workspace = true
 tokio.workspace = true
