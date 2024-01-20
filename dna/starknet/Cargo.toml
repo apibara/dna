@@ -17,13 +17,14 @@ path = "src/bin.rs"
 [dependencies]
 apibara-observability = { path = "../../observability" }
 apibara-dna-common = { path = "../common" }
+async-trait.workspace = true
 bytes.workspace = true
-byte-unit.workspace = true
 clap.workspace = true
 error-stack.workspace = true
 flatbuffers.workspace = true
 governor.workspace = true
 futures-util.workspace = true
+roaring.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
 starknet.workspace = true
