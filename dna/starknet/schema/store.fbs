@@ -1,18 +1,44 @@
 table Snapshot {
+  // Snapshot revision.
   revision:uint64;
-  // block range.
-  // bitmaps etc.
-  // link to segments.
-  //   - sorted by block number.
+  // The first block number in the snapshot.
+  //
+  // Usually it's 0, but it can be different if the snapshot is a partial
+  // snapshot.
+  first_block_number:uint64;
+  // Number of blocks in each segment.
+  segment_size:uint32;
+  // Number of segments in each group.
+  group_size:uint32;
+  // Number of groups in the snapshot.
+  group_count:uint32;
+}
+
+table SegmentGroup {
+  // The first block number in the segment group.
+  first_block_number:uint64;
+  // Number of blocks in each segment.
+  segment_size:uint32;
+  // Number of segments in the group.
+  segment_count:uint32;
+
+  // Block numbers with events from this address
+  event_by_address:[FieldElementBitmap];
+  // Block numbers with events with this key
+  event_by_key:[FieldElementBitmap];
 }
 
 table BlockHeaderSegment {
+  // The first block number in the segment.
   first_block_number:uint64;
+  // Headers.
   headers:[BlockHeader];
 }
 
 table EventSegment {
+  // The first block number in the segment.
   first_block_number:uint64;
+  // Events, grouped by block.
   blocks:[BlockEvents];
 }
 

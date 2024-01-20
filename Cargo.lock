@@ -253,6 +253,9 @@ dependencies = [
 name = "apibara-dna-common"
 version = "0.0.0"
 dependencies = [
+ "async-trait",
+ "byte-unit",
+ "bytes 1.5.0",
  "error-stack",
  "futures-util",
  "jemallocator",
@@ -279,7 +282,7 @@ version = "0.0.0"
 dependencies = [
  "apibara-dna-common",
  "apibara-observability",
- "byte-unit",
+ "async-trait",
  "bytes 1.5.0",
  "clap",
  "error-stack",
@@ -287,6 +290,7 @@ dependencies = [
  "futures-util",
  "governor",
  "jemallocator",
+ "roaring",
  "starknet",
  "tokio 1.33.0",
  "tokio-util",
@@ -1740,6 +1744,12 @@ name = "bytecount"
 version = "0.6.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e1e5f035d16fc623ae5f74981db80a439803888314e3a555fd6f04acd51a3205"
+
+[[package]]
+name = "bytemuck"
+version = "1.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "374d28ec25809ee0e23827c2ab573d729e293f281dfe393500e7ad618baa61c6"
 
 [[package]]
 name = "byteorder"
@@ -6974,9 +6984,9 @@ dependencies = [
 
 [[package]]
 name = "retain_mut"
-version = "0.1.9"
+version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4389f1d5789befaf6029ebd9f7dac4af7f7e3d61b69d4f30e2ac02b57e7712b0"
+checksum = "8c31b5c4033f8fdde8700e4657be2c497e7288f01515be52168c631e2e4d4086"
 
 [[package]]
 name = "rfc6979"
@@ -7046,6 +7056,17 @@ checksum = "bb919243f34364b6bd2fc10ef797edbfa75f33c252e7998527479c6d6b47e1ec"
 dependencies = [
  "bytes 1.5.0",
  "rustc-hex",
+]
+
+[[package]]
+name = "roaring"
+version = "0.10.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6106b5cf8587f5834158895e9715a3c6c9716c8aefab57f1f7680917191c7873"
+dependencies = [
+ "bytemuck",
+ "byteorder",
+ "retain_mut",
 ]
 
 [[package]]

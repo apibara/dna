@@ -11,6 +11,9 @@ name = "apibara_dna_common"
 path = "src/lib.rs"
 
 [dependencies]
+async-trait.workspace = true
+bytes.workspace = true
+byte-unit.workspace = true
 error-stack.workspace = true
 futures-util.workspace = true
 tokio.workspace = true

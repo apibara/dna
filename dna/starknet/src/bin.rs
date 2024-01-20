@@ -1,8 +1,14 @@
 use std::{path::PathBuf, process::ExitCode};
 
-use apibara_dna_common::error::{DnaError, ReportExt, Result};
+use apibara_dna_common::{
+    error::{DnaError, ReportExt, Result},
+    segment::{SegmentExt, SegmentOptions},
+    storage::LocalStorageBackend,
+};
 use apibara_dna_starknet::{
-    ingestion::FinalizedBlockIngestion, provider::RpcProvider, segment::BlockSegmentBuilder,
+    ingestion::RpcBlockDownloader,
+    provider::RpcProvider,
+    segment::{SegmentBuilder, SegmentGroupBuilder, Snapshot},
 };
 use apibara_observability::init_opentelemetry;
 use clap::{Args, Parser, Subcommand};
@@ -32,9 +38,15 @@ struct IngestArgs {
     /// Starting block.
     #[arg(long, env)]
     pub from_block: u64,
-    /// Number of blocks to ingest.
+    /// Size of each segment.
     #[arg(long, env)]
-    pub num_blocks: u64,
+    pub segment_size: usize,
+    /// Size of each segment group.
+    #[arg(long, env)]
+    pub segment_group_size: usize,
+    /// Number of segment groups to ingest.
+    #[arg(long, env)]
+    pub segment_group_count: usize,
     /// Where to store the segment files.
     #[arg(long, env)]
     pub output_dir: PathBuf,
@@ -64,7 +76,9 @@ async fn run_with_args(args: Cli) -> Result<()> {
 async fn run_ingest(args: IngestArgs) -> Result<()> {
     info!(
         from_block = args.from_block,
-        num_blocks = args.num_blocks,
+        segment_size = args.segment_size,
+        segment_group_size = args.segment_group_size,
+        segment_group_count = args.segment_group_count,
         output_dir = ?args.output_dir,
         rpc_url = args.rpc_url,
         rpc_rate_limit = args.rpc_rate_limit,
@@ -75,18 +89,44 @@ async fn run_ingest(args: IngestArgs) -> Result<()> {
         .change_context(DnaError::Configuration)
         .attach_printable("failed to parse RPC url")?;
     let provider = RpcProvider::new(rpc_url, args.rpc_rate_limit);
-    let ingestion = FinalizedBlockIngestion::new(provider);
 
-    let mut builder = BlockSegmentBuilder::new();
+    let block_downloader = RpcBlockDownloader::new(provider);
 
-    for block_number in args.from_block..args.from_block + args.num_blocks {
-        info!(block_number = block_number, "Ingesting block");
-        ingestion
-            .ingest_block_by_number(&mut builder, block_number)
+    let storage = LocalStorageBackend::new(args.output_dir);
+
+    let segment_options = SegmentOptions {
+        segment_size: args.segment_size,
+        group_size: args.segment_group_size,
+        target_num_digits: 9,
+    };
+
+    let mut current_block = args.from_block.segment_start(&segment_options);
+
+    let mut segment_builder = SegmentBuilder::new(storage.clone(), segment_options.clone());
+    let mut segment_group_builder =
+        SegmentGroupBuilder::new(storage.clone(), segment_options.clone());
+    let mut snapshot = Snapshot::new(args.from_block, storage, segment_options);
+
+    loop {
+        if snapshot.group_count() >= args.segment_group_count {
+            break;
+        }
+
+        let block = block_downloader
+            .download_block_by_number(current_block)
+            .await?;
+        current_block += 1;
+
+        let segment_event = segment_builder.ingest_block(current_block, block).await?;
+
+        let segment_group_event = segment_group_builder
+            .handle_segment_event(segment_event)
+            .await?;
+
+        snapshot
+            .handle_segment_group_event(segment_group_event)
             .await?;
     }
-
-    builder.flush().await?;
 
     Ok(())
 }
