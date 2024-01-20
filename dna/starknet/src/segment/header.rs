@@ -1,7 +1,10 @@
-use apibara_dna_common::error::{DnaError, Result};
-use bytes::Bytes;
+use apibara_dna_common::{
+    error::{DnaError, Result},
+    storage::{FormattedSize, StorageWriter},
+};
 use error_stack::ResultExt;
 use flatbuffers::{FlatBufferBuilder, WIPOffset};
+use tracing::info;
 
 use crate::provider::models;
 
@@ -60,7 +63,7 @@ impl<'a> BlockHeaderSegmentBuilder<'a> {
         Ok(())
     }
 
-    pub fn finished_data(&mut self) -> Result<Bytes> {
+    pub async fn flush<W: StorageWriter>(&mut self, writer: &mut W) -> Result<()> {
         let headers = self.builder.create_vector(&self.headers);
 
         let segment = {
@@ -75,12 +78,15 @@ impl<'a> BlockHeaderSegmentBuilder<'a> {
         };
 
         self.builder.finish(segment, None);
-        let data = Bytes::copy_from_slice(self.builder.finished_data());
+
+        let bytes = self.builder.finished_data();
+        info!(segment_size = %FormattedSize(bytes.len()), "flushing block header segment");
+        writer.put("header.segment", bytes).await?;
 
         self.first_block_number = None;
         self.headers.clear();
         self.builder.reset();
 
-        Ok(data)
+        Ok(())
     }
 }
