@@ -1,29 +1,27 @@
-//! Ingest finalized blocks from Starknet.
-
 use apibara_dna_common::error::{DnaError, Result};
 use error_stack::ResultExt;
-use tracing::instrument;
+use tracing::{debug, instrument};
 
-use crate::{
-    provider::{models, RpcProvider},
-    segment::BlockSegmentBuilder,
-};
+use crate::provider::{models, RpcProvider};
 
-pub struct FinalizedBlockIngestion {
+pub struct FullBlock {
+    pub block: models::BlockWithTxHashes,
+    pub transactions: Vec<models::Transaction>,
+    pub receipts: Vec<models::TransactionReceipt>,
+}
+
+pub struct RpcBlockDownloader {
     provider: RpcProvider,
 }
 
-impl FinalizedBlockIngestion {
+impl RpcBlockDownloader {
     pub fn new(provider: RpcProvider) -> Self {
         Self { provider }
     }
 
-    #[instrument(skip(self, builder), err(Debug))]
-    pub async fn ingest_block_by_number<'a>(
-        &self,
-        builder: &mut BlockSegmentBuilder<'a>,
-        number: u64,
-    ) -> Result<()> {
+    #[instrument(skip(self), err(Debug))]
+    pub async fn download_block_by_number(&self, number: u64) -> Result<FullBlock> {
+        debug!(number, "downloading block");
         let block_id = models::BlockId::Number(number);
         let models::MaybePendingBlockWithTxHashes::Block(block) =
             self.provider.get_block_with_tx_hashes(&block_id).await?
@@ -34,14 +32,10 @@ impl FinalizedBlockIngestion {
 
         assert!(block.status == models::BlockStatus::AcceptedOnL1);
 
+        /*
         let transactions = self
             .provider
             .get_transactions_by_hash(&block.transactions)
-            .await?;
-
-        let receipts = self
-            .provider
-            .get_transactions_receipts(&block.transactions)
             .await?;
 
         // Check that the order was preserved.
@@ -49,16 +43,21 @@ impl FinalizedBlockIngestion {
         for (hash, tx) in block.transactions.iter().zip(transactions.iter()) {
             assert!(hash == tx.transaction_hash());
         }
+        */
 
-        for (tx, rx) in transactions.iter().zip(receipts.iter()) {
-            assert!(tx.transaction_hash() == rx.transaction_hash());
+        let receipts = self
+            .provider
+            .get_transactions_receipts(&block.transactions)
+            .await?;
+
+        for (hash, rx) in block.transactions.iter().zip(receipts.iter()) {
+            assert!(hash == rx.transaction_hash());
         }
 
-        builder.add_block_header(&block)?;
-        builder.add_transactions(&transactions)?;
-        builder.add_receipts(&receipts)?;
-        builder.add_events(block.block_number, &receipts)?;
-
-        Ok(())
+        Ok(FullBlock {
+            block,
+            transactions: vec![],
+            receipts,
+        })
     }
 }
