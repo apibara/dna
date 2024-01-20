@@ -290,6 +290,7 @@ dependencies = [
  "flatbuffers",
  "futures-util",
  "governor",
+ "hex",
  "jemallocator",
  "roaring",
  "starknet",
