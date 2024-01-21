@@ -1,4 +1,4 @@
-use std::{path::PathBuf, process::ExitCode, time::Instant};
+use std::{collections::BTreeMap, io::Cursor, path::PathBuf, process::ExitCode, time::Instant};
 
 use apibara_dna_common::{
     error::{DnaError, ReportExt, Result},
@@ -7,13 +7,14 @@ use apibara_dna_common::{
 };
 use apibara_dna_starknet::{
     ingestion::RpcBlockDownloader,
-    provider::RpcProvider,
+    provider::{models, RpcProvider},
     segment::{store, SegmentBuilder, SegmentGroupBuilder, Snapshot},
 };
 use apibara_observability::init_opentelemetry;
 use bytes::BytesMut;
 use clap::{Args, Parser, Subcommand};
 use error_stack::ResultExt;
+use roaring::RoaringBitmap;
 use starknet::providers::Url;
 use tracing::info;
 
@@ -194,6 +195,9 @@ async fn run_inspect(args: InspectArgs) -> Result<()> {
     let mut blocks_count = 0;
     let start_time = Instant::now();
     let mut current_block = snapshot.first_block_number();
+
+    let mut event_blocks: BTreeMap<[u8; 32], RoaringBitmap> = BTreeMap::new();
+
     while current_block < end_block {
         let segment_name = current_block.format_segment_name(&segment_options);
         let segment_size = segment_reader
@@ -222,6 +226,12 @@ async fn run_inspect(args: InspectArgs) -> Result<()> {
                     events_count += 1;
 
                     let from_address = event.from_address().unwrap();
+
+                    let entry = event_blocks
+                        .entry(from_address.0)
+                        .or_insert_with(RoaringBitmap::new);
+                    entry.insert(block_number as u32);
+
                     if let Some(filter) = filter_event_address.as_ref() {
                         if from_address != filter {
                             continue;
@@ -264,6 +274,26 @@ async fn run_inspect(args: InspectArgs) -> Result<()> {
         matches_ratio = format!("{:.0}%", matches_ratio * 100.0),
         events_per_block = format!("{events_per_block:.0}"),
         "finished reading events"
+    );
+
+    let mut address_size = 0;
+    let mut bitmap_size = 0;
+    let mut real_bitmap_size = 0;
+    let mut out = Cursor::new(vec![]);
+    for (address, blocks) in event_blocks.iter() {
+        address_size += address.len();
+        bitmap_size += blocks.serialized_size();
+        out.set_position(0);
+        blocks.serialize_into(&mut out).unwrap();
+        real_bitmap_size += out.position();
+    }
+
+    info!(
+        address_count = event_blocks.len(),
+        address_size = %FormattedSize(address_size),
+        bitmap_size = %FormattedSize(bitmap_size),
+        real_bitmap_size = %FormattedSize(real_bitmap_size as usize),
+        "total roaring bitmap size"
     );
 
     Ok(())
