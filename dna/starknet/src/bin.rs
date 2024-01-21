@@ -3,11 +3,11 @@ use std::{collections::BTreeMap, io::Cursor, path::PathBuf, process::ExitCode, t
 use apibara_dna_common::{
     error::{DnaError, ReportExt, Result},
     segment::{SegmentExt, SegmentOptions},
-    storage::{FormattedSize, LocalStorageBackend, StorageBackend, StorageReader},
+    storage::{FormattedSize, LocalStorageBackend, StorageBackend},
 };
 use apibara_dna_starknet::{
     ingestion::RpcBlockDownloader,
-    provider::{models, RpcProvider},
+    provider::RpcProvider,
     segment::{store, SegmentBuilder, SegmentGroupBuilder, Snapshot},
 };
 use apibara_observability::init_opentelemetry;
@@ -57,7 +57,7 @@ struct IngestArgs {
     #[arg(long, env)]
     pub rpc_url: String,
     /// RPC rate limit, in requests per second.
-    #[arg(long, env, default_value = "512")]
+    #[arg(long, env, default_value = "1000")]
     pub rpc_rate_limit: u32,
 }
 
@@ -154,12 +154,21 @@ async fn run_inspect(args: InspectArgs) -> Result<()> {
 
     let mut storage = LocalStorageBackend::new(args.root_dir);
 
-    let mut reader = storage.reader("").await?;
+    let mut buffer = BytesMut::zeroed(200 * 1024 * 1024);
+    info!(size = %FormattedSize(buffer.len()), "prepare buffer");
+    let mut buf = Cursor::new(&mut buffer[..]);
 
-    let mut bytes = BytesMut::zeroed(200_000_000);
-    info!(capacity = %FormattedSize(bytes.len()), "prepare buffer with capacity");
-    let snapshot_size = reader.copy_to_slice("snapshot", &mut bytes).await?;
-    let snapshot = flatbuffers::root::<store::Snapshot>(&bytes[..snapshot_size])
+    let mut reader = storage
+        .get("", "snapshot")
+        .await
+        .change_context(DnaError::Io)?;
+
+    buf.set_position(0);
+    let snapshot_size = tokio::io::copy(&mut reader, &mut buf)
+        .await
+        .change_context(DnaError::Io)?;
+    assert!(snapshot_size == buf.position());
+    let snapshot = flatbuffers::root::<store::Snapshot>(buf.get_ref())
         .change_context(DnaError::Fatal)
         .attach_printable("failed to parse snapshot")?;
 
@@ -182,8 +191,6 @@ async fn run_inspect(args: InspectArgs) -> Result<()> {
             * snapshot.group_size() as u64
             * snapshot.group_count() as u64);
 
-    let mut segment_reader = storage.reader("segment").await?;
-
     let filter_event_address = if let Some(filter_event_address) = args.filter_event_address {
         Some(store::FieldElement::from_hex(&filter_event_address)?)
     } else {
@@ -200,19 +207,26 @@ async fn run_inspect(args: InspectArgs) -> Result<()> {
 
     while current_block < end_block {
         let segment_name = current_block.format_segment_name(&segment_options);
-        let segment_size = segment_reader
-            .copy_to_slice(&format!("{segment_name}/event.segment"), &mut bytes)
-            .await?;
+        let mut reader = storage
+            .get(format!("segment/{segment_name}"), "events")
+            .await
+            .change_context(DnaError::Io)?;
+
+        buf.set_position(0);
+        let segment_size = tokio::io::copy(&mut reader, &mut buf)
+            .await
+            .change_context(DnaError::Io)?;
+        assert!(segment_size == buf.position());
 
         if args.log {
             info!(
                 segment_name = %segment_name,
-                segment_size = %FormattedSize(segment_size),
+                segment_size = %FormattedSize(segment_size as usize),
                 "read segment"
             );
         }
 
-        let segment = flatbuffers::root::<store::EventSegment>(&bytes[..segment_size])
+        let segment = flatbuffers::root::<store::EventSegment>(buf.get_ref())
             .change_context(DnaError::Fatal)
             .attach_printable("failed to parse segment")?;
 
@@ -227,9 +241,7 @@ async fn run_inspect(args: InspectArgs) -> Result<()> {
 
                     let from_address = event.from_address().unwrap();
 
-                    let entry = event_blocks
-                        .entry(from_address.0)
-                        .or_insert_with(RoaringBitmap::new);
+                    let entry = event_blocks.entry(from_address.0).or_default();
                     entry.insert(block_number as u32);
 
                     if let Some(filter) = filter_event_address.as_ref() {
