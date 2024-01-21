@@ -29,7 +29,7 @@ impl RpcProvider {
         Self {
             inner,
             limiter,
-            concurrency: 20,
+            concurrency: 100,
         }
     }
 
