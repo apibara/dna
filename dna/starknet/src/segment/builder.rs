@@ -7,12 +7,14 @@ use crate::ingestion::FullBlock;
 
 pub use super::event::EventSegmentBuilder;
 pub use super::header::BlockHeaderSegmentBuilder;
+use super::index::SegmentIndex;
 
 /// Turn a bunch of blocks into a segment.
 pub struct SegmentBuilder<'a, S: StorageBackend> {
     storage: S,
     options: SegmentOptions,
     current_block_number: u64,
+    index: SegmentIndex,
     header: BlockHeaderSegmentBuilder<'a>,
     event: EventSegmentBuilder<'a>,
 }
@@ -20,6 +22,7 @@ pub struct SegmentBuilder<'a, S: StorageBackend> {
 pub struct SegmentSummary {
     pub first_block_number: u64,
     pub size: usize,
+    pub index: SegmentIndex,
 }
 
 pub enum SegmentEvent {
@@ -37,6 +40,7 @@ where
             storage,
             options,
             current_block_number: 0,
+            index: SegmentIndex::default(),
             header: BlockHeaderSegmentBuilder::new(),
             event: EventSegmentBuilder::new(),
         }
@@ -54,6 +58,7 @@ where
 
         self.header.add_block_header(&block.block)?;
         self.event.add_block_events(block_number, &block.receipts)?;
+        self.index.add_block_events(block_number, &block.receipts)?;
 
         let next_segment = (block_number + 1).segment_start(&self.options);
 
@@ -80,10 +85,12 @@ where
             .await?;
         self.event.write_segment(&mut events_writer).await?;
 
+        let index = std::mem::take(&mut self.index);
         let segment_size = 1 + self.current_block_number - current_segment;
         let summary = SegmentSummary {
             first_block_number: current_segment,
             size: segment_size as usize,
+            index,
         };
 
         Ok(SegmentEvent::Flushed(summary))

@@ -8,9 +8,9 @@ use flatbuffers::FlatBufferBuilder;
 use tokio::io::{AsyncWrite, AsyncWriteExt};
 use tracing::info;
 
-use crate::segment::store;
+use crate::segment::{index::FlatBufferBuilderFieldElementBitmapExt, store};
 
-use super::builder::SegmentEvent;
+use super::{builder::SegmentEvent, index::SegmentIndex};
 
 /// A builder for a segment group.
 ///
@@ -20,6 +20,7 @@ pub struct SegmentGroupBuilder<'a, S: StorageBackend> {
     storage: S,
     options: SegmentOptions,
     builder: FlatBufferBuilder<'a>,
+    index: SegmentIndex,
     first_block_number: u64,
     segment_count: usize,
 }
@@ -41,6 +42,7 @@ where
         Self {
             storage,
             options,
+            index: SegmentIndex::default(),
             builder: FlatBufferBuilder::new(),
             first_block_number: 0,
             segment_count: 0,
@@ -62,6 +64,7 @@ where
             self.first_block_number = segment_start;
         }
         self.segment_count += 1;
+        self.index.join(&summary.index);
 
         if self.segment_count < self.options.group_size {
             return Ok(SegmentGroupEvent::None);
@@ -80,10 +83,20 @@ where
     async fn write_segment_group<W: AsyncWrite + Unpin>(&mut self, writer: &mut W) -> Result<()> {
         info!("flushing segment group");
 
+        let event_by_address = self
+            .builder
+            .create_field_element_bitmap(&self.index.event_by_address)?;
+
+        let event_by_key = self
+            .builder
+            .create_field_element_bitmap(&self.index.event_by_key)?;
+
         let mut group = store::SegmentGroupBuilder::new(&mut self.builder);
         group.add_first_block_number(self.first_block_number);
         group.add_segment_size(self.options.segment_size as u32);
         group.add_segment_count(self.segment_count as u32);
+        group.add_event_by_address(event_by_address);
+        group.add_event_by_key(event_by_key);
 
         let group = group.finish();
         self.builder.finish(group, None);

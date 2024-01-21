@@ -2,132 +2,110 @@
 // @generated
 extern crate alloc;
 extern crate flatbuffers;
-use self::flatbuffers::{EndianScalar, Follow};
-use super::*;
 use alloc::boxed::Box;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
-use core::cmp::Ordering;
 use core::mem;
+use core::cmp::Ordering;
+use self::flatbuffers::{EndianScalar, Follow};
+use super::*;
 pub enum SnapshotOffset {}
 #[derive(Copy, Clone, PartialEq)]
 
 pub struct Snapshot<'a> {
-    pub _tab: flatbuffers::Table<'a>,
+  pub _tab: flatbuffers::Table<'a>,
 }
 
 impl<'a> flatbuffers::Follow<'a> for Snapshot<'a> {
-    type Inner = Snapshot<'a>;
-    #[inline]
-    unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
-        Self {
-            _tab: flatbuffers::Table::new(buf, loc),
-        }
-    }
+  type Inner = Snapshot<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
 }
 
 impl<'a> Snapshot<'a> {
-    pub const VT_REVISION: flatbuffers::VOffsetT = 4;
-    pub const VT_FIRST_BLOCK_NUMBER: flatbuffers::VOffsetT = 6;
-    pub const VT_SEGMENT_SIZE: flatbuffers::VOffsetT = 8;
-    pub const VT_GROUP_SIZE: flatbuffers::VOffsetT = 10;
-    pub const VT_GROUP_COUNT: flatbuffers::VOffsetT = 12;
+  pub const VT_REVISION: flatbuffers::VOffsetT = 4;
+  pub const VT_FIRST_BLOCK_NUMBER: flatbuffers::VOffsetT = 6;
+  pub const VT_SEGMENT_SIZE: flatbuffers::VOffsetT = 8;
+  pub const VT_GROUP_SIZE: flatbuffers::VOffsetT = 10;
+  pub const VT_GROUP_COUNT: flatbuffers::VOffsetT = 12;
 
-    pub const fn get_fully_qualified_name() -> &'static str {
-        "Snapshot"
-    }
+  pub const fn get_fully_qualified_name() -> &'static str {
+    "Snapshot"
+  }
 
-    #[inline]
-    pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
-        Snapshot { _tab: table }
-    }
-    #[allow(unused_mut)]
-    pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr>(
-        _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr>,
-        args: &'args SnapshotArgs,
-    ) -> flatbuffers::WIPOffset<Snapshot<'bldr>> {
-        let mut builder = SnapshotBuilder::new(_fbb);
-        builder.add_first_block_number(args.first_block_number);
-        builder.add_revision(args.revision);
-        builder.add_group_count(args.group_count);
-        builder.add_group_size(args.group_size);
-        builder.add_segment_size(args.segment_size);
-        builder.finish()
-    }
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    Snapshot { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr>,
+    args: &'args SnapshotArgs
+  ) -> flatbuffers::WIPOffset<Snapshot<'bldr>> {
+    let mut builder = SnapshotBuilder::new(_fbb);
+    builder.add_first_block_number(args.first_block_number);
+    builder.add_revision(args.revision);
+    builder.add_group_count(args.group_count);
+    builder.add_group_size(args.group_size);
+    builder.add_segment_size(args.segment_size);
+    builder.finish()
+  }
 
-    #[inline]
-    pub fn revision(&self) -> u64 {
-        // Safety:
-        // Created from valid Table for this object
-        // which contains a valid value in this slot
-        unsafe {
-            self._tab
-                .get::<u64>(Snapshot::VT_REVISION, Some(0))
-                .unwrap()
-        }
-    }
-    #[inline]
-    pub fn first_block_number(&self) -> u64 {
-        // Safety:
-        // Created from valid Table for this object
-        // which contains a valid value in this slot
-        unsafe {
-            self._tab
-                .get::<u64>(Snapshot::VT_FIRST_BLOCK_NUMBER, Some(0))
-                .unwrap()
-        }
-    }
-    #[inline]
-    pub fn segment_size(&self) -> u32 {
-        // Safety:
-        // Created from valid Table for this object
-        // which contains a valid value in this slot
-        unsafe {
-            self._tab
-                .get::<u32>(Snapshot::VT_SEGMENT_SIZE, Some(0))
-                .unwrap()
-        }
-    }
-    #[inline]
-    pub fn group_size(&self) -> u32 {
-        // Safety:
-        // Created from valid Table for this object
-        // which contains a valid value in this slot
-        unsafe {
-            self._tab
-                .get::<u32>(Snapshot::VT_GROUP_SIZE, Some(0))
-                .unwrap()
-        }
-    }
-    #[inline]
-    pub fn group_count(&self) -> u32 {
-        // Safety:
-        // Created from valid Table for this object
-        // which contains a valid value in this slot
-        unsafe {
-            self._tab
-                .get::<u32>(Snapshot::VT_GROUP_COUNT, Some(0))
-                .unwrap()
-        }
-    }
+
+  #[inline]
+  pub fn revision(&self) -> u64 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<u64>(Snapshot::VT_REVISION, Some(0)).unwrap()}
+  }
+  #[inline]
+  pub fn first_block_number(&self) -> u64 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<u64>(Snapshot::VT_FIRST_BLOCK_NUMBER, Some(0)).unwrap()}
+  }
+  #[inline]
+  pub fn segment_size(&self) -> u32 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<u32>(Snapshot::VT_SEGMENT_SIZE, Some(0)).unwrap()}
+  }
+  #[inline]
+  pub fn group_size(&self) -> u32 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<u32>(Snapshot::VT_GROUP_SIZE, Some(0)).unwrap()}
+  }
+  #[inline]
+  pub fn group_count(&self) -> u32 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<u32>(Snapshot::VT_GROUP_COUNT, Some(0)).unwrap()}
+  }
 }
 
 impl flatbuffers::Verifiable for Snapshot<'_> {
-    #[inline]
-    fn run_verifier(
-        v: &mut flatbuffers::Verifier,
-        pos: usize,
-    ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
-        use self::flatbuffers::Verifiable;
-        v.visit_table(pos)?
-            .visit_field::<u64>("revision", Self::VT_REVISION, false)?
-            .visit_field::<u64>("first_block_number", Self::VT_FIRST_BLOCK_NUMBER, false)?
-            .visit_field::<u32>("segment_size", Self::VT_SEGMENT_SIZE, false)?
-            .visit_field::<u32>("group_size", Self::VT_GROUP_SIZE, false)?
-            .visit_field::<u32>("group_count", Self::VT_GROUP_COUNT, false)?
-            .finish();
-        Ok(())
-    }
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_field::<u64>("revision", Self::VT_REVISION, false)?
+     .visit_field::<u64>("first_block_number", Self::VT_FIRST_BLOCK_NUMBER, false)?
+     .visit_field::<u32>("segment_size", Self::VT_SEGMENT_SIZE, false)?
+     .visit_field::<u32>("group_size", Self::VT_GROUP_SIZE, false)?
+     .visit_field::<u32>("group_count", Self::VT_GROUP_COUNT, false)?
+     .finish();
+    Ok(())
+  }
 }
 pub struct SnapshotArgs {
     pub revision: u64,
@@ -137,71 +115,66 @@ pub struct SnapshotArgs {
     pub group_count: u32,
 }
 impl<'a> Default for SnapshotArgs {
-    #[inline]
-    fn default() -> Self {
-        SnapshotArgs {
-            revision: 0,
-            first_block_number: 0,
-            segment_size: 0,
-            group_size: 0,
-            group_count: 0,
-        }
+  #[inline]
+  fn default() -> Self {
+    SnapshotArgs {
+      revision: 0,
+      first_block_number: 0,
+      segment_size: 0,
+      group_size: 0,
+      group_count: 0,
     }
+  }
 }
 
 pub struct SnapshotBuilder<'a: 'b, 'b> {
-    fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a>,
-    start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
 }
 impl<'a: 'b, 'b> SnapshotBuilder<'a, 'b> {
-    #[inline]
-    pub fn add_revision(&mut self, revision: u64) {
-        self.fbb_
-            .push_slot::<u64>(Snapshot::VT_REVISION, revision, 0);
+  #[inline]
+  pub fn add_revision(&mut self, revision: u64) {
+    self.fbb_.push_slot::<u64>(Snapshot::VT_REVISION, revision, 0);
+  }
+  #[inline]
+  pub fn add_first_block_number(&mut self, first_block_number: u64) {
+    self.fbb_.push_slot::<u64>(Snapshot::VT_FIRST_BLOCK_NUMBER, first_block_number, 0);
+  }
+  #[inline]
+  pub fn add_segment_size(&mut self, segment_size: u32) {
+    self.fbb_.push_slot::<u32>(Snapshot::VT_SEGMENT_SIZE, segment_size, 0);
+  }
+  #[inline]
+  pub fn add_group_size(&mut self, group_size: u32) {
+    self.fbb_.push_slot::<u32>(Snapshot::VT_GROUP_SIZE, group_size, 0);
+  }
+  #[inline]
+  pub fn add_group_count(&mut self, group_count: u32) {
+    self.fbb_.push_slot::<u32>(Snapshot::VT_GROUP_COUNT, group_count, 0);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a>) -> SnapshotBuilder<'a, 'b> {
+    let start = _fbb.start_table();
+    SnapshotBuilder {
+      fbb_: _fbb,
+      start_: start,
     }
-    #[inline]
-    pub fn add_first_block_number(&mut self, first_block_number: u64) {
-        self.fbb_
-            .push_slot::<u64>(Snapshot::VT_FIRST_BLOCK_NUMBER, first_block_number, 0);
-    }
-    #[inline]
-    pub fn add_segment_size(&mut self, segment_size: u32) {
-        self.fbb_
-            .push_slot::<u32>(Snapshot::VT_SEGMENT_SIZE, segment_size, 0);
-    }
-    #[inline]
-    pub fn add_group_size(&mut self, group_size: u32) {
-        self.fbb_
-            .push_slot::<u32>(Snapshot::VT_GROUP_SIZE, group_size, 0);
-    }
-    #[inline]
-    pub fn add_group_count(&mut self, group_count: u32) {
-        self.fbb_
-            .push_slot::<u32>(Snapshot::VT_GROUP_COUNT, group_count, 0);
-    }
-    #[inline]
-    pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a>) -> SnapshotBuilder<'a, 'b> {
-        let start = _fbb.start_table();
-        SnapshotBuilder {
-            fbb_: _fbb,
-            start_: start,
-        }
-    }
-    #[inline]
-    pub fn finish(self) -> flatbuffers::WIPOffset<Snapshot<'a>> {
-        let o = self.fbb_.end_table(self.start_);
-        flatbuffers::WIPOffset::new(o.value())
-    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<Snapshot<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    flatbuffers::WIPOffset::new(o.value())
+  }
 }
 
 impl core::fmt::Debug for Snapshot<'_> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        let mut ds = f.debug_struct("Snapshot");
-        ds.field("revision", &self.revision());
-        ds.field("first_block_number", &self.first_block_number());
-        ds.field("segment_size", &self.segment_size());
-        ds.field("group_size", &self.group_size());
-        ds.field("group_count", &self.group_count());
-        ds.finish()
-    }
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("Snapshot");
+      ds.field("revision", &self.revision());
+      ds.field("first_block_number", &self.first_block_number());
+      ds.field("segment_size", &self.segment_size());
+      ds.field("group_size", &self.group_size());
+      ds.field("group_count", &self.group_count());
+      ds.finish()
+  }
 }
