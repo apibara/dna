@@ -1,9 +1,11 @@
 use apibara_dna_common::{
-    error::Result,
+    error::{DnaError, Result},
     segment::SegmentOptions,
-    storage::{FormattedSize, StorageBackend, StorageWriter},
+    storage::{FormattedSize, StorageBackend},
 };
+use error_stack::ResultExt;
 use flatbuffers::FlatBufferBuilder;
+use tokio::io::AsyncWriteExt;
 use tracing::info;
 
 use super::{store, SegmentGroupEvent};
@@ -58,8 +60,14 @@ where
             snapshot_size = %FormattedSize(data.len()),
             "writing snapshot"
         );
-        let mut writer = self.storage.writer("").await?;
-        writer.put("snapshot", data).await?;
+
+        let mut writer = self.storage.put("", "snapshot").await?;
+        writer
+            .write_all(data)
+            .await
+            .change_context(DnaError::Io)
+            .attach_printable("failed to write snapshot")?;
+        writer.shutdown().await.change_context(DnaError::Io)?;
 
         self.revision += 1;
         self.builder.reset();

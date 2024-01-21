@@ -11,6 +11,7 @@ name = "apibara_dna_common"
 path = "src/lib.rs"
 
 [dependencies]
+async-compression = { version = "0.4.6", features = ["tokio", "zstd"] }
 async-trait.workspace = true
 bytes.workspace = true
 byte-unit.workspace = true
@@ -22,3 +23,6 @@ tracing.workspace = true
 
 [target.'cfg(not(windows))'.dependencies]
 jemallocator.workspace = true
+
+[dev-dependencies]
+tempdir.workspace = true
