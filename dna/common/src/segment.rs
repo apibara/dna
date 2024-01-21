@@ -9,6 +9,8 @@ pub struct SegmentOptions {
 }
 
 pub trait SegmentExt {
+    fn segment_group_start(&self, options: &SegmentOptions) -> u64;
+
     fn segment_start(&self, options: &SegmentOptions) -> u64;
     fn format_segment_group_name(&self, options: &SegmentOptions) -> String;
     fn format_segment_name(&self, options: &SegmentOptions) -> String;
@@ -25,15 +27,31 @@ impl Default for SegmentOptions {
 }
 
 impl SegmentExt for u64 {
+    /// Compute the first block number of the segment group.
+    ///
+    /// Notice that we always assume that block numbers start at 0.
+    fn segment_group_start(&self, options: &SegmentOptions) -> u64 {
+        self / options.segment_size as u64 / options.group_size as u64
+            * options.segment_size as u64
+            * options.group_size as u64
+    }
+
+    /// Compute the first block number of the segment.
+    ///
+    /// Notice that we always assume that block numbers start at 0.
     fn segment_start(&self, options: &SegmentOptions) -> u64 {
         self / options.segment_size as u64 * options.segment_size as u64
     }
 
+    /// Format the segment group name.
     fn format_segment_group_name(&self, options: &SegmentOptions) -> String {
-        let segment = self.segment_start(options).format_segment_name(options);
+        let segment = self
+            .segment_group_start(options)
+            .format_segment_name(options);
         format!("{}-{}", segment, options.group_size)
     }
 
+    /// Format the segment name.
     fn format_segment_name(&self, options: &SegmentOptions) -> String {
         let start = self.segment_start(options);
         let formatted = format!("{:0>width$}", start, width = options.target_num_digits);
@@ -88,6 +106,25 @@ mod tests {
         assert_eq!(500u64.segment_start(&options), 500);
         assert_eq!(749u64.segment_start(&options), 500);
         assert_eq!(750u64.segment_start(&options), 750);
+    }
+
+    #[test]
+    pub fn test_segment_group_start() {
+        // 100 blocks per segment
+        // 250 segments per group
+        let options = SegmentOptions {
+            segment_size: 100,
+            group_size: 250,
+            target_num_digits: 6,
+        };
+
+        assert_eq!(0u64.segment_group_start(&options), 0);
+        assert_eq!(100u64.segment_group_start(&options), 0);
+        assert_eq!(24_999u64.segment_group_start(&options), 0);
+
+        assert_eq!(25_000u64.segment_group_start(&options), 25_000);
+        assert_eq!(40_000u64.segment_group_start(&options), 25_000);
+        assert_eq!(50_000u64.segment_group_start(&options), 50_000);
     }
 
     #[test]
