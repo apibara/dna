@@ -1,9 +1,10 @@
 use apibara_dna_common::{
     error::{DnaError, Result},
-    storage::{FormattedSize, StorageWriter},
+    storage::FormattedSize,
 };
 use error_stack::ResultExt;
 use flatbuffers::{FlatBufferBuilder, WIPOffset};
+use tokio::io::{AsyncWrite, AsyncWriteExt};
 use tracing::info;
 
 use crate::provider::models;
@@ -63,7 +64,7 @@ impl<'a> BlockHeaderSegmentBuilder<'a> {
         Ok(())
     }
 
-    pub async fn flush<W: StorageWriter>(&mut self, writer: &mut W) -> Result<()> {
+    pub async fn write_segment<W: AsyncWrite + Unpin>(&mut self, writer: &mut W) -> Result<()> {
         let headers = self.builder.create_vector(&self.headers);
 
         let segment = {
@@ -81,7 +82,12 @@ impl<'a> BlockHeaderSegmentBuilder<'a> {
 
         let bytes = self.builder.finished_data();
         info!(segment_size = %FormattedSize(bytes.len()), "flushing block header segment");
-        writer.put("header.segment", bytes).await?;
+        writer
+            .write_all(bytes)
+            .await
+            .change_context(DnaError::Io)
+            .attach_printable("failed to write block header segment")?;
+        writer.shutdown().await.change_context(DnaError::Io)?;
 
         self.first_block_number = None;
         self.headers.clear();

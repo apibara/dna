@@ -1,9 +1,10 @@
 use apibara_dna_common::{
     error::{DnaError, Result},
-    storage::{FormattedSize, StorageWriter},
+    storage::FormattedSize,
 };
 use error_stack::ResultExt;
 use flatbuffers::{FlatBufferBuilder, WIPOffset};
+use tokio::io::{AsyncWrite, AsyncWriteExt};
 use tracing::info;
 
 use crate::provider::models;
@@ -92,7 +93,7 @@ impl<'a> EventSegmentBuilder<'a> {
         Ok(())
     }
 
-    pub async fn flush<W: StorageWriter>(&mut self, writer: &mut W) -> Result<()> {
+    pub async fn write_segment<W: AsyncWrite + Unpin>(&mut self, writer: &mut W) -> Result<()> {
         let blocks = self.builder.create_vector(&self.blocks);
 
         let segment = {
@@ -109,7 +110,13 @@ impl<'a> EventSegmentBuilder<'a> {
         self.builder.finish(segment, None);
         let bytes = self.builder.finished_data();
         info!(segment_size = %FormattedSize(bytes.len()), "flushing event segment");
-        writer.put("event.segment", bytes).await?;
+
+        writer
+            .write_all(bytes)
+            .await
+            .change_context(DnaError::Io)
+            .attach_printable("failed to write event segment")?;
+        writer.shutdown().await.change_context(DnaError::Io)?;
 
         self.first_block_number = None;
         self.blocks.clear();

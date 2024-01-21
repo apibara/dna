@@ -68,13 +68,17 @@ where
 
         let segment_name = self.current_block_number.format_segment_name(&self.options);
 
-        let mut writer = self
+        let mut headers_writer = self
             .storage
-            .writer(&format!("segment/{}", segment_name))
+            .put(format!("segment/{segment_name}"), "headers")
             .await?;
+        self.header.write_segment(&mut headers_writer).await?;
 
-        self.header.flush(&mut writer).await?;
-        self.event.flush(&mut writer).await?;
+        let mut events_writer = self
+            .storage
+            .put(format!("segment/{segment_name}"), "events")
+            .await?;
+        self.event.write_segment(&mut events_writer).await?;
 
         let segment_size = 1 + self.current_block_number - current_segment;
         let summary = SegmentSummary {

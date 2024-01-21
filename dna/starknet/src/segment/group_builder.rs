@@ -1,9 +1,11 @@
 use apibara_dna_common::{
-    error::Result,
+    error::{DnaError, Result},
     segment::{SegmentExt, SegmentOptions},
-    storage::{StorageBackend, StorageWriter},
+    storage::StorageBackend,
 };
+use error_stack::ResultExt;
 use flatbuffers::FlatBufferBuilder;
+use tokio::io::{AsyncWrite, AsyncWriteExt};
 use tracing::info;
 
 use crate::segment::store;
@@ -65,15 +67,18 @@ where
             return Ok(SegmentGroupEvent::None);
         }
 
-        let mut writer = self.storage.writer("group").await?;
-
-        self.flush(&mut writer).await
-    }
-
-    async fn flush<W: StorageWriter>(&mut self, writer: &mut W) -> Result<SegmentGroupEvent> {
-        info!("flushing segment group");
         let first_block_number = self.first_block_number;
         let group_name = first_block_number.format_segment_group_name(&self.options);
+
+        let mut writer = self.storage.put("group", group_name).await?;
+        self.write_segment_group(&mut writer).await?;
+
+        let summary = SegmentGroupSummary { first_block_number };
+        Ok(SegmentGroupEvent::Flushed(summary))
+    }
+
+    async fn write_segment_group<W: AsyncWrite + Unpin>(&mut self, writer: &mut W) -> Result<()> {
+        info!("flushing segment group");
 
         let mut group = store::SegmentGroupBuilder::new(&mut self.builder);
         group.add_first_block_number(self.first_block_number);
@@ -84,14 +89,16 @@ where
         self.builder.finish(group, None);
 
         writer
-            .put(&group_name, self.builder.finished_data())
-            .await?;
+            .write_all(self.builder.finished_data())
+            .await
+            .change_context(DnaError::Io)
+            .attach_printable("failed to write segment group")?;
+        writer.shutdown().await.change_context(DnaError::Io)?;
 
         self.segment_count = 0;
         self.first_block_number = 0;
         self.builder.reset();
 
-        let summary = SegmentGroupSummary { first_block_number };
-        Ok(SegmentGroupEvent::Flushed(summary))
+        Ok(())
     }
 }
