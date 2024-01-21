@@ -155,7 +155,7 @@ async fn run_inspect(args: InspectArgs) -> Result<()> {
 
     let mut reader = storage.reader("").await?;
 
-    let mut bytes = BytesMut::zeroed(20_000_000);
+    let mut bytes = BytesMut::zeroed(200_000_000);
     info!(capacity = %FormattedSize(bytes.len()), "prepare buffer with capacity");
     let snapshot_size = reader.copy_to_slice("snapshot", &mut bytes).await?;
     let snapshot = flatbuffers::root::<store::Snapshot>(&bytes[..snapshot_size])
@@ -193,16 +193,15 @@ async fn run_inspect(args: InspectArgs) -> Result<()> {
     let mut matched_events_count = 0;
     let mut blocks_count = 0;
     let start_time = Instant::now();
-    for block_number in snapshot.first_block_number()..end_block {
-        blocks_count += 1;
-        let segment_name = block_number.format_segment_name(&segment_options);
+    let mut current_block = snapshot.first_block_number();
+    while current_block < end_block {
+        let segment_name = current_block.format_segment_name(&segment_options);
         let segment_size = segment_reader
             .copy_to_slice(&format!("{segment_name}/event.segment"), &mut bytes)
             .await?;
 
         if args.log {
             info!(
-                block_number = block_number,
                 segment_name = %segment_name,
                 segment_size = %FormattedSize(segment_size),
                 "read segment"
@@ -214,9 +213,11 @@ async fn run_inspect(args: InspectArgs) -> Result<()> {
             .attach_printable("failed to parse segment")?;
 
         if let Some(blocks) = segment.blocks() {
+            current_block += blocks.len() as u64;
+            blocks_count += blocks.len();
             for block in blocks.iter() {
                 let block_events = block.events().unwrap_or_default();
-                let _block_number = block.block_number();
+                let block_number = block.block_number();
                 for event in block_events.iter() {
                     events_count += 1;
 
