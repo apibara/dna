@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, io::Cursor, path::PathBuf, process::ExitCode, time::Instant};
+use std::{io::Cursor, path::PathBuf, process::ExitCode, time::Instant};
 
 use apibara_dna_common::{
     error::{DnaError, ReportExt, Result},
@@ -8,7 +8,7 @@ use apibara_dna_common::{
 use apibara_dna_starknet::{
     ingestion::RpcBlockDownloader,
     provider::RpcProvider,
-    segment::{store, SegmentBuilder, SegmentGroupBuilder, Snapshot},
+    segment::{store, SegmentBuilder, SegmentGroupBuilder, Snapshot, VectorExt},
 };
 use apibara_observability::init_opentelemetry;
 use bytes::BytesMut;
@@ -73,6 +73,9 @@ struct InspectArgs {
     /// Log to stdout.
     #[arg(long, env, default_value = "false")]
     pub log: bool,
+    /// Use bitmap or not.
+    #[arg(long, env, default_value = "false")]
+    pub use_bitmap: bool,
 }
 
 #[tokio::main]
@@ -118,7 +121,7 @@ async fn run_ingest(args: IngestArgs) -> Result<()> {
         target_num_digits: 9,
     };
 
-    let mut current_block = args.from_block.segment_start(&segment_options);
+    let mut current_block = args.from_block.segment_group_start(&segment_options);
 
     let mut segment_builder = SegmentBuilder::new(storage.clone(), segment_options.clone());
     let mut segment_group_builder =
@@ -154,8 +157,14 @@ async fn run_inspect(args: InspectArgs) -> Result<()> {
 
     let mut storage = LocalStorageBackend::new(args.root_dir);
 
+    let mut group_buffer = BytesMut::zeroed(50 * 1024 * 1024);
     let mut buffer = BytesMut::zeroed(200 * 1024 * 1024);
-    info!(size = %FormattedSize(buffer.len()), "prepare buffer");
+    info!(
+        group_size = %FormattedSize(group_buffer.len()),
+        segment_size = %FormattedSize(buffer.len()),
+        "prepare buffers"
+    );
+    let mut group_buf = Cursor::new(&mut group_buffer[..]);
     let mut buf = Cursor::new(&mut buffer[..]);
 
     let mut reader = storage
@@ -201,11 +210,95 @@ async fn run_inspect(args: InspectArgs) -> Result<()> {
     let mut matched_events_count = 0;
     let mut blocks_count = 0;
     let start_time = Instant::now();
+    let mut current_group = u64::MAX;
+
     let mut current_block = snapshot.first_block_number();
 
-    let mut event_blocks: BTreeMap<[u8; 32], RoaringBitmap> = BTreeMap::new();
+    let mut filter_bitmap = RoaringBitmap::full();
+
+    info!(use_bitmap = ?args.use_bitmap, "starting search");
 
     while current_block < end_block {
+        if current_block.segment_group_start(&segment_options) != current_group {
+            current_group = current_block.segment_group_start(&segment_options);
+            let group_name = current_block.format_segment_group_name(&segment_options);
+            if args.log {
+                info!(group_name, "reading segment group");
+            }
+            let mut reader = storage
+                .get("group", group_name)
+                .await
+                .change_context(DnaError::Io)?;
+
+            group_buf.set_position(0);
+            let group_size = tokio::io::copy(&mut reader, &mut group_buf)
+                .await
+                .change_context(DnaError::Io)?;
+            assert!(group_size == group_buf.position());
+            let segment_group = flatbuffers::root::<store::SegmentGroup>(group_buf.get_ref())
+                .change_context(DnaError::Fatal)
+                .attach_printable("failed to parse segment group")?;
+
+            assert!(segment_group.first_block_number() <= current_block);
+            assert!(
+                segment_group.first_block_number()
+                    + (segment_group.segment_count() as u64 * segment_group.segment_size() as u64)
+                    > current_block
+            );
+
+            if args.log {
+                // Check that the events are sorted by address.
+                info!("checking that event by address is sorted");
+                let mut prev_key = store::FieldElement::new(&[0; 32]);
+                if let Some(event_by_address) = segment_group.event_by_address() {
+                    for kv in event_by_address {
+                        let key = kv.key().unwrap();
+                        assert!(&prev_key <= key);
+                        prev_key = *key;
+                    }
+                }
+            }
+
+            if let Some(event_filter) = filter_event_address {
+                if args.log {
+                    info!("loading event by address bitmap");
+                }
+
+                if args.use_bitmap {
+                    let event_by_address = segment_group.event_by_address().unwrap_or_default();
+                    if let Some(field_bitmap) =
+                        event_by_address.binary_search_by_key(&event_filter, |kv| kv.key())
+                    {
+                        let bitmap_bytes = field_bitmap.bitmap().unwrap_or_default();
+                        filter_bitmap = RoaringBitmap::deserialize_from(bitmap_bytes.bytes())
+                            .change_context(DnaError::Fatal)
+                            .attach_printable("failed to deserialize bitmap")?;
+                    } else {
+                        filter_bitmap.clear();
+                    }
+                }
+            }
+        }
+
+        // Check if the segment contains events.
+        // If that's not the case, don't deserialize the segment at all.
+        let segment_start = current_block.segment_start(&segment_options);
+        let segment_end = segment_start + segment_options.segment_size as u64;
+
+        let segment_contains_events = {
+            if filter_bitmap.is_empty() {
+                false
+            } else {
+                filter_bitmap.min().unwrap() >= segment_start as u32
+                    && filter_bitmap.max().unwrap() < segment_end as u32
+            }
+        };
+
+        if segment_contains_events {
+            current_block += segment_options.segment_size as u64;
+            continue;
+        }
+
         let segment_name = current_block.format_segment_name(&segment_options);
         let mut reader = storage
             .get(format!("segment/{segment_name}"), "events")
@@ -234,15 +327,16 @@ async fn run_inspect(args: InspectArgs) -> Result<()> {
             current_block += blocks.len() as u64;
             blocks_count += blocks.len();
             for block in blocks.iter() {
-                let block_events = block.events().unwrap_or_default();
                 let block_number = block.block_number();
+                if args.use_bitmap && !filter_bitmap.contains(block_number as u32) {
+                    continue;
+                }
+
+                let block_events = block.events().unwrap_or_default();
                 for event in block_events.iter() {
                     events_count += 1;
 
                     let from_address = event.from_address().unwrap();
-
-                    let entry = event_blocks.entry(from_address.0).or_default();
-                    entry.insert(block_number as u32);
 
                     if let Some(filter) = filter_event_address.as_ref() {
                         if from_address != filter {
@@ -286,26 +380,6 @@ async fn run_inspect(args: InspectArgs) -> Result<()> {
         matches_ratio = format!("{:.0}%", matches_ratio * 100.0),
         events_per_block = format!("{events_per_block:.0}"),
         "finished reading events"
-    );
-
-    let mut address_size = 0;
-    let mut bitmap_size = 0;
-    let mut real_bitmap_size = 0;
-    let mut out = Cursor::new(vec![]);
-    for (address, blocks) in event_blocks.iter() {
-        address_size += address.len();
-        bitmap_size += blocks.serialized_size();
-        out.set_position(0);
-        blocks.serialize_into(&mut out).unwrap();
-        real_bitmap_size += out.position();
-    }
-
-    info!(
-        address_count = event_blocks.len(),
-        address_size = %FormattedSize(address_size),
-        bitmap_size = %FormattedSize(bitmap_size),
-        real_bitmap_size = %FormattedSize(real_bitmap_size as usize),
-        "total roaring bitmap size"
     );
 
     Ok(())
