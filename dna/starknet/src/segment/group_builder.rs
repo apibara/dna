@@ -110,6 +110,7 @@ where
 
         self.segment_count = 0;
         self.first_block_number = 0;
+        self.index.clear();
         self.builder.reset();
 
         Ok(())
