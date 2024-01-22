@@ -14,6 +14,7 @@ use apibara_observability::init_opentelemetry;
 use bytes::BytesMut;
 use clap::{Args, Parser, Subcommand};
 use error_stack::ResultExt;
+use flatbuffers::VerifierOptions;
 use roaring::RoaringBitmap;
 use starknet::providers::Url;
 use tracing::info;
@@ -73,6 +74,9 @@ struct InspectArgs {
     /// Log to stdout.
     #[arg(long, env, default_value = "false")]
     pub log: bool,
+    /// Log found evens to stdout.
+    #[arg(long, env, default_value = "false")]
+    pub log_event: bool,
     /// Use bitmap or not.
     #[arg(long, env, default_value = "false")]
     pub use_bitmap: bool,
@@ -157,7 +161,7 @@ async fn run_inspect(args: InspectArgs) -> Result<()> {
 
     let mut storage = LocalStorageBackend::new(args.root_dir);
 
-    let mut group_buffer = BytesMut::zeroed(50 * 1024 * 1024);
+    let mut group_buffer = BytesMut::zeroed(500 * 1024 * 1024);
     let mut buffer = BytesMut::zeroed(200 * 1024 * 1024);
     info!(
         group_size = %FormattedSize(group_buffer.len()),
@@ -218,6 +222,10 @@ async fn run_inspect(args: InspectArgs) -> Result<()> {
 
     info!(use_bitmap = ?args.use_bitmap, "starting search");
 
+    let flatbuffers_options = VerifierOptions {
+        max_tables: 5_000_000,
+        ..Default::default()
+    };
     while current_block < end_block {
         if current_block.segment_group_start(&segment_options) != current_group {
             current_group = current_block.segment_group_start(&segment_options);
@@ -235,9 +243,12 @@ async fn run_inspect(args: InspectArgs) -> Result<()> {
                 .await
                 .change_context(DnaError::Io)?;
             assert!(group_size == group_buf.position());
-            let segment_group = flatbuffers::root::<store::SegmentGroup>(group_buf.get_ref())
-                .change_context(DnaError::Fatal)
-                .attach_printable("failed to parse segment group")?;
+            let segment_group = flatbuffers::root_with_opts::<store::SegmentGroup>(
+                &flatbuffers_options,
+                group_buf.get_ref(),
+            )
+            .change_context(DnaError::Fatal)
+            .attach_printable("failed to parse segment group")?;
 
             assert!(segment_group.first_block_number() <= current_block);
             assert!(
@@ -286,16 +297,38 @@ async fn run_inspect(args: InspectArgs) -> Result<()> {
         let segment_end = segment_start + segment_options.segment_size as u64;
 
         let segment_contains_events = {
-            if filter_bitmap.is_empty() {
+            if args.use_bitmap && args.log {
+                info!(
+                    segment_start = segment_start,
+                    segment_end = segment_end,
+                    is_empty = ?filter_bitmap.is_empty(),
+                    filter_min = ?filter_bitmap.min(),
+                    filter_max = ?filter_bitmap.max(),
+                    "checking segment"
+                );
+            }
+
+            if !args.use_bitmap {
+                true
+            } else if filter_bitmap.is_empty() {
                 false
             } else {
-                filter_bitmap.min().unwrap() >= segment_start as u32
-                    && filter_bitmap.max().unwrap() < segment_end as u32
+                let mut segment_bitmap = RoaringBitmap::new();
+                segment_bitmap.insert_range(segment_start as u32..segment_end as u32);
+                !filter_bitmap.is_disjoint(&segment_bitmap)
             }
         };
 
-        if segment_contains_events {
+        if !segment_contains_events {
             current_block += segment_options.segment_size as u64;
+            blocks_count += segment_options.segment_size;
+            if args.log {
+                info!(
+                    segment_start = segment_start,
+                    segment_end = segment_end,
+                    "skipping segment"
+                );
+            }
             continue;
         }
 
@@ -332,6 +365,23 @@ async fn run_inspect(args: InspectArgs) -> Result<()> {
                     continue;
                 }
 
+                // Print out if the segment contains events but the bitmap doesn't.
+                // If this happens it's a bug.
+                if !segment_contains_events && args.log {
+                    let mut segment_bitmap = RoaringBitmap::new();
+                    segment_bitmap.insert_range(segment_start as u32..segment_end as u32);
+                    info!(
+                        block_number = block_number,
+                        segment_start = segment_start,
+                        segment_end = segment_end,
+                        is_empty = ?filter_bitmap.is_empty(),
+                        filter_min = ?filter_bitmap.min(),
+                        filter_max = ?filter_bitmap.max(),
+                        intersection = ?filter_bitmap.intersection_len(&segment_bitmap),
+                        "wroooooong"
+                    );
+                }
+
                 let block_events = block.events().unwrap_or_default();
                 for event in block_events.iter() {
                     events_count += 1;
@@ -348,7 +398,7 @@ async fn run_inspect(args: InspectArgs) -> Result<()> {
                         let transaction_index = event.transaction_index();
                         matched_events_count += 1;
 
-                        if args.log {
+                        if args.log_event {
                             info!(
                                 block_number = block_number,
                                 transaction_index = transaction_index,
