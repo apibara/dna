@@ -59,6 +59,11 @@ impl SegmentIndex {
         Ok(())
     }
 
+    pub fn clear(&mut self) {
+        self.event_by_address.clear();
+        self.event_by_key.clear();
+    }
+
     pub fn join(&mut self, other: &Self) {
         for (address, bitmap) in &other.event_by_address {
             let entry = self.event_by_address.entry(*address).or_default();
