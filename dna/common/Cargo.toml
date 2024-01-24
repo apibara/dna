@@ -11,11 +11,14 @@ name = "apibara_dna_common"
 path = "src/lib.rs"
 
 [dependencies]
-async-compression = { version = "0.4.6", features = ["tokio", "zstd"] }
+async-channel.workspace = true
+async-compression.workspace = true
 async-trait.workspace = true
 bytes.workspace = true
 byte-unit.workspace = true
+clap.workspace = true
 error-stack.workspace = true
+flatbuffers.workspace = true
 futures-util.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true

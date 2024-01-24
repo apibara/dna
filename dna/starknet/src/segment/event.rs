@@ -47,7 +47,7 @@ impl<'a> EventSegmentBuilder<'a> {
                 DeployAccount(receipt) => receipt.events.iter(),
             };
 
-            for tx_event in tx_events {
+            for (event_index, tx_event) in tx_events.enumerate() {
                 let keys = {
                     let mut keys = Vec::new();
                     for key in tx_event.keys.iter() {
@@ -75,6 +75,7 @@ impl<'a> EventSegmentBuilder<'a> {
                 let transaction_hash = receipt.transaction_hash().into();
                 event.add_transaction_hash(&transaction_hash);
                 event.add_transaction_index(tx_index as u64);
+                event.add_event_index(event_index as u64);
 
                 all_events.push(event.finish());
             }

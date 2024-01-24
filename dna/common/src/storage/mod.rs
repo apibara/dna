@@ -15,11 +15,21 @@ pub trait StorageBackend {
     type Reader: AsyncRead;
     type Writer: AsyncWrite + Unpin;
 
+    /// Returns true if `filename` exists in `prefix`.
+    async fn exists(
+        &mut self,
+        prefix: impl AsRef<str> + Send,
+        filename: impl AsRef<str> + Send,
+    ) -> Result<bool>;
+
+    /// Returns a [Self::Reader] for `filename` in `prefix`.
     async fn get(
         &mut self,
         prefix: impl AsRef<str> + Send,
         filename: impl AsRef<str> + Send,
     ) -> Result<Self::Reader>;
+
+    /// Returns a [Self::Writer] for `filename` in `prefix`.
     async fn put(
         &mut self,
         prefix: impl AsRef<str> + Send,
