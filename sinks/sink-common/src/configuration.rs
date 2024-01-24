@@ -46,6 +46,9 @@ pub struct PersistenceTypeOptions {
     #[arg(long, env, requires = "sink_id")]
     /// Path to the directory used to persist data.
     pub persist_to_fs: Option<String>,
+    #[arg(long, env, requires = "sink_id")]
+    /// URL to the redis server used to persist data.
+    pub persist_to_redis: Option<String>,
 }
 
 /// Status server options.
