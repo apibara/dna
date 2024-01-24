@@ -30,8 +30,9 @@ impl<'a> Event<'a> {
     pub const VT_FROM_ADDRESS: flatbuffers::VOffsetT = 4;
     pub const VT_KEYS: flatbuffers::VOffsetT = 6;
     pub const VT_DATA: flatbuffers::VOffsetT = 8;
-    pub const VT_TRANSACTION_INDEX: flatbuffers::VOffsetT = 10;
-    pub const VT_TRANSACTION_HASH: flatbuffers::VOffsetT = 12;
+    pub const VT_EVENT_INDEX: flatbuffers::VOffsetT = 10;
+    pub const VT_TRANSACTION_INDEX: flatbuffers::VOffsetT = 12;
+    pub const VT_TRANSACTION_HASH: flatbuffers::VOffsetT = 14;
 
     pub const fn get_fully_qualified_name() -> &'static str {
         "Event"
@@ -48,6 +49,7 @@ impl<'a> Event<'a> {
     ) -> flatbuffers::WIPOffset<Event<'bldr>> {
         let mut builder = EventBuilder::new(_fbb);
         builder.add_transaction_index(args.transaction_index);
+        builder.add_event_index(args.event_index);
         if let Some(x) = args.transaction_hash {
             builder.add_transaction_hash(x);
         }
@@ -97,6 +99,17 @@ impl<'a> Event<'a> {
         }
     }
     #[inline]
+    pub fn event_index(&self) -> u64 {
+        // Safety:
+        // Created from valid Table for this object
+        // which contains a valid value in this slot
+        unsafe {
+            self._tab
+                .get::<u64>(Event::VT_EVENT_INDEX, Some(0))
+                .unwrap()
+        }
+    }
+    #[inline]
     pub fn transaction_index(&self) -> u64 {
         // Safety:
         // Created from valid Table for this object
@@ -138,6 +151,7 @@ impl flatbuffers::Verifiable for Event<'_> {
                 Self::VT_DATA,
                 false,
             )?
+            .visit_field::<u64>("event_index", Self::VT_EVENT_INDEX, false)?
             .visit_field::<u64>("transaction_index", Self::VT_TRANSACTION_INDEX, false)?
             .visit_field::<FieldElement>("transaction_hash", Self::VT_TRANSACTION_HASH, false)?
             .finish();
@@ -148,6 +162,7 @@ pub struct EventArgs<'a> {
     pub from_address: Option<&'a FieldElement>,
     pub keys: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, FieldElement>>>,
     pub data: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, FieldElement>>>,
+    pub event_index: u64,
     pub transaction_index: u64,
     pub transaction_hash: Option<&'a FieldElement>,
 }
@@ -158,6 +173,7 @@ impl<'a> Default for EventArgs<'a> {
             from_address: None,
             keys: None,
             data: None,
+            event_index: 0,
             transaction_index: 0,
             transaction_hash: None,
         }
@@ -191,6 +207,11 @@ impl<'a: 'b, 'b> EventBuilder<'a, 'b> {
             .push_slot_always::<flatbuffers::WIPOffset<_>>(Event::VT_DATA, data);
     }
     #[inline]
+    pub fn add_event_index(&mut self, event_index: u64) {
+        self.fbb_
+            .push_slot::<u64>(Event::VT_EVENT_INDEX, event_index, 0);
+    }
+    #[inline]
     pub fn add_transaction_index(&mut self, transaction_index: u64) {
         self.fbb_
             .push_slot::<u64>(Event::VT_TRANSACTION_INDEX, transaction_index, 0);
@@ -221,6 +242,7 @@ impl core::fmt::Debug for Event<'_> {
         ds.field("from_address", &self.from_address());
         ds.field("keys", &self.keys());
         ds.field("data", &self.data());
+        ds.field("event_index", &self.event_index());
         ds.field("transaction_index", &self.transaction_index());
         ds.field("transaction_hash", &self.transaction_hash());
         ds.finish()
