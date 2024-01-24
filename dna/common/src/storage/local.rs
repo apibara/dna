@@ -24,6 +24,17 @@ impl StorageBackend for LocalStorageBackend {
     type Reader = ZstdDecoder<tokio::io::BufReader<tokio::fs::File>>;
     type Writer = ZstdEncoder<tokio::fs::File>;
 
+    async fn exists(
+        &mut self,
+        prefix: impl AsRef<str> + Send,
+        filename: impl AsRef<str> + Send,
+    ) -> Result<bool> {
+        let filename = format!("{}.zst", filename.as_ref());
+
+        let target_file = self.root.join(prefix.as_ref()).join(filename);
+        Ok(target_file.exists())
+    }
+
     async fn get(
         &mut self,
         prefix: impl AsRef<str> + Send,
