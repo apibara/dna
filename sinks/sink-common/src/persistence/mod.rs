@@ -2,11 +2,13 @@ pub mod common;
 mod default;
 mod etcd;
 mod fs;
+mod redis;
 
 pub use self::common::{PersistedState, PersistenceClient as PersistenceClientTrait};
 pub use self::default::NoPersistence;
 pub use self::etcd::EtcdPersistence;
 pub use self::fs::DirPersistence;
+pub use self::redis::RedisPersistence;
 
 use apibara_core::filter::Filter;
 use async_trait::async_trait;
@@ -31,12 +33,16 @@ impl Persistence {
             .sink_id
             .clone()
             .unwrap_or_else(|| "default".to_string());
+
         if let Some(etcd_url) = &self.options.persistence_type.persist_to_etcd {
             let client = etcd::EtcdPersistence::connect(etcd_url, sink_id).await?;
             Ok(PersistenceClient::new_etcd(client))
         } else if let Some(dir_path) = &self.options.persistence_type.persist_to_fs {
             let persistence = DirPersistence::initialize(dir_path, sink_id)?;
             Ok(PersistenceClient::new_dir(persistence))
+        } else if let Some(redis_url) = &self.options.persistence_type.persist_to_redis {
+            let client = redis::RedisPersistence::connect(redis_url, sink_id).await?;
+            Ok(PersistenceClient::new_redis(client))
         } else {
             Ok(PersistenceClient::new_none())
         }
@@ -46,6 +52,7 @@ impl Persistence {
 pub enum PersistenceClient {
     Etcd(EtcdPersistence),
     Dir(DirPersistence),
+    Redis(RedisPersistence),
     None(NoPersistence),
 }
 
@@ -58,6 +65,10 @@ impl PersistenceClient {
         Self::Dir(inner)
     }
 
+    fn new_redis(inner: RedisPersistence) -> PersistenceClient {
+        Self::Redis(inner)
+    }
+
     pub fn new_none() -> Self {
         Self::None(NoPersistence)
     }
@@ -66,6 +77,7 @@ impl PersistenceClient {
         match self {
             Self::Etcd(inner) => inner.lock().await,
             Self::Dir(inner) => inner.lock().await,
+            Self::Redis(inner) => inner.lock().await,
             Self::None(inner) => inner.lock().await,
         }
     }
@@ -74,6 +86,7 @@ impl PersistenceClient {
         match self {
             Self::Etcd(inner) => inner.unlock().await,
             Self::Dir(inner) => inner.unlock().await,
+            Self::Redis(inner) => inner.unlock().await,
             Self::None(inner) => inner.unlock().await,
         }
     }
@@ -82,6 +95,7 @@ impl PersistenceClient {
         match self {
             Self::Etcd(inner) => inner.get_state().await,
             Self::Dir(inner) => inner.get_state().await,
+            Self::Redis(inner) => inner.get_state().await,
             Self::None(inner) => inner.get_state().await,
         }
     }
@@ -93,6 +107,7 @@ impl PersistenceClient {
         match self {
             Self::Etcd(inner) => inner.put_state(state).await,
             Self::Dir(inner) => inner.put_state(state).await,
+            Self::Redis(inner) => inner.put_state(state).await,
             Self::None(inner) => inner.put_state(state).await,
         }
     }
@@ -101,6 +116,7 @@ impl PersistenceClient {
         match self {
             Self::Etcd(inner) => inner.delete_state().await,
             Self::Dir(inner) => inner.delete_state().await,
+            Self::Redis(inner) => inner.delete_state().await,
             Self::None(inner) => inner.delete_state().await,
         }
     }
