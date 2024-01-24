@@ -223,7 +223,7 @@ async fn run_inspect(args: InspectArgs) -> Result<()> {
     info!(use_bitmap = ?args.use_bitmap, "starting search");
 
     let flatbuffers_options = VerifierOptions {
-        max_tables: 5_000_000,
+        max_tables: 10_000_000,
         ..Default::default()
     };
     while current_block < end_block {
