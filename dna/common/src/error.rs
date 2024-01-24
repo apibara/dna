@@ -8,6 +8,8 @@ pub enum DnaError {
     Configuration,
     /// Io error. Can retry.
     Io,
+    /// Storage error. Should not retry.
+    Storage,
 }
 
 pub type Result<T> = error_stack::Result<T, DnaError>;
@@ -20,6 +22,7 @@ impl fmt::Display for DnaError {
             DnaError::Fatal => f.write_str("dna error: fatal"),
             DnaError::Configuration => f.write_str("dna error: configuration"),
             DnaError::Io => f.write_str("dna error: io"),
+            DnaError::Storage => f.write_str("dna error: storage"),
         }
     }
 }

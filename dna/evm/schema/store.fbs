@@ -1,0 +1,273 @@
+table SegmentGroup {
+  // The first block number in the segment group.
+  first_block_number:uint64;
+  // Number of blocks in each segment.
+  segment_size:uint32;
+  // Number of segments in the segment group.
+  segment_count:uint32;
+
+  // Roaring bitmap used to quickly lookup which blocks in the segment group
+  // have logs for the given ADDRESS.
+  //
+  // The items in this list MUT BE SORTED by ADDRESS.
+  log_by_address:[AddressBitmapItem];
+  // Roaring bitmap used to quickly lookup which blocks in the segment group
+  // have logs for the given TOPIC.
+  //
+  // The items in this list MUT BE SORTED by TOPIC.
+  log_by_topic:[TopicBitmapItem];
+}
+
+table BlockHeaderSegment {
+  // The first block number in the segment.
+  first_block_number:uint64;
+  // The headers.
+  headers:[BlockHeader];
+}
+
+table LogSegment {
+  // The first block number in the segment.
+  first_block_number:uint64;
+  // Logs, grouped by block.
+  blocks:[BlockLogs];
+}
+
+table BlockLogs {
+  // Block number.
+  block_number:uint64;
+  // The logs in the block, sorted.
+  logs:[Log];
+}
+
+table TransactionSegment {
+  // The first block number in the segment.
+  first_block_number:uint64;
+  // Transactions, grouped by block.
+  blocks:[BlockTransactions];
+}
+
+table BlockTransactions {
+  // Block number.
+  block_number:uint64;
+  // The transactions in the block, sorted.
+  transactions:[Transaction];
+}
+
+table ReceiptSegment {
+  // The first block number in the segment.
+  first_block_number:uint64;
+  // Receipts, grouped by block.
+  blocks:[BlockReceipts];
+}
+
+table BlockReceipts {
+  // Block number.
+  block_number:uint64;
+  // The receipts in the block, sorted.
+  receipts:[TransactionReceipt];
+}
+
+table AddressBitmapItem {
+  // The address.
+  key:Address;
+  // Serialized roaring bitmap.
+  bitmap:[ubyte];
+}
+
+table TopicBitmapItem {
+  // The topic.
+  key:B256;
+  // Serialized roaring bitmap.
+  bitmap:[ubyte];
+}
+
+// Ethereum definitions
+
+// Ethereum block header.
+table BlockHeader {
+  // Block number.
+  number:uint64;
+  // Hash of the block.
+  hash:B256;
+  // Hash of the parent block.
+  parent_hash:B256;
+  // Hash of the uncles.
+  uncles_hash:B256;
+  // Author of the block.
+  miner:Address;
+  // State root hash.
+  state_root:B256;
+  // Transactions root hash.
+  transactions_root:B256;
+  // Receipts root hash.
+  receipts_root:B256;
+  // Logs bloom.
+  logs_bloom:Bloom;
+  // Difficulty.
+  difficulty:U256;
+  // Gas limit.
+  gas_limit:U256;
+  // Gas used.
+  gas_used:U256;
+  // Timestamp.
+  timestamp:U256;
+  // Extra data.
+  extra_data:[ubyte];
+  // Mix hash.
+  mix_hash:B256;
+  // Nonce.
+  nonce:uint64;
+  // Base fee per unit of gas.
+  base_fee_per_gas:U256;
+  // Withdrawals root hash.
+  withdrawals_root:B256;
+
+  // Additional fields.
+
+  // Total difficulty.
+  total_difficulty:U256;
+  // Uncles' hashes.
+  uncles:[B256];
+  // The size of this block in bytes.
+  size:U256;
+  // Withdrawals in the block.
+  withdrawals:[Withdrawal];
+}
+
+// A Log emitted by a transaction.
+table Log {
+  // Address of the contract that emitted the log.
+  address:Address;
+  // Log topics.
+  //
+  // Notice that technically topics can have up to 4 elements, but we use a
+  // variable-length array to distinguish between a topic with value 0 and no
+  // topic.
+  topics:[B256];
+  // Additional data.
+  data:[ubyte];
+  // Index of the log in the block.
+  log_index:uint64;
+  // Index of the transaction that emitted the log.
+  transaction_index:uint64;
+  // Hash of the transaction that emitted the log.
+  transaction_hash:B256;
+}
+
+// A transaction.
+table Transaction {
+  // Transaction hash.
+  hash:B256;
+  // Noce.
+  nonce:uint64;
+  // Transaction index in the block.
+  transaction_index:uint64;
+  // Sender.
+  from:Address;
+  // Recipient.
+  to:Address;
+  // Amount of wei transferred.
+  value:U256;
+  // Gas price.
+  gas_price:U128;
+  // Gas amount.
+  gas:U256;
+  // Max base fee per gas the sender is willing to pay.
+  max_fee_per_gas:U128;
+  // Miner's tip.
+  max_priority_fee_per_gas:U128;
+  // Data.
+  input:[ubyte];
+  // The signature's r,s,v,yParity values.
+  signature:Signature;
+  // Chain ID.
+  chain_id:uint64;
+  // EIP-2930 access list.
+  access_list:[AccessListItem];
+  // EIP-2718 transaction type.
+  transaction_type:uint32;
+}
+
+table TransactionReceipt {
+  // Transaction hash.
+  transaction_hash:B256;
+  // Index of the transaction in the block.
+  transaction_index:uint64;
+  // Cumulative gas used in the block after this transaction has been executed.
+  cumulative_gas_used:U256;
+  // Gas used by this transaction.
+  gas_used:U256;
+  // The price paid by the transaction.
+  effective_gas_price:U128;
+  // Sender.
+  from:Address;
+  // Recipient, if any.
+  to:Address;
+  // Contract address created, if any.
+  contract_address:Address;
+  // Logs bloom.
+  //
+  // Notice that logs are not stored in the receipt, but separately.
+  logs_bloom:Bloom;
+  // Either 1 (success) or 0 (failure).
+  status_code:uint64;
+  // EIP-2718 transaction type.
+  transaction_type:uint32;
+}
+
+// A validator's withdrawal from the consensus layer.
+table Withdrawal {
+  // Increasing index of the withdrawal.
+  index:uint64;
+  // Index of the validator.
+  validator_index:uint64;
+  // Target address of the withdrawal.
+  address:Address;
+  // Value of the withdrawal, in gwei.
+  amount:U256;
+}
+
+table Signature {
+  // The signature's r value.
+  r:U256;
+  // The signature's s value.
+  s:U256;
+  // The signature's v value.
+  // v:U256;
+  // The signature's parity byte.
+  // y_parity:bool;
+}
+
+table AccessListItem {
+  // Account address to be loaded at the start of the transaction.
+  address:Address;
+  // Storage keys to be loaded at the start of the transaction.
+  storage_keys:[B256];
+}
+
+// An address of 160 bits.
+//
+// As a separate type so that the API is clearer.
+struct Address {
+  value:[ubyte:20];
+}
+
+// A bloom filter of 256 bytes.
+struct Bloom {
+  value:[ubyte:256];
+}
+
+// Unsigned integer of 256 bits.
+struct U256 {
+  value:[ubyte:32];
+}
+
+// Unsigned integer of 128 bits.
+struct U128 {
+  value:[ubyte:16];
+}
+
+// Byte array of 256 bits.
+struct B256 {
+  value:[ubyte:32];
+}
