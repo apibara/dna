@@ -6,6 +6,18 @@ The format is based on [Common Changelog](https://common-changelog.org/), and
 this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.3] - 2024-01-25
+
+_Persist state to Redis._
+
+### Added
+
+-   You can now persist state to Redis! Use the `--persist-to-redis` flag with
+    [the connection string to your Redis
+    instance](https://docs.rs/redis/latest/redis/#connection-handling) and the sink
+    will store its state there. Data is persisted under the `apibara:sink:{sink_id}`
+    key and you can easily manage it with `redis-cli`.
+
 ## [0.4.2] - 2024-01-19
 
 _Improve `--allow-net` flag usage._
@@ -182,6 +194,7 @@ _This release improves the developer experience when running locally._
 
 _First tagged release 🎉_
 
+[0.4.3]: https://github.com/apibara/dna/releases/tag/sink-parquet/v0.4.3
 [0.4.2]: https://github.com/apibara/dna/releases/tag/sink-parquet/v0.4.2
 [0.4.1]: https://github.com/apibara/dna/releases/tag/sink-parquet/v0.4.1
 [0.4.0]: https://github.com/apibara/dna/releases/tag/sink-parquet/v0.4.0
