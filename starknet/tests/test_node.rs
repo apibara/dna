@@ -26,7 +26,7 @@ async fn test_starknet_reorgs() {
     init_opentelemetry().unwrap();
 
     let docker = clients::Cli::default();
-    let devnet = docker.run(Devnet::default());
+    let devnet = docker.run(Devnet);
 
     let rpc_port = devnet.get_host_port_ipv4(5050);
     let devnet_client = DevnetClient::new(format!("http://localhost:{}", rpc_port));
