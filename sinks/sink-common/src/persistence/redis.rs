@@ -8,7 +8,7 @@ use crate::{common::PersistenceClient, PersistedState, SinkError, SinkErrorResul
 
 pub struct RedisPersistence {
     client: redis::Client,
-    sink_id: String,
+    key: String,
 }
 
 impl RedisPersistence {
@@ -19,10 +19,9 @@ impl RedisPersistence {
         let client = redis::Client::open(url)
             .persistence(&format!("failed to connect to redis server at {url}"))?;
 
-        Ok(RedisPersistence {
-            client,
-            sink_id: sink_id.into(),
-        })
+        let key = format!("apibara:sink:{}", sink_id.into());
+
+        Ok(RedisPersistence { client, key })
     }
 }
 
@@ -45,7 +44,7 @@ impl PersistenceClient for RedisPersistence {
             .persistence("failed to connect to redis")?;
 
         let content = conn
-            .get::<_, Option<String>>(&self.sink_id)
+            .get::<_, Option<String>>(&self.key)
             .persistence("failed to get state from redis")?;
 
         match content {
@@ -64,7 +63,7 @@ impl PersistenceClient for RedisPersistence {
 
         let serialized = serde_json::to_string(&state).persistence("failed to serialize state")?;
 
-        conn.set(&self.sink_id, serialized)
+        conn.set(&self.key, serialized)
             .persistence("failed to put state in redis")?;
 
         Ok(())
@@ -76,7 +75,7 @@ impl PersistenceClient for RedisPersistence {
             .get_connection()
             .persistence("failed to connect to redis")?;
 
-        conn.del(&self.sink_id)
+        conn.del(&self.key)
             .persistence("failed to delete state from redis")?;
 
         Ok(())
