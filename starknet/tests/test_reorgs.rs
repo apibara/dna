@@ -25,7 +25,7 @@ async fn test_reorg_from_client_pov() {
     init_opentelemetry().unwrap();
 
     let docker = clients::Cli::default();
-    let devnet = docker.run(Devnet::default());
+    let devnet = docker.run(Devnet);
 
     let rpc_port = devnet.get_host_port_ipv4(5050);
     let cts = CancellationToken::new();

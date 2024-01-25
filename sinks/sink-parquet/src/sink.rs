@@ -1,8 +1,8 @@
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::fmt::{self};
-use std::fs;
-use std::{fs::File, sync::Arc};
+
+use std::sync::Arc;
 
 use apibara_core::node::v1alpha2::Cursor;
 use apibara_sink_common::{Context, CursorAction, Sink, ValueExt};
@@ -13,9 +13,11 @@ use error_stack::{Result, ResultExt};
 use parquet::arrow::ArrowWriter;
 use serde_json::Value;
 use tokio::sync::Mutex;
+
 use tracing::{debug, info, instrument, warn};
 
 use crate::configuration::{SinkParquetConfiguration, SinkParquetOptions};
+use crate::parquet_writer::write_parquet;
 
 #[derive(Debug)]
 pub struct SinkParquetError;
@@ -68,16 +70,16 @@ impl ParquetSink {
         }
     }
 
-    fn write_batches(&mut self, batches: &[DatasetBatch]) -> Result<(), SinkParquetError> {
+    async fn write_batches(&mut self, batches: &[DatasetBatch]) -> Result<(), SinkParquetError> {
         for batch in batches {
-            self.write_batch(batch)?;
+            self.write_batch(batch).await?;
         }
 
         Ok(())
     }
 
     /// Write a record batch to a parquet file.
-    fn write_batch(&mut self, batch: &DatasetBatch) -> Result<(), SinkParquetError> {
+    async fn write_batch(&mut self, batch: &DatasetBatch) -> Result<(), SinkParquetError> {
         info!(
             size = batch.batch.num_rows(),
             dataset = batch.name,
@@ -85,17 +87,15 @@ impl ParquetSink {
             "writing batch to file"
         );
 
-        let output_dir = self.config.output_dir.join(&batch.name);
-        fs::create_dir_all(&output_dir)
-            .change_context(SinkParquetError)
-            .attach_printable("failed to create output directory")?;
+        let path = self
+            .config
+            .output_dir
+            .join(&batch.name)
+            .join(&batch.filename);
 
-        let output_file = output_dir.join(&batch.filename);
-        let mut file = File::create(&output_file)
-            .change_context(SinkParquetError)
-            .attach_printable_lazy(|| format!("failed to create output file at {output_file:?}"))?;
+        let mut data = Vec::new();
 
-        let mut writer = ArrowWriter::try_new(&mut file, batch.batch.schema(), None)
+        let mut writer = ArrowWriter::try_new(&mut data, batch.batch.schema(), None)
             .change_context(SinkParquetError)
             .attach_printable("failed to create Arrow writer")?;
 
@@ -108,6 +108,8 @@ impl ParquetSink {
             .close()
             .change_context(SinkParquetError)
             .attach_printable("failed to close parquet file")?;
+
+        write_parquet(path, &data).await?;
 
         Ok(())
     }
@@ -158,7 +160,7 @@ impl Sink for ParquetSink {
             .handle_batch(&ctx.cursor, &ctx.end_cursor, batch)
             .await?
         {
-            self.write_batches(&batches)?;
+            self.write_batches(&batches).await?;
             cursor_action = CursorAction::Persist;
         }
 
