@@ -1,6 +1,7 @@
 use std::fmt;
+use std::time::Instant;
 
-use apibara_core::node::v1alpha2::Cursor;
+use apibara_core::node::v1alpha2::{Cursor, DataFinality};
 use apibara_sink_common::{Context, CursorAction, DisplayCursor, Sink, ValueExt};
 use async_trait::async_trait;
 use error_stack::{Result, ResultExt};
@@ -27,11 +28,28 @@ impl fmt::Display for SinkMongoError {
     }
 }
 
+pub struct Batch {
+    pub data: Vec<Value>,
+    pub end_cursor: Cursor,
+    pub start_at: Instant,
+}
+impl Batch {
+    fn new() -> Self {
+        Self {
+            data: Vec::new(),
+            start_at: Instant::now(),
+            end_cursor: Cursor::default(),
+        }
+    }
+}
+
 pub struct MongoSink {
     pub collections: HashMap<String, Collection<Document>>,
     invalidate: Option<Document>,
     client: Client,
     mode: Mode,
+    current_batch: Batch,
+    batch_secs: Option<u64>,
 }
 
 enum Mode {
@@ -95,6 +113,8 @@ impl Sink for MongoSink {
             client,
             mode,
             invalidate: options.invalidate,
+            current_batch: Batch::new(),
+            batch_secs: options.batch_secs,
         })
     }
 
@@ -103,7 +123,18 @@ impl Sink for MongoSink {
         ctx: &Context,
         batch: &Value,
     ) -> Result<CursorAction, Self::Error> {
-        debug!(ctx = %ctx, "inserting data");
+        debug!(ctx = %ctx, "handling data");
+        if self.should_flush() {
+            info!(
+                "inserting batch of {} documents after {} seconds",
+                self.current_batch.data.len(),
+                self.current_batch.start_at.elapsed().as_secs()
+            );
+
+            self.flush().await?;
+
+            return Ok(CursorAction::Persist);
+        }
 
         let Some(values) = batch.as_array_of_objects() else {
             warn!("data is not an array of objects, skipping");
@@ -124,13 +155,24 @@ impl Sink for MongoSink {
             }
         }
 
-        self.insert_data(&ctx.end_cursor, values).await?;
-
-        Ok(CursorAction::Persist)
+        // only batch finalized data
+        if self.batch_secs.is_some() & (ctx.finality == DataFinality::DataStatusFinalized) {
+            self.current_batch.end_cursor = ctx.end_cursor.clone();
+            self.current_batch.data.extend(values.to_vec());
+            Ok(CursorAction::Skip)
+        } else {
+            self.insert_data(&ctx.end_cursor, values).await?;
+            Ok(CursorAction::Persist)
+        }
     }
 
     async fn handle_invalidate(&mut self, cursor: &Option<Cursor>) -> Result<(), Self::Error> {
         debug!(cursor = %DisplayCursor(cursor), "handling invalidate");
+
+        // only flush if batching is enabled
+        if self.batch_secs.is_some() {
+            self.flush().await?;
+        }
 
         let mut session = self
             .client
@@ -189,6 +231,23 @@ impl MongoSink {
             .get(collection_name)
             .ok_or(SinkMongoError)
             .attach_printable(format!("collection '{collection_name}' not found"))
+    }
+
+    pub fn should_flush(&self) -> bool {
+        if let Some(batch_secs) = self.batch_secs {
+            self.current_batch.start_at.elapsed().as_secs() > batch_secs
+        } else {
+            false
+        }
+    }
+
+    pub async fn flush(&mut self) -> Result<(), SinkMongoError> {
+        self.insert_data(&self.current_batch.end_cursor, &self.current_batch.data)
+            .await?;
+
+        self.current_batch = Batch::new();
+
+        Ok(())
     }
 
     pub async fn insert_data(
