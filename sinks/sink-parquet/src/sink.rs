@@ -1,7 +1,9 @@
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
-use std::fmt::{self};
+use std::fmt;
+use std::io::Write;
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use apibara_core::node::v1alpha2::Cursor;
@@ -9,6 +11,7 @@ use apibara_sink_common::{Context, CursorAction, Sink, ValueExt};
 use arrow::json::reader::{infer_json_schema_from_iterator, Decoder, ReaderBuilder};
 use arrow::record_batch::RecordBatch;
 use async_trait::async_trait;
+use aws_sdk_s3::Client;
 use error_stack::{Result, ResultExt};
 use parquet::arrow::ArrowWriter;
 use serde_json::Value;
@@ -17,7 +20,7 @@ use tokio::sync::Mutex;
 use tracing::{debug, info, instrument, warn};
 
 use crate::configuration::{SinkParquetConfiguration, SinkParquetOptions};
-use crate::parquet_writer::write_parquet;
+use crate::parquet_writer::{FileParquetWriter, ParquetWriter, S3ParquetWriter};
 
 #[derive(Debug)]
 pub struct SinkParquetError;
@@ -32,6 +35,7 @@ impl fmt::Display for SinkParquetError {
 pub struct ParquetSink {
     config: SinkParquetConfiguration,
     state: Option<State>,
+    writer: Box<dyn ParquetWriter + Send + Sync>,
 }
 
 /// Sink state.
@@ -62,10 +66,42 @@ struct DatasetBatch {
     pub batch: RecordBatch,
 }
 
+impl DatasetBatch {
+    pub async fn serialize(&self) -> Result<Vec<u8>, SinkParquetError> {
+        let mut data = Vec::new();
+
+        let mut writer = ArrowWriter::try_new(&mut data, self.batch.schema(), None)
+            .change_context(SinkParquetError)
+            .attach_printable("failed to create Arrow writer")?;
+
+        writer
+            .write(&self.batch)
+            .change_context(SinkParquetError)
+            .attach_printable("failed to write batch")?;
+
+        writer
+            .close()
+            .change_context(SinkParquetError)
+            .attach_printable("failed to close parquet file")?;
+
+        Ok(data)
+    }
+}
+
 impl ParquetSink {
-    pub fn new(config: SinkParquetConfiguration) -> Self {
+    pub async fn new(config: SinkParquetConfiguration) -> Self {
+        let writer: Box<dyn ParquetWriter + Send + Sync> = if config.output_dir.starts_with("s3://")
+        {
+            let config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
+            let client = Client::new(&config);
+            Box::new(S3ParquetWriter { client })
+        } else {
+            Box::new(FileParquetWriter)
+        };
+
         Self {
             config,
+            writer,
             state: None,
         }
     }
@@ -78,13 +114,14 @@ impl ParquetSink {
         Ok(())
     }
 
-    /// Write a record batch to a parquet file.
+    /// Write a `DatasetBatch` using the configured `ParquetSink::writer`,
+    /// either to S3 if the path starts with `"s3://"` or to the local filesystem otherwise.
     async fn write_batch(&mut self, batch: &DatasetBatch) -> Result<(), SinkParquetError> {
         info!(
             size = batch.batch.num_rows(),
             dataset = batch.name,
             filename = batch.filename,
-            "writing batch to file"
+            "writing batch to path"
         );
 
         let path = self
@@ -93,23 +130,9 @@ impl ParquetSink {
             .join(&batch.name)
             .join(&batch.filename);
 
-        let mut data = Vec::new();
+        let data = batch.serialize().await?;
 
-        let mut writer = ArrowWriter::try_new(&mut data, batch.batch.schema(), None)
-            .change_context(SinkParquetError)
-            .attach_printable("failed to create Arrow writer")?;
-
-        writer
-            .write(&batch.batch)
-            .change_context(SinkParquetError)
-            .attach_printable("failed to write batch")?;
-
-        writer
-            .close()
-            .change_context(SinkParquetError)
-            .attach_printable("failed to close parquet file")?;
-
-        write_parquet(path, &data).await?;
+        self.writer.write_parquet(path, &data).await?;
 
         Ok(())
     }
@@ -122,7 +145,7 @@ impl Sink for ParquetSink {
 
     async fn from_options(options: Self::Options) -> Result<Self, Self::Error> {
         let config = options.to_parquet_configuration()?;
-        Ok(Self::new(config))
+        Ok(Self::new(config).await)
     }
 
     #[instrument(skip_all, err(Debug))]
