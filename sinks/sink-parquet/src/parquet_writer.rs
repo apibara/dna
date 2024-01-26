@@ -51,7 +51,7 @@ impl ParquetWriter for FileParquetWriter {
 }
 
 pub struct S3ParquetWriter {
-    client: Client,
+    pub client: Client,
 }
 
 #[async_trait]
@@ -71,6 +71,7 @@ impl ParquetWriter for S3ParquetWriter {
 
         let bucket_name = path_parts
             .next()
+            .and_then(|bucket_name| if bucket_name.is_empty() { None } else { Some(bucket_name) })
             .ok_or(SinkParquetError)
             .attach_printable(format!("cannot get the bucket name from `{path:?}`"))?;
 
@@ -94,23 +95,5 @@ impl ParquetWriter for S3ParquetWriter {
                 // otherwise the error is not printed.
                 .attach_printable(format!("error: {err:?}")),
         }
-    }
-}
-
-/// Write a parquet file to the given path.
-///
-/// If the path starts with `"s3://"`, the file will be written to S3, the S3 credentials will be loaded using the default AWS credentials provider chain.
-///
-/// Otherwise, the file will be written to the local filesystem.
-/// If the file already exists, it will be overwritten. If the parent directory does not exist, it will be created.
-pub async fn write_parquet(path: PathBuf, data: &[u8]) -> Result<(), SinkParquetError> {
-    if path.starts_with("s3://") {
-        let config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
-        let client = Client::new(&config);
-        let mut writer = S3ParquetWriter { client };
-        writer.write_parquet(path, data).await
-    } else {
-        let mut writer = FileParquetWriter;
-        writer.write_parquet(path, data).await
     }
 }

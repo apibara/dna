@@ -17,6 +17,10 @@ pub struct SinkParquetConfiguration {
 #[sink_options(tag = "parquet")]
 pub struct SinkParquetOptions {
     /// The output directory to write the parquet files to.
+    ///
+    /// If it starts with `s3://`, the files will be written to S3. The S3 credentials are loaded using the default AWS credentials provider chain.
+    ///
+    /// Otherwise, they will be written to the local filesystem. If the directory does not exist, it will be created.
     #[arg(long, env = "PARQUET_OUTPUT_DIR")]
     pub output_dir: Option<String>,
     /// The batch size to use when writing parquet files.
