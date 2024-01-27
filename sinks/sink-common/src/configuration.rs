@@ -85,6 +85,16 @@ pub struct ScriptOptions {
     /// Leave empty to allow all hosts, i.e. by specifying `--allow-net`.
     #[arg(long, env, value_delimiter = ',', num_args = 0..)]
     pub allow_net: Option<Vec<String>>,
+    /// Grant file system write access to the paths.
+    ///
+    /// Leave empty to allow all paths, i.e. by specifying `--allow-write`.
+    #[arg(long, env, value_delimiter = ',', num_args = 0..)]
+    pub allow_write: Option<Vec<String>>,
+    /// Grant file system read access to the paths.
+    ///
+    /// Leave empty to allow all paths, i.e. by specifying `--allow-write`.
+    #[arg(long, env, value_delimiter = ',', num_args = 0..)]
+    pub allow_read: Option<Vec<String>>,
     /// Maximum time allowed to execute the transform function.
     #[arg(long, env)]
     pub script_transform_timeout_seconds: Option<u64>,
@@ -365,6 +375,8 @@ impl ScriptOptions {
         IndexerOptions {
             allow_env: self.allow_env_from_env,
             allow_net: self.allow_net,
+            allow_read: self.allow_read,
+            allow_write: self.allow_write,
             transform_timeout: self
                 .script_transform_timeout_seconds
                 .map(Duration::from_secs),

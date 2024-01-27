@@ -47,6 +47,14 @@ pub struct ScriptOptions {
     ///
     /// An empty list gives access to _ALL_ hosts.
     pub allow_net: Option<Vec<String>>,
+    /// Allow read access to the given paths.
+    ///
+    /// An empty list gives access to _ALL_ paths.
+    pub allow_read: Option<Vec<String>>,
+    /// Allow write access to the given paths.
+    ///
+    /// An empty list gives access to _ALL_ paths.
+    pub allow_write: Option<Vec<String>>,
     /// Maximum time allowed to execute the transform function.
     pub transform_timeout: Option<Duration>,
     /// Maximum time allowed to load the indexer script.
@@ -355,22 +363,26 @@ impl Script {
 
     fn default_permissions(options: &ScriptOptions) -> Result<PermissionsContainer, ScriptError> {
         // If users use an empty hostname, allow all hosts.
-        let allow_net = options.allow_net.clone().map(|hosts| {
-            if hosts.len() == 1 {
-                if hosts[0].is_empty() {
-                    vec![]
-                } else {
-                    hosts
-                }
-            } else {
-                hosts
-            }
+        let allow_net = options.allow_net.clone().map(remove_empty_strings);
+        let allow_read = options.allow_read.clone().map(|paths| {
+            remove_empty_strings(paths)
+                .into_iter()
+                .map(Into::into)
+                .collect()
+        });
+        let allow_write = options.allow_write.clone().map(|paths| {
+            remove_empty_strings(paths)
+                .into_iter()
+                .map(Into::into)
+                .collect()
         });
 
         match Permissions::from_options(&PermissionsOptions {
             allow_env: options.allow_env.clone(),
             allow_hrtime: true,
             allow_net,
+            allow_read,
+            allow_write,
             prompt: false,
             ..PermissionsOptions::default()
         }) {
@@ -379,5 +391,22 @@ impl Script {
                 .attach_printable("failed to create Deno permissions")
                 .attach_printable_lazy(|| format!("error: {err:?}")),
         }
+    }
+}
+
+pub fn remove_empty_strings(vec: Vec<String>) -> Vec<String> {
+    vec.into_iter().filter(|s| !s.is_empty()).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::remove_empty_strings;
+
+    #[test]
+    fn test_remove_empty_string() {
+        let r0 = remove_empty_strings(vec!["".to_string()]);
+        assert!(r0.is_empty());
+        let r1 = remove_empty_strings(vec!["abcd".to_string(), "".to_string()]);
+        assert_eq!(r1.len(), 1);
     }
 }
