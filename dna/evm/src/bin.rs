@@ -1,4 +1,4 @@
-use std::{path::PathBuf, process::ExitCode};
+use std::{path::PathBuf, pin::Pin, process::ExitCode};
 
 use apibara_dna_common::{
     error::{DnaError, ReportExt, Result},
@@ -6,12 +6,15 @@ use apibara_dna_common::{
     storage::LocalStorageBackend,
 };
 use apibara_dna_evm::{
-    ingestion::{FinalizedBlockIngestor, IngestionEvent, RpcProvider},
-    segment::SegmentBuilder,
+    ingestion::{
+        FinalizedBlockIngestor, IngestionEvent, Ingestor, RpcProvider, RpcProviderService,
+    },
+    segment::{SegmentBuilder, SegmentIndex},
 };
 use apibara_observability::init_opentelemetry;
 use clap::{Args, Parser, Subcommand};
 use error_stack::ResultExt;
+use futures_util::Future;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
@@ -88,49 +91,27 @@ async fn run_ingestion(args: StartIngestionArgs) -> Result<()> {
 
     let ct = CancellationToken::new();
 
-    let provider = RpcProvider::new(args.rpc.rpc_url)?
+    let (provider, rpc_provider_fut) = RpcProviderService::new(args.rpc.rpc_url)?
         .with_rate_limit(args.rpc.rpc_rate_limit as u32)
-        .with_concurrency(args.rpc.rpc_concurrency);
+        .with_concurrency(args.rpc.rpc_concurrency)
+        .start(ct.clone());
 
-    let mut storage = LocalStorageBackend::new(args.data_dir);
+    let storage = LocalStorageBackend::new(args.data_dir);
     let starting_block_number = segment_options.segment_group_start(args.from_block);
-    let mut ingestor = FinalizedBlockIngestor::new(provider, starting_block_number);
+    let ingestor = Ingestor::new(provider, storage).with_segment_options(segment_options);
 
-    let mut segment_builder = SegmentBuilder::new();
+    let rpc_provider_task = tokio::spawn(rpc_provider_fut);
+    let ingestion_task = tokio::spawn({
+        let ct = ct.clone();
+        async move { ingestor.start(starting_block_number, ct).await }
+    });
 
-    let mut segment_count = 0;
-    loop {
-        match ingestor
-            .ingest_next_segment(&mut segment_builder, 10)
-            .await?
-        {
-            IngestionEvent::Completed {
-                last_ingested_block,
-            } => {
-                info!(block_number = last_ingested_block, "finished ingestion");
-                break;
-            }
-            IngestionEvent::Segment {
-                count,
-                first_block_number,
-                last_block_number,
-            } => {
-                segment_count += count;
-                info!(
-                    first_block_number = first_block_number,
-                    last_block_number = last_block_number,
-                    count = count,
-                    segment_count = segment_count,
-                    "ingested segments"
-                );
-
-                if segment_count >= segment_options.segment_size {
-                    let segment_name = segment_options.format_segment_name(last_block_number);
-                    segment_builder.write(&segment_name, &mut storage).await?;
-                    segment_builder.reset();
-                    segment_count = 0;
-                }
-            }
+    tokio::select! {
+        _ = rpc_provider_task => {
+            info!("rpc provider task finished");
+        }
+        _ = ingestion_task => {
+            info!("ingestion task finished");
         }
     }
 

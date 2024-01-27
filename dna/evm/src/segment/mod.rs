@@ -2,4 +2,4 @@
 pub mod store;
 mod write;
 
-pub use self::write::SegmentBuilder;
+pub use self::write::{SegmentBuilder, SegmentIndex};

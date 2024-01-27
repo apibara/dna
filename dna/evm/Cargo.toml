@@ -14,9 +14,14 @@ path = "src/lib.rs"
 name = "apibara-dna-evm"
 path = "src/bin.rs"
 
+[features]
+default = []
+tokio_console = ["apibara-observability/tokio_console"]
+
 [dependencies]
 apibara-observability = { path = "../../observability" }
 apibara-dna-common = { path = "../common" }
+async-channel.workspace = true
 async-trait.workspace = true
 bytes.workspace = true
 clap.workspace = true
