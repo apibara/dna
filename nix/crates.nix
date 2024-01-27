@@ -323,6 +323,9 @@ in
       inputsFrom = [
         allCrates
       ];
+      buildInputs = with pkgs; [
+        tokio-console
+      ];
     });
 
     # Integration tests require an internet connection, which is
