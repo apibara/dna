@@ -430,7 +430,7 @@ dependencies = [
 
 [[package]]
 name = "apibara-sink-console"
-version = "0.4.3"
+version = "0.4.4"
 dependencies = [
  "apibara-core",
  "apibara-observability",
@@ -511,7 +511,7 @@ dependencies = [
 
 [[package]]
 name = "apibara-sink-postgres"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "apibara-core",
  "apibara-observability",

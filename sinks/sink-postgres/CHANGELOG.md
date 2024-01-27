@@ -6,6 +6,14 @@ The format is based on [Common Changelog](https://common-changelog.org/), and
 this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.5] - 2024-01-27
+
+_Read and write data from the filesystem._
+
+### Added
+
+-   Add the `--allow-read` and `--allow-write` flags to grant read and write access to the filesystem. You can leave the arguments empty to allow access to any path, or restrict access to specific paths by specifying a comma-separated list of paths.
+
 ## [0.5.4] - 2024-01-25
 
 _Persist state to Redis._
@@ -236,6 +244,7 @@ _This release improves the developer experience when running locally._
 
 _First tagged release 🎉_
 
+[0.5.5]: https://github.com/apibara/dna/releases/tag/sink-postgres/v0.5.5
 [0.5.4]: https://github.com/apibara/dna/releases/tag/sink-postgres/v0.5.4
 [0.5.3]: https://github.com/apibara/dna/releases/tag/sink-postgres/v0.5.3
 [0.5.2]: https://github.com/apibara/dna/releases/tag/sink-postgres/v0.5.2
