@@ -6,6 +6,14 @@ The format is based on [Common Changelog](https://common-changelog.org/), and
 this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.1] - 2024-01-27
+
+_Bump database size._
+
+### Changed
+
+-   Increase the maximum database size to 512Gb to support mainnet data.
+
 ## [1.4.0] - 2024-01-11
 
 _Support multiple filters in the same stream._
@@ -173,6 +181,9 @@ _Start publishing versioned Docker images._
 
 _First tagged release 🎉_
 
+[1.4.1]: https://github.com/apibara/dna/releases/tag/starknet/v1.4.1
+[1.4.0]: https://github.com/apibara/dna/releases/tag/starknet/v1.4.0
+[1.3.0]: https://github.com/apibara/dna/releases/tag/starknet/v1.3.0
 [1.2.0]: https://github.com/apibara/dna/releases/tag/starknet/v1.2.0
 [1.1.7]: https://github.com/apibara/dna/releases/tag/starknet/v1.1.7
 [1.1.6]: https://github.com/apibara/dna/releases/tag/starknet/v1.1.6
