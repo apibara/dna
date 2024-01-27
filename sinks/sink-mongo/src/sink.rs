@@ -33,8 +33,14 @@ pub struct Batch {
     pub end_cursor: Cursor,
     pub start_at: Instant,
 }
+impl Default for Batch {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Batch {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             data: Vec::new(),
             start_at: Instant::now(),
@@ -48,7 +54,7 @@ pub struct MongoSink {
     invalidate: Option<Document>,
     client: Client,
     mode: Mode,
-    current_batch: Batch,
+    pub current_batch: Batch,
     batch_secs: Option<u64>,
 }
 
@@ -124,17 +130,6 @@ impl Sink for MongoSink {
         batch: &Value,
     ) -> Result<CursorAction, Self::Error> {
         debug!(ctx = %ctx, "handling data");
-        if self.should_flush() {
-            info!(
-                "inserting batch of {} documents after {} seconds",
-                self.current_batch.data.len(),
-                self.current_batch.start_at.elapsed().as_secs()
-            );
-
-            self.flush().await?;
-
-            return Ok(CursorAction::Persist);
-        }
 
         let Some(values) = batch.as_array_of_objects() else {
             warn!("data is not an array of objects, skipping");
@@ -156,13 +151,26 @@ impl Sink for MongoSink {
         }
 
         // only batch finalized data
-        if self.batch_secs.is_some() & (ctx.finality == DataFinality::DataStatusFinalized) {
-            self.current_batch.end_cursor = ctx.end_cursor.clone();
-            self.current_batch.data.extend(values.to_vec());
-            Ok(CursorAction::Skip)
-        } else {
+        if self.batch_secs.is_none() | (ctx.finality != DataFinality::DataStatusFinalized) {
             self.insert_data(&ctx.end_cursor, values).await?;
+            return Ok(CursorAction::Persist);
+        }
+
+        self.current_batch.end_cursor = ctx.end_cursor.clone();
+        self.current_batch.data.extend(values.to_vec());
+
+        if self.should_flush() {
+            info!(
+                "inserting batch of {} documents after {} seconds",
+                self.current_batch.data.len(),
+                self.current_batch.start_at.elapsed().as_secs()
+            );
+
+            self.flush().await?;
+
             Ok(CursorAction::Persist)
+        } else {
+            Ok(CursorAction::Skip)
         }
     }
 
@@ -235,7 +243,7 @@ impl MongoSink {
 
     pub fn should_flush(&self) -> bool {
         if let Some(batch_secs) = self.batch_secs {
-            self.current_batch.start_at.elapsed().as_secs() > batch_secs
+            self.current_batch.start_at.elapsed().as_secs() >= batch_secs
         } else {
             false
         }

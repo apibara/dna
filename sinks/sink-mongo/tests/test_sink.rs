@@ -1,11 +1,15 @@
+
+use std::time::Duration;
+
 use apibara_core::node::v1alpha2::{Cursor, DataFinality};
-use apibara_sink_common::{Context, CursorAction, Sink};
-use apibara_sink_mongo::{MongoSink, SinkMongoError, SinkMongoOptions};
+use apibara_sink_common::{Context, CursorAction, Sink, ValueExt};
+use apibara_sink_mongo::{Batch, MongoSink, SinkMongoError, SinkMongoOptions};
 use error_stack::{Result, ResultExt};
 use futures_util::TryStreamExt;
 use mongodb::bson::{doc, Bson, Document};
 use serde_json::{json, Value};
 use testcontainers::clients;
+use tokio::time::sleep;
 
 mod common;
 use crate::common::*;
@@ -74,18 +78,20 @@ async fn test_handle_data() -> Result<(), SinkMongoError> {
         };
 
         let action = sink.handle_data(&ctx, &batch).await?;
-
         assert_eq!(action, CursorAction::Persist);
 
-        all_docs.extend(new_docs(&cursor, &end_cursor));
-
         let action = sink.handle_data(&ctx, &new_not_array_of_objects()).await?;
-
         assert_eq!(action, CursorAction::Persist);
 
         let action = sink.handle_data(&ctx, &json!([])).await?;
-
         assert_eq!(action, CursorAction::Persist);
+
+        // Make sure batching is actually disabled.
+        assert_eq!(sink.current_batch.data, Vec::<Value>::new());
+        assert_eq!(sink.current_batch.end_cursor, Cursor::default());
+        assert!(!sink.should_flush());
+
+        all_docs.extend(new_docs(&cursor, &end_cursor));
     }
 
     assert_eq!(all_docs, get_all_docs(sink.collection("test")?).await);
@@ -510,7 +516,7 @@ async fn test_handle_invalidate_in_entity_mode() -> Result<(), SinkMongoError> {
     }
 
     {
-        // This actually shouldn't invalidate any data since the new heade is the same as before
+        // This actually shouldn't invalidate any data since the new head is the same as before
         // (2), but it catches off by one errors in the invalidation logic.
         let new_head = Some(new_cursor(2));
         sink.handle_invalidate(&new_head).await?;
@@ -555,6 +561,161 @@ async fn test_handle_invalidate_in_entity_mode() -> Result<(), SinkMongoError> {
         assert_eq!(new_doc.get_str("v0").unwrap(), "a");
         assert_eq!(new_doc.get_str("v1").unwrap(), "a");
     }
+
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore]
+async fn test_handle_data_batch_mode() -> Result<(), SinkMongoError> {
+    let docker = clients::Cli::default();
+    let mongo = docker.run(new_mongo_image());
+    let port = mongo.get_host_port_ipv4(27017);
+
+    let batch_secs = 1;
+
+    let options = SinkMongoOptions {
+        connection_string: Some(format!("mongodb://localhost:{}", port)),
+        database: Some("test".into()),
+        collection_name: Some("test".into()),
+        collection_names: None,
+        batch_secs: Some(batch_secs),
+        ..SinkMongoOptions::default()
+    };
+
+    let mut sink = MongoSink::from_options(options).await?;
+
+    let batch_size = 2;
+    let num_batches = 15;
+
+    let mut all_docs = vec![];
+
+    let mut current_batch = Batch::new();
+    let mut batch_start_cursor = new_cursor(0);
+
+    for order_key in 0..num_batches {
+        let cursor = Some(new_cursor(order_key * batch_size));
+        let end_cursor = new_cursor((order_key + 1) * batch_size);
+        let finality = DataFinality::DataStatusFinalized;
+        let batch = new_batch(&cursor, &end_cursor);
+        let ctx = Context {
+            cursor: cursor.clone(),
+            end_cursor: end_cursor.clone(),
+            finality,
+        };
+
+        let action = sink.handle_data(&ctx, &new_not_array_of_objects()).await?;
+        assert_eq!(action, CursorAction::Persist);
+
+        let action = sink.handle_data(&ctx, &json!([])).await?;
+        assert_eq!(action, CursorAction::Persist);
+
+        let action = sink.handle_data(&ctx, &batch).await?;
+
+        if current_batch.start_at.elapsed().as_secs() < batch_secs {
+            let batch_data = batch.as_array_of_objects().unwrap().to_vec();
+            current_batch.data.extend(batch_data);
+            current_batch.end_cursor = end_cursor.clone();
+
+            assert_eq!(current_batch.data, sink.current_batch.data);
+            assert_eq!(current_batch.end_cursor, sink.current_batch.end_cursor);
+            assert_eq!(action, CursorAction::Skip);
+        } else {
+            current_batch = Batch::new();
+            assert_eq!(current_batch.data, sink.current_batch.data);
+            assert_eq!(current_batch.end_cursor, sink.current_batch.end_cursor);
+            assert_eq!(action, CursorAction::Persist);
+
+            all_docs.extend(new_docs(&Some(batch_start_cursor.clone()), &end_cursor));
+
+            batch_start_cursor = end_cursor;
+
+            assert_eq!(all_docs, get_all_docs(sink.collection("test")?).await);
+        }
+
+        // Non finalized data should not be batched, it should be written right away
+        let non_finalized_order_key = order_key * 100;
+
+        let cursor = Some(new_cursor(non_finalized_order_key * batch_size));
+        let end_cursor = new_cursor((non_finalized_order_key + 1) * batch_size);
+        let finality = DataFinality::DataStatusAccepted;
+        let batch = new_batch(&cursor, &end_cursor);
+        let ctx = Context {
+            cursor: cursor.clone(),
+            end_cursor: end_cursor.clone(),
+            finality,
+        };
+
+        let action = sink.handle_data(&ctx, &batch).await?;
+        assert_eq!(action, CursorAction::Persist);
+
+        all_docs.extend(new_docs(&cursor, &end_cursor));
+
+        assert_eq!(all_docs, get_all_docs(sink.collection("test")?).await);
+
+        sleep(Duration::from_millis(250)).await;
+    }
+
+    assert_eq!(all_docs, get_all_docs(sink.collection("test")?).await);
+
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore]
+async fn test_invalidate_batch_mode() -> Result<(), SinkMongoError> {
+    let docker = clients::Cli::default();
+    let mongo = docker.run(new_mongo_image());
+    let port = mongo.get_host_port_ipv4(27017);
+
+    let batch_secs = 1;
+
+    let options = SinkMongoOptions {
+        connection_string: Some(format!("mongodb://localhost:{}", port)),
+        database: Some("test".into()),
+        collection_name: Some("test".into()),
+        collection_names: None,
+        batch_secs: Some(batch_secs),
+        ..SinkMongoOptions::default()
+    };
+
+    let mut sink = MongoSink::from_options(options).await?;
+
+    let batch_size = 2;
+    let num_batches = 5;
+
+    for order_key in 0..num_batches {
+        let cursor = Some(new_cursor(order_key * batch_size));
+        let end_cursor = new_cursor((order_key + 1) * batch_size);
+        let finality = DataFinality::DataStatusFinalized;
+        let batch = new_batch(&cursor, &end_cursor);
+        let ctx = Context {
+            cursor: cursor.clone(),
+            end_cursor: end_cursor.clone(),
+            finality,
+        };
+
+        let action = sink.handle_data(&ctx, &batch).await?;
+        assert_eq!(action, CursorAction::Skip);
+    }
+
+    assert_eq!(
+        Vec::<Document>::new(),
+        get_all_docs(sink.collection("test")?).await,
+    );
+
+    sleep(Duration::from_secs(batch_secs)).await;
+
+    assert_eq!(
+        Vec::<Document>::new(),
+        get_all_docs(sink.collection("test")?).await,
+    );
+
+    sink.handle_invalidate(&Some(new_cursor(num_batches * batch_size + 1)))
+        .await?;
+
+    let all_docs = new_docs(&Some(new_cursor(0)), &new_cursor(num_batches * batch_size));
+    assert_eq!(all_docs, get_all_docs(sink.collection("test")?).await,);
 
     Ok(())
 }
