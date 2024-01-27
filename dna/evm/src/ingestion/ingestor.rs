@@ -2,7 +2,7 @@ use apibara_dna_common::{error::Result, segment::SegmentOptions, storage::Storag
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
-use crate::segment::{SegmentBuilder, SegmentIndex};
+use crate::segment::{SegmentBuilder, SegmentGroupBuilder};
 
 use super::{FinalizedBlockIngestor, IngestionEvent, RpcProvider};
 
@@ -31,12 +31,13 @@ where
     }
 
     pub async fn start(mut self, starting_block_number: u64, ct: CancellationToken) -> Result<()> {
-        let mut segment_builder = SegmentBuilder::new();
         let mut ingestor = FinalizedBlockIngestor::new(self.provider, starting_block_number);
+
+        let mut segment_builder = SegmentBuilder::new();
+        let mut segment_group_builder = SegmentGroupBuilder::new();
 
         let mut segment_size = 0;
         let mut group_size = 0;
-        let mut group_index = SegmentIndex::default();
 
         loop {
             if ct.is_cancelled() {
@@ -68,6 +69,8 @@ where
                         "ingested segments"
                     );
 
+                    segment_group_builder.add_segment(first_block_number, count);
+
                     if segment_size >= self.segment_options.segment_size {
                         let segment_name =
                             self.segment_options.format_segment_name(last_block_number);
@@ -75,8 +78,8 @@ where
                             .write(&segment_name, &mut self.storage)
                             .await?;
                         let index = segment_builder.take_index();
+                        segment_group_builder.add_index(&index);
 
-                        group_index.join(&index);
                         segment_size = 0;
                         segment_builder.reset();
                         group_size += 1;
@@ -88,8 +91,11 @@ where
                         let group_name = self
                             .segment_options
                             .format_segment_group_name(last_block_number);
-                        group_index = SegmentIndex::default();
                         group_size = 0;
+                        segment_group_builder
+                            .write(&group_name, &mut self.storage)
+                            .await?;
+                        segment_group_builder.reset();
                         info!(group_name, "wrote group index");
                     }
                 }
