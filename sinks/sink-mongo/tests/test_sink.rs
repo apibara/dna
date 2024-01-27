@@ -1,8 +1,17 @@
+<<<<<<< HEAD
 use std::time::Duration;
 
 use apibara_core::node::v1alpha2::{Cursor, DataFinality};
 use apibara_sink_common::{batching::Buffer, Context, CursorAction, Sink, ValueExt};
 use apibara_sink_mongo::{MongoSink, SinkMongoError, SinkMongoOptions};
+=======
+
+use std::time::Duration;
+
+use apibara_core::node::v1alpha2::{Cursor, DataFinality};
+use apibara_sink_common::{Context, CursorAction, Sink, ValueExt};
+use apibara_sink_mongo::{Batch, MongoSink, SinkMongoError, SinkMongoOptions};
+>>>>>>> ab1d214 (mongo: add tests for batch mode)
 use error_stack::{Result, ResultExt};
 use futures_util::TryStreamExt;
 use mongodb::bson::{doc, Bson, Document};
@@ -86,9 +95,15 @@ async fn test_handle_data() -> Result<(), SinkMongoError> {
         assert_eq!(action, CursorAction::Persist);
 
         // Make sure batching is actually disabled.
+<<<<<<< HEAD
         assert_eq!(sink.batcher.buffer.data, Vec::<Value>::new());
         assert_eq!(sink.batcher.buffer.end_cursor, Cursor::default());
         assert!(!sink.batcher.should_flush());
+=======
+        assert_eq!(sink.current_batch.data, Vec::<Value>::new());
+        assert_eq!(sink.current_batch.end_cursor, Cursor::default());
+        assert!(!sink.should_flush());
+>>>>>>> ab1d214 (mongo: add tests for batch mode)
 
         all_docs.extend(new_docs(&cursor, &end_cursor));
     }
@@ -571,14 +586,22 @@ async fn test_handle_data_batch_mode() -> Result<(), SinkMongoError> {
     let mongo = docker.run(new_mongo_image());
     let port = mongo.get_host_port_ipv4(27017);
 
+<<<<<<< HEAD
     let batch_seconds = 1;
+=======
+    let batch_secs = 1;
+>>>>>>> ab1d214 (mongo: add tests for batch mode)
 
     let options = SinkMongoOptions {
         connection_string: Some(format!("mongodb://localhost:{}", port)),
         database: Some("test".into()),
         collection_name: Some("test".into()),
         collection_names: None,
+<<<<<<< HEAD
         batch_seconds: Some(batch_seconds),
+=======
+        batch_secs: Some(batch_secs),
+>>>>>>> ab1d214 (mongo: add tests for batch mode)
         ..SinkMongoOptions::default()
     };
 
@@ -588,7 +611,13 @@ async fn test_handle_data_batch_mode() -> Result<(), SinkMongoError> {
     let num_batches = 15;
 
     let mut all_docs = vec![];
+<<<<<<< HEAD
     let mut buffer = Buffer::new();
+=======
+
+    let mut current_batch = Batch::new();
+    let mut batch_start_cursor = new_cursor(0);
+>>>>>>> ab1d214 (mongo: add tests for batch mode)
 
     for order_key in 0..num_batches {
         let cursor = Some(new_cursor(order_key * batch_size));
@@ -601,6 +630,7 @@ async fn test_handle_data_batch_mode() -> Result<(), SinkMongoError> {
             finality,
         };
 
+<<<<<<< HEAD
         // If the data is not an array of objects or an empty array,
         // we only skip if we're batching and the buffer is not empty
         let expected_action = if sink.batcher.is_batching() && !sink.batcher.is_flushed() {
@@ -645,6 +675,38 @@ async fn test_handle_data_batch_mode() -> Result<(), SinkMongoError> {
         }
 
         // Test non finalized data should not be batched, it should be written right away
+=======
+        let action = sink.handle_data(&ctx, &new_not_array_of_objects()).await?;
+        assert_eq!(action, CursorAction::Persist);
+
+        let action = sink.handle_data(&ctx, &json!([])).await?;
+        assert_eq!(action, CursorAction::Persist);
+
+        let action = sink.handle_data(&ctx, &batch).await?;
+
+        if current_batch.start_at.elapsed().as_secs() < batch_secs {
+            let batch_data = batch.as_array_of_objects().unwrap().to_vec();
+            current_batch.data.extend(batch_data);
+            current_batch.end_cursor = end_cursor.clone();
+
+            assert_eq!(current_batch.data, sink.current_batch.data);
+            assert_eq!(current_batch.end_cursor, sink.current_batch.end_cursor);
+            assert_eq!(action, CursorAction::Skip);
+        } else {
+            current_batch = Batch::new();
+            assert_eq!(current_batch.data, sink.current_batch.data);
+            assert_eq!(current_batch.end_cursor, sink.current_batch.end_cursor);
+            assert_eq!(action, CursorAction::Persist);
+
+            all_docs.extend(new_docs(&Some(batch_start_cursor.clone()), &end_cursor));
+
+            batch_start_cursor = end_cursor;
+
+            assert_eq!(all_docs, get_all_docs(sink.collection("test")?).await);
+        }
+
+        // Non finalized data should not be batched, it should be written right away
+>>>>>>> ab1d214 (mongo: add tests for batch mode)
         let non_finalized_order_key = order_key * 100;
 
         let cursor = Some(new_cursor(non_finalized_order_key * batch_size));
@@ -661,6 +723,10 @@ async fn test_handle_data_batch_mode() -> Result<(), SinkMongoError> {
         assert_eq!(action, CursorAction::Persist);
 
         all_docs.extend(new_docs(&cursor, &end_cursor));
+<<<<<<< HEAD
+=======
+
+>>>>>>> ab1d214 (mongo: add tests for batch mode)
         assert_eq!(all_docs, get_all_docs(sink.collection("test")?).await);
 
         sleep(Duration::from_millis(250)).await;
