@@ -6,6 +6,14 @@ The format is based on [Common Changelog](https://common-changelog.org/), and
 this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.4] - 2024-01-27
+
+_Read and write data from the filesystem._
+
+### Added
+
+-   Add the `--allow-read` and `--allow-write` flags to grant read and write access to the filesystem. You can leave the arguments empty to allow access to any path, or restrict access to specific paths by specifying a comma-separated list of paths.
+
 ## [0.4.3] - 2024-01-25
 
 _Persist state to Redis._
@@ -187,6 +195,7 @@ _This release improves the developer experience when running locally._
 
 _First tagged release 🎉_
 
+[0.4.4]: https://github.com/apibara/dna/releases/tag/sink-console/v0.4.4
 [0.4.3]: https://github.com/apibara/dna/releases/tag/sink-console/v0.4.3
 [0.4.2]: https://github.com/apibara/dna/releases/tag/sink-console/v0.4.2
 [0.4.1]: https://github.com/apibara/dna/releases/tag/sink-console/v0.4.1
