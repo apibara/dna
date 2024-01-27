@@ -39,25 +39,30 @@ pub fn meter(name: &'static str) -> Meter {
 }
 
 pub fn init_opentelemetry() -> Result<(), OpenTelemetryInitError> {
-    // The otel sdk doesn't follow the disabled env variable flag.
-    // so we manually implement it to disable otel exports.
-    // we diverge from the spec by defaulting to disabled.
-    let sdk_disabled = env::var(OTEL_SDK_DISABLED)
-        .map(|v| v == "true")
-        .unwrap_or(true);
+    #[cfg(feature = "tokio_console")]
+    console_subscriber::init();
+    #[cfg(not(feature = "tokio_console"))]
+    {
+        // The otel sdk doesn't follow the disabled env variable flag.
+        // so we manually implement it to disable otel exports.
+        // we diverge from the spec by defaulting to disabled.
+        let sdk_disabled = env::var(OTEL_SDK_DISABLED)
+            .map(|v| v == "true")
+            .unwrap_or(true);
 
-    if std::env::var("RUST_LOG").is_err() {
-        std::env::set_var("RUST_LOG", "info");
+        if std::env::var("RUST_LOG").is_err() {
+            std::env::set_var("RUST_LOG", "info");
+        }
+
+        let mut layers = vec![stdout()];
+
+        if !sdk_disabled {
+            let otel_layer = otel()?;
+            layers.push(otel_layer);
+        }
+
+        tracing_subscriber::registry().with(layers).init();
     }
-
-    let mut layers = vec![stdout()];
-
-    if !sdk_disabled {
-        let otel_layer = otel()?;
-        layers.push(otel_layer);
-    }
-
-    tracing_subscriber::registry().with(layers).init();
 
     Ok(())
 }
