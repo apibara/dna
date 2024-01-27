@@ -1,20 +1,14 @@
-use std::{path::PathBuf, pin::Pin, process::ExitCode};
+use std::{path::PathBuf, process::ExitCode};
 
 use apibara_dna_common::{
     error::{DnaError, ReportExt, Result},
     segment::SegmentArgs,
     storage::LocalStorageBackend,
 };
-use apibara_dna_evm::{
-    ingestion::{
-        FinalizedBlockIngestor, IngestionEvent, Ingestor, RpcProvider, RpcProviderService,
-    },
-    segment::{SegmentBuilder, SegmentIndex},
-};
+use apibara_dna_evm::ingestion::{Ingestor, RpcProviderService};
 use apibara_observability::init_opentelemetry;
 use clap::{Args, Parser, Subcommand};
 use error_stack::ResultExt;
-use futures_util::Future;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
