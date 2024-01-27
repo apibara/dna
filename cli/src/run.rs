@@ -62,6 +62,14 @@ pub async fn run(args: RunArgs) -> Result<(), CliError> {
         extra_args.push("--allow-net".to_string());
         extra_args.push(allow_net.join(",").to_string());
     };
+    if let Some(allow_read) = args.transform.allow_read {
+        extra_args.push("--allow-read".to_string());
+        extra_args.push(allow_read.join(",").to_string());
+    };
+    if let Some(allow_write) = args.transform.allow_write {
+        extra_args.push("--allow-write".to_string());
+        extra_args.push(allow_write.join(",").to_string());
+    };
     if let Some(transform_timeout) = args.transform.script_transform_timeout_seconds {
         extra_args.push("--script-transform-timeout-seconds".to_string());
         extra_args.push(transform_timeout.to_string());
