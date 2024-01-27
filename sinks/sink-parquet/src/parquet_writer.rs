@@ -71,7 +71,13 @@ impl ParquetWriter for S3ParquetWriter {
 
         let bucket_name = path_parts
             .next()
-            .and_then(|bucket_name| if bucket_name.is_empty() { None } else { Some(bucket_name) })
+            .and_then(|bucket_name| {
+                if bucket_name.is_empty() {
+                    None
+                } else {
+                    Some(bucket_name)
+                }
+            })
             .ok_or(SinkParquetError)
             .attach_printable(format!("cannot get the bucket name from `{path:?}`"))?;
 
