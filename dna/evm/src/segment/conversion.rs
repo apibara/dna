@@ -32,6 +32,12 @@ impl From<models::H160> for store::Address {
     }
 }
 
+impl From<&models::H160> for store::Address {
+    fn from(value: &models::H160) -> Self {
+        store::Address(value.0)
+    }
+}
+
 impl From<models::Bloom> for store::Bloom {
     fn from(value: models::Bloom) -> Self {
         store::Bloom(value.0)

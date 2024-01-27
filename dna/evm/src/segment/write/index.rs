@@ -3,9 +3,12 @@ use std::{
     fmt::{self, Debug, Formatter},
 };
 
+use apibara_dna_common::error::{DnaError, Result};
+use error_stack::ResultExt;
+use flatbuffers::{FlatBufferBuilder, ForwardsUOffset, WIPOffset};
 use roaring::RoaringBitmap;
 
-use crate::ingestion::models;
+use crate::{ingestion::models, segment::store};
 
 #[derive(Default)]
 pub struct SegmentIndex {
@@ -56,5 +59,69 @@ impl Debug for SegmentIndex {
             .field("log_by_address", &self.log_by_address.len())
             .field("log_by_topic", &self.log_by_topic.len())
             .finish()
+    }
+}
+
+pub trait FlatBufferBuilderSegmentIndexExt<'fbb> {
+    fn create_address_bitmap<'a: 'b, 'b>(
+        &'a mut self,
+        table: &'b BTreeMap<models::H160, RoaringBitmap>,
+    ) -> Result<WIPOffset<flatbuffers::Vector<'fbb, ForwardsUOffset<store::AddressBitmapItem<'fbb>>>>>;
+
+    fn create_topic_bitmap<'a: 'b, 'b>(
+        &'a mut self,
+        table: &'b BTreeMap<models::H256, RoaringBitmap>,
+    ) -> Result<WIPOffset<flatbuffers::Vector<'fbb, ForwardsUOffset<store::TopicBitmapItem<'fbb>>>>>;
+}
+
+impl<'fbb> FlatBufferBuilderSegmentIndexExt<'fbb> for FlatBufferBuilder<'fbb> {
+    fn create_address_bitmap<'a: 'b, 'b>(
+        &'a mut self,
+        table: &'b BTreeMap<models::H160, RoaringBitmap>,
+    ) -> Result<WIPOffset<flatbuffers::Vector<'fbb, ForwardsUOffset<store::AddressBitmapItem<'fbb>>>>>
+    {
+        let mut items = Vec::new();
+        for (key, bitmap) in table {
+            let mut buf = Vec::with_capacity(bitmap.serialized_size());
+            bitmap
+                .serialize_into(&mut buf)
+                .change_context(DnaError::Fatal)
+                .attach_printable("failed to serialize bitmap")?;
+            let bitmap = self.create_vector(&buf);
+
+            let key: store::Address = key.into();
+            let mut value = store::AddressBitmapItemBuilder::new(self);
+            value.add_key(&key);
+            value.add_bitmap(bitmap);
+
+            let value = value.finish();
+            items.push(value);
+        }
+        Ok(self.create_vector(&items))
+    }
+
+    fn create_topic_bitmap<'a: 'b, 'b>(
+        &'a mut self,
+        table: &'b BTreeMap<models::H256, RoaringBitmap>,
+    ) -> Result<WIPOffset<flatbuffers::Vector<'fbb, ForwardsUOffset<store::TopicBitmapItem<'fbb>>>>>
+    {
+        let mut items = Vec::new();
+        for (key, bitmap) in table {
+            let mut buf = Vec::with_capacity(bitmap.serialized_size());
+            bitmap
+                .serialize_into(&mut buf)
+                .change_context(DnaError::Fatal)
+                .attach_printable("failed to serialize bitmap")?;
+            let bitmap = self.create_vector(&buf);
+
+            let key: store::B256 = key.into();
+            let mut value = store::TopicBitmapItemBuilder::new(self);
+            value.add_key(&key);
+            value.add_bitmap(bitmap);
+
+            let value = value.finish();
+            items.push(value);
+        }
+        Ok(self.create_vector(&items))
     }
 }

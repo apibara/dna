@@ -6,7 +6,7 @@ use tokio::io::{AsyncWrite, AsyncWriteExt};
 
 use crate::{ingestion::models, segment::store};
 
-use super::conversion::H64Ext;
+use crate::segment::conversion::H64Ext;
 
 pub struct BlockHeaderSegmentBuilder<'a> {
     builder: FlatBufferBuilder<'a>,
