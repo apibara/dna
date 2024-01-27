@@ -1,9 +1,7 @@
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::fmt;
-use std::io::Write;
 
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use apibara_core::node::v1alpha2::Cursor;
