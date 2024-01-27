@@ -220,7 +220,7 @@ impl MongoSink {
 
     pub fn should_flush(&self) -> bool {
         if let Some(batch_secs) = self.batch_secs {
-            self.current_batch.start_at.elapsed().as_secs() > batch_secs
+            self.current_batch.start_at.elapsed().as_secs() >= batch_secs
         } else {
             false
         }
