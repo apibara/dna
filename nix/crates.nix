@@ -323,9 +323,9 @@ in
       inputsFrom = [
         allCrates
       ];
-
-      buildInputs = buildArgs.buildInputs ++ [
-        pkgs.kubernetes-helm
+      buildInputs = with pkgs; [
+        kubernetes-helm
+        tokio-console
       ];
     });
 

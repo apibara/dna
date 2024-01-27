@@ -1,5 +1,6 @@
 mod conversion;
 mod header;
+mod index;
 mod log;
 mod receipt;
 mod transaction;
@@ -18,11 +19,14 @@ use self::{
     transaction::TransactionSegmentBuilder,
 };
 
+pub use self::index::SegmentIndex;
+
 pub struct SegmentBuilder<'a> {
     header: BlockHeaderSegmentBuilder<'a>,
     transaction: TransactionSegmentBuilder<'a>,
     receipt: ReceiptSegmentBuilder<'a>,
     log: LogSegmentBuilder<'a>,
+    index: SegmentIndex,
 }
 
 impl<'a> SegmentBuilder<'a> {
@@ -32,6 +36,7 @@ impl<'a> SegmentBuilder<'a> {
             transaction: TransactionSegmentBuilder::new(),
             receipt: ReceiptSegmentBuilder::new(),
             log: LogSegmentBuilder::new(),
+            index: SegmentIndex::default(),
         }
     }
 
@@ -50,6 +55,11 @@ impl<'a> SegmentBuilder<'a> {
 
     pub fn add_logs(&mut self, block_number: u64, receipts: &[models::TransactionReceipt]) {
         self.log.add_logs(block_number, receipts);
+        self.index.add_logs(block_number, receipts);
+    }
+
+    pub fn take_index(&mut self) -> SegmentIndex {
+        std::mem::take(&mut self.index)
     }
 
     pub async fn write<S: StorageBackend>(
@@ -89,5 +99,6 @@ impl<'a> SegmentBuilder<'a> {
         self.transaction.reset();
         self.receipt.reset();
         self.log.reset();
+        self.index.clear();
     }
 }
