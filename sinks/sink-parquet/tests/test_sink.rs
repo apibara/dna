@@ -21,7 +21,7 @@ fn read_parquet(output_dir: &TempDir, file_name: &str) -> RecordBatch {
     reader.next().unwrap().unwrap()
 }
 
-fn new_sink(batch_size: usize) -> (TempDir, ParquetSink) {
+async fn new_sink(batch_size: usize) -> (TempDir, ParquetSink) {
     let output_dir = TempDir::new("sink_parquet_test").unwrap();
 
     let config = SinkParquetConfiguration {
@@ -30,7 +30,7 @@ fn new_sink(batch_size: usize) -> (TempDir, ParquetSink) {
         batch_size,
     };
 
-    (output_dir, ParquetSink::new(config))
+    (output_dir, ParquetSink::new(config).await)
 }
 
 fn new_batch(start_cursor: &Option<Cursor>, end_cursor: &Cursor) -> Value {
@@ -102,7 +102,7 @@ fn get_file_names(output_dir: &TempDir, path: &str) -> Option<Vec<OsString>> {
 #[ignore]
 async fn test_handle_data() -> Result<(), SinkParquetError> {
     let parquet_batch_size = 10;
-    let (output_dir, mut sink) = new_sink(parquet_batch_size);
+    let (output_dir, mut sink) = new_sink(parquet_batch_size).await;
 
     let finality = DataFinality::DataStatusFinalized;
 
