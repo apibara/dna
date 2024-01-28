@@ -75,7 +75,7 @@ where
                         let segment_name =
                             self.segment_options.format_segment_name(last_block_number);
                         segment_builder
-                            .write(&segment_name, &mut self.storage)
+                            .write(&format!("segment/{segment_name}"), &mut self.storage)
                             .await?;
                         let index = segment_builder.take_index();
                         segment_group_builder.add_index(&index);

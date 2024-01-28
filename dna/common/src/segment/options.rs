@@ -20,6 +20,11 @@ impl Default for SegmentOptions {
 }
 
 impl SegmentOptions {
+    /// Returns the number of blocks in a segment group.
+    pub fn segment_group_blocks(&self) -> u64 {
+        self.segment_size as u64 * self.group_size as u64
+    }
+
     /// Compute the first block number of the segment group.
     ///
     /// Notice that we always assume that block numbers start at 0.
