@@ -2,7 +2,7 @@ use std::{path::PathBuf, process::ExitCode, time::Instant};
 
 use apibara_dna_common::{
     error::{DnaError, ReportExt, Result},
-    segment::SegmentArgs,
+    segment::{SegmentArgs, SnapshotReader},
     storage::LocalStorageBackend,
 };
 use apibara_dna_evm::{
@@ -73,16 +73,9 @@ struct InspectArgs {
     /// Location for ingested data.
     #[arg(long, env)]
     pub data_dir: PathBuf,
-    /// Start ingesting data from this block.
-    ///
-    /// Needed until we add snapshots.
-    #[arg(long, env, default_value = "0")]
-    pub from_block: u64,
+    /// Print found data.
     #[arg(long, env)]
-    pub to_block: u64,
-    /// Needed until we add snapshots.
-    #[clap(flatten)]
-    pub segment: SegmentArgs,
+    pub log: bool,
     #[clap(flatten)]
     pub logs: InspectLogsArgs,
     #[clap(flatten)]
@@ -125,8 +118,6 @@ async fn run_with_args(args: Cli) -> Result<()> {
 async fn run_ingestion(args: StartIngestionArgs) -> Result<()> {
     info!(from_block = %args.from_block, "Starting EVM ingestion");
     info!(data_dir = %args.data_dir.display(), "Using data directory");
-    let segment_options = args.segment.to_segment_options();
-    info!(segment_options = ?segment_options, "Using segment options");
 
     let ct = CancellationToken::new();
 
@@ -135,8 +126,10 @@ async fn run_ingestion(args: StartIngestionArgs) -> Result<()> {
         .with_concurrency(args.rpc.rpc_concurrency)
         .start(ct.clone());
 
-    let storage = LocalStorageBackend::new(args.data_dir);
+    let segment_options = args.segment.to_segment_options();
     let starting_block_number = segment_options.segment_group_start(args.from_block);
+
+    let storage = LocalStorageBackend::new(args.data_dir);
     let ingestor = Ingestor::new(provider, storage).with_segment_options(segment_options);
 
     let rpc_provider_task = tokio::spawn(rpc_provider_fut);
@@ -161,8 +154,14 @@ async fn run_inspect(args: InspectArgs) -> Result<()> {
     info!(data_dir = %args.data_dir.display(), "Using data directory");
 
     let storage = LocalStorageBackend::new(args.data_dir);
-    let segment_options = args.segment.to_segment_options();
-    let starting_block_number = segment_options.segment_group_start(args.from_block);
+
+    let mut snapshot_reader = SnapshotReader::new(storage.clone());
+    let snapshot = snapshot_reader.snapshot_state().await?;
+
+    let segment_options = snapshot.segment_options;
+    let starting_block_number = segment_options.segment_group_start(snapshot.first_block_number);
+    let ending_block_number = starting_block_number
+        + snapshot.group_count as u64 * segment_options.segment_group_blocks() as u64;
 
     let mut segment_group_reader =
         SegmentGroupReader::new(storage.clone(), segment_options.clone(), 1024 * 1024 * 1024);
@@ -195,8 +194,9 @@ async fn run_inspect(args: InspectArgs) -> Result<()> {
 
     let mut block_bitmap = RoaringBitmap::new();
     let mut event_count = 0;
+    let mut withdrawal_count = 0;
     let mut segment_read_count = 0;
-    while current_block_number < args.to_block {
+    while current_block_number < ending_block_number {
         let current_segment_group_start = segment_options.segment_group_start(current_block_number);
         debug!(current_segment_group_start, "reading new segment group");
         let segment_group = segment_group_reader
@@ -282,13 +282,15 @@ async fn run_inspect(args: InspectArgs) -> Result<()> {
                     let transaction_index = log.transaction_index();
                     let transaction_hash = log.transaction_hash().unwrap();
 
-                    info!(
-                        block_number,
-                        transaction_index,
-                        log_index,
-                        transaction_hash = %transaction_hash.as_hex(),
-                        "    log"
-                    );
+                    if args.log {
+                        info!(
+                            block_number,
+                            transaction_index,
+                            log_index,
+                            transaction_hash = %transaction_hash.as_hex(),
+                            "    log"
+                        );
+                    }
 
                     event_count += 1;
                 }
@@ -303,21 +305,26 @@ async fn run_inspect(args: InspectArgs) -> Result<()> {
 
                 let miner = header.miner().expect("miner is missing");
 
-                info!(
-                    number = header.number(),
-                    miner = %miner.as_hex(),
-                    "block"
-                );
+                if args.log {
+                    info!(
+                        number = header.number(),
+                        miner = %miner.as_hex(),
+                        "block"
+                    );
+                }
 
                 for withdrawal in header.withdrawals().unwrap_or_default() {
+                    withdrawal_count += 1;
                     let amount = withdrawal.amount().unwrap().format_units("wei")?;
-                    info!(
-                        index = withdrawal.index(),
-                        validator_index = withdrawal.validator_index(),
-                        address = %withdrawal.address().unwrap().as_hex(),
-                        amount = format!("{amount} gwei"),
-                        "    withdrawal"
-                    );
+                    if args.log {
+                        info!(
+                            index = withdrawal.index(),
+                            validator_index = withdrawal.validator_index(),
+                            address = %withdrawal.address().unwrap().as_hex(),
+                            amount = format!("{amount} gwei"),
+                            "    withdrawal"
+                        );
+                    }
                 }
             }
         }
@@ -344,6 +351,15 @@ async fn run_inspect(args: InspectArgs) -> Result<()> {
         event_count,
         event_sec = format!("{event_sec:.0}"),
         "event count"
+    );
+
+    let withdrawal_sec = withdrawal_count as f64 / elapsed.as_secs_f64();
+
+    info!(
+        elapsed = ?elapsed,
+        withdrawal_count,
+        withdrawal_sec = format!("{withdrawal_sec:.0}"),
+        "withdrawal count"
     );
 
     let segment_read_sec = segment_read_count as f64 / elapsed.as_secs_f64();

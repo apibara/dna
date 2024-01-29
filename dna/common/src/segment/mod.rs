@@ -6,4 +6,4 @@ mod store;
 
 pub use self::args::SegmentArgs;
 pub use self::options::SegmentOptions;
-pub use self::snapshot::{Snapshot, SnapshotBuilder, SnapshotState};
+pub use self::snapshot::{SnapshotBuilder, SnapshotReader, SnapshotState};

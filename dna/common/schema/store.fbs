@@ -13,5 +13,7 @@ table Snapshot {
   group_size:uint32;
   // Number of groups in the snapshot.
   group_count:uint32;
+  // Number of digits used to generate segment file names.
+  target_num_digits:uint32;
 }
 
