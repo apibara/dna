@@ -1,5 +1,8 @@
+use std::io::Cursor;
+
 use error_stack::ResultExt;
-use tokio::io::AsyncReadExt;
+use flatbuffers::FlatBufferBuilder;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use crate::{
     error::{DnaError, Result},
@@ -8,57 +11,79 @@ use crate::{
 
 use super::{store, SegmentOptions};
 
-pub struct SnapshotBuilder<S>
-where
-    S: StorageBackend,
-    S::Reader: Unpin,
-{
+pub struct SnapshotReader<S: StorageBackend> {
     storage: S,
-    segment_options: SegmentOptions,
-    revision: u64,
-    first_block_number: u64,
-    group_count: usize,
+    buffer: Vec<u8>,
 }
 
-pub struct Snapshot {
+impl<S> SnapshotReader<S>
+where
+    S: StorageBackend,
+    <S as StorageBackend>::Reader: Unpin,
+{
+    pub fn new(storage: S) -> Self {
+        let buffer = vec![0; 1024];
+        Self { storage, buffer }
+    }
+
+    pub async fn read<'a>(&'a mut self) -> Result<store::Snapshot<'a>> {
+        let mut reader = self.storage.get("", "snapshot").await?;
+        let len = {
+            let mut cursor = Cursor::new(&mut self.buffer[..]);
+            tokio::io::copy(&mut reader, &mut cursor)
+                .await
+                .change_context(DnaError::Io)? as usize
+        };
+
+        let stored = flatbuffers::root::<store::Snapshot>(&self.buffer[..len])
+            .change_context(DnaError::Storage)
+            .attach_printable("failed to decode snapshot")?;
+
+        Ok(stored)
+    }
+
+    pub async fn snapshot_state(&mut self) -> Result<SnapshotState> {
+        let stored = self.read().await?;
+        Ok(SnapshotState::from_snapshot(&stored))
+    }
+}
+
+pub struct SnapshotBuilder<'a> {
+    builder: FlatBufferBuilder<'a>,
     state: SnapshotState,
 }
 
 pub struct SnapshotState {
     pub revision: u64,
     pub first_block_number: u64,
-    pub segment_size: usize,
-    pub group_size: usize,
-    pub group_count: usize,
+    pub group_count: u32,
+    pub segment_options: SegmentOptions,
 }
 
-impl<S> SnapshotBuilder<S>
-where
-    S: StorageBackend,
-    S::Reader: Unpin,
-{
-    pub fn new(storage: S, options: SegmentOptions) -> Self {
-        SnapshotBuilder {
-            storage,
-            first_block_number: 0,
-            revision: 0,
-            group_count: 0,
-            segment_options: options,
+impl<'a> SnapshotBuilder<'a> {
+    pub fn new(starting_block: u64, segment_options: SegmentOptions) -> Self {
+        Self {
+            builder: FlatBufferBuilder::new(),
+            state: SnapshotState {
+                revision: 0,
+                first_block_number: starting_block,
+                group_count: 0,
+                segment_options,
+            },
         }
     }
 
-    pub fn with_first_block_number(mut self, first_block_number: u64) -> Self {
-        self.first_block_number = first_block_number;
-        self
-    }
-
-    pub async fn merge_with_storage(mut self) -> Result<Self> {
-        let exists = self.storage.exists("", "snapshot").await?;
+    pub async fn from_storage<S>(storage: &mut S) -> Result<Option<SnapshotBuilder<'a>>>
+    where
+        S: StorageBackend,
+        <S as StorageBackend>::Reader: Unpin,
+    {
+        let exists = storage.exists("", "snapshot").await?;
         if !exists {
-            return Ok(self);
+            return Ok(None);
         }
 
-        let mut reader = self.storage.get("", "snapshot").await?;
+        let mut reader = storage.get("", "snapshot").await?;
         let mut buf = Vec::new();
         reader
             .read_to_end(&mut buf)
@@ -70,33 +95,68 @@ where
             .change_context(DnaError::Storage)
             .attach_printable("failed to decode snapshot")?;
 
-        self.revision = stored.revision();
-        self.first_block_number = stored.first_block_number();
-        self.group_count = stored.group_count() as usize;
-        self.segment_options = SegmentOptions {
-            segment_size: stored.segment_size() as usize,
-            group_size: stored.group_size() as usize,
-            ..self.segment_options
-        };
+        let state = SnapshotState::from_snapshot(&stored);
 
-        Ok(self)
+        let builder = FlatBufferBuilder::new();
+        Ok(Self { builder, state }.into())
     }
 
-    pub fn build(self) -> Snapshot {
-        Snapshot {
-            state: SnapshotState {
-                revision: self.revision,
-                first_block_number: self.first_block_number,
-                segment_size: self.segment_options.segment_size,
-                group_size: self.segment_options.group_size,
-                group_count: self.group_count,
+    pub async fn write_revision<S>(&mut self, storage: &mut S) -> Result<u64>
+    where
+        S: StorageBackend,
+        <S as StorageBackend>::Writer: Unpin,
+    {
+        self.state.revision += 1;
+        self.state.group_count += 1;
+
+        let snapshot = store::Snapshot::create(
+            &mut self.builder,
+            &store::SnapshotArgs {
+                first_block_number: self.state.first_block_number,
+                revision: self.state.revision,
+                group_count: self.state.group_count,
+                segment_size: self.state.segment_options.segment_size as u32,
+                group_size: self.state.segment_options.group_size as u32,
+                target_num_digits: self.state.segment_options.target_num_digits as u32,
             },
-        }
+        );
+        self.builder.finish(snapshot, None);
+
+        let mut writer = storage.put("", "snapshot").await?;
+        writer
+            .write_all(self.builder.finished_data())
+            .await
+            .change_context(DnaError::Io)?;
+        writer.shutdown().await.change_context(DnaError::Io)?;
+
+        Ok(self.state.revision)
+    }
+
+    pub fn reset(&mut self) {
+        self.builder.reset();
+    }
+
+    pub fn state(&self) -> &SnapshotState {
+        &self.state
     }
 }
 
-impl Snapshot {
-    pub fn state(&self) -> &SnapshotState {
-        &self.state
+impl SnapshotState {
+    pub fn from_snapshot(snapshot: &store::Snapshot) -> Self {
+        Self {
+            revision: snapshot.revision(),
+            first_block_number: snapshot.first_block_number(),
+            group_count: snapshot.group_count(),
+            segment_options: SegmentOptions {
+                segment_size: snapshot.segment_size() as usize,
+                group_size: snapshot.group_size() as usize,
+                target_num_digits: snapshot.target_num_digits() as usize,
+            },
+        }
+    }
+
+    pub fn starting_block(&self) -> u64 {
+        let ingested_blocks = self.group_count as u64 * self.segment_options.segment_group_blocks();
+        self.first_block_number + ingested_blocks
     }
 }

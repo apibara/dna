@@ -113,7 +113,6 @@ impl<'a> BlockHeaderSegmentBuilder<'a> {
             .ok_or(DnaError::Fatal)
             .attach_printable("writing header segment but no block ingested")?;
 
-        println!("adding headers {}", self.headers.len());
         let headers = self.builder.create_vector(&self.headers);
         let mut segment = store::BlockHeaderSegmentBuilder::new(&mut self.builder);
         segment.add_first_block_number(first_block_number);
