@@ -1,8 +1,18 @@
+use std::mem;
+
 use apibara_dna_common::error::{DnaError, Result};
 
 use crate::segment::SegmentBuilder;
 
-use super::RpcProvider;
+use super::{models, RpcProvider};
+
+#[derive(Clone, Debug)]
+pub struct IngestorOptions {
+    /// Fetch transactions for each block in a single call.
+    pub get_block_by_number_with_transactions: bool,
+    /// Use `eth_getBlockReceipts` instead of `eth_getTransactionReceipt`.
+    pub get_block_receipts_by_number: bool,
+}
 
 pub enum IngestionEvent {
     Segment {
@@ -23,14 +33,20 @@ pub struct FinalizedBlockIngestor {
     provider: RpcProvider,
     current_block_number: u64,
     target_block_number: Option<u64>,
+    options: IngestorOptions,
 }
 
 impl FinalizedBlockIngestor {
-    pub fn new(provider: RpcProvider, starting_block_number: u64) -> Self {
+    pub fn new(
+        provider: RpcProvider,
+        starting_block_number: u64,
+        options: IngestorOptions,
+    ) -> Self {
         Self {
             provider,
             current_block_number: starting_block_number,
             target_block_number: None,
+            options,
         }
     }
 
@@ -70,17 +86,32 @@ impl FinalizedBlockIngestor {
     ) -> Result<()> {
         let block_number = self.current_block_number;
 
-        let block = self.provider.get_block_by_number(block_number).await?;
+        let (block, transactions) = if self.options.get_block_by_number_with_transactions {
+            let mut block_with_txs = self
+                .provider
+                .get_block_by_number_with_transactions(block_number)
+                .await?;
+            let transactions = mem::take(&mut block_with_txs.transactions);
+            let block: models::Block<models::H256> = block_with_txs.into();
+            (block, transactions)
+        } else {
+            let block = self.provider.get_block_by_number(block_number).await?;
+            let transactions = self
+                .provider
+                .get_transactions_by_hash(&block.transactions)
+                .await?;
+            (block, transactions)
+        };
 
-        let transactions = self
-            .provider
-            .get_transactions_by_hash(&block.transactions)
-            .await?;
-
-        let receipts = self
-            .provider
-            .get_receipts_by_hash(&block.transactions)
-            .await?;
+        let receipts = if self.options.get_block_receipts_by_number {
+            self.provider
+                .get_block_receipts_by_number(block_number)
+                .await?
+        } else {
+            self.provider
+                .get_receipts_by_hash(&block.transactions)
+                .await?
+        };
 
         builder.add_block_header(block_number, &block);
         builder.add_transactions(block_number, &transactions);
@@ -103,5 +134,14 @@ impl FinalizedBlockIngestor {
         let finalized = finalized_block.number.ok_or(DnaError::Fatal)?.as_u64();
         self.target_block_number = Some(finalized);
         Ok(finalized)
+    }
+}
+
+impl Default for IngestorOptions {
+    fn default() -> Self {
+        Self {
+            get_block_by_number_with_transactions: true,
+            get_block_receipts_by_number: false,
+        }
     }
 }
