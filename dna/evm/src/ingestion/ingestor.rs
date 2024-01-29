@@ -8,12 +8,13 @@ use tracing::info;
 
 use crate::segment::{SegmentBuilder, SegmentGroupBuilder};
 
-use super::{FinalizedBlockIngestor, IngestionEvent, RpcProvider};
+use super::{FinalizedBlockIngestor, IngestionEvent, IngestorOptions, RpcProvider};
 
 pub struct Ingestor<S: StorageBackend + Send + Sync + 'static> {
     segment_options: SegmentOptions,
     provider: RpcProvider,
     storage: S,
+    options: IngestorOptions,
 }
 
 impl<S> Ingestor<S>
@@ -27,11 +28,17 @@ where
             segment_options,
             provider,
             storage,
+            options: IngestorOptions::default(),
         }
     }
 
     pub fn with_segment_options(mut self, segment_options: SegmentOptions) -> Self {
         self.segment_options = segment_options;
+        self
+    }
+
+    pub fn with_ingestor_options(mut self, options: IngestorOptions) -> Self {
+        self.options = options;
         self
     }
 
@@ -53,7 +60,8 @@ where
             starting_block_number, "starting ingestion"
         );
 
-        let mut ingestor = FinalizedBlockIngestor::new(self.provider, starting_block_number);
+        let mut ingestor =
+            FinalizedBlockIngestor::new(self.provider, starting_block_number, self.options);
 
         let mut segment_size = 0;
         let mut group_size = 0;

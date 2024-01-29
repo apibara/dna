@@ -37,9 +37,17 @@ enum RpcServiceRequest {
         block_number: u64,
         reply: oneshot::Sender<Result<models::Block<models::H256>>>,
     },
+    BlockByNumberWithTransactions {
+        block_number: u64,
+        reply: oneshot::Sender<Result<models::Block<models::Transaction>>>,
+    },
     TransactionByHash {
         hash: models::H256,
         reply: oneshot::Sender<Result<models::Transaction>>,
+    },
+    BlockReceiptsByNumber {
+        block_number: u64,
+        reply: oneshot::Sender<Result<Vec<models::TransactionReceipt>>>,
     },
     TransactionReceiptByHash {
         hash: models::H256,
@@ -128,6 +136,23 @@ impl RpcProvider {
         result
     }
 
+    #[instrument(skip(self), err(Debug))]
+    pub async fn get_block_by_number_with_transactions(
+        &self,
+        block_number: u64,
+    ) -> Result<models::Block<models::Transaction>> {
+        let (tx, rx) = oneshot::channel();
+        self.tx
+            .send(RpcServiceRequest::BlockByNumberWithTransactions {
+                block_number,
+                reply: tx,
+            })
+            .await
+            .unwrap();
+        let result = rx.await.change_context(DnaError::Fatal)?;
+        result
+    }
+
     pub async fn get_transactions_by_hash(
         &self,
         hashes: &[models::H256],
@@ -154,6 +179,23 @@ impl RpcProvider {
             .collect::<Result<Vec<_>>>()?;
 
         Ok(transactions)
+    }
+
+    #[instrument(skip(self), err(Debug))]
+    pub async fn get_block_receipts_by_number(
+        &self,
+        block_number: u64,
+    ) -> Result<Vec<models::TransactionReceipt>> {
+        let (tx, rx) = oneshot::channel();
+        self.tx
+            .send(RpcServiceRequest::BlockReceiptsByNumber {
+                block_number,
+                reply: tx,
+            })
+            .await
+            .unwrap();
+        let result = rx.await.change_context(DnaError::Fatal)?;
+        result
     }
 
     pub async fn get_receipts_by_hash(
@@ -244,8 +286,24 @@ impl RpcWorker {
                 let response = self.get_block_by_number(block_number).await;
                 let _ = reply.send(response);
             }
+            BlockByNumberWithTransactions {
+                block_number,
+                reply,
+            } => {
+                let response = self
+                    .get_block_by_number_with_transactions(block_number)
+                    .await;
+                let _ = reply.send(response);
+            }
             TransactionByHash { hash, reply } => {
                 let response = self.get_transaction_by_hash(hash).await;
+                let _ = reply.send(response);
+            }
+            BlockReceiptsByNumber {
+                block_number,
+                reply,
+            } => {
+                let response = self.get_block_receipts_by_number(block_number).await;
                 let _ = reply.send(response);
             }
             TransactionReceiptByHash { hash, reply } => {
@@ -293,6 +351,25 @@ impl RpcWorker {
     }
 
     #[instrument(skip(self), err(Debug))]
+    pub async fn get_block_by_number_with_transactions(
+        &self,
+        block_number: u64,
+    ) -> Result<models::Block<models::Transaction>> {
+        self.limiter.until_ready().await;
+
+        let block = self
+            .provider
+            .get_block_with_txs(block_number)
+            .await
+            .change_context(DnaError::Fatal)
+            .attach_printable_lazy(|| format!("failed to get block: {}", block_number))?
+            .ok_or(DnaError::Fatal)
+            .attach_printable_lazy(|| format!("block not found: {:?}", block_number))?;
+
+        Ok(block)
+    }
+
+    #[instrument(skip(self), err(Debug))]
     pub async fn get_transaction_by_hash(&self, hash: models::H256) -> Result<models::Transaction> {
         self.limiter.until_ready().await;
 
@@ -305,6 +382,22 @@ impl RpcWorker {
             .attach_printable_lazy(|| format!("transaction not found: {:?}", hash))?;
 
         Ok(transaction)
+    }
+
+    #[instrument(skip(self), err(Debug))]
+    pub async fn get_block_receipts_by_number(
+        &self,
+        block_number: u64,
+    ) -> Result<Vec<models::TransactionReceipt>> {
+        self.limiter.until_ready().await;
+
+        let receipts = self
+            .provider
+            .get_block_receipts(block_number)
+            .await
+            .change_context(DnaError::Fatal)?;
+
+        Ok(receipts)
     }
 
     #[instrument(skip(self), err(Debug))]
@@ -334,28 +427,40 @@ fn new_limiter(rate_limit: u32) -> DefaultDirectRateLimiter {
 
 impl RpcServiceRequest {
     pub fn tag(&self) -> &'static str {
+        use RpcServiceRequest::*;
         match self {
-            RpcServiceRequest::FinalizedBlock { .. } => "FinalizedBlock",
-            RpcServiceRequest::BlockByNumber { .. } => "BlockByNumber",
-            RpcServiceRequest::TransactionByHash { .. } => "TransactionByHash",
-            RpcServiceRequest::TransactionReceiptByHash { .. } => "TransactionReceiptByHash",
+            FinalizedBlock { .. } => "FinalizedBlock",
+            BlockByNumber { .. } => "BlockByNumber",
+            BlockByNumberWithTransactions { .. } => "BlockByNumberWithTransactions",
+            TransactionByHash { .. } => "TransactionByHash",
+            BlockReceiptsByNumber { .. } => "BlockReceiptsByNumber",
+            TransactionReceiptByHash { .. } => "TransactionReceiptByHash",
         }
     }
 }
 
 impl Debug for RpcServiceRequest {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use RpcServiceRequest::*;
         match self {
-            RpcServiceRequest::FinalizedBlock { .. } => f.debug_struct("FinalizedBlock").finish(),
-            RpcServiceRequest::BlockByNumber { block_number, .. } => f
+            FinalizedBlock { .. } => f.debug_struct("FinalizedBlock").finish(),
+            BlockByNumber { block_number, .. } => f
                 .debug_struct("BlockByNumber")
                 .field("block_number", block_number)
                 .finish(),
-            RpcServiceRequest::TransactionByHash { hash, .. } => f
+            BlockByNumberWithTransactions { block_number, .. } => f
+                .debug_struct("BlockByNumberWithTransactions")
+                .field("block_number", block_number)
+                .finish(),
+            TransactionByHash { hash, .. } => f
                 .debug_struct("TransactionByHash")
                 .field("hash", hash)
                 .finish(),
-            RpcServiceRequest::TransactionReceiptByHash { hash, .. } => f
+            BlockReceiptsByNumber { block_number, .. } => f
+                .debug_struct("BlockReceiptsByNumber")
+                .field("block_number", block_number)
+                .finish(),
+            TransactionReceiptByHash { hash, .. } => f
                 .debug_struct("TransactionReceiptByHash")
                 .field("hash", hash)
                 .finish(),

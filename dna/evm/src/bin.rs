@@ -6,7 +6,7 @@ use apibara_dna_common::{
     storage::LocalStorageBackend,
 };
 use apibara_dna_evm::{
-    ingestion::{Ingestor, RpcProviderService},
+    ingestion::{Ingestor, IngestorOptions, RpcProviderService},
     segment::{
         store, BlockHeaderSegmentReader, LogSegmentReader, SegmentGroupExt, SegmentGroupReader,
     },
@@ -52,6 +52,8 @@ struct StartIngestionArgs {
     #[clap(flatten)]
     pub segment: SegmentArgs,
     #[clap(flatten)]
+    pub ingestor: IngestorArgs,
+    #[clap(flatten)]
     pub rpc: RpcArgs,
 }
 
@@ -66,6 +68,16 @@ struct RpcArgs {
     /// How many concurrent requests to send.
     #[arg(long, env, default_value = "100")]
     pub rpc_concurrency: usize,
+}
+
+#[derive(Args, Debug, Clone)]
+struct IngestorArgs {
+    /// Fetch transactions for each block in a single call.
+    #[arg(long, env, default_value = "true")]
+    pub rpc_get_block_by_number_with_transactions: bool,
+    /// Use `eth_getBlockReceipts` instead of `eth_getTransactionReceipt`.
+    #[arg(long, env, default_value = "false")]
+    pub rpc_get_block_receipts_by_number: bool,
 }
 
 #[derive(Args, Debug)]
@@ -130,7 +142,9 @@ async fn run_ingestion(args: StartIngestionArgs) -> Result<()> {
     let starting_block_number = segment_options.segment_group_start(args.from_block);
 
     let storage = LocalStorageBackend::new(args.data_dir);
-    let ingestor = Ingestor::new(provider, storage).with_segment_options(segment_options);
+    let ingestor = Ingestor::new(provider, storage)
+        .with_segment_options(segment_options)
+        .with_ingestor_options(args.ingestor.to_options());
 
     let rpc_provider_task = tokio::spawn(rpc_provider_fut);
     let ingestion_task = tokio::spawn({
@@ -372,4 +386,13 @@ async fn run_inspect(args: InspectArgs) -> Result<()> {
     );
 
     Ok(())
+}
+
+impl IngestorArgs {
+    pub fn to_options(&self) -> IngestorOptions {
+        IngestorOptions {
+            get_block_by_number_with_transactions: self.rpc_get_block_by_number_with_transactions,
+            get_block_receipts_by_number: self.rpc_get_block_receipts_by_number,
+        }
+    }
 }
