@@ -32,6 +32,7 @@ impl<'a> Snapshot<'a> {
     pub const VT_SEGMENT_SIZE: flatbuffers::VOffsetT = 8;
     pub const VT_GROUP_SIZE: flatbuffers::VOffsetT = 10;
     pub const VT_GROUP_COUNT: flatbuffers::VOffsetT = 12;
+    pub const VT_TARGET_NUM_DIGITS: flatbuffers::VOffsetT = 14;
 
     pub const fn get_fully_qualified_name() -> &'static str {
         "Snapshot"
@@ -49,6 +50,7 @@ impl<'a> Snapshot<'a> {
         let mut builder = SnapshotBuilder::new(_fbb);
         builder.add_first_block_number(args.first_block_number);
         builder.add_revision(args.revision);
+        builder.add_target_num_digits(args.target_num_digits);
         builder.add_group_count(args.group_count);
         builder.add_group_size(args.group_size);
         builder.add_segment_size(args.segment_size);
@@ -110,6 +112,17 @@ impl<'a> Snapshot<'a> {
                 .unwrap()
         }
     }
+    #[inline]
+    pub fn target_num_digits(&self) -> u32 {
+        // Safety:
+        // Created from valid Table for this object
+        // which contains a valid value in this slot
+        unsafe {
+            self._tab
+                .get::<u32>(Snapshot::VT_TARGET_NUM_DIGITS, Some(0))
+                .unwrap()
+        }
+    }
 }
 
 impl flatbuffers::Verifiable for Snapshot<'_> {
@@ -125,6 +138,7 @@ impl flatbuffers::Verifiable for Snapshot<'_> {
             .visit_field::<u32>("segment_size", Self::VT_SEGMENT_SIZE, false)?
             .visit_field::<u32>("group_size", Self::VT_GROUP_SIZE, false)?
             .visit_field::<u32>("group_count", Self::VT_GROUP_COUNT, false)?
+            .visit_field::<u32>("target_num_digits", Self::VT_TARGET_NUM_DIGITS, false)?
             .finish();
         Ok(())
     }
@@ -135,6 +149,7 @@ pub struct SnapshotArgs {
     pub segment_size: u32,
     pub group_size: u32,
     pub group_count: u32,
+    pub target_num_digits: u32,
 }
 impl<'a> Default for SnapshotArgs {
     #[inline]
@@ -145,6 +160,7 @@ impl<'a> Default for SnapshotArgs {
             segment_size: 0,
             group_size: 0,
             group_count: 0,
+            target_num_digits: 0,
         }
     }
 }
@@ -180,6 +196,11 @@ impl<'a: 'b, 'b> SnapshotBuilder<'a, 'b> {
             .push_slot::<u32>(Snapshot::VT_GROUP_COUNT, group_count, 0);
     }
     #[inline]
+    pub fn add_target_num_digits(&mut self, target_num_digits: u32) {
+        self.fbb_
+            .push_slot::<u32>(Snapshot::VT_TARGET_NUM_DIGITS, target_num_digits, 0);
+    }
+    #[inline]
     pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a>) -> SnapshotBuilder<'a, 'b> {
         let start = _fbb.start_table();
         SnapshotBuilder {
@@ -202,6 +223,7 @@ impl core::fmt::Debug for Snapshot<'_> {
         ds.field("segment_size", &self.segment_size());
         ds.field("group_size", &self.group_size());
         ds.field("group_count", &self.group_count());
+        ds.field("target_num_digits", &self.target_num_digits());
         ds.finish()
     }
 }

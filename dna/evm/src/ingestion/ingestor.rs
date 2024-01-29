@@ -1,4 +1,8 @@
-use apibara_dna_common::{error::Result, segment::SegmentOptions, storage::StorageBackend};
+use apibara_dna_common::{
+    error::Result,
+    segment::{SegmentOptions, SnapshotBuilder},
+    storage::StorageBackend,
+};
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
@@ -15,6 +19,7 @@ pub struct Ingestor<S: StorageBackend + Send + Sync + 'static> {
 impl<S> Ingestor<S>
 where
     S: StorageBackend + Send + Sync + 'static,
+    <S as StorageBackend>::Reader: Unpin,
 {
     pub fn new(provider: RpcProvider, storage: S) -> Self {
         let segment_options = SegmentOptions::default();
@@ -31,10 +36,24 @@ where
     }
 
     pub async fn start(mut self, starting_block_number: u64, ct: CancellationToken) -> Result<()> {
-        let mut ingestor = FinalizedBlockIngestor::new(self.provider, starting_block_number);
-
         let mut segment_builder = SegmentBuilder::new();
         let mut segment_group_builder = SegmentGroupBuilder::new();
+        let mut snapshot_builder = SnapshotBuilder::from_storage(&mut self.storage)
+            .await?
+            .unwrap_or_else(|| {
+                SnapshotBuilder::new(starting_block_number, self.segment_options.clone())
+            });
+
+        let segment_options = snapshot_builder.state().segment_options.clone();
+
+        let starting_block_number = snapshot_builder.state().starting_block();
+        info!(
+            revision = snapshot_builder.state().revision,
+            segment_options = ?segment_options,
+            starting_block_number, "starting ingestion"
+        );
+
+        let mut ingestor = FinalizedBlockIngestor::new(self.provider, starting_block_number);
 
         let mut segment_size = 0;
         let mut group_size = 0;
@@ -71,9 +90,8 @@ where
 
                     segment_group_builder.add_segment(first_block_number, count);
 
-                    if segment_size >= self.segment_options.segment_size {
-                        let segment_name =
-                            self.segment_options.format_segment_name(last_block_number);
+                    if segment_size >= segment_options.segment_size {
+                        let segment_name = segment_options.format_segment_name(last_block_number);
                         segment_builder
                             .write(&format!("segment/{segment_name}"), &mut self.storage)
                             .await?;
@@ -87,16 +105,19 @@ where
                         info!(segment_name, "wrote segment");
                     }
 
-                    if group_size >= self.segment_options.group_size {
-                        let group_name = self
-                            .segment_options
-                            .format_segment_group_name(last_block_number);
+                    if group_size >= segment_options.group_size {
+                        let group_name =
+                            segment_options.format_segment_group_name(last_block_number);
                         group_size = 0;
                         segment_group_builder
                             .write(&group_name, &mut self.storage)
                             .await?;
                         segment_group_builder.reset();
                         info!(group_name, "wrote group index");
+                        let new_revision =
+                            snapshot_builder.write_revision(&mut self.storage).await?;
+                        snapshot_builder.reset();
+                        info!(revision = new_revision, "wrote snapshot");
                     }
                 }
             }
