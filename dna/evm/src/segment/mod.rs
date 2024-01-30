@@ -5,7 +5,9 @@ mod read;
 pub mod store;
 mod write;
 
-pub use self::read::{BlockHeaderSegmentReader, LogSegmentReader, SegmentGroupReader};
+pub use self::read::{
+    BlockHeaderSegmentReader, LogSegmentReader, SegmentGroupReader, TransactionSegmentReader,
+};
 pub use self::write::{SegmentBuilder, SegmentGroupBuilder, SegmentIndex};
 
 pub use self::helpers::SegmentGroupExt;

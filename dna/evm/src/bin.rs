@@ -9,6 +9,7 @@ use apibara_dna_evm::{
     ingestion::{Ingestor, IngestorOptions, RpcProviderService},
     segment::{
         store, BlockHeaderSegmentReader, LogSegmentReader, SegmentGroupExt, SegmentGroupReader,
+        TransactionSegmentReader,
     },
 };
 use apibara_observability::init_opentelemetry;
@@ -91,6 +92,8 @@ struct InspectArgs {
     #[clap(flatten)]
     pub logs: InspectLogsArgs,
     #[clap(flatten)]
+    pub transaction: InspectTransactionArgs,
+    #[clap(flatten)]
     pub header: InspectHeadersArgs,
 }
 
@@ -98,6 +101,12 @@ struct InspectArgs {
 struct InspectHeadersArgs {
     #[arg(long, env, default_value = "false")]
     pub header: bool,
+}
+
+#[derive(Args, Debug)]
+struct InspectTransactionArgs {
+    #[arg(long, env, default_value = "false")]
+    pub to_address: Option<String>,
 }
 
 #[derive(Args, Debug)]
@@ -183,10 +192,22 @@ async fn run_inspect(args: InspectArgs) -> Result<()> {
         BlockHeaderSegmentReader::new(storage.clone(), segment_options.clone(), 1024 * 1024 * 1024);
     let mut log_segment_reader =
         LogSegmentReader::new(storage.clone(), segment_options.clone(), 1024 * 1024 * 1024);
+    let mut transaction_segment_reader =
+        TransactionSegmentReader::new(storage.clone(), segment_options.clone(), 1024 * 1024 * 1024);
 
     let address_filter = if let Some(address) = args.logs.address {
         info!(address, "Filter by log address");
         let address = store::Address::from_hex(&address)
+            .change_context(DnaError::Fatal)
+            .attach_printable("failed to parse address")?;
+        Some(address)
+    } else {
+        None
+    };
+
+    let transaction_to_filter = if let Some(to_address) = args.transaction.to_address {
+        info!(to_address, "Filter by transaction to address");
+        let address = store::Address::from_hex(&to_address)
             .change_context(DnaError::Fatal)
             .attach_printable("failed to parse address")?;
         Some(address)
@@ -208,6 +229,7 @@ async fn run_inspect(args: InspectArgs) -> Result<()> {
 
     let mut block_bitmap = RoaringBitmap::new();
     let mut event_count = 0;
+    let mut transaction_count = 0;
     let mut withdrawal_count = 0;
     let mut segment_read_count = 0;
     while current_block_number < ending_block_number {
@@ -226,7 +248,8 @@ async fn run_inspect(args: InspectArgs) -> Result<()> {
         let segment_group_end = current_segment_group_start + segment_group_blocks;
 
         block_bitmap.clear();
-        if args.header.header {
+        // TODO: use bitmap for transactions.
+        if args.header.header || transaction_to_filter.is_some() {
             block_bitmap.insert_range(current_segment_group_start as u32..segment_group_end as u32);
         } else {
             if let Some(address) = &address_filter {
@@ -261,6 +284,17 @@ async fn run_inspect(args: InspectArgs) -> Result<()> {
         } else {
             None
         };
+
+        let mut transaction_segment = if transaction_to_filter.is_some() {
+            Some(
+                transaction_segment_reader
+                    .read(current_segment_start)
+                    .await?,
+            )
+        } else {
+            None
+        };
+
         for block_number in block_bitmap.iter() {
             if current_segment_start < segment_options.segment_start(block_number as u64) {
                 current_segment_start = segment_options.segment_start(block_number as u64);
@@ -272,6 +306,14 @@ async fn run_inspect(args: InspectArgs) -> Result<()> {
 
                 if log_segment.is_some() {
                     log_segment = Some(log_segment_reader.read(current_segment_start).await?)
+                };
+
+                if transaction_segment.is_some() {
+                    transaction_segment = Some(
+                        transaction_segment_reader
+                            .read(current_segment_start)
+                            .await?,
+                    )
                 };
             }
 
@@ -307,6 +349,35 @@ async fn run_inspect(args: InspectArgs) -> Result<()> {
                     }
 
                     event_count += 1;
+                }
+            }
+            if let Some(transaction_segment) = transaction_segment.as_ref() {
+                let target_address = transaction_to_filter.as_ref().unwrap();
+
+                let index = block_number - transaction_segment.first_block_number() as u32;
+                let block_transactions = transaction_segment
+                    .blocks()
+                    .unwrap_or_default()
+                    .get(index as usize);
+                for transaction in block_transactions.transactions().unwrap_or_default() {
+                    let Some(to) = transaction.to() else {
+                        continue;
+                    };
+
+                    if to == target_address {
+                        let transaction_hash = transaction.hash().unwrap();
+                        let calldata = transaction.input().unwrap_or_default();
+                        if args.log {
+                            info!(
+                                block_number,
+                                transaction_hash = %transaction_hash.as_hex(),
+                                calldata_len = calldata.len(),
+                                "    transaction"
+                            );
+                        }
+
+                        transaction_count += 1;
+                    }
                 }
             }
 
@@ -374,6 +445,15 @@ async fn run_inspect(args: InspectArgs) -> Result<()> {
         withdrawal_count,
         withdrawal_sec = format!("{withdrawal_sec:.0}"),
         "withdrawal count"
+    );
+
+    let transaction_sec = transaction_count as f64 / elapsed.as_secs_f64();
+
+    info!(
+        elapsed = ?elapsed,
+        transaction_count,
+        transaction_sec = format!("{transaction_sec:.0}"),
+        "transaction count"
     );
 
     let segment_read_sec = segment_read_count as f64 / elapsed.as_secs_f64();
