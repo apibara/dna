@@ -100,7 +100,7 @@ impl RpcProviderService {
 
         let fut = {
             async move {
-                let tasks = (0..self.concurrency).into_iter().map(|wi| {
+                let tasks = (0..self.concurrency).map(|wi| {
                     let ct = ct.clone();
                     let worker = RpcWorker::new(wi, self.provider.clone(), worker_rate_limit);
                     tokio::task::spawn(worker.start(rx.clone(), ct))
@@ -123,8 +123,7 @@ impl RpcProvider {
             .send(RpcServiceRequest::FinalizedBlock { reply: tx })
             .await
             .unwrap();
-        let result = rx.await.change_context(DnaError::Fatal)?;
-        result
+        rx.await.change_context(DnaError::Fatal)?
     }
 
     #[instrument(skip(self), err(Debug))]
@@ -140,8 +139,7 @@ impl RpcProvider {
             })
             .await
             .unwrap();
-        let result = rx.await.change_context(DnaError::Fatal)?;
-        result
+        rx.await.change_context(DnaError::Fatal)?
     }
 
     #[instrument(skip(self), err(Debug))]
@@ -157,8 +155,7 @@ impl RpcProvider {
             })
             .await
             .unwrap();
-        let result = rx.await.change_context(DnaError::Fatal)?;
-        result
+        rx.await.change_context(DnaError::Fatal)?
     }
 
     pub async fn get_transactions_by_hash(
@@ -201,8 +198,7 @@ impl RpcProvider {
             })
             .await
             .unwrap();
-        let result = rx.await.change_context(DnaError::Fatal)?;
-        result
+        rx.await.change_context(DnaError::Fatal)?
     }
 
     pub async fn get_receipts_by_hash(

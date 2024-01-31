@@ -20,8 +20,8 @@ pub struct SegmentBuilder<'a> {
     index: SegmentIndex,
 }
 
-impl<'a> SegmentBuilder<'a> {
-    pub fn new() -> Self {
+impl<'a> Default for SegmentBuilder<'a> {
+    fn default() -> Self {
         Self {
             header: BlockHeaderSegmentBuilder::new(),
             transaction: TransactionSegmentBuilder::new(),
@@ -30,7 +30,9 @@ impl<'a> SegmentBuilder<'a> {
             index: SegmentIndex::default(),
         }
     }
+}
 
+impl<'a> SegmentBuilder<'a> {
     pub fn add_block_header(&mut self, block_number: u64, header: &models::Block) {
         self.header.add_block_header(block_number, header);
     }

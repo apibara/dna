@@ -158,11 +158,13 @@ async fn run_ingestion(args: StartIngestionArgs) -> Result<()> {
     });
 
     tokio::select! {
-        _ = rpc_provider_task => {
+        ret = rpc_provider_task => {
             info!("rpc provider task finished");
+            ret.change_context(DnaError::Fatal)??;
         }
-        _ = ingestion_task => {
+        ret = ingestion_task => {
             info!("ingestion task finished");
+            ret.change_context(DnaError::Fatal)??;
         }
     }
 
@@ -247,14 +249,12 @@ async fn run_inspect(args: InspectArgs) -> Result<()> {
         // TODO: use bitmap for transactions.
         if args.header.header || transaction_to_filter.is_some() {
             block_bitmap.insert_range(current_segment_group_start as u32..segment_group_end as u32);
-        } else {
-            if let Some(address) = &address_filter {
-                let address_bitmap = segment_group
-                    .get_log_by_address(address)
-                    .unwrap_or_default();
-                debug!(address = %address, address_bitmap = ?address_bitmap, "read address bitmap");
-                block_bitmap |= address_bitmap;
-            }
+        } else if let Some(address) = &address_filter {
+            let address_bitmap = segment_group
+                .get_log_by_address(address)
+                .unwrap_or_default();
+            debug!(address = %address, address_bitmap = ?address_bitmap, "read address bitmap");
+            block_bitmap |= address_bitmap;
         }
 
         // Skip as many segments in the group as possible.

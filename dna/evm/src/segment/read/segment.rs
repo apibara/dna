@@ -29,10 +29,7 @@ where
         Self(inner)
     }
 
-    pub async fn read<'a>(
-        &'a mut self,
-        segment_start: u64,
-    ) -> Result<store::BlockHeaderSegment<'a>> {
+    pub async fn read(&mut self, segment_start: u64) -> Result<store::BlockHeaderSegment> {
         self.0
             .read::<store::BlockHeaderSegment>(segment_start, "header")
             .await
@@ -49,7 +46,7 @@ where
         Self(inner)
     }
 
-    pub async fn read<'a>(&'a mut self, segment_start: u64) -> Result<store::LogSegment<'a>> {
+    pub async fn read(&mut self, segment_start: u64) -> Result<store::LogSegment> {
         self.0.read::<store::LogSegment>(segment_start, "log").await
     }
 }
@@ -64,10 +61,7 @@ where
         Self(inner)
     }
 
-    pub async fn read<'a>(
-        &'a mut self,
-        segment_start: u64,
-    ) -> Result<store::TransactionSegment<'a>> {
+    pub async fn read(&mut self, segment_start: u64) -> Result<store::TransactionSegment> {
         self.0
             .read::<store::TransactionSegment>(segment_start, "transaction")
             .await
