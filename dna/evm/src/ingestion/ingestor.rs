@@ -1,8 +1,9 @@
 use apibara_dna_common::{
-    error::Result,
+    error::{DnaError, Result},
     segment::{SegmentOptions, SnapshotBuilder},
     storage::StorageBackend,
 };
+use error_stack::ResultExt;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
@@ -42,18 +43,34 @@ where
         self
     }
 
-    pub async fn start(mut self, starting_block_number: u64, ct: CancellationToken) -> Result<()> {
+    pub async fn start(
+        mut self,
+        starting_block_number_override: Option<u64>,
+        ct: CancellationToken,
+    ) -> Result<()> {
         let mut segment_builder = SegmentBuilder::new();
         let mut segment_group_builder = SegmentGroupBuilder::new();
+
         let mut snapshot_builder = SnapshotBuilder::from_storage(&mut self.storage)
             .await?
             .unwrap_or_else(|| {
-                SnapshotBuilder::new(starting_block_number, self.segment_options.clone())
+                SnapshotBuilder::new(
+                    starting_block_number_override.unwrap_or(0),
+                    self.segment_options.clone(),
+                )
             });
 
         let segment_options = snapshot_builder.state().segment_options.clone();
 
+        // TODO: implement this by recomputing group size if the user overrides the starting block number.
+        if starting_block_number_override.is_some() && snapshot_builder.state().group_count > 0 {
+            return Err(DnaError::Configuration).attach_printable(
+                "cannot override starting block number after ingestion has started",
+            );
+        }
+
         let starting_block_number = snapshot_builder.state().starting_block();
+
         info!(
             revision = snapshot_builder.state().revision,
             segment_options = ?segment_options,
