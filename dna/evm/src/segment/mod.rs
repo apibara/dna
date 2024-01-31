@@ -1,4 +1,4 @@
-mod conversion;
+pub mod conversion;
 mod helpers;
 mod read;
 #[allow(dead_code, unused_imports, clippy::all)]
