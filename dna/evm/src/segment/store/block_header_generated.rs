@@ -49,6 +49,9 @@ impl<'a> BlockHeader<'a> {
     pub const VT_UNCLES: flatbuffers::VOffsetT = 42;
     pub const VT_SIZE_: flatbuffers::VOffsetT = 44;
     pub const VT_WITHDRAWALS: flatbuffers::VOffsetT = 46;
+    pub const VT_BLOB_GAS_USED: flatbuffers::VOffsetT = 48;
+    pub const VT_EXCESS_BLOB_GAS: flatbuffers::VOffsetT = 50;
+    pub const VT_PARENT_BEACON_BLOCK_ROOT: flatbuffers::VOffsetT = 52;
 
     pub const fn get_fully_qualified_name() -> &'static str {
         "BlockHeader"
@@ -64,8 +67,13 @@ impl<'a> BlockHeader<'a> {
         args: &'args BlockHeaderArgs<'args>,
     ) -> flatbuffers::WIPOffset<BlockHeader<'bldr>> {
         let mut builder = BlockHeaderBuilder::new(_fbb);
+        builder.add_excess_blob_gas(args.excess_blob_gas);
+        builder.add_blob_gas_used(args.blob_gas_used);
         builder.add_nonce(args.nonce);
         builder.add_number(args.number);
+        if let Some(x) = args.parent_beacon_block_root {
+            builder.add_parent_beacon_block_root(x);
+        }
         if let Some(x) = args.withdrawals {
             builder.add_withdrawals(x);
         }
@@ -321,6 +329,38 @@ impl<'a> BlockHeader<'a> {
             >>(BlockHeader::VT_WITHDRAWALS, None)
         }
     }
+    #[inline]
+    pub fn blob_gas_used(&self) -> u64 {
+        // Safety:
+        // Created from valid Table for this object
+        // which contains a valid value in this slot
+        unsafe {
+            self._tab
+                .get::<u64>(BlockHeader::VT_BLOB_GAS_USED, Some(0))
+                .unwrap()
+        }
+    }
+    #[inline]
+    pub fn excess_blob_gas(&self) -> u64 {
+        // Safety:
+        // Created from valid Table for this object
+        // which contains a valid value in this slot
+        unsafe {
+            self._tab
+                .get::<u64>(BlockHeader::VT_EXCESS_BLOB_GAS, Some(0))
+                .unwrap()
+        }
+    }
+    #[inline]
+    pub fn parent_beacon_block_root(&self) -> Option<&'a B256> {
+        // Safety:
+        // Created from valid Table for this object
+        // which contains a valid value in this slot
+        unsafe {
+            self._tab
+                .get::<B256>(BlockHeader::VT_PARENT_BEACON_BLOCK_ROOT, None)
+        }
+    }
 }
 
 impl flatbuffers::Verifiable for BlockHeader<'_> {
@@ -363,6 +403,13 @@ impl flatbuffers::Verifiable for BlockHeader<'_> {
             .visit_field::<flatbuffers::ForwardsUOffset<
                 flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<Withdrawal>>,
             >>("withdrawals", Self::VT_WITHDRAWALS, false)?
+            .visit_field::<u64>("blob_gas_used", Self::VT_BLOB_GAS_USED, false)?
+            .visit_field::<u64>("excess_blob_gas", Self::VT_EXCESS_BLOB_GAS, false)?
+            .visit_field::<B256>(
+                "parent_beacon_block_root",
+                Self::VT_PARENT_BEACON_BLOCK_ROOT,
+                false,
+            )?
             .finish();
         Ok(())
     }
@@ -394,6 +441,9 @@ pub struct BlockHeaderArgs<'a> {
             flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Withdrawal<'a>>>,
         >,
     >,
+    pub blob_gas_used: u64,
+    pub excess_blob_gas: u64,
+    pub parent_beacon_block_root: Option<&'a B256>,
 }
 impl<'a> Default for BlockHeaderArgs<'a> {
     #[inline]
@@ -421,6 +471,9 @@ impl<'a> Default for BlockHeaderArgs<'a> {
             uncles: None,
             size_: None,
             withdrawals: None,
+            blob_gas_used: 0,
+            excess_blob_gas: 0,
+            parent_beacon_block_root: None,
         }
     }
 }
@@ -550,6 +603,23 @@ impl<'a: 'b, 'b> BlockHeaderBuilder<'a, 'b> {
         );
     }
     #[inline]
+    pub fn add_blob_gas_used(&mut self, blob_gas_used: u64) {
+        self.fbb_
+            .push_slot::<u64>(BlockHeader::VT_BLOB_GAS_USED, blob_gas_used, 0);
+    }
+    #[inline]
+    pub fn add_excess_blob_gas(&mut self, excess_blob_gas: u64) {
+        self.fbb_
+            .push_slot::<u64>(BlockHeader::VT_EXCESS_BLOB_GAS, excess_blob_gas, 0);
+    }
+    #[inline]
+    pub fn add_parent_beacon_block_root(&mut self, parent_beacon_block_root: &B256) {
+        self.fbb_.push_slot_always::<&B256>(
+            BlockHeader::VT_PARENT_BEACON_BLOCK_ROOT,
+            parent_beacon_block_root,
+        );
+    }
+    #[inline]
     pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a>) -> BlockHeaderBuilder<'a, 'b> {
         let start = _fbb.start_table();
         BlockHeaderBuilder {
@@ -589,6 +659,9 @@ impl core::fmt::Debug for BlockHeader<'_> {
         ds.field("uncles", &self.uncles());
         ds.field("size_", &self.size_());
         ds.field("withdrawals", &self.withdrawals());
+        ds.field("blob_gas_used", &self.blob_gas_used());
+        ds.field("excess_blob_gas", &self.excess_blob_gas());
+        ds.field("parent_beacon_block_root", &self.parent_beacon_block_root());
         ds.finish()
     }
 }

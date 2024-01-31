@@ -132,6 +132,13 @@ table BlockHeader {
   size:U256;
   // Withdrawals in the block.
   withdrawals:[Withdrawal];
+
+  // Blob gas used.
+  blob_gas_used:uint64;
+  // Excess blob gas.
+  excess_blob_gas:uint64;
+  // Parent beacon block root.
+  parent_beacon_block_root:B256;
 }
 
 // A Log emitted by a transaction.
@@ -185,7 +192,11 @@ table Transaction {
   // EIP-2930 access list.
   access_list:[AccessListItem];
   // EIP-2718 transaction type.
-  transaction_type:uint32;
+  transaction_type:uint64;
+  // EIP-4844 max gas fee per blob.
+  max_fee_per_blob_gas:U128;
+  // EIP-4844 blob hashes.
+  blob_versioned_hashes:[B256];
 }
 
 table TransactionReceipt {
@@ -212,7 +223,11 @@ table TransactionReceipt {
   // Either 1 (success) or 0 (failure).
   status_code:uint64;
   // EIP-2718 transaction type.
-  transaction_type:uint32;
+  transaction_type:uint64;
+  // EIP-4844 blob gas used.
+  blob_gas_used:U128;
+  // EIP-4844 blob gas paid by the transaction.
+  blob_gas_price:U128;
 }
 
 // A validator's withdrawal from the consensus layer.
@@ -233,9 +248,9 @@ table Signature {
   // The signature's s value.
   s:U256;
   // The signature's v value.
-  // v:U256;
+  v:U256;
   // The signature's parity byte.
-  // y_parity:bool;
+  y_parity:bool;
 }
 
 table AccessListItem {
