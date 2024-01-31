@@ -26,7 +26,7 @@ where
         Self { storage, buffer }
     }
 
-    pub async fn read<'a>(&'a mut self) -> Result<store::Snapshot<'a>> {
+    pub async fn read(&mut self) -> Result<store::Snapshot> {
         let mut reader = self.storage.get("", "snapshot").await?;
         let len = {
             let mut cursor = Cursor::new(&mut self.buffer[..]);
