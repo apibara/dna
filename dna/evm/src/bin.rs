@@ -41,12 +41,9 @@ enum Command {
 /// If a snapshot is already present, it will be used to resume ingestion.
 #[derive(Args, Debug)]
 struct StartIngestionArgs {
-    /// Start ingesting data from this block.
-    ///
-    /// Notice that if a client requests data from a block that is earlier than
-    /// this block, it will error.
-    #[arg(long, env, default_value = "0")]
-    pub from_block: u64,
+    /// Start ingesting data from this block, replacing any existing snapshot.
+    #[arg(long, env)]
+    pub starting_block: Option<u64>,
     /// Location for ingested data.
     #[arg(long, env)]
     pub data_dir: PathBuf,
@@ -137,7 +134,7 @@ async fn run_with_args(args: Cli) -> Result<()> {
 }
 
 async fn run_ingestion(args: StartIngestionArgs) -> Result<()> {
-    info!(from_block = %args.from_block, "Starting EVM ingestion");
+    info!(from_block = ?args.starting_block, "Starting EVM ingestion");
     info!(data_dir = %args.data_dir.display(), "Using data directory");
 
     let ct = CancellationToken::new();
@@ -148,7 +145,6 @@ async fn run_ingestion(args: StartIngestionArgs) -> Result<()> {
         .start(ct.clone());
 
     let segment_options = args.segment.to_segment_options();
-    let starting_block_number = segment_options.segment_group_start(args.from_block);
 
     let storage = LocalStorageBackend::new(args.data_dir);
     let ingestor = Ingestor::new(provider, storage)
@@ -158,7 +154,7 @@ async fn run_ingestion(args: StartIngestionArgs) -> Result<()> {
     let rpc_provider_task = tokio::spawn(rpc_provider_fut);
     let ingestion_task = tokio::spawn({
         let ct = ct.clone();
-        async move { ingestor.start(starting_block_number, ct).await }
+        async move { ingestor.start(args.starting_block, ct).await }
     });
 
     tokio::select! {
