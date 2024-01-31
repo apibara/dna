@@ -1,26 +1,33 @@
-use std::{fmt::Debug, num::NonZeroU32};
+use std::{fmt::Debug, num::NonZeroU32, sync::Arc};
 
+use alloy_providers::provider::{Provider, TempProvider};
+use alloy_rpc_client::RpcClient;
+use alloy_transport::BoxTransport;
 use apibara_dna_common::error::{DnaError, Result};
 use error_stack::ResultExt;
-use ethers::prelude::*;
-use futures_util::{future::join_all, Future};
+use futures_util::{future::join_all, Future, StreamExt};
 use governor::{DefaultDirectRateLimiter, Quota, RateLimiter};
 use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, instrument, trace};
+use url::Url;
 
 const DEFAULT_RATE_LIMIT: u32 = 1000;
 const DEFAULT_CONCURRENCY: usize = 100;
 
 pub mod models {
-    pub use ethers::types::{
-        transaction::eip2930::AccessListItem, Block, Bloom, Log, Transaction, TransactionReceipt,
-        Withdrawal, H160, H256, H64, U128, U256,
+    pub use alloy_primitives::{
+        aliases::{BlockHash, BlockNumber, TxHash, B256, B64, U128, U256, U64, U8},
+        Address, Bloom, FixedBytes,
+    };
+    pub use alloy_rpc_types::{
+        AccessListItem, Block, BlockId, BlockNumberOrTag, BlockTransactions, Log, Transaction,
+        TransactionReceipt, Withdrawal,
     };
 }
 
 pub struct RpcProviderService {
-    provider: Provider<Http>,
+    provider: Arc<Provider<BoxTransport>>,
     rate_limit: u32,
     concurrency: usize,
 }
@@ -31,36 +38,37 @@ pub struct RpcProvider {
 
 enum RpcServiceRequest {
     FinalizedBlock {
-        reply: oneshot::Sender<Result<models::Block<models::H256>>>,
+        reply: oneshot::Sender<Result<models::Block>>,
     },
     BlockByNumber {
-        block_number: u64,
-        reply: oneshot::Sender<Result<models::Block<models::H256>>>,
+        block_number: models::BlockNumber,
+        reply: oneshot::Sender<Result<models::Block>>,
     },
     BlockByNumberWithTransactions {
-        block_number: u64,
-        reply: oneshot::Sender<Result<models::Block<models::Transaction>>>,
+        block_number: models::BlockNumber,
+        reply: oneshot::Sender<Result<models::Block>>,
     },
     TransactionByHash {
-        hash: models::H256,
+        hash: models::TxHash,
         reply: oneshot::Sender<Result<models::Transaction>>,
     },
     BlockReceiptsByNumber {
-        block_number: u64,
+        block_number: models::BlockNumber,
         reply: oneshot::Sender<Result<Vec<models::TransactionReceipt>>>,
     },
     TransactionReceiptByHash {
-        hash: models::H256,
+        hash: models::TxHash,
         reply: oneshot::Sender<Result<models::TransactionReceipt>>,
     },
 }
 
 impl RpcProviderService {
     pub fn new(url: impl AsRef<str>) -> Result<Self> {
-        let provider = Provider::<Http>::try_from(url.as_ref())
+        let url: Url = Url::parse(url.as_ref())
             .change_context(DnaError::Configuration)
-            .attach_printable("failed to parse rpc provider url")
-            .attach_printable_lazy(|| format!("url: {}", url.as_ref()))?;
+            .attach_printable_lazy(|| format!("failed to parse  provider url: {}", url.as_ref()))?;
+        let client = RpcClient::builder().hyper_http(url).boxed();
+        let provider = Provider::new_with_client(client).into();
 
         let concurrency = DEFAULT_CONCURRENCY;
         Ok(Self {
@@ -109,7 +117,7 @@ impl RpcProviderService {
 }
 
 impl RpcProvider {
-    pub async fn get_finalized_block(&self) -> Result<models::Block<models::H256>> {
+    pub async fn get_finalized_block(&self) -> Result<models::Block> {
         let (tx, rx) = oneshot::channel();
         self.tx
             .send(RpcServiceRequest::FinalizedBlock { reply: tx })
@@ -122,8 +130,8 @@ impl RpcProvider {
     #[instrument(skip(self), err(Debug))]
     pub async fn get_block_by_number(
         &self,
-        block_number: u64,
-    ) -> Result<models::Block<models::H256>> {
+        block_number: models::BlockNumber,
+    ) -> Result<models::Block> {
         let (tx, rx) = oneshot::channel();
         self.tx
             .send(RpcServiceRequest::BlockByNumber {
@@ -139,8 +147,8 @@ impl RpcProvider {
     #[instrument(skip(self), err(Debug))]
     pub async fn get_block_by_number_with_transactions(
         &self,
-        block_number: u64,
-    ) -> Result<models::Block<models::Transaction>> {
+        block_number: models::BlockNumber,
+    ) -> Result<models::Block> {
         let (tx, rx) = oneshot::channel();
         self.tx
             .send(RpcServiceRequest::BlockByNumberWithTransactions {
@@ -155,10 +163,9 @@ impl RpcProvider {
 
     pub async fn get_transactions_by_hash(
         &self,
-        hashes: &[models::H256],
+        hashes: impl Iterator<Item = &models::TxHash>,
     ) -> Result<Vec<models::Transaction>> {
         let futures = hashes
-            .iter()
             .map(|hash| async {
                 let (tx, rx) = oneshot::channel();
                 let _ = self
@@ -200,10 +207,9 @@ impl RpcProvider {
 
     pub async fn get_receipts_by_hash(
         &self,
-        hashes: &[models::H256],
+        hashes: impl Iterator<Item = &models::TxHash>,
     ) -> Result<Vec<models::TransactionReceipt>> {
         let futures = hashes
-            .iter()
             .map(|hash| async {
                 let (tx, rx) = oneshot::channel();
                 let _ = self
@@ -229,12 +235,16 @@ impl RpcProvider {
 
 struct RpcWorker {
     worker_index: usize,
-    provider: Provider<Http>,
+    provider: Arc<Provider<BoxTransport>>,
     limiter: DefaultDirectRateLimiter,
 }
 
 impl RpcWorker {
-    pub fn new(worker_index: usize, provider: Provider<Http>, rate_limit: u32) -> Self {
+    pub fn new(
+        worker_index: usize,
+        provider: Arc<Provider<BoxTransport>>,
+        rate_limit: u32,
+    ) -> Self {
         let limiter = new_limiter(rate_limit);
 
         Self {
@@ -316,12 +326,12 @@ impl RpcWorker {
     }
 
     #[instrument(skip(self), err(Debug))]
-    pub async fn get_finalized_block(&self) -> Result<models::Block<models::H256>> {
+    pub async fn get_finalized_block(&self) -> Result<models::Block> {
         self.limiter.until_ready().await;
 
         let block = self
             .provider
-            .get_block(BlockNumber::Finalized)
+            .get_block_by_number(models::BlockNumberOrTag::Finalized, false)
             .await
             .change_context(DnaError::Fatal)
             .attach_printable("failed to get finalized block")?
@@ -334,13 +344,13 @@ impl RpcWorker {
     #[instrument(skip(self), err(Debug))]
     pub async fn get_block_by_number(
         &self,
-        block_number: u64,
-    ) -> Result<models::Block<models::H256>> {
+        block_number: models::BlockNumber,
+    ) -> Result<models::Block> {
         self.limiter.until_ready().await;
 
         let block = self
             .provider
-            .get_block(block_number)
+            .get_block_by_number(block_number.into(), false)
             .await
             .change_context(DnaError::Fatal)
             .attach_printable_lazy(|| format!("failed to get block: {}", block_number))?
@@ -353,13 +363,13 @@ impl RpcWorker {
     #[instrument(skip(self), err(Debug))]
     pub async fn get_block_by_number_with_transactions(
         &self,
-        block_number: u64,
-    ) -> Result<models::Block<models::Transaction>> {
+        block_number: models::BlockNumber,
+    ) -> Result<models::Block> {
         self.limiter.until_ready().await;
 
         let block = self
             .provider
-            .get_block_with_txs(block_number)
+            .get_block_by_number(block_number.into(), true)
             .await
             .change_context(DnaError::Fatal)
             .attach_printable_lazy(|| format!("failed to get block: {}", block_number))?
@@ -370,16 +380,17 @@ impl RpcWorker {
     }
 
     #[instrument(skip(self), err(Debug))]
-    pub async fn get_transaction_by_hash(&self, hash: models::H256) -> Result<models::Transaction> {
+    pub async fn get_transaction_by_hash(
+        &self,
+        hash: models::TxHash,
+    ) -> Result<models::Transaction> {
         self.limiter.until_ready().await;
 
         let transaction = self
             .provider
-            .get_transaction(hash)
+            .get_transaction_by_hash(hash)
             .await
-            .change_context(DnaError::Fatal)?
-            .ok_or(DnaError::Fatal)
-            .attach_printable_lazy(|| format!("transaction not found: {:?}", hash))?;
+            .change_context(DnaError::Fatal)?;
 
         Ok(transaction)
     }
@@ -387,15 +398,16 @@ impl RpcWorker {
     #[instrument(skip(self), err(Debug))]
     pub async fn get_block_receipts_by_number(
         &self,
-        block_number: u64,
+        block_number: models::BlockNumber,
     ) -> Result<Vec<models::TransactionReceipt>> {
         self.limiter.until_ready().await;
 
         let receipts = self
             .provider
-            .get_block_receipts(block_number)
+            .get_block_receipts(block_number.into())
             .await
-            .change_context(DnaError::Fatal)?;
+            .change_context(DnaError::Fatal)?
+            .ok_or(DnaError::Fatal)?;
 
         Ok(receipts)
     }
@@ -403,7 +415,7 @@ impl RpcWorker {
     #[instrument(skip(self), err(Debug))]
     pub async fn get_transaction_receipt_by_hash(
         &self,
-        hash: models::H256,
+        hash: models::TxHash,
     ) -> Result<models::TransactionReceipt> {
         self.limiter.until_ready().await;
 

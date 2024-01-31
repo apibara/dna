@@ -2,7 +2,7 @@ use std::mem;
 
 use apibara_dna_common::error::{DnaError, Result};
 
-use crate::segment::SegmentBuilder;
+use crate::segment::{conversion::U64Ext, SegmentBuilder};
 
 use super::{models, RpcProvider};
 
@@ -84,23 +84,27 @@ impl FinalizedBlockIngestor {
         &mut self,
         builder: &mut SegmentBuilder<'a>,
     ) -> Result<()> {
+        use models::BlockTransactions;
+
         let block_number = self.current_block_number;
 
-        let (block, transactions) = if self.options.get_block_by_number_with_transactions {
-            let mut block_with_txs = self
-                .provider
+        let mut block = if self.options.get_block_by_number_with_transactions {
+            self.provider
                 .get_block_by_number_with_transactions(block_number)
-                .await?;
-            let transactions = mem::take(&mut block_with_txs.transactions);
-            let block: models::Block<models::H256> = block_with_txs.into();
-            (block, transactions)
+                .await?
         } else {
-            let block = self.provider.get_block_by_number(block_number).await?;
-            let transactions = self
-                .provider
-                .get_transactions_by_hash(&block.transactions)
-                .await?;
-            (block, transactions)
+            self.provider.get_block_by_number(block_number).await?
+        };
+
+        let empty_transactions = BlockTransactions::Hashes(Vec::new());
+        let transactions = match mem::replace(&mut block.transactions, empty_transactions) {
+            BlockTransactions::Full(transactions) => transactions,
+            BlockTransactions::Hashes(hashes) => {
+                self.provider
+                    .get_transactions_by_hash(hashes.iter())
+                    .await?
+            }
+            _ => panic!("ingesting uncle block"),
         };
 
         let receipts = if self.options.get_block_receipts_by_number {
@@ -109,7 +113,7 @@ impl FinalizedBlockIngestor {
                 .await?
         } else {
             self.provider
-                .get_receipts_by_hash(&block.transactions)
+                .get_receipts_by_hash(block.transactions.hashes())
                 .await?
         };
 
@@ -131,7 +135,11 @@ impl FinalizedBlockIngestor {
         }
 
         let finalized_block = self.provider.get_finalized_block().await?;
-        let finalized = finalized_block.number.ok_or(DnaError::Fatal)?.as_u64();
+        let finalized = finalized_block
+            .header
+            .number
+            .ok_or(DnaError::Fatal)?
+            .as_u64();
         self.target_block_number = Some(finalized);
         Ok(finalized)
     }

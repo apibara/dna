@@ -396,13 +396,13 @@ async fn run_inspect(args: InspectArgs) -> Result<()> {
 
                 for withdrawal in header.withdrawals().unwrap_or_default() {
                     withdrawal_count += 1;
-                    let amount = withdrawal.amount().unwrap().format_units("wei")?;
+                    let amount = withdrawal.amount().unwrap();
                     if args.log {
                         info!(
                             index = withdrawal.index(),
                             validator_index = withdrawal.validator_index(),
                             address = %withdrawal.address().unwrap().as_hex(),
-                            amount = format!("{amount} gwei"),
+                            amount = ?amount,
                             "    withdrawal"
                         );
                     }

@@ -31,7 +31,7 @@ impl<'a> SegmentBuilder<'a> {
         }
     }
 
-    pub fn add_block_header(&mut self, block_number: u64, header: &models::Block<models::H256>) {
+    pub fn add_block_header(&mut self, block_number: u64, header: &models::Block) {
         self.header.add_block_header(block_number, header);
     }
 

@@ -6,7 +6,7 @@ use tokio::io::{AsyncWrite, AsyncWriteExt};
 
 use crate::{ingestion::models, segment::store};
 
-use crate::segment::conversion::H64Ext;
+use crate::segment::conversion::U64Ext;
 
 pub struct BlockHeaderSegmentBuilder<'a> {
     builder: FlatBufferBuilder<'a>,
@@ -23,12 +23,14 @@ impl<'a> BlockHeaderSegmentBuilder<'a> {
         }
     }
 
-    pub fn add_block_header(&mut self, block_number: u64, block: &models::Block<models::H256>) {
+    pub fn add_block_header(&mut self, block_number: u64, block: &models::Block) {
         if self.first_block_number.is_none() {
             self.first_block_number = Some(block_number);
         }
 
-        let extra_data = self.builder.create_vector(&block.extra_data.0);
+        let header = &block.header;
+
+        let extra_data = self.builder.create_vector(&header.extra_data.0);
         let uncles = {
             let uncles: Vec<store::B256> = block
                 .uncles
@@ -47,52 +49,57 @@ impl<'a> BlockHeaderSegmentBuilder<'a> {
             None
         };
 
-        let mut header = store::BlockHeaderBuilder::new(&mut self.builder);
+        let mut out = store::BlockHeaderBuilder::new(&mut self.builder);
 
-        header.add_number(block_number);
-        if let Some(hash) = block.hash {
-            header.add_hash(&hash.into());
+        out.add_number(block_number);
+        if let Some(hash) = header.hash {
+            out.add_hash(&hash.into());
         }
-        header.add_parent_hash(&block.parent_hash.into());
-        header.add_uncles_hash(&block.uncles_hash.into());
-        if let Some(author) = block.author {
-            header.add_miner(&author.into());
+        out.add_parent_hash(&header.parent_hash.into());
+        out.add_uncles_hash(&header.uncles_hash.into());
+        out.add_miner(&header.miner.into());
+        out.add_state_root(&header.state_root.into());
+        out.add_transactions_root(&header.transactions_root.into());
+        out.add_receipts_root(&header.receipts_root.into());
+        out.add_logs_bloom(&header.logs_bloom.into());
+        out.add_difficulty(&header.difficulty.into());
+        out.add_gas_limit(&header.gas_limit.into());
+        out.add_gas_used(&header.gas_used.into());
+        out.add_timestamp(&header.timestamp.into());
+        out.add_extra_data(extra_data);
+        if let Some(mix_hash) = header.mix_hash {
+            out.add_mix_hash(&mix_hash.into());
         }
-        header.add_state_root(&block.state_root.into());
-        header.add_transactions_root(&block.transactions_root.into());
-        header.add_receipts_root(&block.receipts_root.into());
-        if let Some(logs_bloom) = block.logs_bloom {
-            header.add_logs_bloom(&logs_bloom.into());
+        if let Some(nonce) = header.nonce {
+            out.add_nonce(nonce.as_u64());
         }
-        header.add_difficulty(&block.difficulty.into());
-        header.add_gas_limit(&block.gas_limit.into());
-        header.add_gas_used(&block.gas_used.into());
-        header.add_timestamp(&block.timestamp.into());
-        header.add_extra_data(extra_data);
-        if let Some(mix_hash) = block.mix_hash {
-            header.add_mix_hash(&mix_hash.into());
+        if let Some(base_fee_per_gas) = header.base_fee_per_gas {
+            out.add_base_fee_per_gas(&base_fee_per_gas.into());
         }
-        if let Some(nonce) = block.nonce {
-            header.add_nonce(nonce.into_u64());
-        }
-        if let Some(base_fee_per_gas) = block.base_fee_per_gas {
-            header.add_base_fee_per_gas(&base_fee_per_gas.into());
-        }
-        if let Some(withdrawals_root) = block.withdrawals_root {
-            header.add_withdrawals_root(&withdrawals_root.into());
+        if let Some(withdrawals_root) = header.withdrawals_root {
+            out.add_withdrawals_root(&withdrawals_root.into());
         }
         if let Some(total_difficulty) = block.total_difficulty {
-            header.add_total_difficulty(&total_difficulty.into());
+            out.add_total_difficulty(&total_difficulty.into());
         }
-        header.add_uncles(uncles);
+        out.add_uncles(uncles);
         if let Some(size) = block.size {
-            header.add_size_(&size.into());
+            out.add_size_(&size.into());
         }
         if let Some(withdrawals) = withdrawals {
-            header.add_withdrawals(withdrawals);
+            out.add_withdrawals(withdrawals);
+        }
+        if let Some(blob_gas_used) = header.blob_gas_used {
+            out.add_blob_gas_used(blob_gas_used.as_u64());
+        }
+        if let Some(excess_blob_gas) = header.excess_blob_gas {
+            out.add_excess_blob_gas(excess_blob_gas.as_u64());
+        }
+        if let Some(parent_beacon_block_root) = header.parent_beacon_block_root {
+            out.add_parent_beacon_block_root(&parent_beacon_block_root.into());
         }
 
-        self.headers.push(header.finish());
+        self.headers.push(out.finish());
     }
 
     fn create_withdrawal(
@@ -100,10 +107,10 @@ impl<'a> BlockHeaderSegmentBuilder<'a> {
         withdrawal: &models::Withdrawal,
     ) -> WIPOffset<store::Withdrawal<'a>> {
         let mut out = store::WithdrawalBuilder::new(&mut self.builder);
-        out.add_index(withdrawal.index.as_u64());
-        out.add_validator_index(withdrawal.validator_index.as_u64());
+        out.add_index(withdrawal.index);
+        out.add_validator_index(withdrawal.validator_index);
         out.add_address(&withdrawal.address.into());
-        out.add_amount(&withdrawal.amount.into());
+        out.add_amount(&models::U256::from(withdrawal.amount).into());
         out.finish()
     }
 

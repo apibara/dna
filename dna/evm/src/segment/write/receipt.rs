@@ -4,7 +4,10 @@ use flatbuffers::{FlatBufferBuilder, WIPOffset};
 use apibara_dna_common::error::{DnaError, Result};
 use tokio::io::{AsyncWrite, AsyncWriteExt};
 
-use crate::{ingestion::models, segment::store};
+use crate::{
+    ingestion::models,
+    segment::{conversion::U64Ext, store},
+};
 
 pub struct ReceiptSegmentBuilder<'a> {
     builder: FlatBufferBuilder<'a>,
@@ -75,15 +78,15 @@ impl<'a> ReceiptSegmentBuilder<'a> {
     ) -> WIPOffset<store::TransactionReceipt<'a>> {
         let mut out = store::TransactionReceiptBuilder::new(&mut self.builder);
 
-        out.add_transaction_hash(&receipt.transaction_hash.into());
+        if let Some(transaction_hash) = receipt.transaction_hash {
+            out.add_transaction_hash(&transaction_hash.into());
+        }
         out.add_transaction_index(receipt.transaction_index.as_u64());
         out.add_cumulative_gas_used(&receipt.cumulative_gas_used.into());
         if let Some(gas_used) = receipt.gas_used {
             out.add_gas_used(&gas_used.into());
         }
-        if let Some(effective_gas_price) = receipt.effective_gas_price {
-            out.add_effective_gas_price(&effective_gas_price.as_u128().into());
-        }
+        out.add_effective_gas_price(&receipt.effective_gas_price.into());
         out.add_from(&receipt.from.into());
         if let Some(to) = receipt.to {
             out.add_to(&to.into());
@@ -92,11 +95,15 @@ impl<'a> ReceiptSegmentBuilder<'a> {
             out.add_contract_address(&contract_address.into());
         }
         out.add_logs_bloom(&receipt.logs_bloom.into());
-        if let Some(status) = receipt.status {
+        if let Some(status) = receipt.status_code {
             out.add_status_code(status.as_u64());
         }
-        if let Some(transaction_type) = receipt.transaction_type {
-            out.add_transaction_type(transaction_type.as_u32());
+        out.add_transaction_type(receipt.transaction_type.as_u64());
+        if let Some(blob_gas_used) = receipt.blob_gas_used {
+            out.add_blob_gas_used(&blob_gas_used.into());
+        }
+        if let Some(blob_gas_price) = receipt.blob_gas_price {
+            out.add_blob_gas_price(&blob_gas_price.into());
         }
 
         out.finish()

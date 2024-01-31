@@ -12,8 +12,8 @@ use crate::{ingestion::models, segment::store};
 
 #[derive(Default)]
 pub struct SegmentIndex {
-    pub log_by_address: BTreeMap<models::H160, RoaringBitmap>,
-    pub log_by_topic: BTreeMap<models::H256, RoaringBitmap>,
+    pub log_by_address: BTreeMap<models::Address, RoaringBitmap>,
+    pub log_by_topic: BTreeMap<models::B256, RoaringBitmap>,
 }
 
 impl SegmentIndex {
@@ -65,19 +65,19 @@ impl Debug for SegmentIndex {
 pub trait FlatBufferBuilderSegmentIndexExt<'fbb> {
     fn create_address_bitmap<'a: 'b, 'b>(
         &'a mut self,
-        table: &'b BTreeMap<models::H160, RoaringBitmap>,
+        table: &'b BTreeMap<models::Address, RoaringBitmap>,
     ) -> Result<WIPOffset<flatbuffers::Vector<'fbb, ForwardsUOffset<store::AddressBitmapItem<'fbb>>>>>;
 
     fn create_topic_bitmap<'a: 'b, 'b>(
         &'a mut self,
-        table: &'b BTreeMap<models::H256, RoaringBitmap>,
+        table: &'b BTreeMap<models::B256, RoaringBitmap>,
     ) -> Result<WIPOffset<flatbuffers::Vector<'fbb, ForwardsUOffset<store::TopicBitmapItem<'fbb>>>>>;
 }
 
 impl<'fbb> FlatBufferBuilderSegmentIndexExt<'fbb> for FlatBufferBuilder<'fbb> {
     fn create_address_bitmap<'a: 'b, 'b>(
         &'a mut self,
-        table: &'b BTreeMap<models::H160, RoaringBitmap>,
+        table: &'b BTreeMap<models::Address, RoaringBitmap>,
     ) -> Result<WIPOffset<flatbuffers::Vector<'fbb, ForwardsUOffset<store::AddressBitmapItem<'fbb>>>>>
     {
         let mut items = Vec::new();
@@ -102,7 +102,7 @@ impl<'fbb> FlatBufferBuilderSegmentIndexExt<'fbb> for FlatBufferBuilder<'fbb> {
 
     fn create_topic_bitmap<'a: 'b, 'b>(
         &'a mut self,
-        table: &'b BTreeMap<models::H256, RoaringBitmap>,
+        table: &'b BTreeMap<models::B256, RoaringBitmap>,
     ) -> Result<WIPOffset<flatbuffers::Vector<'fbb, ForwardsUOffset<store::TopicBitmapItem<'fbb>>>>>
     {
         let mut items = Vec::new();
