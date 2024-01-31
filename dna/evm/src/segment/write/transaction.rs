@@ -6,7 +6,7 @@ use tokio::io::{AsyncWrite, AsyncWriteExt};
 
 use crate::{ingestion::models, segment::store};
 
-use crate::segment::conversion::U256Ext;
+use crate::segment::conversion::{U128Ext, U64Ext};
 
 pub struct TransactionSegmentBuilder<'a> {
     builder: FlatBufferBuilder<'a>,
@@ -79,13 +79,21 @@ impl<'a> TransactionSegmentBuilder<'a> {
         let signature = self.create_signature(transaction);
         let access_list = if let Some(access_list) = &transaction.access_list {
             let items = access_list
-                .0
                 .iter()
                 .map(|item| self.create_access_list_item(item))
                 .collect::<Vec<_>>();
             Some(self.builder.create_vector(&items))
         } else {
             None
+        };
+
+        let blob_versioned_hashes = {
+            let hashes: Vec<store::B256> = transaction
+                .blob_versioned_hashes
+                .iter()
+                .map(|hash| hash.into())
+                .collect::<Vec<_>>();
+            self.builder.create_vector(&hashes)
         };
 
         let mut out = store::TransactionBuilder::new(&mut self.builder);
@@ -118,8 +126,12 @@ impl<'a> TransactionSegmentBuilder<'a> {
             out.add_access_list(access_list);
         }
         if let Some(transaction_type) = transaction.transaction_type {
-            out.add_transaction_type(transaction_type.as_u32());
+            out.add_transaction_type(transaction_type.as_u64());
         }
+        if let Some(max_fee_per_blob_gas) = transaction.max_fee_per_blob_gas {
+            out.add_max_fee_per_blob_gas(&max_fee_per_blob_gas.into_u128());
+        }
+        out.add_blob_versioned_hashes(blob_versioned_hashes);
 
         out.finish()
     }
@@ -129,8 +141,14 @@ impl<'a> TransactionSegmentBuilder<'a> {
         transaction: &models::Transaction,
     ) -> WIPOffset<store::Signature<'a>> {
         let mut out = store::SignatureBuilder::new(&mut self.builder);
-        out.add_r(&transaction.r.into());
-        out.add_s(&transaction.s.into());
+        if let Some(signature) = transaction.signature {
+            out.add_r(&signature.r.into());
+            out.add_s(&signature.s.into());
+            out.add_v(&signature.v.into());
+            if let Some(y_parity) = signature.y_parity {
+                out.add_y_parity(y_parity.0);
+            }
+        }
         out.finish()
     }
 

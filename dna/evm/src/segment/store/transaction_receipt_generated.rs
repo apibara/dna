@@ -38,6 +38,8 @@ impl<'a> TransactionReceipt<'a> {
     pub const VT_LOGS_BLOOM: flatbuffers::VOffsetT = 20;
     pub const VT_STATUS_CODE: flatbuffers::VOffsetT = 22;
     pub const VT_TRANSACTION_TYPE: flatbuffers::VOffsetT = 24;
+    pub const VT_BLOB_GAS_USED: flatbuffers::VOffsetT = 26;
+    pub const VT_BLOB_GAS_PRICE: flatbuffers::VOffsetT = 28;
 
     pub const fn get_fully_qualified_name() -> &'static str {
         "TransactionReceipt"
@@ -53,9 +55,15 @@ impl<'a> TransactionReceipt<'a> {
         args: &'args TransactionReceiptArgs<'args>,
     ) -> flatbuffers::WIPOffset<TransactionReceipt<'bldr>> {
         let mut builder = TransactionReceiptBuilder::new(_fbb);
+        builder.add_transaction_type(args.transaction_type);
         builder.add_status_code(args.status_code);
         builder.add_transaction_index(args.transaction_index);
-        builder.add_transaction_type(args.transaction_type);
+        if let Some(x) = args.blob_gas_price {
+            builder.add_blob_gas_price(x);
+        }
+        if let Some(x) = args.blob_gas_used {
+            builder.add_blob_gas_used(x);
+        }
         if let Some(x) = args.logs_bloom {
             builder.add_logs_bloom(x);
         }
@@ -177,14 +185,34 @@ impl<'a> TransactionReceipt<'a> {
         }
     }
     #[inline]
-    pub fn transaction_type(&self) -> u32 {
+    pub fn transaction_type(&self) -> u64 {
         // Safety:
         // Created from valid Table for this object
         // which contains a valid value in this slot
         unsafe {
             self._tab
-                .get::<u32>(TransactionReceipt::VT_TRANSACTION_TYPE, Some(0))
+                .get::<u64>(TransactionReceipt::VT_TRANSACTION_TYPE, Some(0))
                 .unwrap()
+        }
+    }
+    #[inline]
+    pub fn blob_gas_used(&self) -> Option<&'a U128> {
+        // Safety:
+        // Created from valid Table for this object
+        // which contains a valid value in this slot
+        unsafe {
+            self._tab
+                .get::<U128>(TransactionReceipt::VT_BLOB_GAS_USED, None)
+        }
+    }
+    #[inline]
+    pub fn blob_gas_price(&self) -> Option<&'a U128> {
+        // Safety:
+        // Created from valid Table for this object
+        // which contains a valid value in this slot
+        unsafe {
+            self._tab
+                .get::<U128>(TransactionReceipt::VT_BLOB_GAS_PRICE, None)
         }
     }
 }
@@ -207,7 +235,9 @@ impl flatbuffers::Verifiable for TransactionReceipt<'_> {
             .visit_field::<Address>("contract_address", Self::VT_CONTRACT_ADDRESS, false)?
             .visit_field::<Bloom>("logs_bloom", Self::VT_LOGS_BLOOM, false)?
             .visit_field::<u64>("status_code", Self::VT_STATUS_CODE, false)?
-            .visit_field::<u32>("transaction_type", Self::VT_TRANSACTION_TYPE, false)?
+            .visit_field::<u64>("transaction_type", Self::VT_TRANSACTION_TYPE, false)?
+            .visit_field::<U128>("blob_gas_used", Self::VT_BLOB_GAS_USED, false)?
+            .visit_field::<U128>("blob_gas_price", Self::VT_BLOB_GAS_PRICE, false)?
             .finish();
         Ok(())
     }
@@ -223,7 +253,9 @@ pub struct TransactionReceiptArgs<'a> {
     pub contract_address: Option<&'a Address>,
     pub logs_bloom: Option<&'a Bloom>,
     pub status_code: u64,
-    pub transaction_type: u32,
+    pub transaction_type: u64,
+    pub blob_gas_used: Option<&'a U128>,
+    pub blob_gas_price: Option<&'a U128>,
 }
 impl<'a> Default for TransactionReceiptArgs<'a> {
     #[inline]
@@ -240,6 +272,8 @@ impl<'a> Default for TransactionReceiptArgs<'a> {
             logs_bloom: None,
             status_code: 0,
             transaction_type: 0,
+            blob_gas_used: None,
+            blob_gas_price: None,
         }
     }
 }
@@ -309,9 +343,19 @@ impl<'a: 'b, 'b> TransactionReceiptBuilder<'a, 'b> {
             .push_slot::<u64>(TransactionReceipt::VT_STATUS_CODE, status_code, 0);
     }
     #[inline]
-    pub fn add_transaction_type(&mut self, transaction_type: u32) {
+    pub fn add_transaction_type(&mut self, transaction_type: u64) {
         self.fbb_
-            .push_slot::<u32>(TransactionReceipt::VT_TRANSACTION_TYPE, transaction_type, 0);
+            .push_slot::<u64>(TransactionReceipt::VT_TRANSACTION_TYPE, transaction_type, 0);
+    }
+    #[inline]
+    pub fn add_blob_gas_used(&mut self, blob_gas_used: &U128) {
+        self.fbb_
+            .push_slot_always::<&U128>(TransactionReceipt::VT_BLOB_GAS_USED, blob_gas_used);
+    }
+    #[inline]
+    pub fn add_blob_gas_price(&mut self, blob_gas_price: &U128) {
+        self.fbb_
+            .push_slot_always::<&U128>(TransactionReceipt::VT_BLOB_GAS_PRICE, blob_gas_price);
     }
     #[inline]
     pub fn new(
@@ -344,6 +388,8 @@ impl core::fmt::Debug for TransactionReceipt<'_> {
         ds.field("logs_bloom", &self.logs_bloom());
         ds.field("status_code", &self.status_code());
         ds.field("transaction_type", &self.transaction_type());
+        ds.field("blob_gas_used", &self.blob_gas_used());
+        ds.field("blob_gas_price", &self.blob_gas_price());
         ds.finish()
     }
 }

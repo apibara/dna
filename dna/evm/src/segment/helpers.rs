@@ -5,7 +5,6 @@ use apibara_dna_common::{
     flatbuffers::VectorExt,
 };
 use error_stack::ResultExt;
-use ethers::utils::{ConversionError, Units};
 use hex::ToHex;
 use roaring::RoaringBitmap;
 
@@ -29,27 +28,15 @@ impl store::Address {
     }
 
     pub fn from_hex(hex: &str) -> Result<Self> {
-        let address = models::H160::from_str(hex)
+        let address = models::Address::from_str(hex)
             .change_context(DnaError::Fatal)
             .attach_printable("failed to parse hex to address")?;
         Ok(address.into())
     }
 
     pub fn as_hex(&self) -> String {
-        let address = models::H160::from(self.0);
-        ethers::core::utils::to_checksum(&address, None)
-    }
-}
-
-impl store::U256 {
-    pub fn format_units<U>(&self, units: U) -> Result<String>
-    where
-        U: TryInto<Units, Error = ConversionError>,
-    {
-        let amount = models::U256::from(self.0);
-        let formatted =
-            ethers::core::utils::format_units(amount, units).change_context(DnaError::Fatal)?;
-        Ok(formatted)
+        let address = models::Address::from(self.0);
+        address.to_checksum(None)
     }
 }
 

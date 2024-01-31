@@ -4,7 +4,10 @@ use flatbuffers::{FlatBufferBuilder, WIPOffset};
 use apibara_dna_common::error::{DnaError, Result};
 use tokio::io::{AsyncWrite, AsyncWriteExt};
 
-use crate::{ingestion::models, segment::store};
+use crate::{
+    ingestion::models,
+    segment::{conversion::U64Ext, store},
+};
 
 pub struct LogSegmentBuilder<'a> {
     builder: FlatBufferBuilder<'a>,

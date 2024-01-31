@@ -42,6 +42,8 @@ impl<'a> Transaction<'a> {
     pub const VT_CHAIN_ID: flatbuffers::VOffsetT = 28;
     pub const VT_ACCESS_LIST: flatbuffers::VOffsetT = 30;
     pub const VT_TRANSACTION_TYPE: flatbuffers::VOffsetT = 32;
+    pub const VT_MAX_FEE_PER_BLOB_GAS: flatbuffers::VOffsetT = 34;
+    pub const VT_BLOB_VERSIONED_HASHES: flatbuffers::VOffsetT = 36;
 
     pub const fn get_fully_qualified_name() -> &'static str {
         "Transaction"
@@ -57,10 +59,16 @@ impl<'a> Transaction<'a> {
         args: &'args TransactionArgs<'args>,
     ) -> flatbuffers::WIPOffset<Transaction<'bldr>> {
         let mut builder = TransactionBuilder::new(_fbb);
+        builder.add_transaction_type(args.transaction_type);
         builder.add_chain_id(args.chain_id);
         builder.add_transaction_index(args.transaction_index);
         builder.add_nonce(args.nonce);
-        builder.add_transaction_type(args.transaction_type);
+        if let Some(x) = args.blob_versioned_hashes {
+            builder.add_blob_versioned_hashes(x);
+        }
+        if let Some(x) = args.max_fee_per_blob_gas {
+            builder.add_max_fee_per_blob_gas(x);
+        }
         if let Some(x) = args.access_list {
             builder.add_access_list(x);
         }
@@ -226,14 +234,37 @@ impl<'a> Transaction<'a> {
         }
     }
     #[inline]
-    pub fn transaction_type(&self) -> u32 {
+    pub fn transaction_type(&self) -> u64 {
         // Safety:
         // Created from valid Table for this object
         // which contains a valid value in this slot
         unsafe {
             self._tab
-                .get::<u32>(Transaction::VT_TRANSACTION_TYPE, Some(0))
+                .get::<u64>(Transaction::VT_TRANSACTION_TYPE, Some(0))
                 .unwrap()
+        }
+    }
+    #[inline]
+    pub fn max_fee_per_blob_gas(&self) -> Option<&'a U128> {
+        // Safety:
+        // Created from valid Table for this object
+        // which contains a valid value in this slot
+        unsafe {
+            self._tab
+                .get::<U128>(Transaction::VT_MAX_FEE_PER_BLOB_GAS, None)
+        }
+    }
+    #[inline]
+    pub fn blob_versioned_hashes(&self) -> Option<flatbuffers::Vector<'a, B256>> {
+        // Safety:
+        // Created from valid Table for this object
+        // which contains a valid value in this slot
+        unsafe {
+            self._tab
+                .get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, B256>>>(
+                    Transaction::VT_BLOB_VERSIONED_HASHES,
+                    None,
+                )
         }
     }
 }
@@ -274,7 +305,13 @@ impl flatbuffers::Verifiable for Transaction<'_> {
             .visit_field::<flatbuffers::ForwardsUOffset<
                 flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<AccessListItem>>,
             >>("access_list", Self::VT_ACCESS_LIST, false)?
-            .visit_field::<u32>("transaction_type", Self::VT_TRANSACTION_TYPE, false)?
+            .visit_field::<u64>("transaction_type", Self::VT_TRANSACTION_TYPE, false)?
+            .visit_field::<U128>("max_fee_per_blob_gas", Self::VT_MAX_FEE_PER_BLOB_GAS, false)?
+            .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, B256>>>(
+                "blob_versioned_hashes",
+                Self::VT_BLOB_VERSIONED_HASHES,
+                false,
+            )?
             .finish();
         Ok(())
     }
@@ -298,7 +335,9 @@ pub struct TransactionArgs<'a> {
             flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<AccessListItem<'a>>>,
         >,
     >,
-    pub transaction_type: u32,
+    pub transaction_type: u64,
+    pub max_fee_per_blob_gas: Option<&'a U128>,
+    pub blob_versioned_hashes: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, B256>>>,
 }
 impl<'a> Default for TransactionArgs<'a> {
     #[inline]
@@ -319,6 +358,8 @@ impl<'a> Default for TransactionArgs<'a> {
             chain_id: 0,
             access_list: None,
             transaction_type: 0,
+            max_fee_per_blob_gas: None,
+            blob_versioned_hashes: None,
         }
     }
 }
@@ -410,9 +451,24 @@ impl<'a: 'b, 'b> TransactionBuilder<'a, 'b> {
         );
     }
     #[inline]
-    pub fn add_transaction_type(&mut self, transaction_type: u32) {
+    pub fn add_transaction_type(&mut self, transaction_type: u64) {
         self.fbb_
-            .push_slot::<u32>(Transaction::VT_TRANSACTION_TYPE, transaction_type, 0);
+            .push_slot::<u64>(Transaction::VT_TRANSACTION_TYPE, transaction_type, 0);
+    }
+    #[inline]
+    pub fn add_max_fee_per_blob_gas(&mut self, max_fee_per_blob_gas: &U128) {
+        self.fbb_
+            .push_slot_always::<&U128>(Transaction::VT_MAX_FEE_PER_BLOB_GAS, max_fee_per_blob_gas);
+    }
+    #[inline]
+    pub fn add_blob_versioned_hashes(
+        &mut self,
+        blob_versioned_hashes: flatbuffers::WIPOffset<flatbuffers::Vector<'b, B256>>,
+    ) {
+        self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(
+            Transaction::VT_BLOB_VERSIONED_HASHES,
+            blob_versioned_hashes,
+        );
     }
     #[inline]
     pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a>) -> TransactionBuilder<'a, 'b> {
@@ -447,6 +503,8 @@ impl core::fmt::Debug for Transaction<'_> {
         ds.field("chain_id", &self.chain_id());
         ds.field("access_list", &self.access_list());
         ds.field("transaction_type", &self.transaction_type());
+        ds.field("max_fee_per_blob_gas", &self.max_fee_per_blob_gas());
+        ds.field("blob_versioned_hashes", &self.blob_versioned_hashes());
         ds.finish()
     }
 }
