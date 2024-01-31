@@ -49,7 +49,7 @@ impl From<models::Bloom> for store::Bloom {
 }
 
 pub trait U64Ext {
-    fn as_u64(self) -> u64;
+    fn as_u64(&self) -> u64;
 }
 
 pub trait U128Ext {
@@ -57,26 +57,26 @@ pub trait U128Ext {
 }
 
 impl U64Ext for models::B64 {
-    fn as_u64(self) -> u64 {
+    fn as_u64(&self) -> u64 {
         u64::from_be_bytes(self.0)
     }
 }
 
 impl U64Ext for models::U8 {
-    fn as_u64(self) -> u64 {
+    fn as_u64(&self) -> u64 {
         let bytes: [u8; 1] = self.to_be_bytes();
         bytes[0] as u64
     }
 }
 
 impl U64Ext for models::U64 {
-    fn as_u64(self) -> u64 {
+    fn as_u64(&self) -> u64 {
         u64::from_be_bytes(self.to_be_bytes())
     }
 }
 
 impl U64Ext for models::U256 {
-    fn as_u64(self) -> u64 {
+    fn as_u64(&self) -> u64 {
         if self.leading_zeros() < (32 - 8) * 8 {
             panic!("u256 too large to fit in u64")
         }

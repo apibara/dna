@@ -17,8 +17,8 @@ pub struct SegmentGroupBuilder<'a> {
     segment_count: usize,
 }
 
-impl<'a> SegmentGroupBuilder<'a> {
-    pub fn new() -> Self {
+impl<'a> Default for SegmentGroupBuilder<'a> {
+    fn default() -> Self {
         Self {
             builder: FlatBufferBuilder::new(),
             first_block_number: None,
@@ -26,7 +26,9 @@ impl<'a> SegmentGroupBuilder<'a> {
             index: SegmentIndex::default(),
         }
     }
+}
 
+impl<'a> SegmentGroupBuilder<'a> {
     pub fn add_segment(&mut self, first_block_number: u64, _count: usize) {
         if self.first_block_number.is_none() {
             self.first_block_number = Some(first_block_number);

@@ -48,8 +48,8 @@ where
         starting_block_number_override: Option<u64>,
         ct: CancellationToken,
     ) -> Result<()> {
-        let mut segment_builder = SegmentBuilder::new();
-        let mut segment_group_builder = SegmentGroupBuilder::new();
+        let mut segment_builder = SegmentBuilder::default();
+        let mut segment_group_builder = SegmentGroupBuilder::default();
 
         let mut snapshot_builder = SnapshotBuilder::from_storage(&mut self.storage)
             .await?
