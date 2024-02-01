@@ -1,5 +1,4 @@
-use std::str::FromStr;
-
+use alloy_primitives::hex::FromHex;
 use apibara_dna_common::{
     error::{DnaError, Result},
     flatbuffers::VectorExt,
@@ -28,9 +27,9 @@ impl store::Address {
     }
 
     pub fn from_hex(hex: &str) -> Result<Self> {
-        let address = models::Address::from_str(hex)
+        let address = models::Address::from_hex(hex)
             .change_context(DnaError::Fatal)
-            .attach_printable("failed to parse hex to address")?;
+            .attach_printable_lazy(|| "failed to parse hex to address {hex}")?;
         Ok(address.into())
     }
 
