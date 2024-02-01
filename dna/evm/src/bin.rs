@@ -102,7 +102,7 @@ struct InspectHeadersArgs {
 
 #[derive(Args, Debug)]
 struct InspectTransactionArgs {
-    #[arg(long, env, default_value = "false")]
+    #[arg(long, env)]
     pub to_address: Option<String>,
 }
 
