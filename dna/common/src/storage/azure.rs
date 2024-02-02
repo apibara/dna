@@ -60,6 +60,7 @@ impl AzureStorageBackendBuilder {
     }
 }
 
+#[derive(Clone)]
 pub struct AzureStorageBackend {
     inner: MicrosoftAzure,
 }
