@@ -235,7 +235,9 @@ async fn run_inspect(args: InspectArgs) -> Result<()> {
         debug!(current_segment_group_start, "reading new segment group");
         let segment_group = segment_group_reader
             .read(current_segment_group_start)
-            .await?;
+            .await
+            .change_context(DnaError::Fatal)
+            .attach_printable("failed to read segment group")?;
 
         assert_eq!(
             segment_group.first_block_number(),
@@ -270,13 +272,25 @@ async fn run_inspect(args: InspectArgs) -> Result<()> {
         debug!(current_segment_start, "reading starting segment");
 
         let mut header_segment = if args.header.header {
-            Some(header_segment_reader.read(current_segment_start).await?)
+            Some(
+                header_segment_reader
+                    .read(current_segment_start)
+                    .await
+                    .change_context(DnaError::Fatal)
+                    .attach_printable("failed to read header segment")?,
+            )
         } else {
             None
         };
 
         let mut log_segment = if address_filter.is_some() {
-            Some(log_segment_reader.read(current_segment_start).await?)
+            Some(
+                log_segment_reader
+                    .read(current_segment_start)
+                    .await
+                    .change_context(DnaError::Fatal)
+                    .attach_printable("failed to log segment")?,
+            )
         } else {
             None
         };
@@ -285,7 +299,9 @@ async fn run_inspect(args: InspectArgs) -> Result<()> {
             Some(
                 transaction_segment_reader
                     .read(current_segment_start)
-                    .await?,
+                    .await
+                    .change_context(DnaError::Fatal)
+                    .attach_printable("failed to read transaction segment")?,
             )
         } else {
             None
@@ -297,18 +313,32 @@ async fn run_inspect(args: InspectArgs) -> Result<()> {
                 segment_read_count += 1;
                 debug!(current_segment_start, "reading new segment");
                 if header_segment.is_some() {
-                    header_segment = Some(header_segment_reader.read(current_segment_start).await?)
+                    header_segment = Some(
+                        header_segment_reader
+                            .read(current_segment_start)
+                            .await
+                            .change_context(DnaError::Fatal)
+                            .attach_printable("failed to read header segment")?,
+                    )
                 };
 
                 if log_segment.is_some() {
-                    log_segment = Some(log_segment_reader.read(current_segment_start).await?)
+                    log_segment = Some(
+                        log_segment_reader
+                            .read(current_segment_start)
+                            .await
+                            .change_context(DnaError::Fatal)
+                            .attach_printable("failed to read log segment")?,
+                    )
                 };
 
                 if transaction_segment.is_some() {
                     transaction_segment = Some(
                         transaction_segment_reader
                             .read(current_segment_start)
-                            .await?,
+                            .await
+                            .change_context(DnaError::Fatal)
+                            .attach_printable("failed to read transaction segment")?,
                     )
                 };
             }
