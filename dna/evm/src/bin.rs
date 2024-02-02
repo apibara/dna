@@ -3,7 +3,7 @@ use std::{path::PathBuf, process::ExitCode, time::Instant};
 use apibara_dna_common::{
     error::{DnaError, ReportExt, Result},
     segment::{SegmentArgs, SnapshotReader},
-    storage::LocalStorageBackend,
+    storage::{AzureStorageBackendBuilder, LocalStorageBackend, StorageBackend},
 };
 use apibara_dna_evm::{
     ingestion::{Ingestor, IngestorOptions, RpcProviderService},
@@ -45,14 +45,23 @@ struct StartIngestionArgs {
     #[arg(long, env)]
     pub starting_block: Option<u64>,
     /// Location for ingested data.
-    #[arg(long, env)]
-    pub data_dir: PathBuf,
+    #[clap(flatten)]
+    pub storage: StorageArgs,
     #[clap(flatten)]
     pub segment: SegmentArgs,
     #[clap(flatten)]
     pub ingestor: IngestorArgs,
     #[clap(flatten)]
     pub rpc: RpcArgs,
+}
+
+#[derive(Args, Debug, Clone)]
+#[group(required = true, multiple = false)]
+struct StorageArgs {
+    #[arg(long, env)]
+    local_dir: Option<PathBuf>,
+    #[arg(long, env)]
+    azure_container: Option<String>,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -80,9 +89,8 @@ struct IngestorArgs {
 
 #[derive(Args, Debug)]
 struct InspectArgs {
-    /// Location for ingested data.
-    #[arg(long, env)]
-    pub data_dir: PathBuf,
+    #[clap(flatten)]
+    storage: StorageArgs,
     /// Print found data.
     #[arg(long, env)]
     pub log: bool,
@@ -135,8 +143,31 @@ async fn run_with_args(args: Cli) -> Result<()> {
 
 async fn run_ingestion(args: StartIngestionArgs) -> Result<()> {
     info!(from_block = ?args.starting_block, "Starting EVM ingestion");
-    info!(data_dir = %args.data_dir.display(), "Using data directory");
+    let output = &args.storage;
+    if let Some(local_dir) = &output.local_dir {
+        let storage = LocalStorageBackend::new(local_dir);
+        run_ingestion_with_storage(args, storage).await
+    } else if let Some(azure_container) = &output.azure_container {
+        let storage = AzureStorageBackendBuilder::from_env()
+            .with_container_name(azure_container)
+            .build()
+            .change_context(DnaError::Fatal)
+            .attach_printable("failed to build Azure storage backend")
+            .attach_printable("hint: have you set the AZURE_STORAGE_ACCOUNT_NAME and AZURE_STORAGE_ACCOUNT_KEY environment variables?")?;
+        run_ingestion_with_storage(args, storage).await
+    } else {
+        Err(DnaError::Configuration)
+            .attach_printable("no storage backend configured")
+            .change_context(DnaError::Fatal)
+    }
+}
 
+async fn run_ingestion_with_storage<S>(args: StartIngestionArgs, storage: S) -> Result<()>
+where
+    S: StorageBackend + Send + Sync + 'static,
+    <S as StorageBackend>::Reader: Unpin + Send,
+    <S as StorageBackend>::Writer: Send,
+{
     let ct = CancellationToken::new();
 
     let (provider, rpc_provider_fut) = RpcProviderService::new(args.rpc.rpc_url)?
@@ -146,7 +177,6 @@ async fn run_ingestion(args: StartIngestionArgs) -> Result<()> {
 
     let segment_options = args.segment.to_segment_options();
 
-    let storage = LocalStorageBackend::new(args.data_dir);
     let ingestor = Ingestor::new(provider, storage)
         .with_segment_options(segment_options)
         .with_ingestor_options(args.ingestor.to_options());
@@ -172,10 +202,31 @@ async fn run_ingestion(args: StartIngestionArgs) -> Result<()> {
 }
 
 async fn run_inspect(args: InspectArgs) -> Result<()> {
-    info!(data_dir = %args.data_dir.display(), "Using data directory");
+    let storage = &args.storage;
+    if let Some(local_dir) = &storage.local_dir {
+        let storage = LocalStorageBackend::new(local_dir);
+        run_inspect_with_storage(args, storage).await
+    } else if let Some(azure_container) = &storage.azure_container {
+        let storage = AzureStorageBackendBuilder::from_env()
+            .with_container_name(azure_container)
+            .build()
+            .change_context(DnaError::Fatal)
+            .attach_printable("failed to build Azure storage backend")
+            .attach_printable("hint: have you set the AZURE_STORAGE_ACCOUNT_NAME and AZURE_STORAGE_ACCOUNT_KEY environment variables?")?;
+        run_inspect_with_storage(args, storage).await
+    } else {
+        Err(DnaError::Configuration)
+            .attach_printable("no storage backend configured")
+            .change_context(DnaError::Fatal)
+    }
+}
 
-    let storage = LocalStorageBackend::new(args.data_dir);
-
+async fn run_inspect_with_storage<S>(args: InspectArgs, storage: S) -> Result<()>
+where
+    S: StorageBackend + Clone + Send + Sync + 'static,
+    <S as StorageBackend>::Reader: Unpin + Send,
+    <S as StorageBackend>::Writer: Send,
+{
     let mut snapshot_reader = SnapshotReader::new(storage.clone());
     let snapshot = snapshot_reader.snapshot_state().await?;
 
