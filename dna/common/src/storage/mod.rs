@@ -6,8 +6,10 @@ use tokio::io::{AsyncRead, AsyncWrite};
 
 use crate::error::Result;
 
+mod azure;
 mod local;
 
+pub use self::azure::{AzureStorageBackend, AzureStorageBackendBuilder};
 pub use self::local::LocalStorageBackend;
 
 #[async_trait]
