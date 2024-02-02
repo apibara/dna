@@ -20,7 +20,10 @@ clap.workspace = true
 error-stack.workspace = true
 flatbuffers.workspace = true
 futures-util.workspace = true
-object_store = { version = "0.9.0", features = ["azure"] }
+# Make clients cloneable
+object_store = { git = "https://github.com/fracek/arrow-rs", rev = "662d63ffa", features = [
+    "azure",
+] }
 tokio.workspace = true
 tokio-util.workspace = true
 tracing.workspace = true
