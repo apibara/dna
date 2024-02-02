@@ -19,7 +19,7 @@ default = []
 tokio_console = ["apibara-observability/tokio_console"]
 
 [dependencies]
-alloy-rpc-client = { git = "http://github.com/alloy-rs/alloy", rev = "347fb50e", no-default-features = true, features = [
+alloy-rpc-client = { git = "http://github.com/alloy-rs/alloy", rev = "347fb50e", default-features = true, features = [
     "hyper",
 ] }
 alloy-providers = { git = "http://github.com/alloy-rs/alloy", rev = "347fb50e" }
