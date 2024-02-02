@@ -6,7 +6,7 @@ use apibara_dna_common::{
     storage::StorageBackend,
 };
 use error_stack::ResultExt;
-use flatbuffers::{Follow, Verifiable};
+use flatbuffers::{Follow, Verifiable, VerifierOptions};
 
 use crate::segment::store;
 
@@ -42,7 +42,11 @@ where
     <S as StorageBackend>::Reader: Unpin,
 {
     pub fn new(storage: S, segment_options: SegmentOptions, buffer_size: usize) -> Self {
-        let inner = SegmentReader::new(storage, segment_options, buffer_size);
+        let inner = SegmentReader::new(storage, segment_options, buffer_size)
+            .with_verifier_options(VerifierOptions {
+                max_tables: 10_000_000,
+                ..Default::default()
+            });
         Self(inner)
     }
 
@@ -72,6 +76,7 @@ pub struct SegmentReader<S: StorageBackend> {
     storage: S,
     segment_options: SegmentOptions,
     buffer: Vec<u8>,
+    verifies_options: VerifierOptions,
 }
 
 impl<S> SegmentReader<S>
@@ -81,11 +86,18 @@ where
 {
     pub fn new(storage: S, segment_options: SegmentOptions, buffer_size: usize) -> Self {
         let buffer = vec![0; buffer_size];
+        let verifies_options = VerifierOptions::default();
         Self {
             storage,
             segment_options,
             buffer,
+            verifies_options,
         }
+    }
+
+    pub fn with_verifier_options(mut self, verifies_options: VerifierOptions) -> Self {
+        self.verifies_options = verifies_options;
+        self
     }
 
     pub async fn read<'a, T>(
@@ -110,7 +122,7 @@ where
                 .change_context(DnaError::Io)? as usize
         };
 
-        let segment = flatbuffers::root::<T>(&self.buffer[..len])
+        let segment = flatbuffers::root_with_opts::<T>(&self.verifies_options, &self.buffer[..len])
             .change_context(DnaError::Fatal)
             .attach_printable_lazy(|| format!("failed to read segment {}", segment_name))?;
 
