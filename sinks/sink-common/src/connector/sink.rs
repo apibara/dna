@@ -3,7 +3,7 @@ use error_stack::{Result, ResultExt};
 use exponential_backoff::Backoff;
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
-use tracing::warn;
+use tracing::{warn};
 
 use crate::{
     error::SinkError,
@@ -27,19 +27,25 @@ impl<S: Sink + Send + Sync> SinkWithBackoff<S> {
         batch: &Value,
         ct: CancellationToken,
     ) -> Result<CursorAction, SinkError> {
+        // info!("handling data with backoff: {:?}", &self.backoff);
         for duration in &self.backoff {
+            // info!("trying to handle data, duration: {:?}", duration);
             match self.inner.handle_data(ctx, batch).await {
                 Ok(action) => return Ok(action),
                 Err(err) => {
                     warn!(err = ?err, "failed to handle data");
                     if ct.is_cancelled() {
+                        // info!("cancelled while handling data");
                         return Err(err)
                             .change_context(SinkError::Fatal)
                             .attach_printable("failed to handle data (cancelled)");
                     }
                     tokio::select! {
-                        _ = tokio::time::sleep(duration) => {},
+                        _ = tokio::time::sleep(duration) => {
+                            // info!("retrying to handle data after sleeping");
+                        },
                         _ = ct.cancelled() => {
+                            // info!("cancelled while retrying to handle data");
                             return Ok(CursorAction::Skip);
                         }
                     };

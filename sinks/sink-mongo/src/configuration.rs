@@ -25,8 +25,6 @@ pub struct SinkMongoOptions {
     pub entity_mode: Option<bool>,
     #[clap(skip)]
     pub invalidate: Option<Document>,
-    /// The batch time in seconds.
-    /// If set, the sink will batch the data and send it to the database every `batch_secs` seconds.
     #[arg(long, env = "MONGO_BATCH_SECS")]
     pub batch_secs: Option<u64>,
 }

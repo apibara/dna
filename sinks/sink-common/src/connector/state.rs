@@ -57,11 +57,15 @@ impl StateManager {
             .update_cursor(state.cursor.clone())
             .await?;
 
-        if action == CursorAction::Persist {
-            self.persistence.put_state(state).await?;
+        match action {
+            CursorAction::PersistAt(cursor) => {
+                self.persistence
+                    .put_state(PersistedState::new(Some(cursor), state.filter))
+                    .await
+            }
+            CursorAction::Persist => self.persistence.put_state(state).await,
+            CursorAction::Skip => Ok(()),
         }
-
-        Ok(())
     }
 
     pub async fn heartbeat(&mut self) -> Result<(), SinkError> {

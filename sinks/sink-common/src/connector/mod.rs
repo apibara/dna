@@ -1,3 +1,4 @@
+pub mod batching;
 mod default;
 mod factory;
 mod sink;

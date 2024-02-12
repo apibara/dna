@@ -152,6 +152,9 @@ impl Sink for ParquetSink {
         ctx: &Context,
         batch: &Value,
     ) -> Result<CursorAction, Self::Error> {
+        let len = batch.as_array_of_objects().unwrap().len();
+        info!(ctx = %ctx, batch = %len, "handling data");
+
         let Some(batch) = batch.as_array_of_objects() else {
             warn!("data is not an array of objects, skipping");
             // Skip persistence in case the buffer is still not flushed
@@ -160,10 +163,9 @@ impl Sink for ParquetSink {
 
         if batch.is_empty() {
             // Skip persistence in case the buffer is still not flushed
+            warn!("batch is empty, skipping");
             return Ok(CursorAction::Skip);
         }
-
-        debug!(ctx = %ctx, "handling data");
 
         let mut state = match self.state.take() {
             Some(state) => state,
