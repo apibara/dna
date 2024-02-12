@@ -15,6 +15,7 @@ pub trait SinkOptions: DeserializeOwned {
 #[derive(Debug, PartialEq)]
 pub enum CursorAction {
     Persist,
+    PersistAt(Cursor),
     Skip,
 }
 

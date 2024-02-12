@@ -2,6 +2,7 @@ use std::fmt;
 use std::time::Instant;
 
 use apibara_core::node::v1alpha2::{Cursor, DataFinality};
+use apibara_sink_common::batching::Batcher;
 use apibara_sink_common::{Context, CursorAction, DisplayCursor, Sink, ValueExt};
 use async_trait::async_trait;
 use error_stack::{Result, ResultExt};
@@ -54,8 +55,7 @@ pub struct MongoSink {
     invalidate: Option<Document>,
     client: Client,
     mode: Mode,
-    pub current_batch: Batch,
-    batch_secs: Option<u64>,
+    pub batcher: Batcher,
 }
 
 enum Mode {
@@ -119,8 +119,7 @@ impl Sink for MongoSink {
             client,
             mode,
             invalidate: options.invalidate,
-            current_batch: Batch::new(),
-            batch_secs: options.batch_secs,
+            batcher: Batcher::by_secs(options.batch_secs.unwrap_or_default()),
         })
     }
 
@@ -129,57 +128,48 @@ impl Sink for MongoSink {
         ctx: &Context,
         batch: &Value,
     ) -> Result<CursorAction, Self::Error> {
-        debug!(ctx = %ctx, "handling data");
+        info!(ctx = %ctx, "handling data");
 
-        let Some(values) = batch.as_array_of_objects() else {
-            warn!("data is not an array of objects, skipping");
-            return Ok(CursorAction::Persist);
-        };
+        // match self.batcher.handle_data(ctx, batch).await {
+        //     Ok((action, None)) => Ok(action),
+        //     Ok((action, Some((end_cursor, batch)))) => {
+        //         self.insert_data(&end_cursor, &batch).await?;
+        //         self.batcher.buffer.clear();
+        //         Ok(action)
+        //     }
+        //     Err(e) => Err(e).change_context(SinkMongoError),
+        // }
 
-        if values.is_empty() {
-            return Ok(CursorAction::Persist);
-        }
-
-        if self.collections.len() > 1 {
-            let missing_collection_key =
-                values.iter().any(|value| value.get("collection").is_none());
-
-            if missing_collection_key {
-                warn!("some documents missing 'collection' key while in multi collection mode");
-                return Ok(CursorAction::Persist);
-            }
-        }
-
-        // only batch finalized data
-        if self.batch_secs.is_none() | (ctx.finality != DataFinality::DataStatusFinalized) {
-            self.insert_data(&ctx.end_cursor, values).await?;
+        if !self.batcher.is_batching() || (ctx.finality != DataFinality::DataStatusFinalized) {
+            self.insert_data(&ctx.end_cursor, batch.as_array_of_objects().unwrap())
+                .await?;
             return Ok(CursorAction::Persist);
         }
 
-        self.current_batch.end_cursor = ctx.end_cursor.clone();
-        self.current_batch.data.extend(values.to_vec());
+        let (action, output) = self
+            .batcher
+            .handle_data(ctx, batch)
+            .await
+            .change_context(SinkMongoError)?;
 
-        if self.should_flush() {
-            info!(
-                "inserting batch of {} documents after {} seconds",
-                self.current_batch.data.len(),
-                self.current_batch.start_at.elapsed().as_secs()
-            );
-
-            self.flush().await?;
-
-            Ok(CursorAction::Persist)
-        } else {
-            Ok(CursorAction::Skip)
+        if let Some((end_cursor, batch)) = output {
+            self.insert_data(&end_cursor, &batch).await?;
+            self.batcher.buffer.clear();
         }
+
+        if self.batcher.is_batching() && (ctx.finality == DataFinality::DataStatusFinalized) {
+            self.batcher.add_data(ctx, batch).await;
+        }
+
+        Ok(action)
     }
 
     async fn handle_invalidate(&mut self, cursor: &Option<Cursor>) -> Result<(), Self::Error> {
         debug!(cursor = %DisplayCursor(cursor), "handling invalidate");
 
-        // only flush if batching is enabled
-        if self.batch_secs.is_some() {
-            self.flush().await?;
+        if self.batcher.is_batching() && !self.batcher.is_flushed() {
+            let (end_cursor, batch) = self.batcher.flush();
+            self.insert_data(&end_cursor, &batch).await?;
         }
 
         let mut session = self
@@ -263,6 +253,26 @@ impl MongoSink {
         end_cursor: &Cursor,
         values: &[Value],
     ) -> Result<(), SinkMongoError> {
+        // TODO: sometimes, the function fails because it tries to insert empty data
+        // I noticed this especially when persistence is enabled and the sink is restarted
+        // See the error below:
+        // 2024-01-29T14:18:19.602299Z  WARN failed to handle data err=mongo sink operation failed
+        // ├╴at sinks/sink-mongo/src/sink.rs:313:18
+        // ├╴failed to insert data (logs)
+        // │
+        // ╰─▶ Kind: An invalid argument was provided: No documents provided to insert_many, labels: {}
+        //     ╰╴at sinks/sink-mongo/src/sink.rs:313:18
+
+        if self.collections.len() > 1 {
+            let missing_collection_key =
+                values.iter().any(|value| value.get("collection").is_none());
+
+            if missing_collection_key {
+                warn!("some documents missing 'collection' key while in multi collection mode");
+                return Ok(());
+            }
+        }
+
         let mut docs = values
             .iter()
             .map(to_document)

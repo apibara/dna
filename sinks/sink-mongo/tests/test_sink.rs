@@ -1,9 +1,8 @@
-
 use std::time::Duration;
 
 use apibara_core::node::v1alpha2::{Cursor, DataFinality};
-use apibara_sink_common::{Context, CursorAction, Sink, ValueExt};
-use apibara_sink_mongo::{Batch, MongoSink, SinkMongoError, SinkMongoOptions};
+use apibara_sink_common::{batching::Buffer, Context, CursorAction, Sink, ValueExt};
+use apibara_sink_mongo::{MongoSink, SinkMongoError, SinkMongoOptions};
 use error_stack::{Result, ResultExt};
 use futures_util::TryStreamExt;
 use mongodb::bson::{doc, Bson, Document};
@@ -87,9 +86,9 @@ async fn test_handle_data() -> Result<(), SinkMongoError> {
         assert_eq!(action, CursorAction::Persist);
 
         // Make sure batching is actually disabled.
-        assert_eq!(sink.current_batch.data, Vec::<Value>::new());
-        assert_eq!(sink.current_batch.end_cursor, Cursor::default());
-        assert!(!sink.should_flush());
+        assert_eq!(sink.batcher.buffer.data, Vec::<Value>::new());
+        assert_eq!(sink.batcher.buffer.end_cursor, Cursor::default());
+        assert!(!sink.batcher.should_flush());
 
         all_docs.extend(new_docs(&cursor, &end_cursor));
     }
@@ -566,7 +565,7 @@ async fn test_handle_invalidate_in_entity_mode() -> Result<(), SinkMongoError> {
 }
 
 #[tokio::test]
-#[ignore]
+// #[ignore]
 async fn test_handle_data_batch_mode() -> Result<(), SinkMongoError> {
     let docker = clients::Cli::default();
     let mongo = docker.run(new_mongo_image());
@@ -590,7 +589,7 @@ async fn test_handle_data_batch_mode() -> Result<(), SinkMongoError> {
 
     let mut all_docs = vec![];
 
-    let mut current_batch = Batch::new();
+    let mut buffer = Buffer::new();
     let mut batch_start_cursor = new_cursor(0);
 
     for order_key in 0..num_batches {
@@ -605,30 +604,52 @@ async fn test_handle_data_batch_mode() -> Result<(), SinkMongoError> {
         };
 
         let action = sink.handle_data(&ctx, &new_not_array_of_objects()).await?;
-        assert_eq!(action, CursorAction::Persist);
+        if sink.batcher.is_batching() && !sink.batcher.buffer.is_empty() {
+            assert_eq!(action, CursorAction::Skip);
+        } else {
+            assert_eq!(action, CursorAction::Persist);
+        }
 
         let action = sink.handle_data(&ctx, &json!([])).await?;
         assert_eq!(action, CursorAction::Persist);
+        if sink.batcher.is_batching() && !sink.batcher.buffer.is_empty() {
+            assert_eq!(action, CursorAction::Skip);
+        } else {
+            assert_eq!(action, CursorAction::Persist);
+        }
 
         let action = sink.handle_data(&ctx, &batch).await?;
 
-        if current_batch.start_at.elapsed().as_secs() < batch_secs {
-            let batch_data = batch.as_array_of_objects().unwrap().to_vec();
-            current_batch.data.extend(batch_data);
-            current_batch.end_cursor = end_cursor.clone();
+        let batch = batch.as_array_of_objects().unwrap().to_vec();
 
-            assert_eq!(current_batch.data, sink.current_batch.data);
-            assert_eq!(current_batch.end_cursor, sink.current_batch.end_cursor);
+        if buffer.start_at.elapsed().as_secs() < batch_secs {
+            buffer.data.extend(batch);
+            buffer.end_cursor = end_cursor.clone();
+
+            assert_eq!(buffer.data, sink.batcher.buffer.data);
+            assert_eq!(buffer.end_cursor, sink.batcher.buffer.end_cursor);
             assert_eq!(action, CursorAction::Skip);
         } else {
-            current_batch = Batch::new();
-            assert_eq!(current_batch.data, sink.current_batch.data);
-            assert_eq!(current_batch.end_cursor, sink.current_batch.end_cursor);
-            assert_eq!(action, CursorAction::Persist);
+            let previous_buffer_end_cursor = buffer.end_cursor;
 
-            all_docs.extend(new_docs(&Some(batch_start_cursor.clone()), &end_cursor));
+            // The new buffer will has the current batch
+            buffer = Buffer::new();
+            buffer.data.extend(batch);
+            buffer.end_cursor = end_cursor.clone();
 
-            batch_start_cursor = end_cursor;
+            assert_eq!(buffer.data, sink.batcher.buffer.data);
+            assert_eq!(buffer.end_cursor, sink.batcher.buffer.end_cursor);
+            assert_eq!(
+                action,
+                CursorAction::PersistAt(previous_buffer_end_cursor.clone())
+            );
+
+            all_docs.extend(new_docs(
+                &Some(batch_start_cursor.clone()),
+                &previous_buffer_end_cursor,
+            ));
+
+            batch_start_cursor = previous_buffer_end_cursor;
 
             assert_eq!(all_docs, get_all_docs(sink.collection("test")?).await);
         }
@@ -662,7 +683,7 @@ async fn test_handle_data_batch_mode() -> Result<(), SinkMongoError> {
 }
 
 #[tokio::test]
-#[ignore]
+// #[ignore]
 async fn test_invalidate_batch_mode() -> Result<(), SinkMongoError> {
     let docker = clients::Cli::default();
     let mongo = docker.run(new_mongo_image());
