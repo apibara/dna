@@ -218,23 +218,6 @@ impl MongoSink {
             .attach_printable(format!("collection '{collection_name}' not found"))
     }
 
-    pub fn should_flush(&self) -> bool {
-        if let Some(batch_secs) = self.batch_secs {
-            self.current_batch.start_at.elapsed().as_secs() >= batch_secs
-        } else {
-            false
-        }
-    }
-
-    pub async fn flush(&mut self) -> Result<(), SinkMongoError> {
-        self.insert_data(&self.current_batch.end_cursor, &self.current_batch.data)
-            .await?;
-
-        self.current_batch = Batch::new();
-
-        Ok(())
-    }
-
     pub async fn insert_data(
         &self,
         end_cursor: &Cursor,
