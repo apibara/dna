@@ -4,7 +4,8 @@ use std::fmt;
 
 use std::sync::Arc;
 
-use apibara_core::node::v1alpha2::Cursor;
+use apibara_core::node::v1alpha2::{Cursor, DataFinality};
+use apibara_sink_common::batching::Batcher;
 use apibara_sink_common::{Context, CursorAction, Sink, ValueExt};
 use arrow::json::reader::{infer_json_schema_from_iterator, Decoder, ReaderBuilder};
 use arrow::record_batch::RecordBatch;
@@ -15,7 +16,7 @@ use parquet::arrow::ArrowWriter;
 use serde_json::Value;
 use tokio::sync::Mutex;
 
-use tracing::{debug, info, instrument, warn};
+use tracing::{debug, info, instrument};
 
 use crate::configuration::{SinkParquetConfiguration, SinkParquetOptions};
 use crate::parquet_writer::{FileParquetWriter, ParquetWriter, S3ParquetWriter};
@@ -32,24 +33,8 @@ impl fmt::Display for SinkParquetError {
 
 pub struct ParquetSink {
     config: SinkParquetConfiguration,
-    state: Option<State>,
     writer: Box<dyn ParquetWriter + Send + Sync>,
-}
-
-/// Sink state.
-///
-/// This is used to keep track of the file schema, starting and end blocks.
-struct State {
-    /// Whether to write to a single dataset.
-    pub single_dataset: bool,
-    /// The datasets to write to.
-    pub datasets: HashMap<String, Dataset>,
-    /// How many blocks to include in a single parquet file.
-    pub batch_size: usize,
-    /// The first block (inclusive) in the current batch.
-    pub starting_block_number: u64,
-    /// The last block (exclusive) in the current batch.
-    pub end_block_number: u64,
+    batcher: Batcher,
 }
 
 struct Dataset {
@@ -97,24 +82,25 @@ impl ParquetSink {
             Box::new(FileParquetWriter)
         };
 
+        let batch_size = config.batch_size as u64;
+
         Self {
             config,
             writer,
-            state: None,
+            batcher: Batcher::by_size(batch_size),
         }
     }
 
-    async fn write_batches(&mut self, batches: &[DatasetBatch]) -> Result<(), SinkParquetError> {
-        for batch in batches {
-            self.write_batch(batch).await?;
-        }
-
-        Ok(())
+    fn get_filename(&self) -> String {
+        format!(
+            "{:0>10}_{:0>10}.parquet",
+            self.batcher.buffer.start_cursor.order_key, self.batcher.buffer.end_cursor.order_key
+        )
     }
 
     /// Write a `DatasetBatch` using the configured `ParquetSink::writer`,
     /// either to S3 if the path starts with `"s3://"` or to the local filesystem otherwise.
-    async fn write_batch(&mut self, batch: &DatasetBatch) -> Result<(), SinkParquetError> {
+    async fn write_dataset_batch(&mut self, batch: &DatasetBatch) -> Result<(), SinkParquetError> {
         info!(
             size = batch.batch.num_rows(),
             dataset = batch.name,
@@ -134,106 +120,17 @@ impl ParquetSink {
 
         Ok(())
     }
-}
 
-#[async_trait]
-impl Sink for ParquetSink {
-    type Options = SinkParquetOptions;
-    type Error = SinkParquetError;
-
-    async fn from_options(options: Self::Options) -> Result<Self, Self::Error> {
-        let config = options.to_parquet_configuration()?;
-        Ok(Self::new(config).await)
-    }
-
-    #[instrument(skip_all, err(Debug))]
-    async fn handle_data(
+    pub async fn insert_data(
         &mut self,
-        ctx: &Context,
-        batch: &Value,
-    ) -> Result<CursorAction, Self::Error> {
-        let Some(batch) = batch.as_array_of_objects() else {
-            warn!("data is not an array of objects, skipping");
-            // Skip persistence in case the buffer is still not flushed
-            return Ok(CursorAction::Skip);
-        };
-
-        if batch.is_empty() {
-            // Skip persistence in case the buffer is still not flushed
-            warn!("batch is empty, skipping");
-            return Ok(CursorAction::Skip);
-        }
-
-        let mut state = match self.state.take() {
-            Some(state) => state,
-            None => State::new_from_batch(
-                self.config.datasets.is_none(),
-                self.config.batch_size,
-                &ctx.cursor,
-                &ctx.end_cursor,
-            )?,
-        };
-
-        let mut cursor_action = CursorAction::Skip;
-
-        if let Some(batches) = state
-            .handle_batch(&ctx.cursor, &ctx.end_cursor, batch)
-            .await?
-        {
-            self.write_batches(&batches).await?;
-            cursor_action = CursorAction::Persist;
-        }
-
-        self.state = Some(state);
-        Ok(cursor_action)
-    }
-
-    #[instrument(skip(self, _cursor), err(Debug))]
-    async fn handle_invalidate(&mut self, _cursor: &Option<Cursor>) -> Result<(), Self::Error> {
-        Ok(())
-    }
-
-    #[instrument(skip(self), err(Debug))]
-    async fn handle_heartbeat(&mut self) -> Result<(), Self::Error> {
-        // TODO: write to incomplete file.
-        Ok(())
-    }
-
-    async fn cleanup(&mut self) -> Result<(), Self::Error> {
-        // TODO: flush to incomplete file.
-        Ok(())
-    }
-}
-
-impl State {
-    /// Initialize state from the first batch of data.
-    pub fn new_from_batch(
-        single_dataset: bool,
-        batch_size: usize,
-        cursor: &Option<Cursor>,
-        end_cursor: &Cursor,
-    ) -> Result<Self, SinkParquetError> {
-        let starting_block_number = cursor.as_ref().map(|c| c.order_key).unwrap_or(0);
-        let end_block_number = end_cursor.order_key;
-
-        Ok(State {
-            single_dataset,
-            datasets: HashMap::default(),
-            starting_block_number,
-            batch_size,
-            end_block_number,
-        })
-    }
-
-    pub async fn handle_batch(
-        &mut self,
-        _cursor: &Option<Cursor>,
-        end_cursor: &Cursor,
+        _end_cursor: &Cursor,
         batch: &[Value],
-    ) -> Result<Option<Vec<DatasetBatch>>, SinkParquetError> {
+    ) -> Result<(), SinkParquetError> {
         // Iterate over the data and split it into datasets.
+        let mut datasets = HashMap::<String, Dataset>::default();
+
         for item in batch {
-            let (dataset_name, data) = if self.single_dataset {
+            let (dataset_name, data) = if self.config.datasets.is_none() {
                 ("default", item)
             } else {
                 let dataset_name = item
@@ -248,7 +145,7 @@ impl State {
                 (dataset_name, data)
             };
 
-            let dataset = match self.datasets.entry(dataset_name.to_string()) {
+            let dataset = match datasets.entry(dataset_name.to_string()) {
                 Entry::Occupied(entry) => entry.into_mut(),
                 Entry::Vacant(entry) => {
                     let schema = infer_json_schema_from_iterator(std::iter::once(Ok(data)))
@@ -273,38 +170,79 @@ impl State {
                 .attach_printable("failed to serialize batch item")?;
         }
 
-        self.end_block_number = end_cursor.order_key;
-        if !self.should_flush() {
-            return Ok(None);
-        }
-
-        debug!("flushing batches");
-        let mut batches = Vec::new();
+        debug!("flushing dataset batches");
+        let mut dataset_batches = Vec::new();
         let filename = self.get_filename();
-        for (dataset_name, dataset) in self.datasets.iter_mut() {
+        for (dataset_name, dataset) in datasets.iter_mut() {
             let mut decoder = dataset.decoder.lock().await;
-            if let Some(batch) = decoder.flush().change_context(SinkParquetError)? {
-                batches.push(DatasetBatch {
+            if let Some(record_batch) = decoder.flush().change_context(SinkParquetError)? {
+                dataset_batches.push(DatasetBatch {
                     name: dataset_name.to_string(),
                     filename: filename.clone(),
-                    batch,
+                    batch: record_batch,
                 });
             }
         }
 
-        self.starting_block_number = self.end_block_number;
-        Ok(Some(batches))
+        for dataset_batch in dataset_batches {
+            self.write_dataset_batch(&dataset_batch).await?;
+        }
+
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl Sink for ParquetSink {
+    type Options = SinkParquetOptions;
+    type Error = SinkParquetError;
+
+    async fn from_options(options: Self::Options) -> Result<Self, Self::Error> {
+        let config = options.to_parquet_configuration()?;
+        Ok(Self::new(config).await)
     }
 
-    fn should_flush(&self) -> bool {
-        let num_blocks = self.end_block_number - self.starting_block_number;
-        num_blocks >= self.batch_size as u64
+    #[instrument(skip_all, err(Debug))]
+    async fn handle_data(
+        &mut self,
+        ctx: &Context,
+        batch: &Value,
+    ) -> Result<CursorAction, Self::Error> {
+        info!(ctx = %ctx, "handling data");
+        let batch = batch
+            .as_array_of_objects()
+            .unwrap_or(&Vec::<Value>::new())
+            .to_vec();
+
+        if ctx.finality != DataFinality::DataStatusFinalized {
+            self.insert_data(&ctx.end_cursor, &batch).await?;
+            return Ok(CursorAction::Persist);
+        }
+
+        match self.batcher.handle_data(ctx, &batch).await {
+            Ok((action, None)) => Ok(action),
+            Ok((action, Some((end_cursor, batch)))) => {
+                self.insert_data(&end_cursor, &batch).await?;
+                self.batcher.buffer.clear();
+                Ok(action)
+            }
+            Err(e) => Err(e).change_context(SinkParquetError),
+        }
     }
 
-    fn get_filename(&self) -> String {
-        format!(
-            "{:0>10}_{:0>10}.parquet",
-            self.starting_block_number, self.end_block_number
-        )
+    #[instrument(skip(self, _cursor), err(Debug))]
+    async fn handle_invalidate(&mut self, _cursor: &Option<Cursor>) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
+    #[instrument(skip(self), err(Debug))]
+    async fn handle_heartbeat(&mut self) -> Result<(), Self::Error> {
+        // TODO: write to incomplete file.
+        Ok(())
+    }
+
+    async fn cleanup(&mut self) -> Result<(), Self::Error> {
+        // TODO: flush to incomplete file.
+        Ok(())
     }
 }

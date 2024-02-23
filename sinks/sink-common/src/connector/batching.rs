@@ -123,7 +123,12 @@ impl Batcher {
 
     pub async fn add_data(&mut self, ctx: &Context, batch: &[Value]) {
         if self.buffer.start_cursor == Cursor::default() {
-            self.buffer.start_cursor = ctx.cursor.clone().unwrap_or_default();
+            let zero = 0;
+            let zero_cursor = Cursor {
+                order_key: zero,
+                unique_key: zero.to_be_bytes().to_vec(),
+            };
+            self.buffer.start_cursor = ctx.cursor.clone().unwrap_or(zero_cursor);
         }
         self.buffer.end_cursor = ctx.end_cursor.clone();
         self.buffer.extend(batch.to_vec());
