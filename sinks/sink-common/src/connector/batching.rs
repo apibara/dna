@@ -1,12 +1,13 @@
 use std::time::Instant;
 
-use apibara_core::node::v1alpha2::{Cursor, DataFinality};
+use apibara_core::node::v1alpha2::Cursor;
 use error_stack::Result;
 use serde_json::Value;
 use tracing::{info, warn};
 
-use crate::{error::SinkError, sink::Context, CursorAction, ValueExt};
+use crate::{error::SinkError, sink::Context, CursorAction};
 
+#[derive(Debug)]
 pub struct Buffer {
     pub start_at: Instant,
     pub start_cursor: Cursor,
@@ -89,6 +90,14 @@ impl Batcher {
         self.is_batching_by_secs() || self.is_batching_by_size()
     }
 
+    /// Check if the batch is already added to the buffer
+    pub fn is_already_added(&self, batch: &[Value]) -> bool {
+        batch
+            .iter()
+            .map(|element| self.buffer.data.contains(element))
+            .all(|x| x)
+    }
+
     pub fn should_flush(&self) -> bool {
         let batch_by_size_reached = (self.buffer.end_cursor.order_key
             - self.buffer.start_cursor.order_key)
@@ -100,15 +109,6 @@ impl Batcher {
             || (self.is_batching_by_secs() && batch_by_secs_reached)
     }
 
-    pub fn flush(&mut self) -> (Cursor, Vec<Value>) {
-        let batch = self.buffer.to_vec();
-        let end_cursor = self.buffer.end_cursor.clone();
-
-        self.buffer.clear();
-
-        (end_cursor, batch)
-    }
-
     pub fn clear(&mut self) {
         self.buffer.clear()
     }
@@ -117,51 +117,41 @@ impl Batcher {
         self.buffer.is_empty()
     }
 
-    pub async fn add_data(&mut self, ctx: &Context, batch: &Value) {
-        // TODO: do something about it ? Why do we have to do this here again ?
-        // we already do this in the `handle_data` function
-        let batch = batch
-            .as_array_of_objects()
-            .unwrap_or(&Vec::<Value>::new())
-            .to_vec();
-
+    pub async fn add_data(&mut self, ctx: &Context, batch: &[Value]) {
         if self.buffer.start_cursor == Cursor::default() {
             self.buffer.start_cursor = ctx.cursor.clone().unwrap_or_default();
         }
         self.buffer.end_cursor = ctx.end_cursor.clone();
-        self.buffer.extend(batch);
+        self.buffer.extend(batch.to_vec());
     }
 
     pub async fn handle_data(
         &mut self,
         ctx: &Context,
-        batch: &Value,
+        batch: &[Value],
     ) -> Result<(CursorAction, Option<(Cursor, Vec<Value>)>), SinkError> {
-        let Some(batch) = batch.as_array_of_objects() else {
-            warn!("data is not an array of objects, skipping");
-            // Skip persistence in case the buffer is still not flushed
-            if self.is_batching() && !self.is_flushed() {
-                return Ok((CursorAction::Skip, None));
-            } else {
-                return Ok((CursorAction::Persist, None));
-            }
-        };
-
         if batch.is_empty() {
-            warn!("data is empty, skipping");
-            // Skip persistence if the buffer is still not flushed
+            warn!("data is empty or not an array of objects, skipping");
+            // Only skip persistence if the buffer is still not flushed
             if self.is_batching() && !self.is_flushed() {
                 return Ok((CursorAction::Skip, None));
-            } else {
-                return Ok((CursorAction::Persist, None));
             }
+
+            return Ok((CursorAction::Persist, None));
         }
 
-        if !self.is_batching() || (ctx.finality != DataFinality::DataStatusFinalized) {
+        if !self.is_batching() {
             return Ok((
                 CursorAction::Persist,
                 Some((ctx.end_cursor.clone(), batch.to_vec())),
             ));
+        }
+
+        // `SinkWithBackoff` will retry the same batch if it fails,
+        // we have to check if the batch is already added before adding it again
+        // This makes the batcher idempotent
+        if !self.is_already_added(batch) {
+            self.add_data(ctx, batch).await;
         }
 
         if self.should_flush() {
@@ -173,11 +163,6 @@ impl Batcher {
             );
 
             return Ok((
-                // Persist the cursor of the end of the buffer, since the current
-                // batch is not added the buffer
-                // This is to make the function idempotent because it'll be called
-                // multiple times with the same data by [`SinkWithBackoff`]
-                // if the sink fails
                 CursorAction::PersistAt(self.buffer.end_cursor.clone()),
                 Some((self.buffer.end_cursor.clone(), self.buffer.to_vec())),
             ));

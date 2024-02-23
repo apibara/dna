@@ -588,9 +588,7 @@ async fn test_handle_data_batch_mode() -> Result<(), SinkMongoError> {
     let num_batches = 15;
 
     let mut all_docs = vec![];
-
     let mut buffer = Buffer::new();
-    let mut batch_start_cursor = new_cursor(0);
 
     for order_key in 0..num_batches {
         let cursor = Some(new_cursor(order_key * batch_size));
@@ -603,58 +601,50 @@ async fn test_handle_data_batch_mode() -> Result<(), SinkMongoError> {
             finality,
         };
 
+        // If the data is not an array of objects or an empty array,
+        // we only skip if we're batching and the buffer is not empty
+        let expected_action = if sink.batcher.is_batching() && !sink.batcher.is_flushed() {
+            CursorAction::Skip
+        } else {
+            CursorAction::Persist
+        };
+
+        // Test the case where the data is not an array of objects
         let action = sink.handle_data(&ctx, &new_not_array_of_objects()).await?;
-        if sink.batcher.is_batching() && !sink.batcher.buffer.is_empty() {
-            assert_eq!(action, CursorAction::Skip);
-        } else {
-            assert_eq!(action, CursorAction::Persist);
-        }
+        assert_eq!(action, expected_action);
 
+        // Test the case where the data is an empty array
         let action = sink.handle_data(&ctx, &json!([])).await?;
-        assert_eq!(action, CursorAction::Persist);
-        if sink.batcher.is_batching() && !sink.batcher.buffer.is_empty() {
-            assert_eq!(action, CursorAction::Skip);
-        } else {
-            assert_eq!(action, CursorAction::Persist);
-        }
+        assert_eq!(action, expected_action);
 
+        // Test the regular case
         let action = sink.handle_data(&ctx, &batch).await?;
-
         let batch = batch.as_array_of_objects().unwrap().to_vec();
 
-        if buffer.start_at.elapsed().as_secs() < batch_secs {
-            buffer.data.extend(batch);
-            buffer.end_cursor = end_cursor.clone();
+        buffer.data.extend(batch);
+        buffer.end_cursor = end_cursor.clone();
 
+        // Test batching
+        if buffer.start_at.elapsed().as_secs() < batch_secs {
             assert_eq!(buffer.data, sink.batcher.buffer.data);
             assert_eq!(buffer.end_cursor, sink.batcher.buffer.end_cursor);
             assert_eq!(action, CursorAction::Skip);
+        // Test flushing
         } else {
-            let previous_buffer_end_cursor = buffer.end_cursor;
-
-            // The new buffer will has the current batch
-            buffer = Buffer::new();
-            buffer.data.extend(batch);
-            buffer.end_cursor = end_cursor.clone();
-
-            assert_eq!(buffer.data, sink.batcher.buffer.data);
-            assert_eq!(buffer.end_cursor, sink.batcher.buffer.end_cursor);
-            assert_eq!(
-                action,
-                CursorAction::PersistAt(previous_buffer_end_cursor.clone())
-            );
-
             all_docs.extend(new_docs(
-                &Some(batch_start_cursor.clone()),
-                &previous_buffer_end_cursor,
+                &Some(buffer.start_cursor.clone()),
+                &buffer.end_cursor,
             ));
-
-            batch_start_cursor = previous_buffer_end_cursor;
-
             assert_eq!(all_docs, get_all_docs(sink.collection("test")?).await);
+
+            assert!(sink.batcher.is_flushed());
+            assert_eq!(action, CursorAction::PersistAt(buffer.end_cursor.clone()));
+
+            buffer = Buffer::new();
+            buffer.start_cursor = end_cursor
         }
 
-        // Non finalized data should not be batched, it should be written right away
+        // Test non finalized data should not be batched, it should be written right away
         let non_finalized_order_key = order_key * 100;
 
         let cursor = Some(new_cursor(non_finalized_order_key * batch_size));
@@ -671,7 +661,6 @@ async fn test_handle_data_batch_mode() -> Result<(), SinkMongoError> {
         assert_eq!(action, CursorAction::Persist);
 
         all_docs.extend(new_docs(&cursor, &end_cursor));
-
         assert_eq!(all_docs, get_all_docs(sink.collection("test")?).await);
 
         sleep(Duration::from_millis(250)).await;
