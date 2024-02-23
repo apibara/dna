@@ -128,13 +128,13 @@ async fn test_handle_data() -> Result<(), SinkParquetError> {
     let batch = new_batch(&cursor, &end_cursor);
     let ctx = Context {
         cursor,
-        end_cursor,
+        end_cursor: end_cursor.clone(),
         finality,
     };
 
     let action = sink.handle_data(&ctx, &batch).await?;
 
-    assert_eq!(action, CursorAction::Persist);
+    assert_eq!(action, CursorAction::PersistAt(end_cursor.clone()));
 
     let file_names: Vec<OsString> = get_file_names(&output_dir, "default").unwrap();
     assert_eq!(file_names, vec!["0000000000_0000000010.parquet"]);
