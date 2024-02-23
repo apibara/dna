@@ -129,47 +129,34 @@ impl Sink for MongoSink {
         batch: &Value,
     ) -> Result<CursorAction, Self::Error> {
         info!(ctx = %ctx, "handling data");
+        let batch = batch
+            .as_array_of_objects()
+            .unwrap_or(&Vec::<Value>::new())
+            .to_vec();
 
-        // match self.batcher.handle_data(ctx, batch).await {
-        //     Ok((action, None)) => Ok(action),
-        //     Ok((action, Some((end_cursor, batch)))) => {
-        //         self.insert_data(&end_cursor, &batch).await?;
-        //         self.batcher.buffer.clear();
-        //         Ok(action)
-        //     }
-        //     Err(e) => Err(e).change_context(SinkMongoError),
-        // }
-
-        if !self.batcher.is_batching() || (ctx.finality != DataFinality::DataStatusFinalized) {
-            self.insert_data(&ctx.end_cursor, batch.as_array_of_objects().unwrap())
-                .await?;
+        if ctx.finality != DataFinality::DataStatusFinalized {
+            self.insert_data(&ctx.end_cursor, &batch).await?;
             return Ok(CursorAction::Persist);
         }
 
-        let (action, output) = self
-            .batcher
-            .handle_data(ctx, batch)
-            .await
-            .change_context(SinkMongoError)?;
-
-        if let Some((end_cursor, batch)) = output {
-            self.insert_data(&end_cursor, &batch).await?;
-            self.batcher.buffer.clear();
+        match self.batcher.handle_data(ctx, &batch).await {
+            Ok((action, None)) => Ok(action),
+            Ok((action, Some((end_cursor, batch)))) => {
+                self.insert_data(&end_cursor, &batch).await?;
+                self.batcher.buffer.clear();
+                Ok(action)
+            }
+            Err(e) => Err(e).change_context(SinkMongoError),
         }
-
-        if self.batcher.is_batching() && (ctx.finality == DataFinality::DataStatusFinalized) {
-            self.batcher.add_data(ctx, batch).await;
-        }
-
-        Ok(action)
     }
 
     async fn handle_invalidate(&mut self, cursor: &Option<Cursor>) -> Result<(), Self::Error> {
         debug!(cursor = %DisplayCursor(cursor), "handling invalidate");
 
         if self.batcher.is_batching() && !self.batcher.is_flushed() {
-            let (end_cursor, batch) = self.batcher.flush();
-            self.insert_data(&end_cursor, &batch).await?;
+            self.insert_data(&self.batcher.buffer.end_cursor, &self.batcher.buffer.data)
+                .await?;
+            self.batcher.buffer.clear();
         }
 
         let mut session = self
@@ -229,23 +216,6 @@ impl MongoSink {
             .get(collection_name)
             .ok_or(SinkMongoError)
             .attach_printable(format!("collection '{collection_name}' not found"))
-    }
-
-    pub fn should_flush(&self) -> bool {
-        if let Some(batch_secs) = self.batch_secs {
-            self.current_batch.start_at.elapsed().as_secs() >= batch_secs
-        } else {
-            false
-        }
-    }
-
-    pub async fn flush(&mut self) -> Result<(), SinkMongoError> {
-        self.insert_data(&self.current_batch.end_cursor, &self.current_batch.data)
-            .await?;
-
-        self.current_batch = Batch::new();
-
-        Ok(())
     }
 
     pub async fn insert_data(

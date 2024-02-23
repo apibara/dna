@@ -3,7 +3,7 @@ use error_stack::{Result, ResultExt};
 use exponential_backoff::Backoff;
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
-use tracing::{warn};
+use tracing::warn;
 
 use crate::{
     error::SinkError,
