@@ -1,6 +1,7 @@
 use std::fmt;
 
-use apibara_core::node::v1alpha2::Cursor;
+use apibara_core::node::v1alpha2::{Cursor, DataFinality};
+use apibara_sink_common::batching::Batcher;
 use apibara_sink_common::{Context, CursorAction, DisplayCursor, Sink, ValueExt};
 use async_trait::async_trait;
 use error_stack::{Result, ResultExt};
@@ -26,6 +27,7 @@ impl fmt::Display for SinkPostgresError {
 
 pub struct PostgresSink {
     config: SinkPostgresConfiguration,
+    batcher: Batcher,
     inner: PostgresSinkInner,
 }
 
@@ -69,6 +71,19 @@ impl PostgresSink {
 
         Ok(())
     }
+
+    async fn insert_data(
+        &mut self,
+        end_cursor: &Cursor,
+        batch: &[Value],
+    ) -> Result<CursorAction, SinkPostgresError> {
+        self.ensure_client().await?;
+
+        match self.inner {
+            PostgresSinkInner::Standard(ref mut sink) => sink.insert_data(end_cursor, batch).await,
+            PostgresSinkInner::Entity(ref mut sink) => sink.insert_data(end_cursor, batch).await,
+        }
+    }
 }
 
 #[async_trait]
@@ -82,18 +97,22 @@ impl Sink for PostgresSink {
 
         let client = client_from_config(&config).await?;
 
+        let batcher = Batcher::by_secs(config.batch_secs);
+
         info!("client connected successfully");
 
         if config.entity_mode {
             let inner = EntitySink::new(client, &config).await?;
             Ok(Self {
                 config,
+                batcher,
                 inner: PostgresSinkInner::Entity(inner),
             })
         } else {
             let inner = StandardSink::new(client, &config).await?;
             Ok(Self {
                 config,
+                batcher,
                 inner: PostgresSinkInner::Standard(inner),
             })
         }
@@ -104,11 +123,25 @@ impl Sink for PostgresSink {
         ctx: &Context,
         batch: &Value,
     ) -> Result<CursorAction, Self::Error> {
-        self.ensure_client().await?;
+        info!(ctx = %ctx, "handling data");
+        let batch = batch
+            .as_array_of_objects()
+            .unwrap_or(&Vec::<Value>::new())
+            .to_vec();
 
-        match self.inner {
-            PostgresSinkInner::Standard(ref mut sink) => sink.handle_data(ctx, batch).await,
-            PostgresSinkInner::Entity(ref mut sink) => sink.handle_data(ctx, batch).await,
+        if ctx.finality != DataFinality::DataStatusFinalized {
+            self.insert_data(&ctx.end_cursor, &batch).await?;
+            return Ok(CursorAction::Persist);
+        }
+
+        match self.batcher.handle_data(ctx, &batch).await {
+            Ok((action, None)) => Ok(action),
+            Ok((action, Some((end_cursor, batch)))) => {
+                self.insert_data(&end_cursor, &batch).await?;
+                self.batcher.buffer.clear();
+                Ok(action)
+            }
+            Err(e) => Err(e).change_context(SinkPostgresError),
         }
     }
 
@@ -188,28 +221,17 @@ impl StandardSink {
         })
     }
 
-    async fn handle_data(
+    async fn insert_data(
         &mut self,
-        ctx: &Context,
-        batch: &Value,
+        end_cursor: &Cursor,
+        batch: &[Value],
     ) -> Result<CursorAction, SinkPostgresError> {
-        debug!(ctx = %ctx, "handling data");
-
-        let Some(batch) = batch.as_array_of_objects() else {
-            warn!("data is not an array of objects, skipping");
-            return Ok(CursorAction::Persist);
-        };
-
-        if batch.is_empty() {
-            return Ok(CursorAction::Persist);
-        }
-
         let batch = batch
             .iter()
             .map(|value| {
                 // Safety: we know that the batch is an array of objects
                 let mut value = value.as_object().expect("value is an object").clone();
-                value.insert("_cursor".into(), ctx.end_cursor.order_key.into());
+                value.insert("_cursor".into(), end_cursor.order_key.into());
                 value
             })
             .collect::<Vec<_>>();
@@ -269,22 +291,11 @@ impl EntitySink {
         Ok(EntitySink { client, table_name })
     }
 
-    async fn handle_data(
+    async fn insert_data(
         &mut self,
-        ctx: &Context,
-        batch: &Value,
+        end_cursor: &Cursor,
+        batch: &[Value],
     ) -> Result<CursorAction, SinkPostgresError> {
-        debug!(ctx = %ctx, "handling data");
-
-        let Some(batch) = batch.as_array_of_objects() else {
-            warn!("data is not an array of objects, skipping");
-            return Ok(CursorAction::Persist);
-        };
-
-        if batch.is_empty() {
-            return Ok(CursorAction::Persist);
-        }
-
         let txn = self
             .client
             .transaction()
@@ -310,7 +321,7 @@ impl EntitySink {
 
                 new_data.insert(
                     "_cursor".into(),
-                    format!("[{},)", ctx.end_cursor.order_key).into(),
+                    format!("[{},)", end_cursor.order_key).into(),
                 );
 
                 let query = format!(
@@ -371,7 +382,7 @@ impl EntitySink {
 
                 // Clamp old data validity by updating its _cursor.
                 {
-                    let clamping_cursor = format!("[,{})", ctx.end_cursor.order_key);
+                    let clamping_cursor = format!("[,{})", end_cursor.order_key);
                     let query = format!(
                         "
                         WITH f AS (
@@ -407,7 +418,7 @@ impl EntitySink {
                     // Update _cursor as well.
                     data.insert(
                         "_cursor".into(),
-                        format!("[{},)", ctx.end_cursor.order_key).into(),
+                        format!("[{},)", end_cursor.order_key).into(),
                     );
                 }
 
