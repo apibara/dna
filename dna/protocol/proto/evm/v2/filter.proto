@@ -1,0 +1,4 @@
+// EVM DNA definitions (filter).
+syntax = "proto3";
+
+package apibara.evm.v2;
