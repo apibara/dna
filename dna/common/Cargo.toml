@@ -34,3 +34,7 @@ jemallocator.workspace = true
 [dev-dependencies]
 tempdir.workspace = true
 nanoid.workspace = true
+
+[build-dependencies]
+pbjson-build.workspace = true
+tonic-build.workspace = true

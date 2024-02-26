@@ -15,6 +15,7 @@ members = [
     # Common
     "observability",
     # DNA
+    "dna/protocol",
     "dna/common",
     "dna/evm",
     # "dna/starknet",

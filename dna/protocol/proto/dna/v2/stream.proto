@@ -1,0 +1,80 @@
+// Apibara DNA server V2
+syntax = "proto3";
+
+package apibara.dna.v2;
+
+import "v2/common.proto";
+
+service DnaStream {
+  // Stream data from the server.
+  rpc StreamData(StreamDataRequest) returns (stream StreamDataResponse);
+  // Get DNA server status.
+  rpc Status(StatusRequest) returns (StatusResponse);
+}
+
+// Request data to be streamed.
+message StreamDataRequest {
+  // Cursor to start streaming from.
+  Cursor starting_cursor = 1;
+  // Return data with the specified finality.
+  // If not specified, defaults to `DATA_FINALITY_ACCEPTED`.
+  optional DataFinality finality = 2;
+  // Filters used to generate data.
+  repeated bytes filter = 3;
+}
+
+// Contains a piece of streamed data.
+message StreamDataResponse {
+  oneof message {
+    Data data = 1;
+    Invalidate invalidate = 2;
+    Heartbeat heartbeat = 3;
+    SystemMessage system_message = 4;
+  }
+}
+
+// Invalidate data after the given cursor.
+message Invalidate {
+  // The cursor of the message before the now invalid data.
+  Cursor cursor = 1;
+}
+
+// A single block of data.
+//
+// If the request specified multiple filters, the `data` field will contain the
+// data for each filter in the same order as the filters were specified in the
+// request.
+// If no data is available for a filter, the corresponding data field will be
+// empty.
+message Data {
+  // Block cursor. Use this cursor to resume the stream.
+  Cursor end_cursor = 1;
+  // The finality status of the block.
+  DataFinality finality = 2;
+  // The block data.
+  repeated bytes data = 3;
+}
+
+// Sent to clients to check if stream is still connected.
+message Heartbeat {}
+
+// Message from the server to the client.
+message SystemMessage {
+  oneof output {
+    // Output to stdout.
+    string stdout = 1;
+    // Output to stderr.
+    string stderr = 2;
+  }
+}
+
+// Data finality.
+enum DataFinality {
+  DATA_FINALITY_UNKNOWN = 0;
+  // Data was received, but is not part of the canonical chain yet.
+  DATA_FINALITY_PENDING = 1;
+  // Data is now part of the canonical chain, but could still be invalidated.
+  DATA_FINALITY_ACCEPTED = 2;
+  // Data is finalized and cannot be invalidated.
+  DATA_FINALITY_FINALIZED = 3;
+}
