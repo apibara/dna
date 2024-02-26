@@ -37,7 +37,9 @@ flatbuffers.workspace = true
 governor.workspace = true
 hex.workspace = true
 futures-util.workspace = true
+prost.workspace = true
 roaring.workspace = true
+tonic.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
 starknet.workspace = true
@@ -46,3 +48,6 @@ url.workspace = true
 
 [target.'cfg(not(windows))'.dependencies]
 jemallocator.workspace = true
+
+[build-dependencies]
+tonic-build.workspace = true

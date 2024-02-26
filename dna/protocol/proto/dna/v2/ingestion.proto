@@ -1,0 +1,90 @@
+// Ingestion <-> DNA server
+//
+// The goal of this service is to provide a view over ingested data to clients.
+// The server will stream data changes to the client, allowing the client to
+// know what data is available without having to access the data itself.
+//
+// Roughly speaking, the server needs to track the following:
+//
+// - The most recent sealed segment group.
+// - The most recent segments that are not part of a sealed group yet.
+// - The most recent blocks that are not part of a full segment yet.
+//
+// The following data is stored remotely (AWS S3, Azure Blob, etc.):
+//
+// - Sealed segment groups.
+// - Segments (all).
+//
+// The following data is stored locally on the DNA server, either in memory
+// or on disk:
+//
+// - most recent segment group.
+// - blocks that are not part of a segment yet.
+syntax = "proto3";
+
+package apibara.dna.v2;
+
+service Ingestion {
+  // Subscribe to data changes.
+  rpc Subscribe(SubscribeRequest) returns (stream SubscribeResponse);
+}
+
+message SubscribeRequest {}
+
+message SubscribeResponse {
+  oneof message {
+    Snapshot snapshot = 1;
+    AddSegmentToGroup add_segment_to_group = 2;
+    SealGroup seal_group = 3;
+    AddImmediateData add_immediate_data = 4;
+    Invalidate invalidate = 5;
+  }
+}
+
+// Data snapshot, the starting point to rebuild the DNA state.
+message Snapshot {
+  // Snapshot revision.
+  uint64 revision = 1;
+  // First block number in the snapshot.
+  uint64 first_block_number = 2;
+  // Number of blocks in each segment.
+  uint32 segment_size = 3;
+  // Number of segments in each group.
+  uint32 group_size = 4;
+  // Number of sealed groups ingested.
+  uint32 group_count = 5;
+}
+
+// Add the given segment to the current unsealed group.
+//
+// The client can delete all immediate data that is now in the segment.
+message AddSegmentToGroup {
+  // Segment name.
+  string segment_name = 1;
+  // First block number in the segment.
+  uint64 first_block_number = 2;
+}
+
+// Seal the current group, starting a new unsealed group.
+//
+// The client can start using the sealed group to quickly
+// skip ahead when streaming data.
+message SealGroup {
+  // Group name.
+  string group_name = 2;
+  // First block number in the new group.
+  uint64 new_first_block_number = 3;
+}
+
+// Add data about a single block that is not part of a segment.
+message AddImmediateData {
+  // Block number.
+  uint64 block_number = 1;
+  // Block hash.
+  bytes block_hash = 2;
+  // Block data, encoded as Flatbuffers.
+  bytes data = 3;
+}
+
+// Invalidate all blocks after the given block number.
+message Invalidate {}
