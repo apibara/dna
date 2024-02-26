@@ -165,7 +165,7 @@ table Log {
 table Transaction {
   // Transaction hash.
   hash:B256;
-  // Noce.
+  // Nonce.
   nonce:uint64;
   // Transaction index in the block.
   transaction_index:uint64;
