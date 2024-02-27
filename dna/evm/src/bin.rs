@@ -6,7 +6,7 @@ use apibara_dna_common::{
     storage::{AzureStorageBackendBuilder, LocalStorageBackend, StorageBackend},
 };
 use apibara_dna_evm::{
-    ingestion::{Ingestor, IngestorOptions, RpcProviderService},
+    ingestion::{ChainChange, ChainTracker, Ingestor, IngestorOptions, RpcProviderService},
     segment::{
         store, BlockHeaderSegmentReader, LogSegmentReader, SegmentGroupExt, SegmentGroupReader,
         TransactionSegmentReader,
@@ -15,7 +15,9 @@ use apibara_dna_evm::{
 use apibara_observability::init_opentelemetry;
 use clap::{Args, Parser, Subcommand};
 use error_stack::ResultExt;
+use futures_util::{StreamExt, TryStreamExt};
 use roaring::RoaringBitmap;
+use tokio::pin;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info};
 
@@ -34,6 +36,7 @@ struct Cli {
 enum Command {
     StartIngestion(StartIngestionArgs),
     Inspect(InspectArgs),
+    TrackChain(TrackChainArgs),
 }
 
 /// Start ingesting data from Ethereum.
@@ -62,6 +65,11 @@ struct StorageArgs {
     local_dir: Option<PathBuf>,
     #[arg(long, env)]
     azure_container: Option<String>,
+}
+#[derive(Args, Debug)]
+struct TrackChainArgs {
+    #[clap(flatten)]
+    pub rpc: RpcArgs,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -138,6 +146,7 @@ async fn run_with_args(args: Cli) -> Result<()> {
     match args.subcommand {
         Command::StartIngestion(args) => run_ingestion(args).await,
         Command::Inspect(args) => run_inspect(args).await,
+        Command::TrackChain(args) => run_track_chain(args).await,
     }
 }
 
@@ -541,6 +550,41 @@ where
         segment_read_sec = format!("{segment_read_sec:.0}"),
         "segment read count"
     );
+
+    Ok(())
+}
+
+async fn run_track_chain(args: TrackChainArgs) -> Result<()> {
+    let ct = CancellationToken::new();
+    let (provider, rpc_provider_fut) = RpcProviderService::new(args.rpc.rpc_url)?
+        .with_rate_limit(args.rpc.rpc_rate_limit as u32)
+        .with_concurrency(args.rpc.rpc_concurrency)
+        .start(ct.clone());
+
+    tokio::spawn(rpc_provider_fut);
+
+    let chain_changes = ChainTracker::new(provider)
+        .start(ct.clone())
+        .take_until(ct.cancelled());
+
+    pin!(chain_changes);
+
+    while let Some(change) = chain_changes.try_next().await? {
+        match change {
+            ChainChange::Initialize { head, finalized } => {
+                info!(head = ?head, finalized = ?finalized, "initialize");
+            }
+            ChainChange::NewHead(cursor) => {
+                info!(cursor = ?cursor, "new head");
+            }
+            ChainChange::NewFinalized(cursor) => {
+                info!(cursor = ?cursor, "new finalized");
+            }
+            ChainChange::Invalidate => {
+                info!("invalidate");
+            }
+        }
+    }
 
     Ok(())
 }
