@@ -40,6 +40,9 @@ enum RpcServiceRequest {
     FinalizedBlock {
         reply: oneshot::Sender<Result<models::Block>>,
     },
+    LatestBlock {
+        reply: oneshot::Sender<Result<models::Block>>,
+    },
     BlockByNumber {
         block_number: models::BlockNumber,
         reply: oneshot::Sender<Result<models::Block>>,
@@ -121,6 +124,15 @@ impl RpcProvider {
         let (tx, rx) = oneshot::channel();
         self.tx
             .send(RpcServiceRequest::FinalizedBlock { reply: tx })
+            .await
+            .unwrap();
+        rx.await.change_context(DnaError::Fatal)?
+    }
+
+    pub async fn get_latest_block(&self) -> Result<models::Block> {
+        let (tx, rx) = oneshot::channel();
+        self.tx
+            .send(RpcServiceRequest::LatestBlock { reply: tx })
             .await
             .unwrap();
         rx.await.change_context(DnaError::Fatal)?
@@ -285,6 +297,10 @@ impl RpcWorker {
                 let response = self.get_finalized_block().await;
                 let _ = reply.send(response);
             }
+            LatestBlock { reply } => {
+                let response = self.get_latest_block().await;
+                let _ = reply.send(response);
+            }
             BlockByNumber {
                 block_number,
                 reply,
@@ -331,6 +347,22 @@ impl RpcWorker {
             .await
             .change_context(DnaError::Fatal)
             .attach_printable("failed to get finalized block")?
+            .ok_or(DnaError::Fatal)
+            .attach_printable("block not found")?;
+
+        Ok(block)
+    }
+
+    #[instrument(skip(self), err(Debug))]
+    pub async fn get_latest_block(&self) -> Result<models::Block> {
+        self.limiter.until_ready().await;
+
+        let block = self
+            .provider
+            .get_block_by_number(models::BlockNumberOrTag::Latest, false)
+            .await
+            .change_context(DnaError::Fatal)
+            .attach_printable("failed to get latest block")?
             .ok_or(DnaError::Fatal)
             .attach_printable("block not found")?;
 
@@ -438,6 +470,7 @@ impl RpcServiceRequest {
         use RpcServiceRequest::*;
         match self {
             FinalizedBlock { .. } => "FinalizedBlock",
+            LatestBlock { .. } => "LatestBlock",
             BlockByNumber { .. } => "BlockByNumber",
             BlockByNumberWithTransactions { .. } => "BlockByNumberWithTransactions",
             TransactionByHash { .. } => "TransactionByHash",
@@ -452,6 +485,7 @@ impl Debug for RpcServiceRequest {
         use RpcServiceRequest::*;
         match self {
             FinalizedBlock { .. } => f.debug_struct("FinalizedBlock").finish(),
+            LatestBlock { .. } => f.debug_struct("LatestBlock").finish(),
             BlockByNumber { block_number, .. } => f
                 .debug_struct("BlockByNumber")
                 .field("block_number", block_number)
