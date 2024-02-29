@@ -33,6 +33,10 @@ impl<'a> Default for SegmentBuilder<'a> {
 }
 
 impl<'a> SegmentBuilder<'a> {
+    pub fn header_count(&self) -> usize {
+        self.header.block_count()
+    }
+
     pub fn add_block_header(&mut self, block_number: u64, header: &models::Block) {
         self.header.add_block_header(block_number, header);
     }

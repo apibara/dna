@@ -1,153 +1,235 @@
+use std::future;
+
 use apibara_dna_common::{
     error::{DnaError, Result},
-    segment::{SegmentOptions, SnapshotBuilder},
+    segment::SegmentOptions,
     storage::StorageBackend,
 };
 use error_stack::ResultExt;
+use futures_util::{FutureExt, Stream, StreamExt, TryFutureExt};
+use tokio::sync::mpsc;
+use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::CancellationToken;
-use tracing::info;
+use tracing::{error, info};
 
-use crate::segment::{SegmentBuilder, SegmentGroupBuilder};
+use crate::ingestion::worker::IngestionWorkerBuilder;
 
-use super::{FinalizedBlockIngestor, IngestionEvent, IngestorOptions, RpcProvider};
+use super::{ChainChange, RpcProvider};
 
-pub struct Ingestor<S: StorageBackend + Send + Sync + 'static> {
-    segment_options: SegmentOptions,
+#[derive(Debug)]
+pub struct IngestorOptions {
+    /// Segment creation options.
+    pub segment: SegmentOptions,
+    /// Start ingesting from this block number.
+    pub starting_block: u64,
+    /// Fetch transactions for each block in a single call.
+    pub get_block_by_number_with_transactions: bool,
+    /// Use `eth_getBlockReceipts` instead of `eth_getTransactionReceipt`.
+    pub get_block_receipts_by_number: bool,
+}
+
+#[derive(Debug, Clone)]
+pub enum IngestionEvent {
+    Lol,
+}
+
+pub struct Ingestor<
+    S: StorageBackend + Send + Sync + 'static,
+    C: Stream<Item = ChainChange> + Unpin + Send + Sync + 'static,
+> {
     provider: RpcProvider,
     storage: S,
+    chain_changes: C,
     options: IngestorOptions,
 }
 
-impl<S> Ingestor<S>
+impl<S, C> Ingestor<S, C>
 where
     S: StorageBackend + Send + Sync + 'static,
-    <S as StorageBackend>::Reader: Unpin,
+    <S as StorageBackend>::Reader: Unpin + Send,
+    <S as StorageBackend>::Writer: Unpin + Send,
+    C: Stream<Item = ChainChange> + Unpin + Send + Sync + 'static,
 {
-    pub fn new(provider: RpcProvider, storage: S) -> Self {
-        let segment_options = SegmentOptions::default();
+    pub fn new(provider: RpcProvider, storage: S, chain_changes: C) -> Self {
         Self {
-            segment_options,
             provider,
             storage,
+            chain_changes,
             options: IngestorOptions::default(),
         }
     }
 
-    pub fn with_segment_options(mut self, segment_options: SegmentOptions) -> Self {
-        self.segment_options = segment_options;
-        self
-    }
-
-    pub fn with_ingestor_options(mut self, options: IngestorOptions) -> Self {
+    pub fn with_options(mut self, options: IngestorOptions) -> Self {
         self.options = options;
         self
     }
 
-    pub async fn start(
-        mut self,
-        starting_block_number_override: Option<u64>,
-        ct: CancellationToken,
-    ) -> Result<()> {
-        let mut segment_builder = SegmentBuilder::default();
-        let mut segment_group_builder = SegmentGroupBuilder::default();
-
-        let mut snapshot_builder = SnapshotBuilder::from_storage(&mut self.storage)
-            .await?
-            .unwrap_or_else(|| {
-                SnapshotBuilder::new(
-                    starting_block_number_override.unwrap_or(0),
-                    self.segment_options.clone(),
-                )
-            });
-
-        let segment_options = snapshot_builder.state().segment_options.clone();
-
-        // TODO: implement this by recomputing group size if the user overrides the starting block number.
-        if starting_block_number_override.is_some() && snapshot_builder.state().group_count > 0 {
-            return Err(DnaError::Configuration).attach_printable(
-                "cannot override starting block number after ingestion has started",
-            );
-        }
-
-        let starting_block_number = snapshot_builder.state().starting_block();
-
-        info!(
-            revision = snapshot_builder.state().revision,
-            segment_options = ?segment_options,
-            starting_block_number, "starting ingestion"
+    pub fn start(self, ct: CancellationToken) -> impl Stream<Item = IngestionEvent> {
+        let (tx, rx) = mpsc::channel(128);
+        tokio::spawn(
+            ingest_chain_data(
+                self.provider,
+                self.storage,
+                self.chain_changes,
+                self.options,
+                tx,
+                ct,
+            )
+            .inspect_err(|err| {
+                error!(err = ?err, "ingestor loop returned with error");
+            }),
         );
+        ReceiverStream::new(rx)
+    }
+}
 
-        let mut ingestor =
-            FinalizedBlockIngestor::new(self.provider, starting_block_number, self.options);
+impl IngestorOptions {
+    pub fn with_segment_options(mut self, segment: SegmentOptions) -> Self {
+        self.segment = segment;
+        self
+    }
 
-        let mut segment_size = 0;
-        let mut group_size = 0;
+    pub fn with_starting_block(mut self, starting_block: u64) -> Self {
+        self.starting_block = starting_block;
+        self
+    }
 
-        loop {
-            if ct.is_cancelled() {
-                return Ok(());
-            }
+    pub fn with_get_block_by_number_with_transactions(mut self, flag: bool) -> Self {
+        self.get_block_by_number_with_transactions = flag;
+        self
+    }
 
-            let max_blocks = 1;
-            match ingestor
-                .ingest_next_segment(&mut segment_builder, max_blocks)
-                .await?
-            {
-                IngestionEvent::Completed {
-                    last_ingested_block,
-                } => {
-                    info!(block_number = last_ingested_block, "finished ingestion");
-                    break;
-                }
-                IngestionEvent::Segment {
-                    count,
-                    first_block_number,
-                    last_block_number,
-                } => {
-                    segment_size += count;
-                    info!(
-                        first_block_number = first_block_number,
-                        last_block_number = last_block_number,
-                        count = count,
-                        segment_size = segment_size,
-                        "ingested segments"
-                    );
+    pub fn with_get_block_receipts_by_number(mut self, flag: bool) -> Self {
+        self.get_block_receipts_by_number = flag;
+        self
+    }
+}
 
-                    segment_group_builder.add_segment(first_block_number, count);
+/// Ingest chain data.
+///
+/// This function doesn't ingest data, but it orchestrates the ingestion
+/// process.
+/// It listens for chain changes and triggers the ingestion worker to
+/// ingest blocks. The worker is responsible for generating segments and
+/// writing them to storage.
+async fn ingest_chain_data<S, C>(
+    provider: RpcProvider,
+    storage: S,
+    mut chain_changes: C,
+    options: IngestorOptions,
+    tx: mpsc::Sender<IngestionEvent>,
+    ct: CancellationToken,
+) -> Result<()>
+where
+    S: StorageBackend + Send + Sync + 'static,
+    <S as StorageBackend>::Reader: Unpin + Send,
+    <S as StorageBackend>::Writer: Unpin + Send,
+    C: Stream<Item = ChainChange> + Unpin + Send + Sync + 'static,
+{
+    // 1) Listen to initialize chain event.
+    let (head, finalized) = match chain_changes.next().await {
+        Some(ChainChange::Initialize { head, finalized }) => (head, finalized),
+        _ => {
+            return Err(DnaError::Fatal).attach_printable("expected chain initialization");
+        }
+    };
 
-                    if segment_size >= segment_options.segment_size {
-                        let segment_name = segment_options.format_segment_name(last_block_number);
-                        segment_builder
-                            .write(&format!("segment/{segment_name}"), &mut self.storage)
-                            .await?;
-                        let index = segment_builder.take_index();
-                        segment_group_builder.add_index(&index);
+    info!(
+        head = head.number,
+        finalized = finalized.number,
+        "initialized chain"
+    );
 
-                        segment_size = 0;
-                        segment_builder.reset();
-                        group_size += 1;
+    // 2) Start ingestion worker.
+    let (worker, starting_state) = IngestionWorkerBuilder::new(provider, storage, options)
+        .start(ct.clone())
+        .await?;
 
-                        info!(segment_name, "wrote segment");
-                    }
+    let mut block_number = starting_state.starting_block();
+    let mut finalized = finalized.number;
 
-                    if group_size >= segment_options.group_size {
-                        let group_name =
-                            segment_options.format_segment_group_name(last_block_number);
-                        group_size = 0;
-                        segment_group_builder
-                            .write(&group_name, &mut self.storage)
-                            .await?;
-                        segment_group_builder.reset();
-                        info!(group_name, "wrote group index");
-                        let new_revision =
-                            snapshot_builder.write_revision(&mut self.storage).await?;
-                        snapshot_builder.reset();
-                        info!(revision = new_revision, "wrote snapshot");
-                    }
-                }
+    info!(
+        revision = starting_state.revision,
+        segment_options = ?starting_state.segment_options,
+        starting_block_number = block_number,
+        "starting ingestion"
+    );
+
+    // 3) Start ingesting blocks.
+    let mut worker_fut = future::pending().fuse().boxed();
+    let mut worker_state = WorkerState::Available;
+
+    loop {
+        if !worker_state.is_busy() {
+            if finalized >= block_number {
+                worker_fut = worker.ingest_block_by_number(block_number).boxed();
+                worker_state = WorkerState::Busy;
+            } else if worker_state.is_available() {
+                info!("reached finalized block. waiting.");
+                // Wait until the block moves to continue ingesting.
+                worker_fut = future::pending().fuse().boxed();
+                worker_state = WorkerState::Waiting;
             }
         }
 
-        Ok(())
+        tokio::select! {
+            _response = &mut worker_fut => {
+                // info!(response = ?response, "got response");
+                block_number += 1;
+                worker_state = WorkerState::Available;
+            }
+            Some(chain_change) = chain_changes.next() => {
+                match chain_change {
+                    ChainChange::NewFinalized(new_finalized) => {
+                        info!(block = ?new_finalized, "new finalized");
+                        if new_finalized.number > finalized {
+                            finalized = new_finalized.number;
+                        }
+                    }
+                    ChainChange::NewHead(new_head) => {
+                        info!(block = ?new_head, "new head");
+                    }
+                    _ => {}
+                }
+            }
+            _ = ct.cancelled() => {
+                break;
+            }
+            else => {
+                break;
+            }
+        };
+    }
+
+    Ok(())
+}
+
+impl Default for IngestorOptions {
+    fn default() -> Self {
+        Self {
+            segment: SegmentOptions::default(),
+            starting_block: 0,
+            get_block_by_number_with_transactions: true,
+            get_block_receipts_by_number: false,
+        }
+    }
+}
+
+enum WorkerState {
+    /// Worker is busy ingesting a block.
+    Busy,
+    /// Worker is available to ingest a block.
+    Available,
+    /// Worker is waiting for the head block to move.
+    Waiting,
+}
+
+impl WorkerState {
+    fn is_busy(&self) -> bool {
+        matches!(self, WorkerState::Busy)
+    }
+
+    fn is_available(&self) -> bool {
+        matches!(self, WorkerState::Available)
     }
 }

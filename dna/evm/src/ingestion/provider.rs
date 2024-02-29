@@ -5,7 +5,7 @@ use alloy_rpc_client::RpcClient;
 use alloy_transport::BoxTransport;
 use apibara_dna_common::error::{DnaError, Result};
 use error_stack::ResultExt;
-use futures_util::{future::join_all, Future, StreamExt};
+use futures_util::{future::join_all, StreamExt};
 use governor::{DefaultDirectRateLimiter, Quota, RateLimiter};
 use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
@@ -32,6 +32,7 @@ pub struct RpcProviderService {
     concurrency: usize,
 }
 
+#[derive(Clone)]
 pub struct RpcProvider {
     tx: async_channel::Sender<RpcServiceRequest>,
 }
@@ -91,7 +92,7 @@ impl RpcProviderService {
         self
     }
 
-    pub fn start(self, ct: CancellationToken) -> (RpcProvider, impl Future<Output = Result<()>>) {
+    pub fn start(self, ct: CancellationToken) -> RpcProvider {
         let (tx, rx) = async_channel::unbounded();
         let worker_rate_limit = self.rate_limit / self.concurrency as u32;
 
@@ -101,21 +102,17 @@ impl RpcProviderService {
             "starting rpc provider service"
         );
 
-        let fut = {
-            async move {
-                let tasks = (0..self.concurrency).map(|wi| {
-                    let ct = ct.clone();
-                    let worker = RpcWorker::new(wi, self.provider.clone(), worker_rate_limit);
-                    tokio::task::spawn(worker.start(rx.clone(), ct))
-                });
+        tokio::spawn(async move {
+            let tasks = (0..self.concurrency).map(|wi| {
+                let ct = ct.clone();
+                let worker = RpcWorker::new(wi, self.provider.clone(), worker_rate_limit);
+                tokio::task::spawn(worker.start(rx.clone(), ct))
+            });
 
-                join_all(tasks).await;
-                Ok(())
-            }
-        };
+            join_all(tasks).await;
+        });
 
-        let provider = RpcProvider { tx };
-        (provider, fut)
+        RpcProvider { tx }
     }
 }
 
