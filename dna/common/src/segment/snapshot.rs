@@ -53,6 +53,7 @@ pub struct SnapshotBuilder<'a> {
     state: SnapshotState,
 }
 
+#[derive(Debug, Clone)]
 pub struct SnapshotState {
     pub revision: u64,
     pub first_block_number: u64,

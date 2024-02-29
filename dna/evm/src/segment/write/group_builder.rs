@@ -29,7 +29,7 @@ impl<'a> Default for SegmentGroupBuilder<'a> {
 }
 
 impl<'a> SegmentGroupBuilder<'a> {
-    pub fn add_segment(&mut self, first_block_number: u64, _count: usize) {
+    pub fn add_segment(&mut self, first_block_number: u64) {
         if self.first_block_number.is_none() {
             self.first_block_number = Some(first_block_number);
         }
@@ -38,6 +38,10 @@ impl<'a> SegmentGroupBuilder<'a> {
 
     pub fn add_index(&mut self, other: &SegmentIndex) {
         self.index.join(other);
+    }
+
+    pub fn segment_count(&self) -> usize {
+        self.segment_count
     }
 
     pub async fn write<S: StorageBackend>(
