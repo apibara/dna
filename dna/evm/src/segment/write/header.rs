@@ -12,6 +12,7 @@ pub struct BlockHeaderSegmentBuilder<'a> {
     builder: FlatBufferBuilder<'a>,
     headers: Vec<WIPOffset<store::BlockHeader<'a>>>,
     first_block_number: Option<u64>,
+    block_count: usize,
 }
 
 impl<'a> BlockHeaderSegmentBuilder<'a> {
@@ -20,13 +21,20 @@ impl<'a> BlockHeaderSegmentBuilder<'a> {
             builder: FlatBufferBuilder::new(),
             headers: vec![],
             first_block_number: None,
+            block_count: 0,
         }
+    }
+
+    pub fn block_count(&self) -> usize {
+        self.block_count
     }
 
     pub fn add_block_header(&mut self, block_number: u64, block: &models::Block) {
         if self.first_block_number.is_none() {
             self.first_block_number = Some(block_number);
         }
+
+        self.block_count += 1;
 
         let header = &block.header;
 
@@ -139,6 +147,7 @@ impl<'a> BlockHeaderSegmentBuilder<'a> {
 
     pub fn reset(&mut self) {
         self.first_block_number = None;
+        self.block_count = 0;
         self.headers.clear();
         self.builder.reset();
     }

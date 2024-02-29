@@ -30,7 +30,7 @@ impl ChainTracker {
         Self { provider }
     }
 
-    pub fn start(self, ct: CancellationToken) -> impl Stream<Item = Result<ChainChange>> {
+    pub fn start(self, ct: CancellationToken) -> impl Stream<Item = ChainChange> {
         let (tx, rx) = mpsc::channel(128);
 
         tokio::spawn(track_chain(self.provider, tx, ct));
@@ -41,7 +41,7 @@ impl ChainTracker {
 
 async fn track_chain(
     provider: RpcProvider,
-    tx: mpsc::Sender<Result<ChainChange>>,
+    tx: mpsc::Sender<ChainChange>,
     ct: CancellationToken,
 ) -> Result<()> {
     let mut head = provider.get_latest_block().await?.cursor();
@@ -52,7 +52,7 @@ async fn track_chain(
         finalized: finalized.clone(),
     };
 
-    tx.send(Ok(change))
+    tx.send(change)
         .await
         .map_err(|_| DnaError::Fatal)
         .attach_printable("failed to send initial chain state")?;
@@ -67,7 +67,7 @@ async fn track_chain(
                 if new_head != head {
                     head = new_head;
                     let change = ChainChange::NewHead(head.clone());
-                    tx.send(Ok(change)).await.map_err(|_| DnaError::Fatal).attach_printable("failed to send chain change")?;
+                    tx.send(change).await.map_err(|_| DnaError::Fatal).attach_printable("failed to send chain change")?;
                 }
             }
             _ = finalized_timeout.tick() => {
@@ -75,7 +75,7 @@ async fn track_chain(
                 if new_finalized != finalized {
                     finalized = new_finalized;
                     let change = ChainChange::NewFinalized(finalized.clone());
-                    tx.send(Ok(change)).await.map_err(|_| DnaError::Fatal).attach_printable("failed to send chain change")?;
+                    tx.send(change).await.map_err(|_| DnaError::Fatal).attach_printable("failed to send chain change")?;
                 }
             }
         };

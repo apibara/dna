@@ -6,7 +6,7 @@ use apibara_dna_common::{
     storage::{AzureStorageBackendBuilder, LocalStorageBackend, StorageBackend},
 };
 use apibara_dna_evm::{
-    ingestion::{ChainChange, ChainTracker, Ingestor, IngestorOptions, RpcProviderService},
+    ingestion::{ChainTracker, Ingestor, IngestorOptions, RpcProviderService},
     segment::{
         store, BlockHeaderSegmentReader, LogSegmentReader, SegmentGroupExt, SegmentGroupReader,
         TransactionSegmentReader,
@@ -15,7 +15,7 @@ use apibara_dna_evm::{
 use apibara_observability::init_opentelemetry;
 use clap::{Args, Parser, Subcommand};
 use error_stack::ResultExt;
-use futures_util::{StreamExt, TryStreamExt};
+use futures_util::StreamExt;
 use roaring::RoaringBitmap;
 use tokio::pin;
 use tokio_util::sync::CancellationToken;
@@ -36,7 +36,6 @@ struct Cli {
 enum Command {
     StartIngestion(StartIngestionArgs),
     Inspect(InspectArgs),
-    TrackChain(TrackChainArgs),
 }
 
 /// Start ingesting data from Ethereum.
@@ -65,11 +64,6 @@ struct StorageArgs {
     local_dir: Option<PathBuf>,
     #[arg(long, env)]
     azure_container: Option<String>,
-}
-#[derive(Args, Debug)]
-struct TrackChainArgs {
-    #[clap(flatten)]
-    pub rpc: RpcArgs,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -146,7 +140,6 @@ async fn run_with_args(args: Cli) -> Result<()> {
     match args.subcommand {
         Command::StartIngestion(args) => run_ingestion(args).await,
         Command::Inspect(args) => run_inspect(args).await,
-        Command::TrackChain(args) => run_track_chain(args).await,
     }
 }
 
@@ -179,32 +172,29 @@ where
 {
     let ct = CancellationToken::new();
 
-    let (provider, rpc_provider_fut) = RpcProviderService::new(args.rpc.rpc_url)?
+    let provider = RpcProviderService::new(args.rpc.rpc_url)?
         .with_rate_limit(args.rpc.rpc_rate_limit as u32)
         .with_concurrency(args.rpc.rpc_concurrency)
         .start(ct.clone());
 
-    let segment_options = args.segment.to_segment_options();
+    let chain_changes = ChainTracker::new(provider.clone()).start(ct.clone());
 
-    let ingestor = Ingestor::new(provider, storage)
-        .with_segment_options(segment_options)
-        .with_ingestor_options(args.ingestor.to_options());
+    let ingestor_options = IngestorOptions::default()
+        .with_segment_options(args.segment.to_segment_options())
+        .with_starting_block(args.starting_block.unwrap_or_default())
+        .with_get_block_by_number_with_transactions(
+            args.ingestor.rpc_get_block_by_number_with_transactions,
+        )
+        .with_get_block_receipts_by_number(args.ingestor.rpc_get_block_receipts_by_number);
 
-    let rpc_provider_task = tokio::spawn(rpc_provider_fut);
-    let ingestion_task = tokio::spawn({
-        let ct = ct.clone();
-        async move { ingestor.start(args.starting_block, ct).await }
-    });
+    let ingestion_stream = Ingestor::new(provider, storage, chain_changes)
+        .with_options(ingestor_options)
+        .start(ct.clone());
 
-    tokio::select! {
-        ret = rpc_provider_task => {
-            info!("rpc provider task finished");
-            ret.change_context(DnaError::Fatal)??;
-        }
-        ret = ingestion_task => {
-            info!("ingestion task finished");
-            ret.change_context(DnaError::Fatal)??;
-        }
+    pin!(ingestion_stream);
+
+    while let Some(event) = ingestion_stream.next().await {
+        info!(event = ?event, "ingestion event");
     }
 
     Ok(())
@@ -552,48 +542,4 @@ where
     );
 
     Ok(())
-}
-
-async fn run_track_chain(args: TrackChainArgs) -> Result<()> {
-    let ct = CancellationToken::new();
-    let (provider, rpc_provider_fut) = RpcProviderService::new(args.rpc.rpc_url)?
-        .with_rate_limit(args.rpc.rpc_rate_limit as u32)
-        .with_concurrency(args.rpc.rpc_concurrency)
-        .start(ct.clone());
-
-    tokio::spawn(rpc_provider_fut);
-
-    let chain_changes = ChainTracker::new(provider)
-        .start(ct.clone())
-        .take_until(ct.cancelled());
-
-    pin!(chain_changes);
-
-    while let Some(change) = chain_changes.try_next().await? {
-        match change {
-            ChainChange::Initialize { head, finalized } => {
-                info!(head = ?head, finalized = ?finalized, "initialize");
-            }
-            ChainChange::NewHead(cursor) => {
-                info!(cursor = ?cursor, "new head");
-            }
-            ChainChange::NewFinalized(cursor) => {
-                info!(cursor = ?cursor, "new finalized");
-            }
-            ChainChange::Invalidate => {
-                info!("invalidate");
-            }
-        }
-    }
-
-    Ok(())
-}
-
-impl IngestorArgs {
-    pub fn to_options(&self) -> IngestorOptions {
-        IngestorOptions {
-            get_block_by_number_with_transactions: self.rpc_get_block_by_number_with_transactions,
-            get_block_receipts_by_number: self.rpc_get_block_receipts_by_number,
-        }
-    }
 }
