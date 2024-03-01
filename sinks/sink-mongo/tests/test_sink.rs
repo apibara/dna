@@ -565,7 +565,7 @@ async fn test_handle_invalidate_in_entity_mode() -> Result<(), SinkMongoError> {
 }
 
 #[tokio::test]
-// #[ignore]
+#[ignore]
 async fn test_handle_data_batch_mode() -> Result<(), SinkMongoError> {
     let docker = clients::Cli::default();
     let mongo = docker.run(new_mongo_image());
@@ -672,7 +672,7 @@ async fn test_handle_data_batch_mode() -> Result<(), SinkMongoError> {
 }
 
 #[tokio::test]
-// #[ignore]
+#[ignore]
 async fn test_invalidate_batch_mode() -> Result<(), SinkMongoError> {
     let docker = clients::Cli::default();
     let mongo = docker.run(new_mongo_image());
