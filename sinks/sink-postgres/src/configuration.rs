@@ -27,7 +27,7 @@ pub struct SinkPostgresConfiguration {
     pub tls: TlsConfiguration,
     pub entity_mode: bool,
     pub invalidate: Vec<InvalidateColumn>,
-    pub batch_secs: u64,
+    pub batch_seconds: u64,
 }
 
 #[derive(Debug, Args, Default, SinkOptions)]
@@ -66,8 +66,8 @@ pub struct SinkPostgresOptions {
     /// Additional conditions for the invalidate query.
     #[clap(skip)]
     pub invalidate: Option<Vec<InvalidateColumn>>,
-    #[arg(long, env = "POSTGRES_BATCH_SECS")]
-    pub batch_secs: Option<u64>,
+    #[arg(long, env = "POSTGRES_BATCH_SECONDS")]
+    pub batch_seconds: Option<u64>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -97,7 +97,7 @@ impl SinkOptions for SinkPostgresOptions {
             tls_use_sni: self.tls_use_sni.or(other.tls_use_sni),
             entity_mode: self.entity_mode.or(other.entity_mode),
             invalidate: self.invalidate.or(other.invalidate),
-            batch_secs: self.batch_secs.or(other.batch_secs),
+            batch_seconds: self.batch_seconds.or(other.batch_seconds),
         }
     }
 }
@@ -130,7 +130,7 @@ impl SinkPostgresOptions {
 
         let entity_mode = self.entity_mode.unwrap_or(false);
         let invalidate = self.invalidate.unwrap_or_default();
-        let batch_secs = self.batch_secs.unwrap_or(0);
+        let batch_seconds = self.batch_seconds.unwrap_or(0);
 
         Ok(SinkPostgresConfiguration {
             pg,
@@ -138,7 +138,7 @@ impl SinkPostgresOptions {
             tls,
             entity_mode,
             invalidate,
-            batch_secs,
+            batch_seconds,
         })
     }
 }

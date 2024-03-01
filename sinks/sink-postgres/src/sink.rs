@@ -97,7 +97,7 @@ impl Sink for PostgresSink {
 
         let client = client_from_config(&config).await?;
 
-        let batcher = Batcher::by_secs(config.batch_secs);
+        let batcher = Batcher::by_secs(config.batch_seconds);
 
         info!("client connected successfully");
 
