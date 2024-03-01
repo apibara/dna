@@ -308,7 +308,7 @@ async fn test_handle_data_in_entity_mode() -> Result<(), SinkMongoError> {
         collection_names: None,
         entity_mode: Some(true),
         invalidate: None,
-        batch_secs: None,
+        batch_seconds: None,
     };
 
     let mut sink = MongoSink::from_options(options).await?;
@@ -458,7 +458,7 @@ async fn test_handle_invalidate_in_entity_mode() -> Result<(), SinkMongoError> {
         collection_names: None,
         entity_mode: Some(true),
         invalidate: None,
-        batch_secs: None,
+        batch_seconds: None,
     };
 
     let mut sink = MongoSink::from_options(options).await?;
@@ -571,14 +571,14 @@ async fn test_handle_data_batch_mode() -> Result<(), SinkMongoError> {
     let mongo = docker.run(new_mongo_image());
     let port = mongo.get_host_port_ipv4(27017);
 
-    let batch_secs = 1;
+    let batch_seconds = 1;
 
     let options = SinkMongoOptions {
         connection_string: Some(format!("mongodb://localhost:{}", port)),
         database: Some("test".into()),
         collection_name: Some("test".into()),
         collection_names: None,
-        batch_secs: Some(batch_secs),
+        batch_seconds: Some(batch_seconds),
         ..SinkMongoOptions::default()
     };
 
@@ -625,7 +625,7 @@ async fn test_handle_data_batch_mode() -> Result<(), SinkMongoError> {
         buffer.end_cursor = end_cursor.clone();
 
         // Test batching
-        if buffer.start_at.elapsed().as_secs() < batch_secs {
+        if buffer.start_at.elapsed().as_secs() < batch_seconds {
             assert_eq!(buffer.data, sink.batcher.buffer.data);
             assert_eq!(buffer.end_cursor, sink.batcher.buffer.end_cursor);
             assert_eq!(action, CursorAction::Skip);
@@ -678,14 +678,14 @@ async fn test_invalidate_batch_mode() -> Result<(), SinkMongoError> {
     let mongo = docker.run(new_mongo_image());
     let port = mongo.get_host_port_ipv4(27017);
 
-    let batch_secs = 1;
+    let batch_seconds = 1;
 
     let options = SinkMongoOptions {
         connection_string: Some(format!("mongodb://localhost:{}", port)),
         database: Some("test".into()),
         collection_name: Some("test".into()),
         collection_names: None,
-        batch_secs: Some(batch_secs),
+        batch_seconds: Some(batch_seconds),
         ..SinkMongoOptions::default()
     };
 
@@ -714,7 +714,7 @@ async fn test_invalidate_batch_mode() -> Result<(), SinkMongoError> {
         get_all_docs(sink.collection("test")?).await,
     );
 
-    sleep(Duration::from_secs(batch_secs)).await;
+    sleep(Duration::from_secs(batch_seconds)).await;
 
     assert_eq!(
         Vec::<Document>::new(),

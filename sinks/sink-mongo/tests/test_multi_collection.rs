@@ -389,7 +389,7 @@ async fn test_handle_data_in_entity_mode() -> Result<(), SinkMongoError> {
         collection_names: Some(collection_names.clone()),
         entity_mode: Some(true),
         invalidate: None,
-        batch_secs: None,
+        batch_seconds: None,
     };
 
     let mut sink = MongoSink::from_options(options).await?;
@@ -545,7 +545,7 @@ async fn test_handle_invalidate_in_entity_mode() -> Result<(), SinkMongoError> {
         collection_names: Some(collection_names.clone()),
         entity_mode: Some(true),
         invalidate: None,
-        batch_secs: None,
+        batch_seconds: None,
     };
 
     let mut sink = MongoSink::from_options(options).await?;

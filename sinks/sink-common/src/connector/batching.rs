@@ -57,15 +57,15 @@ impl Buffer {
 
 pub struct Batcher {
     pub batch_size: u64,
-    pub batch_secs: u64,
+    pub batch_seconds: u64,
     pub buffer: Buffer,
 }
 
 impl Batcher {
-    pub fn by_secs(batch_secs: u64) -> Self {
+    pub fn by_seconds(batch_seconds: u64) -> Self {
         Self {
             batch_size: 0,
-            batch_secs,
+            batch_seconds,
             buffer: Buffer::new(),
         }
     }
@@ -73,13 +73,13 @@ impl Batcher {
     pub fn by_size(batch_size: u64) -> Self {
         Self {
             batch_size,
-            batch_secs: 0,
+            batch_seconds: 0,
             buffer: Buffer::new(),
         }
     }
 
-    pub fn is_batching_by_secs(&self) -> bool {
-        self.batch_secs != 0
+    pub fn is_batching_by_seconds(&self) -> bool {
+        self.batch_seconds != 0
     }
 
     pub fn is_batching_by_size(&self) -> bool {
@@ -87,11 +87,14 @@ impl Batcher {
     }
 
     pub fn is_batching(&self) -> bool {
-        self.is_batching_by_secs() || self.is_batching_by_size()
+        self.is_batching_by_seconds() || self.is_batching_by_size()
     }
 
     /// Check if the batch is already added to the buffer
     pub fn is_already_added(&self, batch: &[Value]) -> bool {
+        // TODO: This operation can be expensive because contains on a list does
+        // a linear search. We should fix it by tracking `context.cursor` from
+        // `handle_batch` and `handle_invalidate``.
         batch
             .iter()
             .map(|element| self.buffer.data.contains(element))
@@ -103,10 +106,10 @@ impl Batcher {
             - self.buffer.start_cursor.order_key)
             >= self.batch_size;
 
-        let batch_by_secs_reached = self.buffer.start_at.elapsed().as_secs() >= self.batch_secs;
+        let batch_by_seconds_reached = self.buffer.start_at.elapsed().as_secs() >= self.batch_seconds;
 
         (self.is_batching_by_size() && batch_by_size_reached)
-            || (self.is_batching_by_secs() && batch_by_secs_reached)
+            || (self.is_batching_by_seconds() && batch_by_seconds_reached)
     }
 
     pub fn clear(&mut self) {
