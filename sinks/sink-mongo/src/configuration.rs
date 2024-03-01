@@ -25,8 +25,8 @@ pub struct SinkMongoOptions {
     pub entity_mode: Option<bool>,
     #[clap(skip)]
     pub invalidate: Option<Document>,
-    #[arg(long, env = "MONGO_BATCH_SECS")]
-    pub batch_secs: Option<u64>,
+    #[arg(long, env = "MONGO_BATCH_SECONDS")]
+    pub batch_seconds: Option<u64>,
 }
 
 impl SinkOptions for SinkMongoOptions {
@@ -38,7 +38,7 @@ impl SinkOptions for SinkMongoOptions {
             collection_names: self.collection_names.or(other.collection_names),
             entity_mode: self.entity_mode.or(other.entity_mode),
             invalidate: self.invalidate.or(other.invalidate),
-            batch_secs: self.batch_secs.or(other.batch_secs),
+            batch_seconds: self.batch_seconds.or(other.batch_seconds),
         }
     }
 }

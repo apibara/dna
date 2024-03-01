@@ -119,7 +119,7 @@ impl Sink for MongoSink {
             client,
             mode,
             invalidate: options.invalidate,
-            batcher: Batcher::by_secs(options.batch_secs.unwrap_or_default()),
+            batcher: Batcher::by_seconds(options.batch_seconds.unwrap_or_default()),
         })
     }
 
