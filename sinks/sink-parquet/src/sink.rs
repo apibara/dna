@@ -152,8 +152,6 @@ impl Sink for ParquetSink {
         ctx: &Context,
         batch: &Value,
     ) -> Result<CursorAction, Self::Error> {
-        let len = batch.as_array_of_objects().unwrap().len();
-        info!(ctx = %ctx, batch = %len, "handling data");
 
         let Some(batch) = batch.as_array_of_objects() else {
             warn!("data is not an array of objects, skipping");
