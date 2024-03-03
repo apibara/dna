@@ -2,7 +2,7 @@
   description = "Apibara development environment";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-22.11";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-23.11";
     flake-utils = {
       url = "github:numtide/flake-utils";
     };
@@ -11,15 +11,12 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     crane = {
-      url = "github:ipetkov/crane?rev=35110cccf28823320f4fd697fcafcb5038683982";
+      url = "github:ipetkov/crane";
       inputs.nixpkgs.follows = "nixpkgs";
-    };
-    pre-commit-hooks = {
-      url = "github:cachix/pre-commit-hooks.nix";
     };
   };
 
-  outputs = { self, nixpkgs, rust-overlay, flake-utils, crane, pre-commit-hooks, ... }:
+  outputs = { self, nixpkgs, rust-overlay, flake-utils, crane, ... }:
     flake-utils.lib.eachDefaultSystem (system:
       let
         overlays = [
@@ -118,7 +115,6 @@
 
         builtCrates = pkgs.callPackage ./nix/crates.nix {
           inherit crane crates;
-          pre-commit-hooks = pre-commit-hooks.lib.${system};
           workspaceDir = ./.;
         };
 

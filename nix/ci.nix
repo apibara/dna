@@ -229,10 +229,6 @@ let
           command = "nix build .#tests";
         }
         {
-          label = ":books: Check documentation";
-          command = "nix develop .#ci -c vale docs/";
-        }
-        {
           wait = { };
         }
         {
@@ -386,8 +382,6 @@ in
         ci-prepare-image
         ci-prepare-binary
         ci-publish-image
-
-        vale
       ];
     };
 

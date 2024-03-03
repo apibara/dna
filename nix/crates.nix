@@ -1,7 +1,7 @@
 # Build the provided crates using crane.
-{ pkgs, crane, pre-commit-hooks, workspaceDir, crates }:
+{ pkgs, crane, workspaceDir, crates }:
 let
-  rustToolchain = pkgs.rust-bin.stable.latest.default.override {
+  rustToolchain = (pkgs.rust-bin.fromRustupToolchainFile ../rust-toolchain.toml).override {
     extensions = [ "rust-src" "rust-analyzer" ];
   };
 
@@ -57,6 +57,18 @@ let
     pname = "apibara";
     version = "0.0.0";
     doCheck = false;
+  });
+
+  cargoFmt = craneLib.cargoFmt (commonArgs // {
+    inherit cargoArtifacts;
+    pname = "apibara";
+    version = "0.0.0";
+  });
+
+  cargoClippy = craneLib.cargoClippy (commonArgs // {
+    inherit cargoArtifacts;
+    pname = "apibara";
+    version = "0.0.0";
   });
 
   testBinaries = craneLib.buildPackage (commonArgs // {
@@ -243,21 +255,7 @@ let
 in
 rec {
   checks = {
-    pre-commit-check = pre-commit-hooks.run {
-      src = ./.;
-      hooks = {
-        nixpkgs-fmt.enable = true;
-        rustfmt.enable = true;
-        clippy.enable = true;
-        cargo-check.enable = true;
-        shellcheck.enable = true;
-      };
-      tools = {
-        rustfmt = rustToolchain;
-        clippy = rustToolchain;
-        cargo = rustToolchain;
-      };
-    };
+    inherit cargoFmt cargoClippy;
   };
 
   shell = {

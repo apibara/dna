@@ -152,7 +152,6 @@ impl Sink for ParquetSink {
         ctx: &Context,
         batch: &Value,
     ) -> Result<CursorAction, Self::Error> {
-
         let Some(batch) = batch.as_array_of_objects() else {
             warn!("data is not an array of objects, skipping");
             // Skip persistence in case the buffer is still not flushed
