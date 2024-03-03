@@ -106,7 +106,8 @@ impl Batcher {
             - self.buffer.start_cursor.order_key)
             >= self.batch_size;
 
-        let batch_by_seconds_reached = self.buffer.start_at.elapsed().as_secs() >= self.batch_seconds;
+        let batch_by_seconds_reached =
+            self.buffer.start_at.elapsed().as_secs() >= self.batch_seconds;
 
         (self.is_batching_by_size() && batch_by_size_reached)
             || (self.is_batching_by_seconds() && batch_by_seconds_reached)
