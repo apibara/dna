@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use apibara_dna_protocol::dna::Cursor;
+use apibara_dna_protocol::dna::{Cursor, StreamDataRequest, StreamDataResponse};
 use apibara_script::Script;
 use error_stack::{Result, ResultExt};
 use prost::Message;
@@ -8,7 +8,7 @@ use serde::Serialize;
 use serde_json::Value;
 use tokio_stream::StreamExt;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use crate::{
     error::SinkError, filter::Filter, sink::Sink, Context, CursorAction, DisplayCursor,
@@ -66,31 +66,36 @@ where
     }
 
     pub async fn start(&mut self, ct: CancellationToken) -> Result<(), SinkError> {
-        /*
         self.state_manager.lock(ct.clone()).await?;
 
         let mut state = self.state_manager.get_state::<F>().await?;
 
-        let starting_cursor = state.cursor.clone();
-
-        let mut configuration = self.starting_configuration.clone();
-        if starting_cursor.is_some() {
-            info!(cursor = %DisplayCursor(&starting_cursor), "restarting from last cursor");
-            configuration.starting_cursor = starting_cursor.clone();
-            self.handle_invalidate(starting_cursor, &mut state, ct.clone())
+        let starting_cursor = if let Some(cursor) = state.cursor.clone() {
+            info!(cursor = %cursor, "restarting from last cursor");
+            self.handle_invalidate(Some(cursor.clone()), &mut state, ct.clone())
                 .await?;
-        }
+            Some(cursor)
+        } else {
+            self.starting_configuration.starting_cursor()
+        };
 
         debug!("start consume stream");
+
+        let request = StreamDataRequest {
+            starting_cursor,
+            finality: self.starting_configuration.finality.map(|f| f as i32),
+            filter: vec![self.starting_configuration.filter.to_bytes()],
+        };
 
         let mut data_stream = self
             .stream_client_factory
             .new_stream_client()
             .await?
-            .start_stream_immutable::<F, B>(configuration)
+            .stream_data(request)
             .await
             .change_context(SinkError::Temporary)
-            .attach_printable("failed to start stream")?;
+            .attach_printable("failed to start stream")?
+            .into_inner();
 
         self.needs_invalidation = false;
 
@@ -101,10 +106,10 @@ where
                     info!("sink stopped: cancelled");
                     break;
                 }
-                maybe_message = data_stream.try_next() => {
-                    match maybe_message {
+                stream_message = data_stream.try_next() => {
+                    match stream_message {
                         Err(err) => {
-                            ret = Err(err).map_err(|err| err.temporary("data stream error"));
+                            ret = Err(err).change_context(SinkError::Temporary).attach_printable("data stream error");
                             break;
                         }
                         Ok(None) => {
@@ -132,72 +137,74 @@ where
         self.state_manager.cleanup().await?;
 
         ret
-        */
-        todo!();
     }
 
     #[tracing::instrument(skip_all, err(Debug))]
     async fn handle_message(
         &mut self,
-        message: DataMessage<B>,
+        message: StreamDataResponse,
         state: &mut PersistedState<F>,
         ct: CancellationToken,
     ) -> Result<(CursorAction, StreamAction), SinkError> {
-        match message {
-            DataMessage::Data {
-                cursor,
-                end_cursor,
-                finality,
-                batch,
-            } => {
+        use apibara_dna_protocol::dna::stream_data_response::Message;
+
+        match message.message.ok_or(SinkError::Temporary)? {
+            Message::Data(data) => {
+                let finality = data.finality();
+                let end_cursor = data.end_cursor.unwrap_or_default();
+
                 info!(
                     block = end_cursor.order_key,
                     status = %finality,
                     "handle block batch"
                 );
                 let context = Context {
-                    cursor,
+                    cursor: data.cursor,
                     end_cursor,
                     finality,
                 };
-                self.handle_data(context, batch, state, ct).await
+                self.handle_data(context, data.data, state, ct).await
             }
-            DataMessage::Invalidate { cursor } => {
+            Message::Invalidate(invalidate) => {
+                let cursor = invalidate.cursor;
                 info!(block = %DisplayCursor(&cursor), "handle invalidate");
                 self.handle_invalidate(cursor, state, ct).await
             }
-            DataMessage::Heartbeat => {
+            Message::Heartbeat(_) => {
                 self.sink.handle_heartbeat().await?;
                 self.state_manager.heartbeat().await?;
                 Ok((CursorAction::Skip, StreamAction::Continue))
             }
+            Message::SystemMessage(system_message) => {
+                if let Some(output) = system_message.output {
+                    use apibara_dna_protocol::dna::system_message::Output;
+                    match output {
+                        Output::Stdout(message) => {
+                            info!("system message: {}", message);
+                        }
+                        Output::Stderr(message) => {
+                            warn!("system message: {}", message);
+                        }
+                    }
+                }
+                Ok((CursorAction::Skip, StreamAction::Continue))
+            }
         }
     }
-    */
 
     #[tracing::instrument(skip_all, err(Debug))]
     async fn handle_data(
         &mut self,
         context: Context,
-        batch: Vec<B>,
+        data: Vec<Vec<u8>>,
         state: &mut PersistedState<F>,
         ct: CancellationToken,
     ) -> Result<(CursorAction, StreamAction), SinkError> {
         // fatal error since if the sink is restarted it will receive the same data again.
-        let json_batch = batch
-            .into_iter()
-            .map(|b| serde_json::to_value(b).fatal("failed to serialize batch data"))
-            .collect::<Result<Vec<Value>, _>>()?;
-        let data = self
-            .script
-            .transform(json_batch)
-            .await
-            .map_err(|err| err.fatal("failed to transform batch data"))?;
-
         let block_end_cursor = context.end_cursor.order_key;
 
         if let Some(ending_block) = self.ending_block {
-            if block_end_cursor >= ending_block {
+            if block_end_cursor > ending_block {
                 info!(
                     block = block_end_cursor,
                     ending_block = ending_block,
@@ -207,22 +214,42 @@ where
             }
         }
 
-        let mut action = if self.needs_invalidation {
+        // In default mode we expect exactly one item per block.
+        let Some(block_data) = data.iter().next() else {
+            return Ok((CursorAction::Persist, StreamAction::Continue));
+        };
+
+        if block_data.is_empty() {
+            return Ok((CursorAction::Persist, StreamAction::Continue));
+        }
+
+        // fatal error since if the sink is restarted it will receive the same data again.                  │    │
+        let block = B::decode(block_data.as_slice()).fatal("failed to parse binary block data")?;
+        let json_block = serde_json::to_value(block).fatal("failed to serialize block data")?;
+
+        let output_data = self
+            .script
+            .transform(json_block)
+            .await
+            .map_err(|err| err.fatal("failed to transform block data"))?;
+
+        let sink_data = Value::Array(vec![output_data]);
+
+        let mut cursor_action = if self.needs_invalidation {
             self.needs_invalidation = false;
-            self.sink.handle_replace(&context, &data, ct).await?
+            self.sink.handle_replace(&context, &sink_data, ct).await?
         } else {
-            self.sink.handle_data(&context, &data, ct).await?
+            self.sink.handle_data(&context, &sink_data, ct).await?
         };
 
         // If it's pending, don't store the cursor.
         if context.finality.is_pending() {
             self.needs_invalidation = true;
-            action = CursorAction::Skip;
+            cursor_action = CursorAction::Skip;
         }
 
         state.cursor = Some(context.end_cursor.clone());
-
-        Ok((action, StreamAction::Continue))
+        Ok((cursor_action, StreamAction::Continue))
     }
 
     #[tracing::instrument(skip_all, err(Debug))]

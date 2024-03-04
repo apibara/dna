@@ -47,12 +47,14 @@ message Invalidate {
 // If no data is available for a filter, the corresponding data field will be
 // empty.
 message Data {
+  // Cursor that generated this block of data.
+  Cursor cursor = 1;
   // Block cursor. Use this cursor to resume the stream.
-  Cursor end_cursor = 1;
+  Cursor end_cursor = 2;
   // The finality status of the block.
-  DataFinality finality = 2;
+  DataFinality finality = 3;
   // The block data.
-  repeated bytes data = 3;
+  repeated bytes data = 4;
 }
 
 // Sent to clients to check if stream is still connected.

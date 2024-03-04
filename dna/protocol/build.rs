@@ -37,7 +37,13 @@ fn main() -> Result<()> {
     let evm_descriptor_set = std::fs::read(out_dir.join(EVM_DESCRIPTOR_FILE))?;
     pbjson_build::Builder::new()
         .register_descriptors(&evm_descriptor_set)?
-        // .exclude([".apibara.starknet.v1alpha2.FieldElement"])
+        .exclude([
+            ".apibara.evm.v2.Address",
+            ".apibara.evm.v2.U128",
+            ".apibara.evm.v2.Bloom",
+            ".apibara.evm.v2.U256",
+            ".apibara.evm.v2.B256",
+        ])
         .build(&[".apibara"])?;
 
     Ok(())

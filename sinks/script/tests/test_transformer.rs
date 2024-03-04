@@ -33,7 +33,9 @@ async fn new_script_with_code(ext: &str, code: &str) -> (NamedTempFile, Script) 
     new_script_with_code_and_options(ext, code, Default::default()).await
 }
 
-// #[tokio::test]
+/*
+#[tokio::test(flavor = "current_thread")]
+#[ignore]
 async fn test_identity() {
     let (_file, mut script) = new_script_with_code(
         "js",
@@ -45,15 +47,16 @@ async fn test_identity() {
         "#,
     )
     .await;
-    let input = vec![json!({
+    let input = json!({
     "foo": "bar",
     "baz": 42,
-    })];
+    });
     let result = script.transform(input.clone()).await.unwrap();
-    assert_eq!(result.as_array().unwrap(), &input);
+    assert_eq!(result, input);
 }
 
-// #[tokio::test]
+#[tokio::test(flavor = "current_thread")]
+#[ignore]
 async fn test_return_data_is_different() {
     let (_file, mut script) = new_script_with_code(
         "js",
@@ -64,104 +67,19 @@ async fn test_return_data_is_different() {
         "#,
     )
     .await;
-    let input = vec![
-        json!({
-            "foo": "bar",
-            "baz": 42,
-        }),
-        json!({
-            "foo": "bux",
-        }),
-    ];
+    let input = json!({
+        "foo": "bar",
+        "baz": 42,
+    });
     let result = script.transform(input).await.unwrap();
-    let expected = vec![
-        json!({
-            "foo": "bar",
-        }),
-        json!({
-            "foo": "bux",
-        }),
-    ];
-    assert_eq!(result.as_array().unwrap(), &expected);
+    let expected = json!({
+        "foo": "bar",
+    });
+    assert_eq!(result, expected);
 }
 
-// #[tokio::test]
-async fn test_return_data_is_flattened() {
-    let (_file, mut script) = new_script_with_code(
-        "js",
-        r#"
-        export default function ({ foo }) {
-            return [{ foo }, { foo }]
-        }
-        "#,
-    )
-    .await;
-    let input = vec![
-        json!({
-            "foo": "bar",
-            "baz": 42,
-        }),
-        json!({
-            "foo": "bux",
-        }),
-    ];
-    let result = script.transform(input).await.unwrap();
-    let expected = vec![
-        json!({
-            "foo": "bar",
-        }),
-        json!({
-            "foo": "bar",
-        }),
-        json!({
-            "foo": "bux",
-        }),
-        json!({
-            "foo": "bux",
-        }),
-    ];
-    assert_eq!(result.as_array().unwrap(), &expected);
-}
-
-// #[tokio::test]
-async fn test_async_return_data_is_flattened() {
-    let (_file, mut script) = new_script_with_code(
-        "js",
-        r#"
-        export default async function ({ foo }) {
-            return [{ foo }, { foo }]
-        }
-        "#,
-    )
-    .await;
-    let input = vec![
-        json!({
-            "foo": "bar",
-            "baz": 42,
-        }),
-        json!({
-            "foo": "bux",
-        }),
-    ];
-    let result = script.transform(input).await.unwrap();
-    let expected = vec![
-        json!({
-            "foo": "bar",
-        }),
-        json!({
-            "foo": "bar",
-        }),
-        json!({
-            "foo": "bux",
-        }),
-        json!({
-            "foo": "bux",
-        }),
-    ];
-    assert_eq!(result.as_array().unwrap(), &expected);
-}
-
-// #[tokio::test]
+#[tokio::test(flavor = "current_thread")]
+#[ignore]
 async fn test_import_library_over_http() {
     let (_file, mut script) = new_script_with_code(
         "js",
@@ -174,29 +92,20 @@ async fn test_import_library_over_http() {
         "#,
     )
     .await;
-    let input = vec![
-        json!({
-            "foo": "bar",
-            "baz": 42,
-        }),
-        json!({
-            "foo": "bux",
-        }),
-    ];
+    let input = json!({
+        "foo": "bar",
+        "baz": 42,
+    });
     let result = script.transform(input).await.unwrap();
-    let expected = vec![
-        json!({
-            "Foo": "bar",
-            "Baz": 42,
-        }),
-        json!({
-            "Foo": "bux",
-        }),
-    ];
-    assert_eq!(result.as_array().unwrap(), &expected);
+    let expected = json!({
+        "Foo": "bar",
+        "Baz": 42,
+    });
+    assert_eq!(result, expected);
 }
 
-// #[tokio::test]
+#[tokio::test(flavor = "current_thread")]
+#[ignore]
 async fn test_typescript() {
     let (_file, mut script) = new_script_with_code(
         "ts",
@@ -212,15 +121,16 @@ async fn test_typescript() {
         "#,
     )
     .await;
-    let input = vec![json!({
+    let input = json!({
         "foo": "bar",
         "baz": 42,
-    })];
+    });
     let result = script.transform(input.clone()).await.unwrap();
-    assert_eq!(result.as_array().unwrap(), &input);
+    assert_eq!(result, input);
 }
 
-// #[tokio::test]
+#[tokio::test(flavor = "current_thread")]
+#[ignore]
 async fn test_import_data() {
     let json_file = write_source(
         "json",
@@ -239,7 +149,7 @@ async fn test_import_data() {
     .replace("<JSON_FILE>", json_file.path().to_str().unwrap());
 
     let (_file, mut script) = new_script_with_code("ts", &code).await;
-    let input = vec![json!({
+    let input = json!({
         "key": vec!["0x99cd8bde557814842a3121e8ddfd433a539b8c9f14bf31ebf108d12e6196e9"],
         "data": vec![
             "0x4391e7c963a1dced0d206278464778711f2ad480b34f22e1d658fb3f6ac81f3",
@@ -247,15 +157,16 @@ async fn test_import_data() {
             "0x1df635bc07855",
             "0x0"
         ],
-    })];
+    });
     let result = script.transform(input).await.unwrap();
-    let expected = vec![json!({
+    let expected = json!({
         "is_json": true
-    })];
-    assert_eq!(result.as_array().unwrap(), &expected);
+    });
+    assert_eq!(result, expected);
 }
 
-// #[tokio::test]
+#[tokio::test(flavor = "current_thread")]
+#[ignore]
 async fn test_use_starknet_js() {
     let (_file, mut script) = new_script_with_code(
         "js",
@@ -269,17 +180,18 @@ async fn test_use_starknet_js() {
         "#,
     )
     .await;
-    let input = vec![json!({
+    let input = json!({
         "key": "Transfer",
-    })];
+    });
     let result = script.transform(input).await.unwrap();
-    let expected = vec![json!({
+    let expected = json!({
         "result": "0x99cd8bde557814842a3121e8ddfd433a539b8c9f14bf31ebf108d12e6196e9",
-    })];
-    assert_eq!(result.as_array().unwrap(), &expected);
+    });
+    assert_eq!(result, expected);
 }
 
-// #[tokio::test]
+#[tokio::test(flavor = "current_thread")]
+#[ignore]
 async fn test_net_is_denied() {
     let (_file, mut script) = new_script_with_code(
         "js",
@@ -291,12 +203,13 @@ async fn test_net_is_denied() {
         "#,
     )
     .await;
-    let input = vec![json!({})];
+    let input = json!({});
     let result = script.transform(input).await;
     assert!(result.is_err());
 }
 
-// #[tokio::test]
+#[tokio::test(flavor = "current_thread")]
+#[ignore]
 async fn test_read_is_denied() {
     let (_file, mut script) = new_script_with_code(
         "js",
@@ -308,12 +221,13 @@ async fn test_read_is_denied() {
         "#,
     )
     .await;
-    let input = vec![json!({})];
+    let input = json!({});
     let result = script.transform(input).await;
     assert!(result.is_err());
 }
 
-// #[tokio::test]
+#[tokio::test(flavor = "current_thread")]
+#[ignore]
 async fn test_write_is_denied() {
     let (_file, mut script) = new_script_with_code(
         "js",
@@ -325,12 +239,13 @@ async fn test_write_is_denied() {
         "#,
     )
     .await;
-    let input = vec![json!({})];
+    let input = json!({});
     let result = script.transform(input).await;
     assert!(result.is_err());
 }
 
-// #[tokio::test]
+#[tokio::test(flavor = "current_thread")]
+#[ignore]
 async fn test_run_is_denied() {
     let (_file, mut script) = new_script_with_code(
         "js",
@@ -342,12 +257,13 @@ async fn test_run_is_denied() {
         "#,
     )
     .await;
-    let input = vec![json!({})];
+    let input = json!({});
     let result = script.transform(input).await;
     assert!(result.is_err());
 }
 
-// #[tokio::test]
+#[tokio::test(flavor = "current_thread")]
+#[ignore]
 async fn test_sys_is_denied() {
     let (_file, mut script) = new_script_with_code(
         "js",
@@ -359,12 +275,13 @@ async fn test_sys_is_denied() {
         "#,
     )
     .await;
-    let input = vec![json!({})];
+    let input = json!({});
     let result = script.transform(input).await;
     assert!(result.is_err());
 }
 
-// #[tokio::test]
+#[tokio::test(flavor = "current_thread")]
+#[ignore]
 async fn test_env_is_denied_by_default() {
     let (_file, mut script) = new_script_with_code(
         "js",
@@ -376,12 +293,13 @@ async fn test_env_is_denied_by_default() {
         "#,
     )
     .await;
-    let input = vec![json!({})];
+    let input = json!({});
     let result = script.transform(input).await;
     assert!(result.is_err());
 }
 
-// #[tokio::test]
+#[tokio::test(flavor = "current_thread")]
+#[ignore]
 async fn test_env_can_access_some_variables() {
     let (_file, mut script) = new_script_with_code_and_options(
         "js",
@@ -397,6 +315,8 @@ async fn test_env_can_access_some_variables() {
         },
     )
     .await;
-    let input = vec![json!({})];
+    let input = json!({});
     script.transform(input).await.unwrap();
 }
+
+*/
