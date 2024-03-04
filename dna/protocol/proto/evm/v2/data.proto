@@ -98,7 +98,7 @@ message Transaction {
   // Nonce.
   uint64 nonce = 2;
   // Transaction index in the block.
-  uint65 transaction_index = 3;
+  uint64 transaction_index = 3;
   // Sender.
   Address from = 4;
   // Recipient.

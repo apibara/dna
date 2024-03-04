@@ -423,6 +423,7 @@ dependencies = [
 name = "apibara-dna-common"
 version = "0.0.0"
 dependencies = [
+ "apibara-dna-protocol",
  "async-channel 2.2.0",
  "async-compression",
  "async-trait",
@@ -438,8 +439,11 @@ dependencies = [
  "pbjson-build",
  "tempdir",
  "tokio 1.36.0",
+ "tokio-stream",
  "tokio-util",
+ "tonic 0.9.2",
  "tonic-build 0.9.2",
+ "tonic-reflection",
  "tracing",
 ]
 
@@ -453,6 +457,7 @@ dependencies = [
  "alloy-rpc-types",
  "alloy-transport",
  "apibara-dna-common",
+ "apibara-dna-protocol",
  "apibara-observability",
  "async-channel 2.2.0",
  "async-trait",

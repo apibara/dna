@@ -2,13 +2,15 @@ use std::mem;
 
 use apibara_dna_common::{
     error::{DnaError, Result},
+    ingestion::{IngestionEvent, SealGroup, Segment},
     segment::{SnapshotBuilder, SnapshotState},
     storage::StorageBackend,
 };
 use error_stack::ResultExt;
+use futures_util::TryFutureExt;
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
-use tracing::info;
+use tracing::{error, info};
 
 use crate::{
     ingestion::models,
@@ -34,7 +36,7 @@ where
 enum IngestionCommand {
     IngestBlockByNumber {
         block_number: u64,
-        reply: oneshot::Sender<()>,
+        reply: oneshot::Sender<Option<IngestionEvent>>,
     },
 }
 
@@ -51,7 +53,10 @@ where
 }
 
 impl IngestionWorker {
-    pub async fn ingest_block_by_number(&self, block_number: u64) -> Result<()> {
+    pub async fn ingest_block_by_number(
+        &self,
+        block_number: u64,
+    ) -> Result<Option<IngestionEvent>> {
         let (reply_tx, reply_rx) = oneshot::channel();
 
         self.tx
@@ -63,12 +68,12 @@ impl IngestionWorker {
             .map_err(|_| DnaError::Fatal)
             .attach_printable("failed to send ingestion command")?;
 
-        reply_rx
+        let response = reply_rx
             .await
             .map_err(|_| DnaError::Fatal)
             .attach_printable("failed to receive reply")?;
 
-        Ok(())
+        Ok(response)
     }
 }
 
@@ -93,7 +98,9 @@ where
         let inner = Worker::initialize(self.provider, self.storage, self.options).await?;
         let starting_state = inner.snapshot_state().clone();
 
-        tokio::spawn(inner.ingestion_loop(rx, ct));
+        tokio::spawn(inner.ingestion_loop(rx, ct).inspect_err(|err| {
+            error!(err = ?err, "ingestion loop returned with error");
+        }));
 
         Ok((client, starting_state))
     }
@@ -161,10 +168,10 @@ where
                 block_number,
                 reply,
             } => {
-                self.do_ingest_block_by_number(block_number).await?;
+                let event = self.do_ingest_block_by_number(block_number).await?;
 
                 reply
-                    .send(())
+                    .send(event)
                     .map_err(|_| DnaError::Fatal)
                     .attach_printable("failed to send reply")?;
             }
@@ -173,7 +180,10 @@ where
         Ok(())
     }
 
-    async fn do_ingest_block_by_number(&mut self, block_number: u64) -> Result<()> {
+    async fn do_ingest_block_by_number(
+        &mut self,
+        block_number: u64,
+    ) -> Result<Option<IngestionEvent>> {
         use models::BlockTransactions;
 
         let mut block = if self.options.get_block_by_number_with_transactions {
@@ -214,12 +224,15 @@ where
         self.finish_block_ingestion(block_number).await
     }
 
-    async fn finish_block_ingestion(&mut self, block_number: u64) -> Result<()> {
+    async fn finish_block_ingestion(
+        &mut self,
+        block_number: u64,
+    ) -> Result<Option<IngestionEvent>> {
         let segment_options = &self.options.segment;
 
         // If the segment is not full, we're done.
         if self.segment_builder.header_count() < segment_options.segment_size {
-            return Ok(());
+            return Ok(None);
         }
 
         let segment_name = segment_options.format_segment_name(block_number);
@@ -234,7 +247,9 @@ where
         info!(segment_name, "segment written");
 
         if self.segment_group_builder.segment_count() < segment_options.group_size {
-            return Ok(());
+            let first_block_number = segment_options.segment_start(block_number);
+            let event = IngestionEvent::SegmentAdded(Segment { first_block_number });
+            return Ok(Some(event));
         }
 
         let group_name = segment_options.format_segment_group_name(block_number);
@@ -251,6 +266,11 @@ where
         self.snapshot_builder.reset();
         info!(revision = new_revision, "snapshot written");
 
-        Ok(())
+        let first_block_number = segment_options.segment_group_start(block_number);
+        let event = IngestionEvent::GroupSealed(SealGroup {
+            first_block_number,
+            revision: new_revision,
+        });
+        Ok(Some(event))
     }
 }

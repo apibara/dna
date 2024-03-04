@@ -2,6 +2,7 @@ use std::{path::PathBuf, process::ExitCode, time::Instant};
 
 use apibara_dna_common::{
     error::{DnaError, ReportExt, Result},
+    ingestion::IngestionServer,
     segment::{SegmentArgs, SnapshotReader},
     storage::{AzureStorageBackendBuilder, LocalStorageBackend, StorageBackend},
 };
@@ -11,13 +12,12 @@ use apibara_dna_evm::{
         store, BlockHeaderSegmentReader, LogSegmentReader, SegmentGroupExt, SegmentGroupReader,
         TransactionSegmentReader,
     },
+    server::DnaServer,
 };
 use apibara_observability::init_opentelemetry;
 use clap::{Args, Parser, Subcommand};
 use error_stack::ResultExt;
-use futures_util::StreamExt;
 use roaring::RoaringBitmap;
-use tokio::pin;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info};
 
@@ -35,6 +35,7 @@ struct Cli {
 #[derive(Subcommand, Debug)]
 enum Command {
     StartIngestion(StartIngestionArgs),
+    StartServer(StartServerArgs),
     Inspect(InspectArgs),
 }
 
@@ -55,6 +56,17 @@ struct StartIngestionArgs {
     pub ingestor: IngestorArgs,
     #[clap(flatten)]
     pub rpc: RpcArgs,
+}
+
+/// Start the DNA server.
+#[derive(Args, Debug)]
+struct StartServerArgs {
+    /// Location for ingested data.
+    #[clap(flatten)]
+    pub storage: StorageArgs,
+    /// Ingestion server URL.
+    #[clap(long, env)]
+    pub ingestion_server: String,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -139,6 +151,7 @@ async fn run_with_args(args: Cli) -> Result<()> {
 
     match args.subcommand {
         Command::StartIngestion(args) => run_ingestion(args).await,
+        Command::StartServer(args) => run_server(args).await,
         Command::Inspect(args) => run_inspect(args).await,
     }
 }
@@ -191,11 +204,47 @@ where
         .with_options(ingestor_options)
         .start(ct.clone());
 
-    pin!(ingestion_stream);
+    let server = IngestionServer::new(ingestion_stream);
 
-    while let Some(event) = ingestion_stream.next().await {
-        info!(event = ?event, "ingestion event");
+    let address = "0.0.0.0:7007".parse().expect("parse address");
+
+    server.start(address, ct).await?;
+
+    Ok(())
+}
+
+async fn run_server(args: StartServerArgs) -> Result<()> {
+    info!("Starting DNA server");
+    let output = &args.storage;
+    if let Some(local_dir) = &output.local_dir {
+        let storage = LocalStorageBackend::new(local_dir);
+        run_server_with_storage(args, storage).await
+    } else if let Some(azure_container) = &output.azure_container {
+        let storage = AzureStorageBackendBuilder::from_env()
+            .with_container_name(azure_container)
+            .build()
+            .change_context(DnaError::Fatal)
+            .attach_printable("failed to build Azure storage backend")
+            .attach_printable("hint: have you set the AZURE_STORAGE_ACCOUNT_NAME and AZURE_STORAGE_ACCOUNT_KEY environment variables?")?;
+        run_server_with_storage(args, storage).await
+    } else {
+        Err(DnaError::Configuration)
+            .attach_printable("no storage backend configured")
+            .change_context(DnaError::Fatal)
     }
+}
+
+async fn run_server_with_storage<S>(args: StartServerArgs, storage: S) -> Result<()>
+where
+    S: StorageBackend + Send + Sync + 'static,
+    <S as StorageBackend>::Reader: Unpin + Send,
+{
+    let ct = CancellationToken::new();
+
+    let server = DnaServer::new(args.ingestion_server, storage);
+    let address = "0.0.0.0:7070".parse().expect("parse address");
+
+    server.start(address, ct).await?;
 
     Ok(())
 }
