@@ -27,7 +27,7 @@ where
 
 impl<S> DnaServer<S>
 where
-    S: StorageBackend + Send + Sync + 'static,
+    S: StorageBackend + Send + Sync + 'static + Clone,
     <S as StorageBackend>::Reader: Unpin + Send,
 {
     pub fn new(ingestion_server: impl Into<String>, storage: S) -> Self {

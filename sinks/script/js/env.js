@@ -1,12 +1,8 @@
 const core = globalThis.Deno.core;
 const ops = core.ops;
 
-function batch_size() {
-  return ops.op_batch_size();
-}
-
-function batch_get(index) {
-  return ops.op_batch_get(index);
+function input_get() {
+  return ops.op_input_get();
 }
 
 function output_set(value) {
@@ -14,7 +10,6 @@ function output_set(value) {
 }
 
 globalThis.Script = {
-  batch_size,
-  batch_get,
+  input_get,
   output_set,
 };

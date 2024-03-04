@@ -9,6 +9,7 @@ pub mod persistence;
 mod sink;
 mod status;
 
+use apibara_dna_protocol::evm;
 use error_stack::Result;
 use error_stack::ResultExt;
 use serde::Deserialize;
@@ -96,17 +97,15 @@ where
 
     let connector = SinkConnector::new(script, sink, sink_connector_options);
 
-    /*
-    if let Some(starknet_config) = stream_configuration.as_starknet() {
+    println!("stream config {:?}", stream_configuration);
+    if stream_configuration.is_evm() {
         connector
-            .consume_stream::<v1alpha2::Filter, v1alpha2::Block>(starknet_config, ct)
+            .consume_stream::<evm::Filter, evm::Block>(stream_configuration, ct)
             .await
-            .attach_printable("error while streaming data")?;
+            .attach_printable("error while streaming evm data")?;
     } else {
-        todo!()
-    };
-    */
-    todo!();
+        return Err(SinkError::Configuration).attach_printable("unsupported stream type");
+    }
 
     Ok(())
 }

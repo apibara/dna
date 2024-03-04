@@ -134,7 +134,7 @@ impl Script {
         .into();
 
         let result = self
-            .execute_script_with_timeout(code, Vec::default(), ScriptTimeout::Load)
+            .execute_script_with_timeout(code, Value::Null, ScriptTimeout::Load)
             .await?;
 
         match result.as_u64() {
@@ -168,7 +168,7 @@ impl Script {
         .into();
 
         let configuration = self
-            .execute_script_with_timeout(code, Vec::default(), ScriptTimeout::Load)
+            .execute_script_with_timeout(code, Value::Null, ScriptTimeout::Load)
             .await?;
 
         if Value::Null == configuration {
@@ -183,42 +183,27 @@ impl Script {
         Ok(configuration)
     }
 
-    pub async fn transform(&mut self, data: Vec<Value>) -> Result<Value, ScriptError> {
+    pub async fn transform(&mut self, data: Value) -> Result<Value, ScriptError> {
         let code: FastString = format!(
             r#"(async (globalThis) => {{
             const module = await import("{0}");
             const t = module.default;
-            let batchSize = globalThis.Script.batch_size();
-            let output = Array(batchSize);
+            let output;
 
             if (t.constructor.name === 'AsyncFunction') {{
-              let promises = Array(batchSize);
-              for (let i = 0; i < batchSize; i++) {{
-                const block = globalThis.Script.batch_get(i);
-                if (block.empty) {{
-                  promises[i] = undefined;
-                }} else {{
-                  promises[i] = await t(block);
-                }}
-              }}
-              output = await Promise.all(promises);
+              const block = globalThis.Script.input_get();
+              output = await t(block);
             }} else {{
-              for (let i = 0; i < batchSize; i++) {{
-                const block = globalThis.Script.batch_get(i);
-                if (block.empty) {{
-                  output[i] = undefined;
-                }} else {{
-                  output[i] = t(block);
-                }}
-              }}
+              const block = globalThis.Script.input_get();
+              output = t(block);
             }}
-
-            // "flatten" the results into an array of values.
-            let __script_result = output.flatMap(x => x);
+            let __script_result = output;
 
             if (typeof __script_result === 'undefined') {{
               __script_result = null;
             }}
+
+            globalThis.Script.output_set(__script_result);
 
             globalThis.Script.output_set(__script_result);
         }})(globalThis)"#,
@@ -248,7 +233,7 @@ impl Script {
         .into();
 
         let result = self
-            .execute_script_with_timeout(code, Vec::default(), ScriptTimeout::Load)
+            .execute_script_with_timeout(code, Value::Null, ScriptTimeout::Load)
             .await?;
 
         match result.as_u64() {
@@ -272,13 +257,13 @@ impl Script {
             r#"(async (globalThis) => {{
             const module = await import("{0}");
             const t = module.factory;
-            const block = globalThis.Script.batch_get(0);
+            const block = globalThis.Script.input_get();
             if (block.empty) {{
               output = undefined;
             }} else if (t.constructor.name === 'AsyncFunction') {{
-              output = await t(globalThis.Script.batch_get(0));
+              output = await t(block);
             }} else {{
-              output = t(globalThis.Script.batch_get(0));
+              output = t(block);
             }}
             let __script_result = output;
 
@@ -293,7 +278,7 @@ impl Script {
         .into();
 
         let result = self
-            .execute_script_with_timeout(code, vec![data], ScriptTimeout::Transform)
+            .execute_script_with_timeout(code, data, ScriptTimeout::Transform)
             .await?;
 
         if Value::Null == result {
@@ -313,13 +298,13 @@ impl Script {
     async fn execute_script_with_timeout(
         &mut self,
         code: FastString,
-        input: Vec<Value>,
+        input: Value,
         timeout: ScriptTimeout,
     ) -> Result<Value, ScriptError> {
         let state = self.worker.js_runtime.op_state();
 
         state.borrow_mut().put::<TransformState>(TransformState {
-            input_batch: input,
+            input,
             output: Value::Null,
         });
 
