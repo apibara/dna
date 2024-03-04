@@ -1,8 +1,7 @@
 use std::marker::PhantomData;
 
-use apibara_core::{filter::Filter, node::v1alpha2::Cursor};
+use apibara_dna_protocol::dna::Cursor;
 use apibara_script::Script;
-use apibara_sdk::{Configuration, DataMessage, ImmutableDataStream};
 use error_stack::{Result, ResultExt};
 use prost::Message;
 use serde::Serialize;
@@ -11,8 +10,8 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, info};
 
 use crate::{
-    error::SinkError, sink::Sink, Context, CursorAction, DisplayCursor, PersistedState,
-    SinkErrorReportExt, SinkErrorResultExt,
+    error::SinkError, filter::Filter, sink::Sink, Context, CursorAction, DisplayCursor,
+    PersistedState, SinkErrorReportExt, SinkErrorResultExt, StreamConfigurationOptions,
 };
 
 use super::{
@@ -32,9 +31,10 @@ where
     stream_client_factory: StreamClientFactory,
     state_manager: StateManager,
     ending_block: Option<u64>,
-    starting_configuration: Configuration<F>,
+    starting_configuration: StreamConfigurationOptions,
     needs_invalidation: bool,
     skip_factory: bool,
+    _filter: PhantomData<F>,
     _data: PhantomData<B>,
 }
 
@@ -48,7 +48,7 @@ where
         script: Script,
         sink: SinkWithBackoff<S>,
         ending_block: Option<u64>,
-        starting_configuration: Configuration<F>,
+        starting_configuration: StreamConfigurationOptions,
         stream_client_factory: StreamClientFactory,
         state_manager: StateManager,
     ) -> Self {
@@ -61,11 +61,13 @@ where
             state_manager,
             needs_invalidation: false,
             skip_factory: false,
+            _filter: Default::default(),
             _data: Default::default(),
         }
     }
 
     pub async fn start(&mut self, ct: CancellationToken) -> Result<(), SinkError> {
+        /*
         self.state_manager.lock(ct.clone()).await?;
 
         let mut state = self.state_manager.get_state::<F>().await?;
@@ -124,8 +126,11 @@ where
         self.state_manager.cleanup().await?;
 
         ret
+        */
+        todo!()
     }
 
+    /*
     async fn start_stream_with_state(
         &mut self,
         state: &PersistedState<F>,
@@ -166,7 +171,9 @@ where
             Ok(data_stream)
         }
     }
+    */
 
+    /*
     async fn handle_message(
         &mut self,
         message: DataMessage<B>,
@@ -237,6 +244,7 @@ where
             }
         }
     }
+    */
 
     async fn handle_factory(
         &mut self,

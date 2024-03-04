@@ -11,10 +11,16 @@ name = "apibara_dna_protocol"
 path = "src/lib.rs"
 
 [dependencies]
+hex.workspace = true
 pbjson.workspace = true
 pbjson-types.workspace = true
 prost.workspace = true
+serde.workspace = true
 tonic.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
 
 [build-dependencies]
 tonic-build.workspace = true
+pbjson-build.workspace = true
