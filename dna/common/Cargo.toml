@@ -11,6 +11,7 @@ name = "apibara_dna_common"
 path = "src/lib.rs"
 
 [dependencies]
+apibara-dna-protocol = { path = "../protocol" }
 async-channel.workspace = true
 async-compression.workspace = true
 async-trait.workspace = true
@@ -25,7 +26,10 @@ object_store = { git = "https://github.com/fracek/arrow-rs", rev = "662d63ffa", 
     "azure",
 ] }
 tokio.workspace = true
+tokio-stream.workspace = true
 tokio-util.workspace = true
+tonic.workspace = true
+tonic-reflection.workspace = true
 tracing.workspace = true
 
 [target.'cfg(not(windows))'.dependencies]

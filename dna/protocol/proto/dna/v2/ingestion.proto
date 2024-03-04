@@ -22,7 +22,7 @@
 // - blocks that are not part of a segment yet.
 syntax = "proto3";
 
-package apibara.dna.v2;
+package apibara.ingestion.v2;
 
 service Ingestion {
   // Subscribe to data changes.
@@ -72,8 +72,8 @@ message AddSegmentToGroup {
 message SealGroup {
   // Group name.
   string group_name = 2;
-  // First block number in the new group.
-  uint64 new_first_block_number = 3;
+  // First block number in the current group.
+  uint64 first_block_number = 3;
 }
 
 // Add data about a single block that is not part of a segment.

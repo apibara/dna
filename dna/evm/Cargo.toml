@@ -28,6 +28,7 @@ alloy-rpc-types = { git = "http://github.com/alloy-rs/alloy", rev = "347fb50e" }
 alloy-transport = { git = "http://github.com/alloy-rs/alloy", rev = "347fb50e" }
 apibara-observability = { path = "../../observability" }
 apibara-dna-common = { path = "../common" }
+apibara-dna-protocol = { path = "../protocol" }
 async-channel.workspace = true
 async-trait.workspace = true
 bytes.workspace = true
