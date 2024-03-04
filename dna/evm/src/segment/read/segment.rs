@@ -100,13 +100,9 @@ where
         self
     }
 
-    pub async fn read<'a, T>(
-        &'a mut self,
-        segment_start: u64,
-        filename: &str,
-    ) -> Result<<T as Follow>::Inner>
+    pub async fn read<'a, T>(&'a mut self, segment_start: u64, filename: &str) -> Result<T>
     where
-        T: 'a + Follow<'a> + Verifiable,
+        T: 'a + Follow<'a, Inner = T> + Verifiable,
     {
         let segment_name = self.segment_options.format_segment_name(segment_start);
 
