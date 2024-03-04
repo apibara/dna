@@ -236,7 +236,7 @@ async fn run_server(args: StartServerArgs) -> Result<()> {
 
 async fn run_server_with_storage<S>(args: StartServerArgs, storage: S) -> Result<()>
 where
-    S: StorageBackend + Send + Sync + 'static,
+    S: StorageBackend + Send + Sync + 'static + Clone,
     <S as StorageBackend>::Reader: Unpin + Send,
 {
     let ct = CancellationToken::new();

@@ -463,6 +463,7 @@ dependencies = [
 name = "apibara-dna-protocol"
 version = "0.1.0"
 dependencies = [
+ "error-stack",
  "hex",
  "pbjson",
  "pbjson-build",
