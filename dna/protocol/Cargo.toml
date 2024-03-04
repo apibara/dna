@@ -11,6 +11,7 @@ name = "apibara_dna_protocol"
 path = "src/lib.rs"
 
 [dependencies]
+error-stack.workspace = true
 hex.workspace = true
 pbjson.workspace = true
 pbjson-types.workspace = true
