@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use apibara_core::node::v1alpha2::{Cursor, DataFinality};
+use apibara_dna_protocol::dna::{Cursor, DataFinality};
 use apibara_sink_common::batching::Batcher;
 use apibara_sink_common::{Context, CursorAction, DisplayCursor, Sink, ValueExt};
 use apibara_sink_common::{SinkError, SinkErrorResultExt};
@@ -210,9 +210,8 @@ impl MongoSink {
             .unwrap_or(&Vec::<Value>::new())
             .to_vec();
 
-        if ctx.finality != DataFinality::DataStatusFinalized {
+        if ctx.finality != DataFinality::Finalized {
             self.insert_data(session, &ctx.end_cursor, &batch).await?;
-
             return Ok(CursorAction::Persist);
         }
 
