@@ -2,6 +2,7 @@ use std::future;
 
 use apibara_dna_common::{
     error::{DnaError, Result},
+    ingestion::{IngestionEvent, Snapshot},
     segment::SegmentOptions,
     storage::StorageBackend,
 };
@@ -26,11 +27,6 @@ pub struct IngestorOptions {
     pub get_block_by_number_with_transactions: bool,
     /// Use `eth_getBlockReceipts` instead of `eth_getTransactionReceipt`.
     pub get_block_receipts_by_number: bool,
-}
-
-#[derive(Debug, Clone)]
-pub enum IngestionEvent {
-    Lol,
 }
 
 pub struct Ingestor<
@@ -148,6 +144,20 @@ where
     let mut block_number = starting_state.starting_block();
     let mut finalized = finalized.number;
 
+    {
+        let snapshot = Snapshot {
+            revision: starting_state.revision,
+            first_block_number: starting_state.first_block_number,
+            segment_options: starting_state.segment_options.clone(),
+            group_count: starting_state.group_count,
+        };
+
+        tx.send(IngestionEvent::Started(snapshot))
+            .await
+            .map_err(|_| DnaError::Fatal)
+            .attach_printable("failed to send ingestion event: started")?;
+    }
+
     info!(
         revision = starting_state.revision,
         segment_options = ?starting_state.segment_options,
@@ -173,8 +183,14 @@ where
         }
 
         tokio::select! {
-            _response = &mut worker_fut => {
-                // info!(response = ?response, "got response");
+            result = &mut worker_fut => {
+                let result = result?;
+                if let Some(event) = result {
+                    tx.send(event)
+                        .await
+                        .map_err(|_| DnaError::Fatal)
+                        .attach_printable("failed to send ingestion event")?;
+                }
                 block_number += 1;
                 worker_state = WorkerState::Available;
             }
