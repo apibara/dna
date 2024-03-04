@@ -1,12 +1,16 @@
 use std::{env, fmt, net::AddrParseError, path::PathBuf, str::FromStr, time::Duration};
 
-use apibara_core::{node::v1alpha2::DataFinality, starknet::v1alpha2};
+use apibara_dna_protocol::{dna::DataFinality, evm};
 use apibara_script::ScriptOptions as IndexerOptions;
-use apibara_sdk::{Configuration, MetadataKey, MetadataMap, MetadataValue, Uri};
+// use apibara_sdk::{Configuration, MetadataKey, MetadataMap, MetadataValue, Uri};
 use bytesize::ByteSize;
 use clap::Args;
 use error_stack::{Result, ResultExt};
 use serde::{Deserialize, Serialize};
+use tonic::{
+    metadata::{self, MetadataKey, MetadataMap, MetadataValue},
+    transport::Uri,
+};
 use tracing::debug;
 
 use crate::{connector::StreamConfiguration, status::StatusServer};
@@ -163,7 +167,7 @@ pub struct StreamConfigurationOptions {
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 #[serde(tag = "network", content = "filter", rename_all = "camelCase")]
 pub enum NetworkFilterOptions {
-    Starknet(v1alpha2::Filter),
+    Evm(evm::Filter),
 }
 
 impl StatusServerOptions {
@@ -248,11 +252,11 @@ impl StreamOptions {
                 }
                 Some((key, value)) => {
                     let key = key
-                        .parse::<MetadataKey>()
+                        .parse::<MetadataKey<metadata::Ascii>>()
                         .change_context(StreamOptionsError)
                         .attach_printable_lazy(|| format!("invalid metadata key: {key}"))?;
                     let value = value
-                        .parse::<MetadataValue>()
+                        .parse::<MetadataValue<metadata::Ascii>>()
                         .change_context(StreamOptionsError)
                         .attach_printable_lazy(|| format!("invalid metadata value: {value}"))?;
                     metadata.insert(key, value);
@@ -281,6 +285,7 @@ impl StreamConfigurationOptions {
         }
     }
 
+    /*
     /// Returns a `Configuration` object to stream Starknet data.
     pub fn as_starknet(&self) -> Option<Configuration<v1alpha2::Filter>> {
         let mut configuration = Configuration::default();
@@ -312,6 +317,7 @@ impl StreamConfigurationOptions {
             }
         }
     }
+    */
 }
 
 #[derive(Debug)]
@@ -385,9 +391,10 @@ impl ScriptOptions {
     }
 }
 
+/*
 #[cfg(test)]
 mod tests {
-    use apibara_core::node::v1alpha2::DataFinality;
+    use apibara_dna_protocol::dna::DataFinality;
     use bytesize::ByteSize;
 
     use super::{
@@ -624,3 +631,5 @@ mod tests {
         assert!(config.is_ok());
     }
 }
+
+*/

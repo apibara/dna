@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use apibara_core::node::v1alpha2::Cursor;
+use apibara_dna_protocol::dna::Cursor;
 use error_stack::Result;
 use serde_json::Value;
 use tracing::{info, warn};
