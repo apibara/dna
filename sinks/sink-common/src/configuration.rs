@@ -1,11 +1,15 @@
-use std::{env, fmt, net::AddrParseError, path::PathBuf, str::FromStr, time::Duration};
+use std::{env, fmt, net::AddrParseError, path::PathBuf, str::FromStr, time::Duration, vec};
 
-use apibara_dna_protocol::{dna::DataFinality, evm};
+use apibara_dna_protocol::{
+    dna::{Cursor, DataFinality},
+    evm,
+};
 use apibara_script::ScriptOptions as IndexerOptions;
 // use apibara_sdk::{Configuration, MetadataKey, MetadataMap, MetadataValue, Uri};
 use bytesize::ByteSize;
 use clap::Args;
 use error_stack::{Result, ResultExt};
+use prost::Message;
 use serde::{Deserialize, Serialize};
 use tonic::{
     metadata::{self, MetadataKey, MetadataMap, MetadataValue},
@@ -153,9 +157,6 @@ pub struct StreamConfigurationOptions {
     /// The data filter.
     #[serde(flatten)]
     pub filter: NetworkFilterOptions,
-    /// Set the response preferred batch size.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub batch_size: Option<u64>,
     /// The finality of the data to be streamed.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub finality: Option<DataFinality>,
@@ -276,48 +277,38 @@ impl StreamOptions {
 }
 
 impl StreamConfigurationOptions {
+    pub fn starting_cursor(&self) -> Option<Cursor> {
+        self.starting_block.and_then(|block| {
+            if block == 0 {
+                None
+            } else {
+                Some(Cursor {
+                    order_key: block - 1,
+                    unique_key: Vec::default(),
+                })
+            }
+        })
+    }
+
     pub fn merge(self, other: StreamConfigurationOptions) -> StreamConfigurationOptions {
         StreamConfigurationOptions {
             filter: self.filter,
-            batch_size: self.batch_size.or(other.batch_size),
             finality: self.finality.or(other.finality),
             starting_block: self.starting_block.or(other.starting_block),
         }
     }
 
-    /*
-    /// Returns a `Configuration` object to stream Starknet data.
-    pub fn as_starknet(&self) -> Option<Configuration<v1alpha2::Filter>> {
-        let mut configuration = Configuration::default();
+    pub fn is_evm(&self) -> bool {
+        matches!(self.filter, NetworkFilterOptions::Evm(_))
+    }
+}
 
-        configuration = if let Some(batch_size) = self.batch_size {
-            configuration.with_batch_size(batch_size)
-        } else {
-            configuration
-        };
-
-        configuration = if let Some(finality) = self.finality {
-            configuration.with_finality(finality)
-        } else {
-            configuration
-        };
-
-        // The starting block is inclusive, but the stream expects the index of the block
-        // immediately before the first one sent.
-        configuration = match self.starting_block {
-            Some(starting_block) if starting_block > 0 => {
-                configuration.with_starting_block(starting_block - 1)
-            }
-            _ => configuration,
-        };
-
-        match self.filter {
-            NetworkFilterOptions::Starknet(ref filter) => {
-                Some(configuration.with_filter(|_| filter.clone()))
-            }
+impl NetworkFilterOptions {
+    pub fn to_bytes(&self) -> Vec<u8> {
+        match self {
+            NetworkFilterOptions::Evm(filter) => filter.encode_to_vec(),
         }
     }
-    */
 }
 
 #[derive(Debug)]

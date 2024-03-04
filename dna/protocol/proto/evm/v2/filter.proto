@@ -18,12 +18,12 @@ message Filter {
 
 message HeaderFilter {
   // Include header only if any other data matches. Defaults to `true`.
-  bool weak = 1;
+  optional bool weak = 1;
 }
 
 message WithdrawalFilter {
   // Filter based on the validator index.
-  uint64 validator_index = 1;
+  optional uint64 validator_index = 1;
   // Filter based on the withdrawal's target address.
   Address address = 2;
 }
@@ -34,9 +34,9 @@ message TransactionFilter {
   // Filter based on the transaction's recipient address.
   Address to = 2;
   // Flag to request the transaction's receipt. Defaults to `false`.
-  bool include_receipt = 3;
+  optional bool include_receipt = 3;
   // Flag to request the transaction's logs. Defaults to `false`.
-  bool include_logs = 4;
+  optional bool include_logs = 4;
 }
 
 message LogFilter {
@@ -45,9 +45,9 @@ message LogFilter {
   // Filter based on the log's topics.
   repeated Topic topics = 2;
   // Flag to request the log's transaction. Defaults to `false`.
-  bool include_transaction = 3;
+  optional bool include_transaction = 3;
   // Flag to request the log's receipt. Defaults to `false`.
-  bool include_receipt = 4;
+  optional bool include_receipt = 4;
 }
 
 // Topic filter.

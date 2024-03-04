@@ -278,6 +278,7 @@ where
         Ok(result.filter)
     }
 
+    /*
     async fn handle_data(
         &mut self,
         context: Context,
@@ -312,6 +313,7 @@ where
 
         Ok((action, StreamAction::Continue))
     }
+    */
 
     async fn handle_invalidate(
         &mut self,

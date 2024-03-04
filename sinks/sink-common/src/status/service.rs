@@ -1,6 +1,6 @@
 use std::time::{Duration, Instant};
 
-use apibara_dna_protocol::dna::{dna_stream_client::DnaStreamClient, Cursor, StatusRequest};
+use apibara_dna_protocol::dna::{self, dna_stream_client::DnaStreamClient, Cursor, StatusRequest};
 use apibara_observability::ObservableGauge;
 use error_stack::{Result, ResultExt};
 use tokio::sync::{mpsc, oneshot};
@@ -154,21 +154,16 @@ impl StatusService {
     }
 
     async fn get_dna_head(&self) -> Result<Option<Cursor>, SinkError> {
-        /*
         let dna_status = self
             .stream_client
             .clone()
             .status(StatusRequest::default())
             .await
-            .map_err(|err| {
-                Err(err)
-                    .change_context(SinkError::Status)
-                    .attach_printable("failed to get dna status")
-            })?;
+            .change_context(SinkError::Status)
+            .attach_printable("failed to get dna status")?
+            .into_inner();
 
         Ok(dna_status.current_head)
-        */
-        todo!();
     }
 }
 

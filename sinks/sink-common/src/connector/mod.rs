@@ -84,7 +84,6 @@ where
         F: Filter,
         B: Message + Default + Serialize,
     {
-        /*
         let stream_ending_block = self.stream_configuration.ending_block;
 
         let stream_client_factory = StreamClientFactory::new(self.stream_configuration);
@@ -111,7 +110,7 @@ where
                 self.script,
                 sink,
                 stream_ending_block,
-                configuration,
+                stream_configuration,
                 stream_client_factory,
                 state_manager,
             )
@@ -120,7 +119,7 @@ where
                 self.script,
                 sink,
                 stream_ending_block,
-                configuration,
+                stream_configuration,
                 stream_client_factory,
                 state_manager,
             )
@@ -168,8 +167,6 @@ where
         }
 
         Ok(())
-        */
-        todo!();
     }
 }
 
