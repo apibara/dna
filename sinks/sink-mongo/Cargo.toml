@@ -15,8 +15,8 @@ name = "apibara-sink-mongo"
 path = "src/bin.rs"
 
 [dependencies]
-apibara-core = { path = "../../core" }
 apibara-observability = { path = "../../observability" }
+apibara-dna-protocol = { path = "../../dna/protocol" }
 apibara-sink-common = { path = "../sink-common" }
 async-trait.workspace = true
 clap.workspace = true
