@@ -5,12 +5,11 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use apibara_core::filter::Filter;
 use async_trait::async_trait;
 use error_stack::Result;
 use tracing::info;
 
-use crate::{SinkError, SinkErrorResultExt};
+use crate::{filter::Filter, SinkError, SinkErrorResultExt};
 
 use super::common::{PersistedState, PersistenceClient};
 
@@ -80,8 +79,9 @@ impl PersistenceClient for DirPersistence {
 
 #[cfg(test)]
 mod tests {
-    use apibara_core::node::v1alpha2::Cursor;
+    /*
     use apibara_core::starknet::v1alpha2::Filter;
+    use apibara_dna_protocol::dna::Cursor;
     use tempdir::TempDir;
 
     use super::DirPersistence;
@@ -159,4 +159,5 @@ mod tests {
         let state = second.get_state::<Filter>().await.unwrap();
         assert!(state.cursor.is_none());
     }
+    */
 }

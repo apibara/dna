@@ -7,11 +7,6 @@ license = "Apache-2.0"
 [workspace]
 resolver = "2"
 members = [
-    # Legacy. Remove once upgraded to DNA V2.
-    "core",
-    "node",
-    "sdk",
-    "starknet",
     # Common
     "observability",
     # DNA
@@ -20,15 +15,15 @@ members = [
     "dna/evm",
     # "dna/starknet",
     # Sink and indexers
-    "script",
+    "sinks/script",
     "sinks/sink-common",
     "sinks/sink-options-derive",
     "sinks/sink-options-derive-tests",
     "sinks/sink-console",
-    "sinks/sink-webhook",
-    "sinks/sink-mongo",
-    "sinks/sink-parquet",
-    "sinks/sink-postgres",
+    # "sinks/sink-webhook",
+    # "sinks/sink-mongo",
+    # "sinks/sink-parquet",
+    # "sinks/sink-postgres",
     "cli",
     # Runners
     "runners/runner-common",

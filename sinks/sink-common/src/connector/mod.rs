@@ -7,23 +7,25 @@ mod stream;
 
 use std::time::Duration;
 
-use apibara_core::filter::Filter;
 use apibara_script::Script;
-use apibara_sdk::{Configuration, MetadataMap, Uri};
 use bytesize::ByteSize;
 use error_stack::Result;
 use exponential_backoff::Backoff;
+use futures::Stream;
 use prost::Message;
 use serde::ser::Serialize;
 use tokio_util::sync::CancellationToken;
+use tonic::{metadata::MetadataMap, transport::Uri};
 use tracing::{info, warn};
 
 use crate::{
     connector::{state::StateManager, stream::StreamClientFactory},
     error::{SinkError, SinkErrorReportExt},
+    filter::Filter,
     persistence::Persistence,
     sink::Sink,
     status::StatusServer,
+    StreamConfigurationOptions,
 };
 
 use self::{default::DefaultConnector, factory::FactoryConnector, sink::SinkWithBackoff};
@@ -75,13 +77,14 @@ where
     /// Start consuming the stream, calling the configured callback for each message.
     pub async fn consume_stream<F, B>(
         mut self,
-        configuration: Configuration<F>,
+        stream_configuration: StreamConfigurationOptions,
         ct: CancellationToken,
     ) -> Result<(), SinkError>
     where
         F: Filter,
         B: Message + Default + Serialize,
     {
+        /*
         let stream_ending_block = self.stream_configuration.ending_block;
 
         let stream_client_factory = StreamClientFactory::new(self.stream_configuration);
@@ -165,6 +168,8 @@ where
         }
 
         Ok(())
+        */
+        todo!();
     }
 }
 
@@ -188,7 +193,7 @@ where
         script: Script,
         sink: SinkWithBackoff<S>,
         ending_block: Option<u64>,
-        starting_configuration: Configuration<F>,
+        starting_configuration: StreamConfigurationOptions,
         stream_client_factory: StreamClientFactory,
         state_manager: StateManager,
     ) -> Self {
@@ -207,7 +212,7 @@ where
         script: Script,
         sink: SinkWithBackoff<S>,
         ending_block: Option<u64>,
-        starting_configuration: Configuration<F>,
+        starting_configuration: StreamConfigurationOptions,
         stream_client_factory: StreamClientFactory,
         state_manager: StateManager,
     ) -> Self {

@@ -1,11 +1,11 @@
 use std::time::{Duration, Instant};
 
-use apibara_core::node;
+use apibara_dna_protocol::dna::{dna_stream_client::DnaStreamClient, Cursor, StatusRequest};
 use apibara_observability::ObservableGauge;
-use apibara_sdk::StreamClient;
-use error_stack::Result;
+use error_stack::{Result, ResultExt};
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
+use tonic::transport::Channel;
 use tonic_health::pb::health_server::{Health, HealthServer};
 use tracing::info;
 
@@ -26,16 +26,16 @@ enum RequestMessage {
 #[derive(Debug)]
 pub struct Cursors {
     /// Indexer's starting cursor.
-    pub starting: Option<node::v1alpha2::Cursor>,
+    pub starting: Option<Cursor>,
     /// Indexer's current cursor.
-    pub current: Option<node::v1alpha2::Cursor>,
+    pub current: Option<Cursor>,
     /// Chain's head cursor.
-    pub head: Option<node::v1alpha2::Cursor>,
+    pub head: Option<Cursor>,
 }
 
 pub struct StatusService {
     health_reporter: tonic_health::server::HealthReporter,
-    stream_client: StreamClient,
+    stream_client: DnaStreamClient<Channel>,
     request_rx: mpsc::Receiver<RequestMessage>,
     status_rx: mpsc::Receiver<StatusMessage>,
 }
@@ -48,7 +48,7 @@ pub struct StatusServiceClient {
 
 impl StatusService {
     pub fn new(
-        stream_client: StreamClient,
+        stream_client: DnaStreamClient<Channel>,
     ) -> (
         Self,
         StatusServerClient,
@@ -153,15 +153,22 @@ impl StatusService {
         Ok(())
     }
 
-    async fn get_dna_head(&self) -> Result<Option<node::v1alpha2::Cursor>, SinkError> {
+    async fn get_dna_head(&self) -> Result<Option<Cursor>, SinkError> {
+        /*
         let dna_status = self
             .stream_client
             .clone()
-            .status()
+            .status(StatusRequest::default())
             .await
-            .map_err(|err| err.status("failed to get dna status"))?;
+            .map_err(|err| {
+                Err(err)
+                    .change_context(SinkError::Status)
+                    .attach_printable("failed to get dna status")
+            })?;
 
         Ok(dna_status.current_head)
+        */
+        todo!();
     }
 }
 
@@ -211,21 +218,21 @@ impl Default for SinkMetrics {
 }
 
 impl SinkMetrics {
-    pub fn sync_start(&self, cursor: &Option<node::v1alpha2::Cursor>) {
+    pub fn sync_start(&self, cursor: &Option<Cursor>) {
         if let Some(cursor) = cursor {
             let cx = apibara_observability::Context::current();
             self.sync_start.observe(&cx, cursor.order_key, &[]);
         }
     }
 
-    pub fn sync_current(&self, cursor: &Option<node::v1alpha2::Cursor>) {
+    pub fn sync_current(&self, cursor: &Option<Cursor>) {
         if let Some(cursor) = cursor {
             let cx = apibara_observability::Context::current();
             self.sync_current.observe(&cx, cursor.order_key, &[]);
         }
     }
 
-    pub fn sync_head(&self, cursor: &Option<node::v1alpha2::Cursor>) {
+    pub fn sync_head(&self, cursor: &Option<Cursor>) {
         if let Some(cursor) = cursor {
             let cx = apibara_observability::Context::current();
             self.sync_head.observe(&cx, cursor.order_key, &[]);

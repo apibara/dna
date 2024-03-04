@@ -3,12 +3,12 @@ mod configuration;
 mod connector;
 mod cursor;
 mod error;
+mod filter;
 mod json;
 pub mod persistence;
 mod sink;
 mod status;
 
-use apibara_core::starknet::v1alpha2;
 use error_stack::Result;
 use error_stack::ResultExt;
 use serde::Deserialize;
@@ -96,6 +96,7 @@ where
 
     let connector = SinkConnector::new(script, sink, sink_connector_options);
 
+    /*
     if let Some(starknet_config) = stream_configuration.as_starknet() {
         connector
             .consume_stream::<v1alpha2::Filter, v1alpha2::Block>(starknet_config, ct)
@@ -104,6 +105,8 @@ where
     } else {
         todo!()
     };
+    */
+    todo!();
 
     Ok(())
 }
