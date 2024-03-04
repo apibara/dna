@@ -1,4 +1,4 @@
-use apibara_core::node;
+use apibara_dna_protocol::dna::Cursor;
 use error_stack::Result;
 use tokio::sync::mpsc::{self, error::TrySendError};
 
@@ -8,9 +8,9 @@ use crate::{SinkError, SinkErrorResultExt};
 #[derive(Debug)]
 pub enum StatusMessage {
     /// Set the starting cursor.
-    SetStartingCursor(Option<node::v1alpha2::Cursor>),
+    SetStartingCursor(Option<Cursor>),
     /// Update the most recently indexed cursor.
-    UpdateCursor(Option<node::v1alpha2::Cursor>),
+    UpdateCursor(Option<Cursor>),
     /// Send a heartbeat to the status service.
     Heartbeat,
 }
@@ -35,10 +35,7 @@ impl StatusServerClient {
     }
 
     /// Update the most recently processed cursor.
-    pub async fn set_starting_cursor(
-        &self,
-        cursor: Option<node::v1alpha2::Cursor>,
-    ) -> Result<(), SinkError> {
+    pub async fn set_starting_cursor(&self, cursor: Option<Cursor>) -> Result<(), SinkError> {
         self.tx
             .send(StatusMessage::SetStartingCursor(cursor))
             .await
@@ -47,10 +44,7 @@ impl StatusServerClient {
     }
 
     /// Update the most recently processed cursor.
-    pub async fn update_cursor(
-        &self,
-        cursor: Option<node::v1alpha2::Cursor>,
-    ) -> Result<(), SinkError> {
+    pub async fn update_cursor(&self, cursor: Option<Cursor>) -> Result<(), SinkError> {
         match self.tx.try_send(StatusMessage::UpdateCursor(cursor)) {
             Ok(_) => Ok(()),
             // If the channel is full, we don't care.

@@ -1,4 +1,4 @@
-use apibara_core::node::v1alpha2::Cursor;
+use apibara_dna_protocol::dna::Cursor;
 use error_stack::{Result, ResultExt};
 use exponential_backoff::Backoff;
 use serde_json::Value;
