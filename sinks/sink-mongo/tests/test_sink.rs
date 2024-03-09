@@ -4,7 +4,6 @@ use apibara_core::node::v1alpha2::{Cursor, DataFinality};
 use apibara_sink_common::{batching::Buffer, Context, CursorAction, Sink, ValueExt};
 use apibara_sink_mongo::{MongoSink, SinkMongoError, SinkMongoOptions};
 
-
 use error_stack::{Result, ResultExt};
 use futures_util::TryStreamExt;
 use mongodb::bson::{doc, Bson, Document};
