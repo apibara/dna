@@ -1,6 +1,6 @@
 use apibara_core::node::v1alpha2::DataFinality;
-use apibara_sink_common::{Context, Sink};
-use apibara_sink_postgres::{PostgresSink, SinkPostgresError};
+use apibara_sink_common::{Context, Sink, SinkError};
+use apibara_sink_postgres::PostgresSink;
 use async_trait::async_trait;
 use error_stack::Result;
 use serde_json::json;
@@ -35,7 +35,7 @@ async fn create_test_table(port: u16) {
 
 #[tokio::test]
 #[ignore]
-async fn test_entity_mode() -> Result<(), SinkPostgresError> {
+async fn test_entity_mode() -> Result<(), SinkError> {
     let docker = clients::Cli::default();
     let postgres = docker.run(new_postgres_image());
     let port = postgres.get_host_port_ipv4(5432);
@@ -120,7 +120,7 @@ async fn test_entity_mode() -> Result<(), SinkPostgresError> {
 
 #[tokio::test]
 #[ignore]
-async fn test_entity_mode_invalidate_genesis() -> Result<(), SinkPostgresError> {
+async fn test_entity_mode_invalidate_genesis() -> Result<(), SinkError> {
     let docker = clients::Cli::default();
     let postgres = docker.run(new_postgres_image());
     let port = postgres.get_host_port_ipv4(5432);
@@ -164,7 +164,7 @@ async fn test_entity_mode_invalidate_genesis() -> Result<(), SinkPostgresError> 
 
 #[tokio::test]
 #[ignore]
-async fn test_entity_mode_invalidate() -> Result<(), SinkPostgresError> {
+async fn test_entity_mode_invalidate() -> Result<(), SinkError> {
     let docker = clients::Cli::default();
     let postgres = docker.run(new_postgres_image());
     let port = postgres.get_host_port_ipv4(5432);

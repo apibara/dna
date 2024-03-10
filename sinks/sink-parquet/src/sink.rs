@@ -1,12 +1,12 @@
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
-use std::fmt;
 
 use std::sync::Arc;
 
 use apibara_core::node::v1alpha2::{Cursor, DataFinality};
 use apibara_sink_common::batching::Batcher;
 use apibara_sink_common::{Context, CursorAction, Sink, ValueExt};
+use apibara_sink_common::{SinkError, SinkErrorResultExt};
 use arrow::json::reader::{infer_json_schema_from_iterator, Decoder, ReaderBuilder};
 use arrow::record_batch::RecordBatch;
 use async_trait::async_trait;
@@ -20,16 +20,6 @@ use tracing::{debug, info, instrument};
 
 use crate::configuration::{SinkParquetConfiguration, SinkParquetOptions};
 use crate::parquet_writer::{FileParquetWriter, ParquetWriter, S3ParquetWriter};
-
-#[derive(Debug)]
-pub struct SinkParquetError;
-impl error_stack::Context for SinkParquetError {}
-
-impl fmt::Display for SinkParquetError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("parquet sink operation failed")
-    }
-}
 
 pub struct ParquetSink {
     config: SinkParquetConfiguration,
@@ -50,22 +40,19 @@ struct DatasetBatch {
 }
 
 impl DatasetBatch {
-    pub async fn serialize(&self) -> Result<Vec<u8>, SinkParquetError> {
+    pub async fn serialize(&self) -> Result<Vec<u8>, SinkError> {
         let mut data = Vec::new();
 
         let mut writer = ArrowWriter::try_new(&mut data, self.batch.schema(), None)
-            .change_context(SinkParquetError)
-            .attach_printable("failed to create Arrow writer")?;
+            .runtime_error("failed to create Arrow writer")?;
 
         writer
             .write(&self.batch)
-            .change_context(SinkParquetError)
-            .attach_printable("failed to write batch")?;
+            .runtime_error("failed to write batch")?;
 
         writer
             .close()
-            .change_context(SinkParquetError)
-            .attach_printable("failed to close parquet file")?;
+            .runtime_error("failed to close parquet file")?;
 
         Ok(data)
     }
@@ -100,7 +87,7 @@ impl ParquetSink {
 
     /// Write a `DatasetBatch` using the configured `ParquetSink::writer`,
     /// either to S3 if the path starts with `"s3://"` or to the local filesystem otherwise.
-    async fn write_dataset_batch(&mut self, batch: &DatasetBatch) -> Result<(), SinkParquetError> {
+    async fn write_dataset_batch(&mut self, batch: &DatasetBatch) -> Result<(), SinkError> {
         info!(
             size = batch.batch.num_rows(),
             dataset = batch.name,
@@ -125,7 +112,7 @@ impl ParquetSink {
         &mut self,
         _end_cursor: &Cursor,
         batch: &[Value],
-    ) -> Result<(), SinkParquetError> {
+    ) -> Result<(), SinkError> {
         // Iterate over the data and split it into datasets.
         let mut datasets = HashMap::<String, Dataset>::default();
 
@@ -136,12 +123,10 @@ impl ParquetSink {
                 let dataset_name = item
                     .get("dataset")
                     .and_then(Value::as_str)
-                    .ok_or(SinkParquetError)
-                    .attach_printable("item is missing required property 'dataset'")?;
+                    .runtime_error("item is missing required property 'dataset'")?;
                 let data = item
                     .get("data")
-                    .ok_or(SinkParquetError)
-                    .attach_printable("item is missing required property 'data'")?;
+                    .runtime_error("item is missing required property 'data'")?;
                 (dataset_name, data)
             };
 
@@ -149,13 +134,11 @@ impl ParquetSink {
                 Entry::Occupied(entry) => entry.into_mut(),
                 Entry::Vacant(entry) => {
                     let schema = infer_json_schema_from_iterator(std::iter::once(Ok(data)))
-                        .change_context(SinkParquetError)
-                        .attach_printable("failed to infer json schema")?;
+                        .runtime_error("failed to infer json schema")?;
                     debug!(schema = ?schema, "inferred schema from item");
                     let decoder = ReaderBuilder::new(Arc::new(schema))
                         .build_decoder()
-                        .change_context(SinkParquetError)
-                        .attach_printable("failed to create reader")?;
+                        .runtime_error("failed to create reader")?;
                     let dataset = Dataset {
                         decoder: Mutex::new(decoder),
                     };
@@ -166,8 +149,7 @@ impl ParquetSink {
             let mut decoder = dataset.decoder.lock().await;
             (*decoder)
                 .serialize(&[data])
-                .change_context(SinkParquetError)
-                .attach_printable("failed to serialize batch item")?;
+                .runtime_error("failed to serialize batch item")?;
         }
 
         debug!("flushing dataset batches");
@@ -175,7 +157,10 @@ impl ParquetSink {
         let filename = self.get_filename();
         for (dataset_name, dataset) in datasets.iter_mut() {
             let mut decoder = dataset.decoder.lock().await;
-            if let Some(record_batch) = decoder.flush().change_context(SinkParquetError)? {
+            if let Some(record_batch) = decoder
+                .flush()
+                .runtime_error("failed to flush the parquet RecordBatch")?
+            {
                 dataset_batches.push(DatasetBatch {
                     name: dataset_name.to_string(),
                     filename: filename.clone(),
@@ -195,7 +180,7 @@ impl ParquetSink {
 #[async_trait]
 impl Sink for ParquetSink {
     type Options = SinkParquetOptions;
-    type Error = SinkParquetError;
+    type Error = SinkError;
 
     async fn from_options(options: Self::Options) -> Result<Self, Self::Error> {
         let config = options.to_parquet_configuration()?;
@@ -226,7 +211,7 @@ impl Sink for ParquetSink {
                 self.batcher.buffer.clear();
                 Ok(action)
             }
-            Err(e) => Err(e).change_context(SinkParquetError),
+            Err(e) => Err(e).change_context(SinkError::Runtime),
         }
     }
 

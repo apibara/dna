@@ -1,6 +1,6 @@
 use apibara_core::node::v1alpha2::{Cursor, DataFinality};
-use apibara_sink_common::{Context, Sink};
-use apibara_sink_webhook::{SinkWebhookConfiguration, SinkWebhookError, WebhookSink};
+use apibara_sink_common::{Context, Sink, SinkError};
+use apibara_sink_webhook::{SinkWebhookConfiguration, WebhookSink};
 use error_stack::{Result, ResultExt};
 use http::{HeaderMap, Uri};
 use serde_json::{json, Value};
@@ -33,14 +33,14 @@ fn new_cursor(order_key: u64) -> Cursor {
 
 #[tokio::test]
 #[ignore]
-async fn test_handle_data() -> Result<(), SinkWebhookError> {
+async fn test_handle_data() -> Result<(), SinkError> {
     let server = wiremock::MockServer::start().await;
 
     let config = SinkWebhookConfiguration {
         target_url: server
             .uri()
             .parse::<Uri>()
-            .change_context(SinkWebhookError)?,
+            .change_context(SinkError::Runtime)?,
         headers: HeaderMap::new(),
         raw: false,
     };
@@ -71,7 +71,7 @@ async fn test_handle_data() -> Result<(), SinkWebhookError> {
                 .last()
                 .unwrap()
                 .body_json::<Value>()
-                .change_context(SinkWebhookError)?,
+                .change_context(SinkError::Runtime)?,
             json!({
                 "data": {
                     "cursor": &cursor,
@@ -88,14 +88,14 @@ async fn test_handle_data() -> Result<(), SinkWebhookError> {
 
 #[tokio::test]
 #[ignore]
-async fn test_handle_invalidate() -> Result<(), SinkWebhookError> {
+async fn test_handle_invalidate() -> Result<(), SinkError> {
     let server = wiremock::MockServer::start().await;
 
     let config = SinkWebhookConfiguration {
         target_url: server
             .uri()
             .parse::<Uri>()
-            .change_context(SinkWebhookError)?,
+            .change_context(SinkError::Runtime)?,
         headers: HeaderMap::new(),
         raw: false,
     };
@@ -114,7 +114,7 @@ async fn test_handle_invalidate() -> Result<(), SinkWebhookError> {
                 .last()
                 .unwrap()
                 .body_json::<Value>()
-                .change_context(SinkWebhookError)?,
+                .change_context(SinkError::Runtime)?,
             json!({
                 "invalidate": {
                     "cursor": &cursor,
@@ -128,14 +128,14 @@ async fn test_handle_invalidate() -> Result<(), SinkWebhookError> {
 
 #[tokio::test]
 #[ignore]
-async fn test_handle_data_raw() -> Result<(), SinkWebhookError> {
+async fn test_handle_data_raw() -> Result<(), SinkError> {
     let server = wiremock::MockServer::start().await;
 
     let config = SinkWebhookConfiguration {
         target_url: server
             .uri()
             .parse::<Uri>()
-            .change_context(SinkWebhookError)?,
+            .change_context(SinkError::Runtime)?,
         headers: HeaderMap::new(),
         raw: true,
     };
@@ -167,7 +167,7 @@ async fn test_handle_data_raw() -> Result<(), SinkWebhookError> {
                 .last()
                 .unwrap()
                 .body_json::<Value>()
-                .change_context(SinkWebhookError)?,
+                .change_context(SinkError::Runtime)?,
             batch_as_array.last().unwrap()
         );
         prev_count = requests.len();
@@ -178,14 +178,14 @@ async fn test_handle_data_raw() -> Result<(), SinkWebhookError> {
 
 #[tokio::test]
 #[ignore]
-async fn test_handle_invalidate_raw() -> Result<(), SinkWebhookError> {
+async fn test_handle_invalidate_raw() -> Result<(), SinkError> {
     let server = wiremock::MockServer::start().await;
 
     let config = SinkWebhookConfiguration {
         target_url: server
             .uri()
             .parse::<Uri>()
-            .change_context(SinkWebhookError)?,
+            .change_context(SinkError::Runtime)?,
         headers: HeaderMap::new(),
         raw: true,
     };

@@ -1,8 +1,8 @@
 use std::{ffi::OsString, sync::Arc};
 
 use apibara_core::node::v1alpha2::{Cursor, DataFinality};
-use apibara_sink_common::{Context, CursorAction, Sink};
-use apibara_sink_parquet::{ParquetSink, SinkParquetConfiguration, SinkParquetError};
+use apibara_sink_common::{Context, CursorAction, Sink, SinkError};
+use apibara_sink_parquet::{ParquetSink, SinkParquetConfiguration};
 use arrow::{
     array::{ArrayRef, Int64Array, StringArray},
     record_batch::RecordBatch,
@@ -100,7 +100,7 @@ fn get_file_names(output_dir: &TempDir, path: &str) -> Option<Vec<OsString>> {
 
 #[tokio::test]
 #[ignore]
-async fn test_handle_data() -> Result<(), SinkParquetError> {
+async fn test_handle_data() -> Result<(), SinkError> {
     let parquet_batch_size = 10;
     let (output_dir, mut sink) = new_sink(parquet_batch_size).await;
 

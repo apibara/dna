@@ -1,9 +1,9 @@
-use std::fmt;
 use std::time::Instant;
 
 use apibara_core::node::v1alpha2::{Cursor, DataFinality};
 use apibara_sink_common::batching::Batcher;
 use apibara_sink_common::{Context, CursorAction, DisplayCursor, Sink, ValueExt};
+use apibara_sink_common::{SinkError, SinkErrorResultExt};
 use async_trait::async_trait;
 use error_stack::{Result, ResultExt};
 use futures_util::TryStreamExt;
@@ -18,16 +18,6 @@ use serde_json::Value;
 use tracing::{debug, info, warn};
 
 use crate::configuration::SinkMongoOptions;
-
-#[derive(Debug)]
-pub struct SinkMongoError;
-impl error_stack::Context for SinkMongoError {}
-
-impl fmt::Display for SinkMongoError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("mongo sink operation failed")
-    }
-}
 
 pub struct Batch {
     pub data: Vec<Value>,
@@ -68,39 +58,36 @@ enum Mode {
 #[async_trait]
 impl Sink for MongoSink {
     type Options = SinkMongoOptions;
-    type Error = SinkMongoError;
+    type Error = SinkError;
 
     async fn from_options(options: Self::Options) -> Result<Self, Self::Error> {
         info!("connecting to database");
         let connection_string = options
             .connection_string
-            .ok_or(SinkMongoError)
-            .attach_printable("missing connection string")?;
-        let db_name = options
-            .database
-            .ok_or(SinkMongoError)
-            .attach_printable("missing database name")?;
+            .runtime_error("missing connection string")?;
+
+        let db_name = options.database.runtime_error("missing database name")?;
 
         if options.collection_name.is_some() && options.collection_names.is_some() {
-            return Err(SinkMongoError)
-                .attach_printable("conflicting collection_name and collection_names options");
+            // TODO: consider using `SinkError::Configuration` instead
+            return Err(SinkError::runtime_error(
+                "conflicting collection_name and collection_names options",
+            ));
         }
         let collection_names = options
             .collection_name
             .map(|c| vec![c])
             .or(options.collection_names)
             .and_then(|vec| (!vec.is_empty()).then_some(vec))
-            .ok_or(SinkMongoError)
-            .attach_printable("missing collection name or collection names")?;
+            .runtime_error("missing collection name or collection names")?;
 
         let client_options = ClientOptions::parse(connection_string)
             .await
-            .change_context(SinkMongoError)
-            .attach_printable("failed to parse mongo connection string")?;
+            .runtime_error("failed to parse mongo connection string")?;
 
-        let client = Client::with_options(client_options)
-            .change_context(SinkMongoError)
-            .attach_printable("failed to create mongo client")?;
+        let client =
+            Client::with_options(client_options).runtime_error("failed to create mongo client")?;
+
         let db = client.database(&db_name);
         let collections: HashMap<String, Collection<Document>> = collection_names
             .into_iter()
@@ -146,7 +133,7 @@ impl Sink for MongoSink {
                 self.batcher.buffer.clear();
                 Ok(action)
             }
-            Err(e) => Err(e).change_context(SinkMongoError),
+            Err(e) => Err(e).change_context(SinkError::Runtime),
         }
     }
 
@@ -163,8 +150,7 @@ impl Sink for MongoSink {
             .client
             .start_session(None)
             .await
-            .change_context(SinkMongoError)
-            .attach_printable("failed to create mongo session")?;
+            .runtime_error("failed to create mongo session")?;
 
         let (mut delete_query, mut unclamp_query) = if let Some(cursor) = cursor {
             // convert to u32 because that's the maximum bson can handle
@@ -189,8 +175,7 @@ impl Sink for MongoSink {
             collection
                 .delete_many_with_session(delete_query.clone(), None, &mut session)
                 .await
-                .change_context(SinkMongoError)
-                .attach_printable("failed to invalidate data (delete)")?;
+                .runtime_error("failed to invalidate data (delete)")?;
             collection
                 .update_many_with_session(
                     unclamp_query.clone(),
@@ -199,8 +184,7 @@ impl Sink for MongoSink {
                     &mut session,
                 )
                 .await
-                .change_context(SinkMongoError)
-                .attach_printable("failed to invalidate data (update)")?;
+                .runtime_error("failed to invalidate data (update)")?;
         }
 
         Ok(())
@@ -208,21 +192,17 @@ impl Sink for MongoSink {
 }
 
 impl MongoSink {
-    pub fn collection(
-        &self,
-        collection_name: &str,
-    ) -> Result<&Collection<Document>, SinkMongoError> {
+    pub fn collection(&self, collection_name: &str) -> Result<&Collection<Document>, SinkError> {
         self.collections
             .get(collection_name)
-            .ok_or(SinkMongoError)
-            .attach_printable(format!("collection '{collection_name}' not found"))
+            .runtime_error(&format!("collection '{collection_name}' not found"))
     }
 
     pub async fn insert_data(
         &self,
         end_cursor: &Cursor,
         values: &[Value],
-    ) -> Result<(), SinkMongoError> {
+    ) -> Result<(), SinkError> {
         // TODO: sometimes, the function fails because it tries to insert empty data
         // I noticed this especially when persistence is enabled and the sink is restarted
         // See the error below:
@@ -247,8 +227,7 @@ impl MongoSink {
             .iter()
             .map(to_document)
             .collect::<std::result::Result<Vec<_>, _>>()
-            .change_context(SinkMongoError)
-            .attach_printable("failed to convert batch to mongo document")?;
+            .runtime_error("failed to convert batch to mongo document")?;
 
         let mut docs_map: HashMap<String, Vec<Document>> = HashMap::new();
 
@@ -256,21 +235,17 @@ impl MongoSink {
             for doc in docs.iter_mut() {
                 let collection_name = doc
                     .remove("collection")
-                    .ok_or(SinkMongoError)
-                    .attach_printable("document missing collection key")?
+                    .runtime_error("document missing collection key")?
                     .as_str()
-                    .ok_or(SinkMongoError)
-                    .attach_printable("collection is not a string")?
+                    .runtime_error("collection is not a string")?
                     .to_string();
 
                 if let Mode::Standard = self.mode {
                     *doc = doc
                         .get("data")
-                        .ok_or(SinkMongoError)
-                        .attach_printable("document missing data key")?
+                        .runtime_error("document missing data key")?
                         .as_document()
-                        .ok_or(SinkMongoError)
-                        .attach_printable("data is not a document")?
+                        .runtime_error("data is not a document")?
                         .clone();
                 }
 
@@ -295,8 +270,7 @@ impl MongoSink {
             .client
             .start_session(None)
             .await
-            .change_context(SinkMongoError)
-            .attach_printable("failed to create mongo session")?;
+            .runtime_error("failed to create mongo session")?;
 
         match &self.mode {
             Mode::Standard => {
@@ -315,7 +289,7 @@ impl MongoSink {
         end_cursor: &Cursor,
         docs_map: HashMap<String, Vec<Document>>,
         session: &mut ClientSession,
-    ) -> Result<(), SinkMongoError> {
+    ) -> Result<(), SinkError> {
         let cursor = doc! {
             "from": end_cursor.order_key as i64,
         };
@@ -325,8 +299,7 @@ impl MongoSink {
             self.collection(&collection_name)?
                 .insert_many_with_session(docs, None, session)
                 .await
-                .change_context(SinkMongoError)
-                .attach_printable("failed to insert data (logs)")?;
+                .runtime_error("failed to insert data (logs)")?;
         }
 
         Ok(())
@@ -337,7 +310,7 @@ impl MongoSink {
         end_cursor: &Cursor,
         docs_map: HashMap<String, Vec<Document>>,
         session: &mut ClientSession,
-    ) -> Result<(), SinkMongoError> {
+    ) -> Result<(), SinkError> {
         let new_cursor = doc! {
             "from": end_cursor.order_key as i64,
         };
@@ -351,16 +324,13 @@ impl MongoSink {
                 .map(|doc| {
                     let entity = doc
                         .get("entity")
-                        .ok_or(SinkMongoError)
-                        .attach_printable("document missing entity key")?
+                        .runtime_error("document missing entity key")?
                         .as_document()
-                        .ok_or(SinkMongoError)
-                        .attach_printable("entity is not an object")?;
+                        .runtime_error("entity is not an object")?;
 
                     let update = doc
                         .get("update")
-                        .ok_or(SinkMongoError)
-                        .attach_printable("document missing update key")?;
+                        .runtime_error("document missing update key")?;
 
                     // Validate that the update is either an object or an array of objects (a
                     // pipeline), then
@@ -386,26 +356,25 @@ impl MongoSink {
                                 .map(|stage| {
                                     stage
                                         .as_document()
-                                        .ok_or(SinkMongoError)
-                                        .attach_printable(
+                                        .runtime_error(
                                             "update is expected to be a document or pipeline",
                                         )
                                         .map(|stage| stage.clone())
                                 })
-                                .collect::<Result<Vec<_>, SinkMongoError>>()?;
+                                .collect::<Result<Vec<_>, SinkError>>()?;
                             pipeline.push(doc! { "$set": { "_cursor": new_cursor.clone() } });
                             UpdateModifications::Pipeline(pipeline)
                         }
                         _ => {
-                            return Err(SinkMongoError).attach_printable(
+                            return Err(SinkError::runtime_error(
                                 "update is expected to be a document or pipeline",
-                            );
+                            ));
                         }
                     };
 
                     Ok((entity.clone(), update))
                 })
-                .collect::<Result<Vec<_>, SinkMongoError>>()?;
+                .collect::<Result<Vec<_>, SinkError>>()?;
 
             let entities_filter = entities_with_updates
                 .iter()
@@ -424,13 +393,11 @@ impl MongoSink {
                 .collection(&collection_name)?
                 .find_with_session(Some(existing_docs_query.clone()), None, session)
                 .await
-                .change_context(SinkMongoError)
-                .attach_printable("failed to find existing documents")?
+                .runtime_error("failed to find existing documents")?
                 .stream(session)
                 .try_collect::<Vec<_>>()
                 .await
-                .change_context(SinkMongoError)
-                .attach_printable("failed to fetch find results")?;
+                .runtime_error("failed to fetch find results")?;
 
             if !existing_docs.is_empty() {
                 // update validity of previous values
@@ -443,8 +410,7 @@ impl MongoSink {
                 self.collection(&collection_name)?
                     .update_many_with_session(existing_docs_query, clamp_cursor, None, session)
                     .await
-                    .change_context(SinkMongoError)
-                    .attach_printable("failed to insert entities (update existing)")?;
+                    .runtime_error("failed to insert entities (update existing)")?;
 
                 // duplicate existing rows so that the update operation has something to work on
                 existing_docs
@@ -454,8 +420,7 @@ impl MongoSink {
                 self.collection(&collection_name)?
                     .insert_many_with_session(existing_docs, None, session)
                     .await
-                    .change_context(SinkMongoError)
-                    .attach_printable("failed to insert entities (insert copies)")?;
+                    .runtime_error("failed to insert entities (insert copies)")?;
             }
 
             // update values as specified by user
@@ -471,8 +436,7 @@ impl MongoSink {
                         session,
                     )
                     .await
-                    .change_context(SinkMongoError)
-                    .attach_printable("failed to insert entities (update entities)")?;
+                    .runtime_error("failed to insert entities (update entities)")?;
             }
         }
 

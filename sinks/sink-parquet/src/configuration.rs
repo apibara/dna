@@ -1,10 +1,9 @@
 use std::path::PathBuf;
 
-use apibara_sink_common::SinkOptions;
+use apibara_sink_common::SinkError;
+use apibara_sink_common::{SinkErrorResultExt, SinkOptions};
 use clap::Args;
-use error_stack::{Result, ResultExt};
-
-use crate::sink::SinkParquetError;
+use error_stack::Result;
 
 #[derive(Debug)]
 pub struct SinkParquetConfiguration {
@@ -44,11 +43,10 @@ impl SinkOptions for SinkParquetOptions {
 }
 
 impl SinkParquetOptions {
-    pub fn to_parquet_configuration(self) -> Result<SinkParquetConfiguration, SinkParquetError> {
+    pub fn to_parquet_configuration(self) -> Result<SinkParquetConfiguration, SinkError> {
         let output_dir = self
             .output_dir
-            .ok_or(SinkParquetError)
-            .attach_printable("missing output directory")?
+            .runtime_error("missing output directory")?
             .into();
 
         let batch_size = self.batch_size.unwrap_or(1000);
