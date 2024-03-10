@@ -1,9 +1,8 @@
-use std::fmt;
-
 use apibara_core::node::v1alpha2::Cursor;
 use apibara_sink_common::{Context, CursorAction, Sink};
+use apibara_sink_common::{SinkError, SinkErrorResultExt};
 use async_trait::async_trait;
-use error_stack::{Result, ResultExt};
+use error_stack::Result;
 use http::HeaderMap;
 use reqwest::Client;
 use serde::ser::Serialize;
@@ -11,16 +10,6 @@ use serde_json::{json, Value};
 use tracing::{debug, instrument, warn};
 
 use crate::{configuration::SinkWebhookOptions, SinkWebhookConfiguration};
-
-#[derive(Debug)]
-pub struct SinkWebhookError;
-impl error_stack::Context for SinkWebhookError {}
-
-impl fmt::Display for SinkWebhookError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("webhook sink operation failed")
-    }
-}
 
 pub struct WebhookSink {
     client: Client,
@@ -40,7 +29,7 @@ impl WebhookSink {
     }
 
     #[instrument(skip(self, body), err(Debug))]
-    async fn send<B: Serialize + ?Sized>(&self, body: &B) -> Result<(), SinkWebhookError> {
+    async fn send<B: Serialize + ?Sized>(&self, body: &B) -> Result<(), SinkError> {
         let response = self
             .client
             .post(&self.target_url)
@@ -48,8 +37,7 @@ impl WebhookSink {
             .json(body)
             .send()
             .await
-            .change_context(SinkWebhookError)
-            .attach_printable("failed to POST json data")?;
+            .runtime_error("failed to POST json data")?;
 
         match response.text().await {
             Ok(text) => {
@@ -67,7 +55,7 @@ impl WebhookSink {
 #[async_trait]
 impl Sink for WebhookSink {
     type Options = SinkWebhookOptions;
-    type Error = SinkWebhookError;
+    type Error = SinkError;
 
     async fn from_options(options: Self::Options) -> Result<Self, Self::Error> {
         let config = options.to_webhook_configuration()?;

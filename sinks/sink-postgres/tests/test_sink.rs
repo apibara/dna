@@ -1,6 +1,6 @@
 use apibara_core::node::v1alpha2::{Cursor, DataFinality};
-use apibara_sink_common::{Context, CursorAction, Sink};
-use apibara_sink_postgres::{InvalidateColumn, SinkPostgresError};
+use apibara_sink_common::{Context, CursorAction, Sink, SinkError};
+use apibara_sink_postgres::InvalidateColumn;
 use error_stack::Result;
 use serde_json::{json, Value};
 use testcontainers::clients;
@@ -113,7 +113,7 @@ async fn create_test_table(port: u16) {
 
 #[tokio::test]
 #[ignore]
-async fn test_handle_data() -> Result<(), SinkPostgresError> {
+async fn test_handle_data() -> Result<(), SinkError> {
     let docker = clients::Cli::default();
     let postgres = docker.run(new_postgres_image());
     let port = postgres.get_host_port_ipv4(5432);
@@ -159,9 +159,7 @@ async fn test_handle_data() -> Result<(), SinkPostgresError> {
     Ok(())
 }
 
-async fn test_handle_invalidate_all(
-    invalidate_from: &Option<Cursor>,
-) -> Result<(), SinkPostgresError> {
+async fn test_handle_invalidate_all(invalidate_from: &Option<Cursor>) -> Result<(), SinkError> {
     assert!(invalidate_from.is_none() || invalidate_from.clone().unwrap().order_key == 0);
 
     let docker = clients::Cli::default();
@@ -210,19 +208,19 @@ async fn test_handle_invalidate_all(
 
 #[tokio::test]
 #[ignore]
-async fn test_handle_invalidate_genesis() -> Result<(), SinkPostgresError> {
+async fn test_handle_invalidate_genesis() -> Result<(), SinkError> {
     test_handle_invalidate_all(&None).await
 }
 
 #[tokio::test]
 #[ignore]
-async fn test_handle_invalidate_block_zero() -> Result<(), SinkPostgresError> {
+async fn test_handle_invalidate_block_zero() -> Result<(), SinkError> {
     test_handle_invalidate_all(&Some(new_cursor(0))).await
 }
 
 #[tokio::test]
 #[ignore]
-async fn test_handle_invalidate() -> Result<(), SinkPostgresError> {
+async fn test_handle_invalidate() -> Result<(), SinkError> {
     let docker = clients::Cli::default();
     let postgres = docker.run(new_postgres_image());
     let port = postgres.get_host_port_ipv4(5432);
@@ -274,7 +272,7 @@ async fn test_handle_invalidate() -> Result<(), SinkPostgresError> {
 
 #[tokio::test]
 #[ignore]
-async fn test_handle_invalidate_with_additional_condition() -> Result<(), SinkPostgresError> {
+async fn test_handle_invalidate_with_additional_condition() -> Result<(), SinkError> {
     let docker = clients::Cli::default();
     let postgres = docker.run(new_postgres_image());
     let port = postgres.get_host_port_ipv4(5432);

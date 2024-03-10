@@ -1,8 +1,7 @@
-use std::fmt;
-
 use apibara_core::node::v1alpha2::{Cursor, DataFinality};
 use apibara_sink_common::batching::Batcher;
 use apibara_sink_common::{Context, CursorAction, DisplayCursor, Sink, ValueExt};
+use apibara_sink_common::{SinkError, SinkErrorResultExt};
 use async_trait::async_trait;
 use error_stack::{Result, ResultExt};
 use native_tls::{Certificate, TlsConnector};
@@ -14,16 +13,6 @@ use tracing::{debug, info, warn};
 
 use crate::configuration::{InvalidateColumn, TlsConfiguration};
 use crate::{SinkPostgresConfiguration, SinkPostgresOptions};
-
-#[derive(Debug)]
-pub struct SinkPostgresError;
-impl error_stack::Context for SinkPostgresError {}
-
-impl fmt::Display for SinkPostgresError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("postgres sink operation failed")
-    }
-}
 
 pub struct PostgresSink {
     config: SinkPostgresConfiguration,
@@ -47,7 +36,7 @@ impl PostgresSink {
     ///  Ensures that the client is connected to the database.
     ///
     /// If the client is not connected, it will reconnect and recreate the prepared statements.
-    async fn ensure_client(&mut self) -> Result<(), SinkPostgresError> {
+    async fn ensure_client(&mut self) -> Result<(), SinkError> {
         match self.inner {
             PostgresSinkInner::Standard(ref sink) => {
                 if sink.client.is_closed() {
@@ -76,7 +65,7 @@ impl PostgresSink {
         &mut self,
         end_cursor: &Cursor,
         batch: &[Value],
-    ) -> Result<CursorAction, SinkPostgresError> {
+    ) -> Result<CursorAction, SinkError> {
         self.ensure_client().await?;
 
         match self.inner {
@@ -89,7 +78,7 @@ impl PostgresSink {
 #[async_trait]
 impl Sink for PostgresSink {
     type Options = SinkPostgresOptions;
-    type Error = SinkPostgresError;
+    type Error = SinkError;
 
     async fn from_options(options: Self::Options) -> Result<Self, Self::Error> {
         info!("connecting to database");
@@ -141,7 +130,7 @@ impl Sink for PostgresSink {
                 self.batcher.buffer.clear();
                 Ok(action)
             }
-            Err(e) => Err(e).change_context(SinkPostgresError),
+            Err(e) => Err(e).change_context(SinkError::Runtime),
         }
     }
 
@@ -163,10 +152,7 @@ struct StandardSink {
 }
 
 impl StandardSink {
-    async fn new(
-        client: Client,
-        config: &SinkPostgresConfiguration,
-    ) -> Result<Self, SinkPostgresError> {
+    async fn new(client: Client, config: &SinkPostgresConfiguration) -> Result<Self, SinkError> {
         let table_name = &config.table_name;
         let query = format!(
             "INSERT INTO {} SELECT * FROM json_populate_recordset(NULL::{}, $1::json)",
@@ -198,20 +184,17 @@ impl StandardSink {
         let insert_statement = client
             .prepare(&query)
             .await
-            .change_context(SinkPostgresError)
-            .attach_printable("failed to prepare insert data query")?;
+            .runtime_error("failed to prepare insert data query")?;
 
         let delete_statement = client
             .prepare(&delete_query)
             .await
-            .change_context(SinkPostgresError)
-            .attach_printable("failed to prepare invalidate data query")?;
+            .runtime_error("failed to prepare invalidate data query")?;
 
         let delete_all_statement = client
             .prepare(&delete_all_query)
             .await
-            .change_context(SinkPostgresError)
-            .attach_printable("failed to prepare invalidate all query")?;
+            .runtime_error("failed to prepare invalidate all query")?;
 
         Ok(Self {
             client,
@@ -225,7 +208,7 @@ impl StandardSink {
         &mut self,
         end_cursor: &Cursor,
         batch: &[Value],
-    ) -> Result<CursorAction, SinkPostgresError> {
+    ) -> Result<CursorAction, SinkError> {
         let batch = batch
             .iter()
             .map(|value| {
@@ -239,16 +222,12 @@ impl StandardSink {
         self.client
             .execute(&self.insert_statement, &[&Json(batch)])
             .await
-            .change_context(SinkPostgresError)
-            .attach_printable("failed to run insert data query")?;
+            .runtime_error("failed to run insert data query")?;
 
         Ok(CursorAction::Persist)
     }
 
-    async fn handle_invalidate(
-        &mut self,
-        cursor: &Option<Cursor>,
-    ) -> Result<(), SinkPostgresError> {
+    async fn handle_invalidate(&mut self, cursor: &Option<Cursor>) -> Result<(), SinkError> {
         debug!(cursor = %DisplayCursor(cursor), "handling invalidate");
 
         if let Some(cursor) = cursor {
@@ -257,14 +236,12 @@ impl StandardSink {
             self.client
                 .execute(&self.delete_statement, &[&block_number])
                 .await
-                .change_context(SinkPostgresError)
-                .attach_printable("failed to run invalidate data query")?;
+                .runtime_error("failed to run invalidate data query")?;
         } else {
             self.client
                 .execute(&self.delete_all_statement, &[])
                 .await
-                .change_context(SinkPostgresError)
-                .attach_printable("failed to run invalidate all data query")?;
+                .runtime_error("failed to run invalidate all data query")?;
         }
 
         Ok(())
@@ -277,14 +254,12 @@ struct EntitySink {
 }
 
 impl EntitySink {
-    async fn new(
-        client: Client,
-        config: &SinkPostgresConfiguration,
-    ) -> Result<Self, SinkPostgresError> {
+    async fn new(client: Client, config: &SinkPostgresConfiguration) -> Result<Self, SinkError> {
         if !config.invalidate.is_empty() {
-            return Err(SinkPostgresError)
-                .attach_printable("invalidate option is not supported in entity mode")
-                .attach_printable("contact us on Discord to request this feature");
+            return Err(SinkError::runtime_error(
+                "invalidate option is not supported in entity mode
+                contact us on Discord to request this feature",
+            ));
         }
 
         let table_name = config.table_name.clone();
@@ -295,13 +270,12 @@ impl EntitySink {
         &mut self,
         end_cursor: &Cursor,
         batch: &[Value],
-    ) -> Result<CursorAction, SinkPostgresError> {
+    ) -> Result<CursorAction, SinkError> {
         let txn = self
             .client
             .transaction()
             .await
-            .change_context(SinkPostgresError)
-            .attach_printable("failed to create postgres transaction")?;
+            .runtime_error("failed to create postgres transaction")?;
 
         for item in batch {
             let Some(item) = item.as_object() else {
@@ -331,8 +305,7 @@ impl EntitySink {
 
                 txn.execute(&query, &[&Json(new_data)])
                     .await
-                    .change_context(SinkPostgresError)
-                    .attach_printable("failed to run insert data query")?;
+                    .runtime_error("failed to run insert data query")?;
             } else if let Some(update) = item.get("update").cloned() {
                 let Some(update) = update.as_object() else {
                     warn!("update data is not an object, skipping");
@@ -376,9 +349,10 @@ impl EntitySink {
                 let row = txn
                     .query_one(&query, &[&Json(entity)])
                     .await
-                    .change_context(SinkPostgresError)
-                    .attach_printable("failed to select existing entity")
-                    .attach_printable("hint: do multiple entities with the same key exist?")?;
+                    .runtime_error(
+                        "failed to select existing entity
+                    hint: do multiple entities with the same key exist?",
+                    )?;
 
                 // Clamp old data validity by updating its _cursor.
                 {
@@ -398,18 +372,18 @@ impl EntitySink {
 
                     txn.execute(&query, &[&Json(entity)])
                         .await
-                        .change_context(SinkPostgresError)
-                        .attach_printable("failed to clamp entity data")?;
+                        .runtime_error("failed to clamp entity data")?;
                 }
 
                 // Update the existing row with the new rows.
                 let mut duplicated = row
                     .try_get::<_, serde_json::Value>(0)
-                    .change_context(SinkPostgresError)
-                    .attach_printable("failed to get existing entity")?;
+                    .runtime_error("failed to get existing entity")?;
 
                 {
-                    let data = duplicated.as_object_mut().ok_or(SinkPostgresError)?;
+                    let data = duplicated
+                        .as_object_mut()
+                        .runtime_error("failed to convert exiting entity as an object")?;
 
                     for (k, v) in update {
                         data.insert(k.clone(), v.clone());
@@ -431,8 +405,7 @@ impl EntitySink {
                     // Insert duplicated + updated entity.
                     txn.execute(&query, &[&Json(duplicated)])
                         .await
-                        .change_context(SinkPostgresError)
-                        .attach_printable("failed to duplicate entity")?;
+                        .runtime_error("failed to duplicate entity")?;
                 }
             } else {
                 warn!("item does not contain insert or update key, skipping");
@@ -441,16 +414,12 @@ impl EntitySink {
 
         txn.commit()
             .await
-            .change_context(SinkPostgresError)
-            .attach_printable("failed to commit transaction")?;
+            .runtime_error("failed to commit transaction")?;
 
         Ok(CursorAction::Persist)
     }
 
-    async fn handle_invalidate(
-        &mut self,
-        cursor: &Option<Cursor>,
-    ) -> Result<(), SinkPostgresError> {
+    async fn handle_invalidate(&mut self, cursor: &Option<Cursor>) -> Result<(), SinkError> {
         let cursor_lb = cursor
             .as_ref()
             .map(|c| c.order_key + 1) // add 1 because we compare with >=
@@ -460,8 +429,7 @@ impl EntitySink {
             .client
             .transaction()
             .await
-            .change_context(SinkPostgresError)
-            .attach_printable("failed to create postgres transaction")?;
+            .runtime_error("failed to create postgres transaction")?;
 
         // delete data generated after the new head.
         let delete_query = format!(
@@ -471,8 +439,7 @@ impl EntitySink {
 
         txn.execute(&delete_query, &[&cursor_lb])
             .await
-            .change_context(SinkPostgresError)
-            .attach_printable("failed to run delete query on invalidate")?;
+            .runtime_error("failed to run delete query on invalidate")?;
 
         // restore _cursor for data updated after the new head.
         let unclamp_query = format!(
@@ -486,21 +453,17 @@ impl EntitySink {
 
         txn.execute(&unclamp_query, &[&cursor_lb])
             .await
-            .change_context(SinkPostgresError)
-            .attach_printable("failed to run unclamp query on invalidate")?;
+            .runtime_error("failed to run unclamp query on invalidate")?;
 
         txn.commit()
             .await
-            .change_context(SinkPostgresError)
-            .attach_printable("failed to commit transaction")?;
+            .runtime_error("failed to commit transaction")?;
 
         Ok(())
     }
 }
 
-async fn client_from_config(
-    config: &SinkPostgresConfiguration,
-) -> Result<Client, SinkPostgresError> {
+async fn client_from_config(config: &SinkPostgresConfiguration) -> Result<Client, SinkError> {
     // Notice that all `connector` and `connection` types are different, so it's easier/cleaner
     // to just connect and spawn a connection inside each branch.
     match config.tls {
@@ -510,8 +473,7 @@ async fn client_from_config(
                 .pg
                 .connect(NoTls)
                 .await
-                .change_context(SinkPostgresError)
-                .attach_printable("failed to connect to postgres (no tls)")?;
+                .runtime_error("failed to connect to postgres (no tls)")?;
             tokio::spawn(connection);
             Ok(client)
         }
@@ -526,15 +488,11 @@ async fn client_from_config(
             let mut builder = TlsConnector::builder();
 
             if let Some(ref certificate) = certificate {
-                let certificate = tokio::fs::read(certificate)
-                    .await
-                    .change_context(SinkPostgresError)
-                    .attach_printable_lazy(|| {
-                        format!("failed to read tls certificate at {certificate:?}")
-                    })?;
+                let certificate = tokio::fs::read(certificate).await.runtime_error(&format!(
+                    "failed to read tls certificate at {certificate:?}"
+                ))?;
                 let certificate = Certificate::from_pem(&certificate)
-                    .change_context(SinkPostgresError)
-                    .attach_printable("failed to build certificate from PEM file")?;
+                    .runtime_error("failed to build certificate from PEM file")?;
                 builder.add_root_certificate(certificate);
             }
 
@@ -556,15 +514,13 @@ async fn client_from_config(
 
             let connector = builder
                 .build()
-                .change_context(SinkPostgresError)
-                .attach_printable("failed to build tls connector")?;
+                .runtime_error("failed to build tls connector")?;
             let connector = MakeTlsConnector::new(connector);
             let (client, connection) = config
                 .pg
                 .connect(connector)
                 .await
-                .change_context(SinkPostgresError)
-                .attach_printable("failed to connect to postgres (tls)")?;
+                .runtime_error("failed to connect to postgres (tls)")?;
             tokio::spawn(connection);
             Ok(client)
         }

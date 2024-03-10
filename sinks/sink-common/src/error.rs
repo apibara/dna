@@ -21,6 +21,8 @@ pub enum SinkError {
     Persistence,
     // Load script error
     LoadScript,
+    // Runtime error
+    Runtime,
 }
 
 pub trait ReportExt {
@@ -38,6 +40,7 @@ impl fmt::Display for SinkError {
             SinkError::Persistence => f.write_str("persistence client operation failed"),
             SinkError::Status => f.write_str("status server operation failed"),
             SinkError::LoadScript => f.write_str("load script failed"),
+            SinkError::Runtime => f.write_str("runtime error"),
         }
     }
 }
@@ -77,6 +80,9 @@ impl SinkError {
     pub fn load_script(reason: &str) -> Report<SinkError> {
         report!(SinkError::LoadScript).attach_printable(reason.to_string())
     }
+    pub fn runtime_error(reason: &str) -> Report<SinkError> {
+        report!(SinkError::Runtime).attach_printable(reason.to_string())
+    }
 }
 
 pub trait SinkErrorResultExt {
@@ -87,6 +93,7 @@ pub trait SinkErrorResultExt {
     fn status(self, reason: &str) -> Result<Self::Ok, SinkError>;
     fn persistence(self, reason: &str) -> Result<Self::Ok, SinkError>;
     fn load_script(self, reason: &str) -> Result<Self::Ok, SinkError>;
+    fn runtime_error(self, reason: &str) -> Result<Self::Ok, SinkError>;
 }
 
 impl<T, C> SinkErrorResultExt for core::result::Result<T, C>
@@ -124,6 +131,11 @@ where
         self.change_context(SinkError::LoadScript)
             .attach_printable(reason.to_string())
     }
+
+    fn runtime_error(self, reason: &str) -> Result<T, SinkError> {
+        self.change_context(SinkError::Runtime)
+            .attach_printable(reason.to_string())
+    }
 }
 
 pub trait SinkErrorReportExt {
@@ -133,6 +145,47 @@ pub trait SinkErrorReportExt {
     fn fatal(self, reason: &str) -> Report<SinkError>;
     fn status(self, reason: &str) -> Report<SinkError>;
     fn load_script(self, reason: &str) -> Report<SinkError>;
+    fn runtime_error(self, reason: &str) -> Report<SinkError>;
+}
+
+// Implement SinkErrorReportExt for Option<C>
+impl<T> SinkErrorResultExt for Option<T> {
+    type Ok = T;
+
+    fn configuration(self, reason: &str) -> Result<T, SinkError> {
+        self.ok_or(SinkError::Configuration)
+            .attach_printable(reason.to_string())
+    }
+
+    fn temporary(self, reason: &str) -> Result<T, SinkError> {
+        self.ok_or(SinkError::Temporary)
+            .attach_printable(reason.to_string())
+    }
+
+    fn fatal(self, reason: &str) -> Result<T, SinkError> {
+        self.ok_or(SinkError::Fatal)
+            .attach_printable(reason.to_string())
+    }
+
+    fn status(self, reason: &str) -> Result<T, SinkError> {
+        self.ok_or(SinkError::Status)
+            .attach_printable(reason.to_string())
+    }
+
+    fn load_script(self, reason: &str) -> Result<T, SinkError> {
+        self.ok_or(SinkError::LoadScript)
+            .attach_printable(reason.to_string())
+    }
+
+    fn runtime_error(self, reason: &str) -> Result<T, SinkError> {
+        self.ok_or(SinkError::Runtime)
+            .attach_printable(reason.to_string())
+    }
+
+    fn persistence(self, reason: &str) -> Result<Self::Ok, SinkError> {
+        self.ok_or(SinkError::Persistence)
+            .attach_printable(reason.to_string())
+    }
 }
 
 impl<C> SinkErrorReportExt for Report<C> {
@@ -160,6 +213,11 @@ impl<C> SinkErrorReportExt for Report<C> {
 
     fn load_script(self, reason: &str) -> Report<SinkError> {
         self.change_context(SinkError::LoadScript)
+            .attach_printable(reason.to_string())
+    }
+
+    fn runtime_error(self, reason: &str) -> Report<SinkError> {
+        self.change_context(SinkError::Runtime)
             .attach_printable(reason.to_string())
     }
 }

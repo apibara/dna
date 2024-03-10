@@ -1,6 +1,6 @@
 use apibara_core::node::v1alpha2::{Cursor, DataFinality};
-use apibara_sink_common::{Context, CursorAction, Sink};
-use apibara_sink_mongo::{MongoSink, SinkMongoError, SinkMongoOptions};
+use apibara_sink_common::{Context, CursorAction, Sink, SinkError};
+use apibara_sink_mongo::{MongoSink, SinkMongoOptions};
 use error_stack::{Result, ResultExt};
 use futures_util::TryStreamExt;
 use mongodb::bson::{doc, Bson, Document};
@@ -53,7 +53,7 @@ fn new_batch_with_extra(
 
 #[tokio::test]
 #[ignore]
-async fn test_handle_data() -> Result<(), SinkMongoError> {
+async fn test_handle_data() -> Result<(), SinkError> {
     let docker = clients::Cli::default();
     let mongo = docker.run(new_mongo_image());
     let port = mongo.get_host_port_ipv4(27017);
@@ -114,7 +114,7 @@ async fn test_handle_data() -> Result<(), SinkMongoError> {
 
 #[tokio::test]
 #[ignore]
-async fn test_handle_data_empty_collection() -> Result<(), SinkMongoError> {
+async fn test_handle_data_empty_collection() -> Result<(), SinkError> {
     let docker = clients::Cli::default();
     let mongo = docker.run(new_mongo_image());
     let port = mongo.get_host_port_ipv4(27017);
@@ -158,9 +158,7 @@ async fn test_handle_data_empty_collection() -> Result<(), SinkMongoError> {
     Ok(())
 }
 
-async fn test_handle_invalidate_all(
-    invalidate_from: &Option<Cursor>,
-) -> Result<(), SinkMongoError> {
+async fn test_handle_invalidate_all(invalidate_from: &Option<Cursor>) -> Result<(), SinkError> {
     assert!(invalidate_from.is_none() || invalidate_from.clone().unwrap().order_key == 0);
 
     let docker = clients::Cli::default();
@@ -211,19 +209,19 @@ async fn test_handle_invalidate_all(
 
 #[tokio::test]
 #[ignore]
-async fn test_handle_invalidate_genesis() -> Result<(), SinkMongoError> {
+async fn test_handle_invalidate_genesis() -> Result<(), SinkError> {
     test_handle_invalidate_all(&None).await
 }
 
 #[tokio::test]
 #[ignore]
-async fn test_handle_invalidate_block_zero() -> Result<(), SinkMongoError> {
+async fn test_handle_invalidate_block_zero() -> Result<(), SinkError> {
     test_handle_invalidate_all(&Some(new_cursor(0))).await
 }
 
 #[tokio::test]
 #[ignore]
-async fn test_handle_invalidate() -> Result<(), SinkMongoError> {
+async fn test_handle_invalidate() -> Result<(), SinkError> {
     let docker = clients::Cli::default();
     let mongo = docker.run(new_mongo_image());
     let port = mongo.get_host_port_ipv4(27017);
@@ -295,7 +293,7 @@ async fn test_handle_invalidate() -> Result<(), SinkMongoError> {
 
 #[tokio::test]
 #[ignore]
-async fn test_handle_invalidate_with_extra_condition() -> Result<(), SinkMongoError> {
+async fn test_handle_invalidate_with_extra_condition() -> Result<(), SinkError> {
     let docker = clients::Cli::default();
     let mongo = docker.run(new_mongo_image());
     let port = mongo.get_host_port_ipv4(27017);
@@ -375,7 +373,7 @@ async fn test_handle_invalidate_with_extra_condition() -> Result<(), SinkMongoEr
 
 #[tokio::test]
 #[ignore]
-async fn test_handle_data_in_entity_mode() -> Result<(), SinkMongoError> {
+async fn test_handle_data_in_entity_mode() -> Result<(), SinkError> {
     let docker = clients::Cli::default();
     let mongo = docker.run(new_mongo_image());
     let port = mongo.get_host_port_ipv4(27017);
@@ -446,10 +444,10 @@ async fn test_handle_data_in_entity_mode() -> Result<(), SinkMongoError> {
                 None,
             )
             .await
-            .change_context(SinkMongoError)?
+            .change_context(SinkError::Runtime)?
             .try_collect::<Vec<_>>()
             .await
-            .change_context(SinkMongoError)?;
+            .change_context(SinkError::Runtime)?;
 
         assert_eq!(new_docs.len(), 1);
         let new_doc = &new_docs[0];
@@ -464,10 +462,10 @@ async fn test_handle_data_in_entity_mode() -> Result<(), SinkMongoError> {
                 None,
             )
             .await
-            .change_context(SinkMongoError)?
+            .change_context(SinkError::Runtime)?
             .try_collect::<Vec<_>>()
             .await
-            .change_context(SinkMongoError)?;
+            .change_context(SinkError::Runtime)?;
 
         assert_eq!(new_docs.len(), 1);
     }
@@ -498,10 +496,10 @@ async fn test_handle_data_in_entity_mode() -> Result<(), SinkMongoError> {
                 None,
             )
             .await
-            .change_context(SinkMongoError)?
+            .change_context(SinkError::Runtime)?
             .try_collect::<Vec<_>>()
             .await
-            .change_context(SinkMongoError)?;
+            .change_context(SinkError::Runtime)?;
 
         assert_eq!(updated_docs.len(), 1);
         let updated_doc = &updated_docs[0];
@@ -515,10 +513,10 @@ async fn test_handle_data_in_entity_mode() -> Result<(), SinkMongoError> {
                 None,
             )
             .await
-            .change_context(SinkMongoError)?
+            .change_context(SinkError::Runtime)?
             .try_collect::<Vec<_>>()
             .await
-            .change_context(SinkMongoError)?;
+            .change_context(SinkError::Runtime)?;
 
         assert_eq!(new_docs.len(), 1);
         let new_doc = &new_docs[0];
@@ -531,7 +529,7 @@ async fn test_handle_data_in_entity_mode() -> Result<(), SinkMongoError> {
 
 #[tokio::test]
 #[ignore]
-async fn test_handle_invalidate_in_entity_mode() -> Result<(), SinkMongoError> {
+async fn test_handle_invalidate_in_entity_mode() -> Result<(), SinkError> {
     let docker = clients::Cli::default();
     let mongo = docker.run(new_mongo_image());
     let port = mongo.get_host_port_ipv4(27017);
@@ -590,10 +588,10 @@ async fn test_handle_invalidate_in_entity_mode() -> Result<(), SinkMongoError> {
                 None,
             )
             .await
-            .change_context(SinkMongoError)?
+            .change_context(SinkError::Runtime)?
             .try_collect::<Vec<_>>()
             .await
-            .change_context(SinkMongoError)?;
+            .change_context(SinkError::Runtime)?;
 
         assert_eq!(new_docs.len(), 1);
         let new_doc = &new_docs[0];
@@ -614,10 +612,10 @@ async fn test_handle_invalidate_in_entity_mode() -> Result<(), SinkMongoError> {
                 None,
             )
             .await
-            .change_context(SinkMongoError)?
+            .change_context(SinkError::Runtime)?
             .try_collect::<Vec<_>>()
             .await
-            .change_context(SinkMongoError)?;
+            .change_context(SinkError::Runtime)?;
 
         assert_eq!(new_docs.len(), 1);
         let new_doc = &new_docs[0];
@@ -637,10 +635,10 @@ async fn test_handle_invalidate_in_entity_mode() -> Result<(), SinkMongoError> {
                 None,
             )
             .await
-            .change_context(SinkMongoError)?
+            .change_context(SinkError::Runtime)?
             .try_collect::<Vec<_>>()
             .await
-            .change_context(SinkMongoError)?;
+            .change_context(SinkError::Runtime)?;
 
         assert_eq!(new_docs.len(), 1);
         let new_doc = &new_docs[0];
