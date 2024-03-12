@@ -21,6 +21,7 @@ clap.workspace = true
 error-stack.workspace = true
 flatbuffers.workspace = true
 futures-util.workspace = true
+lru.workspace = true
 # Make clients cloneable
 object_store = { git = "https://github.com/fracek/arrow-rs", rev = "662d63ffa", features = [
     "azure",
@@ -36,8 +37,12 @@ tracing.workspace = true
 jemallocator.workspace = true
 
 [dev-dependencies]
+azure_storage = "0.19.0"
+azure_storage_blobs = "0.19.0"
 tempdir.workspace = true
 nanoid.workspace = true
+reqwest.workspace = true
+testcontainers.workspace = true
 
 [build-dependencies]
 pbjson-build.workspace = true

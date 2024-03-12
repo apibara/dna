@@ -19,6 +19,33 @@ impl LocalStorageBackend {
     }
 }
 
+impl LocalStorageBackend {
+    fn target_dir(&self, prefix: &str) -> PathBuf {
+        self.root.join(prefix)
+    }
+
+    fn target_file(&self, prefix: &str, filename: &str) -> PathBuf {
+        let filename = format!("{}.zst", filename);
+        self.target_dir(prefix).join(filename)
+    }
+
+    pub async fn remove(
+        &mut self,
+        prefix: impl AsRef<str> + Send,
+        filename: impl AsRef<str> + Send,
+    ) -> Result<()> {
+        let target_file = self.target_file(prefix.as_ref(), filename.as_ref());
+
+        tokio::fs::remove_file(&target_file)
+            .await
+            .change_context(DnaError::Io)
+            .attach_printable("failed to delete storage file")
+            .attach_printable_lazy(|| format!("file: {:?}", target_file))?;
+
+        Ok(())
+    }
+}
+
 #[async_trait]
 impl StorageBackend for LocalStorageBackend {
     type Reader = ZstdDecoder<tokio::io::BufReader<tokio::fs::File>>;
@@ -40,9 +67,7 @@ impl StorageBackend for LocalStorageBackend {
         prefix: impl AsRef<str> + Send,
         filename: impl AsRef<str> + Send,
     ) -> Result<Self::Reader> {
-        let filename = format!("{}.zst", filename.as_ref());
-
-        let target_file = self.root.join(prefix.as_ref()).join(filename);
+        let target_file = self.target_file(prefix.as_ref(), filename.as_ref());
         if !target_file.exists() {
             return Err(DnaError::Fatal)
                 .attach_printable("storage file does not exist")
@@ -65,15 +90,14 @@ impl StorageBackend for LocalStorageBackend {
         prefix: impl AsRef<str> + Send,
         filename: impl AsRef<str> + Send,
     ) -> Result<Self::Writer> {
-        let target_dir = self.root.join(prefix.as_ref());
+        let target_dir = self.target_dir(prefix.as_ref());
         tokio::fs::create_dir_all(&target_dir)
             .await
             .change_context(DnaError::Io)
             .attach_printable("failed to create storage directory")
             .attach_printable_lazy(|| format!("dir: {:?}", target_dir))?;
 
-        let filename = format!("{}.zst", filename.as_ref());
-        let target_file = target_dir.join(filename);
+        let target_file = self.target_file(prefix.as_ref(), filename.as_ref());
         let file = tokio::fs::File::create(&target_file)
             .await
             .change_context(DnaError::Io)

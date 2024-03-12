@@ -69,10 +69,10 @@ where
         tokio::select! {
             Err(err) = update_task => {
                 error!("ingestion stream error");
-                return Err(err).change_context(DnaError::Fatal).attach_printable("ingestion stream error");
+                Err(err).change_context(DnaError::Fatal).attach_printable("ingestion stream error")
             }
             Err(err) = server_task => {
-                return Err(err).change_context(DnaError::Fatal).attach_printable("ingestion gRPC server error");
+                Err(err).change_context(DnaError::Fatal).attach_printable("ingestion gRPC server error")
             }
             else => {
                 Ok(())
