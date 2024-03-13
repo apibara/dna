@@ -27,6 +27,7 @@ pub struct SinkPostgresConfiguration {
     pub entity_mode: bool,
     pub invalidate: Vec<InvalidateColumn>,
     pub batch_seconds: u64,
+    pub unique_columns: bool,
 }
 
 #[derive(Debug, Args, Default, SinkOptions)]
@@ -67,6 +68,9 @@ pub struct SinkPostgresOptions {
     pub invalidate: Option<Vec<InvalidateColumn>>,
     #[arg(long, env = "POSTGRES_BATCH_SECONDS")]
     pub batch_seconds: Option<u64>,
+    /// Enable unique columns .
+    #[clap(skip)]
+    pub unique_columns: Option<bool>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -97,6 +101,7 @@ impl SinkOptions for SinkPostgresOptions {
             entity_mode: self.entity_mode.or(other.entity_mode),
             invalidate: self.invalidate.or(other.invalidate),
             batch_seconds: self.batch_seconds.or(other.batch_seconds),
+            unique_columns: self.unique_columns.or(other.unique_columns),
         }
     }
 }
@@ -125,6 +130,7 @@ impl SinkPostgresOptions {
         let entity_mode = self.entity_mode.unwrap_or(false);
         let invalidate = self.invalidate.unwrap_or_default();
         let batch_seconds = self.batch_seconds.unwrap_or(0);
+        let unique_columns = self.unique_columns.unwrap_or(false);
 
         Ok(SinkPostgresConfiguration {
             pg,
@@ -133,6 +139,7 @@ impl SinkPostgresOptions {
             entity_mode,
             invalidate,
             batch_seconds,
+            unique_columns,
         })
     }
 }
