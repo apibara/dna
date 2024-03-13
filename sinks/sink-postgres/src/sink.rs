@@ -154,10 +154,18 @@ struct StandardSink {
 impl StandardSink {
     async fn new(client: Client, config: &SinkPostgresConfiguration) -> Result<Self, SinkError> {
         let table_name = &config.table_name;
-        let query = format!(
-            "INSERT INTO {} SELECT * FROM json_populate_recordset(NULL::{}, $1::json)",
-            &table_name, &table_name
-        );
+
+        let query: String = if config.unique_columns {
+            format!(
+                "INSERT INTO {} SELECT * FROM json_populate_recordset(NULL::{}, $1::json) ON CONFLICT DO NOTHING",
+                &table_name, &table_name
+            )
+        } else {
+            format!(
+                "INSERT INTO {} SELECT * FROM json_populate_recordset(NULL::{}, $1::json)",
+                &table_name, &table_name
+            )
+        };
 
         let additional_conditions: String = if config.invalidate.is_empty() {
             "".into()
