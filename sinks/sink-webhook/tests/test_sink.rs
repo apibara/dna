@@ -3,7 +3,7 @@ use apibara_sink_common::{Context, Sink, SinkError};
 use apibara_sink_webhook::{SinkWebhookConfiguration, WebhookSink};
 use error_stack::{Result, ResultExt};
 use http::{HeaderMap, Uri};
-use serde_json::{json, Value};
+use serde_json::{json, Number, Value};
 
 fn new_batch(start_cursor: &Option<Cursor>, end_cursor: &Cursor) -> Value {
     let mut batch = Vec::new();
@@ -199,6 +199,52 @@ async fn test_handle_invalidate_raw() -> Result<(), SinkError> {
 
         let requests = server.received_requests().await.unwrap();
         assert_eq!(requests.len(), 0);
+    }
+
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore]
+async fn test_handle_data_skips_null_values() -> Result<(), SinkError> {
+    let server = wiremock::MockServer::start().await;
+
+    let config = SinkWebhookConfiguration {
+        target_url: server
+            .uri()
+            .parse::<Uri>()
+            .change_context(SinkError::Runtime)?,
+        headers: HeaderMap::new(),
+        raw: false,
+    };
+
+    let mut sink = WebhookSink::new(config);
+
+    let cursor = Some(new_cursor(0));
+    let end_cursor = new_cursor(2);
+    let finality = DataFinality::DataStatusFinalized;
+    let ctx = Context {
+        cursor: cursor.clone(),
+        end_cursor: end_cursor.clone(),
+        finality,
+    };
+
+    // Case 1: all values are null.
+    {
+        let batch = json!([Value::Null, Value::Null]);
+
+        sink.handle_data(&ctx, &batch).await?;
+        let requests = server.received_requests().await.unwrap();
+        assert_eq!(requests.len(), 0);
+    }
+
+    // Case 2: some values are not null, so it should be sent.
+    {
+        let batch = json!([Value::Null, Value::Number(Number::from_f64(123.0).unwrap())]);
+
+        sink.handle_data(&ctx, &batch).await?;
+        let requests = server.received_requests().await.unwrap();
+        assert_eq!(requests.len(), 1);
     }
 
     Ok(())

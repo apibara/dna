@@ -62,7 +62,7 @@ impl Sink for WebhookSink {
         Ok(WebhookSink::new(config))
     }
 
-    #[instrument(skip(self, batch), err(Debug))]
+    #[instrument(skip_all, err(Debug))]
     async fn handle_data(
         &mut self,
         ctx: &Context,
@@ -81,21 +81,31 @@ impl Sink for WebhookSink {
                 self.send(&item).await?;
             }
         } else {
-            let body = &json!({
-                "data": {
-                    "cursor": ctx.cursor,
-                    "end_cursor": ctx.end_cursor,
-                    "finality": ctx.finality,
-                    "batch": batch,
-                },
-            });
-            self.send(&body).await?;
+            // Skip batches of null values.
+            let should_send = match batch {
+                Value::Array(batch) => !batch.iter().all(|v| v.is_null()),
+                Value::Null => false,
+                _ => true,
+            };
+
+            if should_send {
+                let body = &json!({
+                    "data": {
+                        "cursor": ctx.cursor,
+                        "end_cursor": ctx.end_cursor,
+                        "finality": ctx.finality,
+                        "batch": batch,
+                    },
+                });
+
+                self.send(&body).await?;
+            }
         }
 
         Ok(CursorAction::Persist)
     }
 
-    #[instrument(skip(self), err(Debug))]
+    #[instrument(skip_all, err(Debug))]
     async fn handle_invalidate(&mut self, cursor: &Option<Cursor>) -> Result<(), Self::Error> {
         if self.raw {
             return Ok(());
