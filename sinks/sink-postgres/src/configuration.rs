@@ -68,7 +68,7 @@ pub struct SinkPostgresOptions {
     pub invalidate: Option<Vec<InvalidateColumn>>,
     #[arg(long, env = "POSTGRES_BATCH_SECONDS")]
     pub batch_seconds: Option<u64>,
-    /// Enable unique columns .
+    /// Enable unique columns.
     #[clap(skip)]
     pub unique_columns: Option<bool>,
 }

@@ -93,9 +93,12 @@ async fn get_num_rows(client: &Client) -> i64 {
     rows[0].get(0)
 }
 
-async fn create_test_table(port: u16) {
-    let create_table_query =
-        "CREATE TABLE test(block_num int, block_str varchar(10), col1 text, col2 text, _cursor bigint);";
+async fn create_test_table(port: u16, unique: bool) {
+    let create_table_query = if unique {
+        "CREATE TABLE test(block_num int unique, block_str varchar(10), col1 text, col2 text, _cursor bigint);"
+    } else {
+        "CREATE TABLE test(block_num int, block_str varchar(10), col1 text, col2 text, _cursor bigint);"
+    };
 
     let connection_string = format!("postgresql://postgres@localhost:{}", port);
     let (client, connection) = tokio_postgres::connect(&connection_string, NoTls)
@@ -118,7 +121,7 @@ async fn test_handle_data() -> Result<(), SinkError> {
     let postgres = docker.run(new_postgres_image());
     let port = postgres.get_host_port_ipv4(5432);
 
-    create_test_table(port).await;
+    create_test_table(port, false).await;
 
     let mut sink = new_sink(port).await;
 
@@ -166,7 +169,7 @@ async fn test_handle_invalidate_all(invalidate_from: &Option<Cursor>) -> Result<
     let postgres = docker.run(new_postgres_image());
     let port = postgres.get_host_port_ipv4(5432);
 
-    create_test_table(port).await;
+    create_test_table(port, false).await;
 
     let mut sink = new_sink(port).await;
 
@@ -225,7 +228,7 @@ async fn test_handle_invalidate() -> Result<(), SinkError> {
     let postgres = docker.run(new_postgres_image());
     let port = postgres.get_host_port_ipv4(5432);
 
-    create_test_table(port).await;
+    create_test_table(port, false).await;
 
     let mut sink = new_sink(port).await;
 
@@ -277,7 +280,7 @@ async fn test_handle_invalidate_with_additional_condition() -> Result<(), SinkEr
     let postgres = docker.run(new_postgres_image());
     let port = postgres.get_host_port_ipv4(5432);
 
-    create_test_table(port).await;
+    create_test_table(port, false).await;
 
     let invalidate = vec![
         InvalidateColumn {
@@ -334,6 +337,52 @@ async fn test_handle_invalidate_with_additional_condition() -> Result<(), SinkEr
     // 10 rows with col1 = "a" and col2 = "b"
     // 2 rows with col1 = "a" and col2 = "a"
     assert_eq!(rows.len(), 12);
+
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore]
+async fn test_handle_data_with_unique_column() -> Result<(), SinkError> {
+    let docker = clients::Cli::default();
+    let postgres = docker.run(new_postgres_image());
+    let port = postgres.get_host_port_ipv4(5432);
+
+    create_test_table(port, true).await;
+
+    let cursor = Some(new_cursor(0));
+    let end_cursor = new_cursor(2);
+    let finality = DataFinality::DataStatusFinalized;
+    let batch = json!([
+        {
+            "block_num": 0,
+            "block_str": "block_0",
+        },
+        {
+            "block_num": 0,
+            "block_str": "block_0",
+        },
+    ]);
+
+    let ctx = Context {
+        cursor,
+        end_cursor,
+        finality,
+    };
+
+    // By default, unique_columns is false and the sink operation will fail.
+    {
+        let mut sink = new_sink(port).await;
+        let result = sink.handle_data(&ctx, &batch).await;
+        assert!(result.is_err());
+    }
+
+    // Set unique_columns to true and the insert operation changes to allow duplicates.
+    {
+        let mut sink = new_sink_with_unique(port, true).await;
+        let result = sink.handle_data(&ctx, &batch).await;
+        assert!(result.is_ok());
+    }
 
     Ok(())
 }

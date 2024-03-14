@@ -40,6 +40,17 @@ pub async fn new_sink_with_invalidate(
     PostgresSink::from_options(options).await.unwrap()
 }
 
+pub async fn new_sink_with_unique(port: u16, unique: bool) -> PostgresSink {
+    let options = SinkPostgresOptions {
+        connection_string: Some(format!("postgresql://postgres@localhost:{}", port)),
+        table_name: Some("test".into()),
+        no_tls: Some(true),
+        unique_columns: Some(unique),
+        ..Default::default()
+    };
+    PostgresSink::from_options(options).await.unwrap()
+}
+
 pub async fn new_entity_mode_sink(port: u16) -> PostgresSink {
     let options = SinkPostgresOptions {
         connection_string: Some(format!("postgresql://postgres@localhost:{}", port)),
