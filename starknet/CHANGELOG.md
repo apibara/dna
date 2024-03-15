@@ -6,6 +6,15 @@ The format is based on [Common Changelog](https://common-changelog.org/), and
 this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2024-03-15
+
+_Stream reverted transactions and events._
+
+### Changed
+
+-   Respect the `include_reverted` option in the filter to stream reverted
+    transactions and events.
+
 ## [1.4.1] - 2024-01-27
 
 _Bump database size._
