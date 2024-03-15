@@ -3,7 +3,6 @@ use apibara_sdk::{configuration, ClientBuilder, Configuration, Uri};
 use futures_util::{StreamExt, TryStreamExt};
 
 // #[tokio::test]
-// #[ignore]
 #[allow(dead_code)]
 async fn test_apibara_high_level_api() -> Result<(), Box<dyn std::error::Error>> {
     let (config_client, config_stream) = configuration::channel(128);

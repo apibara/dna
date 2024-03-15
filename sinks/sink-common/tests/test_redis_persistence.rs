@@ -15,7 +15,6 @@ pub fn new_redis_image() -> GenericImage {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_single_indexer() {
     let docker = clients::Cli::default();
     let redis = docker.run(new_redis_image());
@@ -45,7 +44,6 @@ async fn test_single_indexer() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_multiple_indexers() {
     let docker = clients::Cli::default();
     let redis = docker.run(new_redis_image());

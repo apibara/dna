@@ -21,7 +21,6 @@ where
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_single_indexer() {
     let docker = clients::Cli::default();
     let etcd = docker.run(Etcd::default());
@@ -51,7 +50,6 @@ async fn test_single_indexer() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_multiple_indexers() {
     let docker = clients::Cli::default();
     let etcd = docker.run(Etcd::default());
@@ -96,7 +94,6 @@ async fn test_multiple_indexers() {
 
 // Flaky test
 // #[tokio::test]
-// #[ignore]
 #[allow(dead_code)]
 async fn test_lock_unlock_single() {
     let docker = clients::Cli::default();
@@ -115,7 +112,6 @@ async fn test_lock_unlock_single() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_lock_unlock_multiple() {
     let docker = clients::Cli::default();
     let etcd = docker.run(Etcd::default());

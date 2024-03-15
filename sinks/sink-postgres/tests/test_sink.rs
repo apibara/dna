@@ -115,7 +115,6 @@ async fn create_test_table(port: u16, unique: bool) {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_handle_data() -> Result<(), SinkError> {
     let docker = clients::Cli::default();
     let postgres = docker.run(new_postgres_image());
@@ -210,19 +209,16 @@ async fn test_handle_invalidate_all(invalidate_from: &Option<Cursor>) -> Result<
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_handle_invalidate_genesis() -> Result<(), SinkError> {
     test_handle_invalidate_all(&None).await
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_handle_invalidate_block_zero() -> Result<(), SinkError> {
     test_handle_invalidate_all(&Some(new_cursor(0))).await
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_handle_invalidate() -> Result<(), SinkError> {
     let docker = clients::Cli::default();
     let postgres = docker.run(new_postgres_image());
@@ -274,7 +270,6 @@ async fn test_handle_invalidate() -> Result<(), SinkError> {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_handle_invalidate_with_additional_condition() -> Result<(), SinkError> {
     let docker = clients::Cli::default();
     let postgres = docker.run(new_postgres_image());
@@ -342,7 +337,6 @@ async fn test_handle_invalidate_with_additional_condition() -> Result<(), SinkEr
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_handle_data_with_unique_column() -> Result<(), SinkError> {
     let docker = clients::Cli::default();
     let postgres = docker.run(new_postgres_image());

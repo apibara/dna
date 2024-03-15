@@ -99,7 +99,6 @@ fn get_file_names(output_dir: &TempDir, path: &str) -> Option<Vec<OsString>> {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_handle_data() -> Result<(), SinkError> {
     let parquet_batch_size = 10;
     let (output_dir, mut sink) = new_sink(parquet_batch_size).await;

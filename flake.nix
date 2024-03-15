@@ -119,7 +119,6 @@
         };
 
         ci = pkgs.callPackage ./nix/ci.nix {
-          tests = builtCrates.packages.tests;
           binaries = builtCrates.binaries;
         };
       in
