@@ -19,7 +19,6 @@ use common::{Devnet, DevnetClient};
 
 // Starknet-devnet doesn't support RCP 0.4 yet
 // #[tokio::test]
-// #[ignore]
 #[allow(dead_code)]
 async fn test_reorg_from_client_pov() {
     init_opentelemetry().unwrap();

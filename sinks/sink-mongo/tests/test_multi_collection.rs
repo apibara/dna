@@ -52,7 +52,6 @@ fn new_batch_with_extra(
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_handle_data() -> Result<(), SinkError> {
     let docker = clients::Cli::default();
     let mongo = docker.run(new_mongo_image());
@@ -113,7 +112,6 @@ async fn test_handle_data() -> Result<(), SinkError> {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_handle_data_empty_collection() -> Result<(), SinkError> {
     let docker = clients::Cli::default();
     let mongo = docker.run(new_mongo_image());
@@ -208,19 +206,16 @@ async fn test_handle_invalidate_all(invalidate_from: &Option<Cursor>) -> Result<
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_handle_invalidate_genesis() -> Result<(), SinkError> {
     test_handle_invalidate_all(&None).await
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_handle_invalidate_block_zero() -> Result<(), SinkError> {
     test_handle_invalidate_all(&Some(new_cursor(0))).await
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_handle_invalidate() -> Result<(), SinkError> {
     let docker = clients::Cli::default();
     let mongo = docker.run(new_mongo_image());
@@ -292,7 +287,6 @@ async fn test_handle_invalidate() -> Result<(), SinkError> {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_handle_invalidate_with_extra_condition() -> Result<(), SinkError> {
     let docker = clients::Cli::default();
     let mongo = docker.run(new_mongo_image());
@@ -372,7 +366,6 @@ async fn test_handle_invalidate_with_extra_condition() -> Result<(), SinkError> 
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_handle_data_in_entity_mode() -> Result<(), SinkError> {
     let docker = clients::Cli::default();
     let mongo = docker.run(new_mongo_image());
@@ -528,7 +521,6 @@ async fn test_handle_data_in_entity_mode() -> Result<(), SinkError> {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_handle_invalidate_in_entity_mode() -> Result<(), SinkError> {
     let docker = clients::Cli::default();
     let mongo = docker.run(new_mongo_image());

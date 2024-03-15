@@ -34,7 +34,6 @@ async fn create_test_table(port: u16) {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_entity_mode() -> Result<(), SinkError> {
     let docker = clients::Cli::default();
     let postgres = docker.run(new_postgres_image());
@@ -119,7 +118,6 @@ async fn test_entity_mode() -> Result<(), SinkError> {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_entity_mode_invalidate_genesis() -> Result<(), SinkError> {
     let docker = clients::Cli::default();
     let postgres = docker.run(new_postgres_image());
@@ -163,7 +161,6 @@ async fn test_entity_mode_invalidate_genesis() -> Result<(), SinkError> {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_entity_mode_invalidate() -> Result<(), SinkError> {
     let docker = clients::Cli::default();
     let postgres = docker.run(new_postgres_image());

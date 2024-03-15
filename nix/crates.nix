@@ -17,6 +17,7 @@ let
 
   buildArgs = ({
     nativeBuildInputs = with pkgs; [
+      cargo-nextest
       clang
       cmake
       llvmPackages.libclang.lib
@@ -71,45 +72,21 @@ let
     version = "0.0.0";
   });
 
-  testBinaries = craneLib.buildPackage (commonArgs // {
+  unitTests = craneLib.cargoNextest (commonArgs // {
     inherit cargoArtifacts;
-    pname = "apibara-test";
+    pname = "apibara";
     version = "0.0.0";
-    cargoExtraArgs = "--tests";
-    doCheck = false;
+    cargoNextestExtraArgs = "-E 'kind(lib)'";
+  });
 
-    installPhaseCommand = ''
-      local dest="$out"
-      local log="$cargoBuildLog"
-
-      if ! [ -f "''${log}" ]; then
-        echo "unable to install, cargo build log does not exist at: ''${log}"
-        false
-      fi
-
-      echo "searching for tests to install from cargo build log at ''${log}"
-
-      local logs
-      logs=$(jq -R 'fromjson?' <"''${log}")
-
-      local select_test='select(.reason == "compiler-artifact" and .profile.test == true)'
-      local select_bins="''${select_test} | .executable | select(.!= null)"
-
-      function installArtifacts() {
-        local loc=''${1?:missing}
-        mkdir -p "''${loc}"
-
-        while IFS= read -r to_install; do
-          echo "installing ''${to_install}"
-          cp "''${to_install}" "''${loc}"
-        done
-
-        rmdir --ignore-fail-on-non-empty "''${loc}"
-      }
-
-      echo "''${logs}" | jq -r "''${select_bins}" | installArtifacts "''${dest}/bin"
-      echo "searching for tests complete"
-    '';
+  integrationTests = craneLib.cargoNextest (commonArgs // {
+    inherit cargoArtifacts;
+    pname = "apibara";
+    version = "0.0.0";
+    cargoNextestExtraArgs = "-E 'kind(test)'";
+    nativeBuildInputs = commonArgs.nativeBuildInputs ++ [
+      pkgs.docker-client
+    ];
   });
 
   /* Build a crate from a path, optionally overriding the binary name.
@@ -253,7 +230,7 @@ let
   # Binaries as packages.
   # binaryPackages = builtins.mapAttrs (_: crate: crate.bin) binaries;
 in
-rec {
+{
   checks = {
     inherit cargoFmt cargoClippy;
   };
@@ -270,6 +247,7 @@ rec {
 
   packages = images // binariesUniversal // {
     all-crates = allCrates;
-    tests = testBinaries;
+    unit-tests = unitTests;
+    integration-tests = integrationTests;
   };
 }

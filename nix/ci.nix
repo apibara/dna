@@ -1,4 +1,4 @@
-{ pkgs, tests, binaries, ... }:
+{ pkgs, binaries, ... }:
 /* CI/CD related scripts and pipelines.
 
   This file is used to dynamically generate the Buildkite pipeline (see `pipeline` down below).
@@ -9,36 +9,6 @@
    - `binaries`: a list of binaries in the crate. This is generated from the `crates` definition in flake.nix.
  */
 let
-  /* Run all unit tests.
-  */
-  ci-test = pkgs.writeShellApplication {
-    name = "ci-test";
-    runtimeInputs = [ tests ];
-    text = ''
-      echo "--- Running unit tests"
-      for testBin in ${tests}/bin/*; do
-        echo "Running ''${testBin}"
-        ''${testBin}
-      done
-    '';
-  };
-
-  /* Run all integration tests.
-
-    This tests take longer to run so they're run separately.
-  */
-  ci-e2e-test = pkgs.writeShellApplication {
-    name = "ci-e2e-test";
-    runtimeInputs = [ tests ];
-    text = ''
-      echo "--- Running e2e tests"
-      for testBin in ${tests}/bin/*; do
-        echo "Running ''${testBin}"
-        ''${testBin} --ignored
-      done
-    '';
-  };
-
   /* Prepares the image to be uploaded to Buildkite.
 
     Notice that this script expects the image to be in `./result`.
@@ -222,11 +192,7 @@ let
       steps = [
         {
           label = ":nix: Checks";
-          command = "nix flake check";
-        }
-        {
-          label = ":rust: Build tests";
-          command = "nix build .#tests";
+          command = "nix flake check -L";
         }
         {
           wait = { };
@@ -234,14 +200,14 @@ let
         {
           label = ":test_tube: Run unit tests";
           commands = [
-            "nix develop .#test -c ci-test"
+            "nix build .#unit-tests -L"
           ];
         }
         {
           label = ":test_tube: Run e2e tests";
           commands = [
             "podman system service --time=0 unix:///var/run/docker.sock &"
-            "nix develop .#test -c ci-e2e-test"
+            "nix build .#integration-tests -L"
           ];
         }
         {
@@ -378,20 +344,10 @@ in
 
   shell = {
     ci = pkgs.mkShell {
-      buildInputs = with pkgs; [
+      buildInputs = [
         ci-prepare-image
         ci-prepare-binary
         ci-publish-image
-      ];
-    };
-
-    test = pkgs.mkShell {
-      buildInputs = with pkgs; [
-        # used by e2e tests to start test containers
-        docker-client
-
-        ci-test
-        ci-e2e-test
       ];
     };
   };
