@@ -6,6 +6,18 @@ The format is based on [Common Changelog](https://common-changelog.org/), and
 this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2024-03-15
+
+_Batch insert rows._
+
+### Added
+
+-   Introduce the new `--batch-seconds` option to insert rows into the
+    table at the specified interval. You should use this option if you find
+    the indexer is making too many small writes and wish to group them into
+    larger ones. This option only affects backfilling finalized data, recent
+    onchain data is inserted as soon as it's produced.
+
 ## [0.5.5] - 2024-01-27
 
 _Read and write data from the filesystem._

@@ -6,6 +6,17 @@ The format is based on [Common Changelog](https://common-changelog.org/), and
 this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2024-03-15
+
+_Uploading data to Amazon S3 compatible storage._
+
+### Added
+
+-   You can now upload Parquet files directly to Amazon S3 compatible storage.
+    Change the `--output-dir` to an S3 URL like `s3://bucket/` to enable this mode.
+    The sink will authenticate with S3 using the default AWS environment variables
+    (e.g. `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`).
+
 ## [0.4.3] - 2024-01-25
 
 _Persist state to Redis._

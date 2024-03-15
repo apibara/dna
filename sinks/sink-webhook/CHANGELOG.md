@@ -6,6 +6,16 @@ The format is based on [Common Changelog](https://common-changelog.org/), and
 this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2024-03-15
+
+_Skip webhook invocation if data is `null`._
+
+### Changed
+
+-   The sink will not invoke the webhook if the data returned by the transform
+    function is `null`. Previously, this was the behavior of the sink in _raw_ mode,
+    now that's the behavior in normal mode too.
+
 ## [0.4.3] - 2024-01-25
 
 _Persist state to Redis._
