@@ -169,12 +169,7 @@ where
             .into_iter()
             .zip(receipts.into_iter())
             .flat_map(|(tx, rx)| {
-                // For now, never include reverted transactions.
-                // TODO: use filter flag.
-                if rx.execution_status == v1alpha2::ExecutionStatus::Reverted as i32 {
-                    return None;
-                }
-                if self.filter_transaction(&tx) {
+                if self.filter_transaction(&tx, rx.execution_status) {
                     Some(v1alpha2::TransactionWithReceipt {
                         transaction: Some(tx),
                         receipt: Some(rx),
@@ -214,13 +209,9 @@ where
         let events = filter_events_span.in_scope(|| {
             let mut events = Vec::default();
             for receipt in &receipts {
-                // TODO: use filter flag.
-                if receipt.execution_status == v1alpha2::ExecutionStatus::Reverted as i32 {
-                    continue;
-                }
                 let transaction = &transactions[receipt.transaction_index as usize];
                 for event in &receipt.events {
-                    if let Some(filter) = self.filter_event(event) {
+                    if let Some(filter) = self.filter_event(event, receipt.execution_status) {
                         let transaction = if filter.include_transaction.unwrap_or(true) {
                             Some(transaction.clone())
                         } else {
@@ -269,13 +260,9 @@ where
 
         let mut messages = Vec::default();
         for receipt in &receipts {
-            // TODO: use filter flag.
-            if receipt.execution_status == v1alpha2::ExecutionStatus::Reverted as i32 {
-                continue;
-            }
             let transaction = &transactions[receipt.transaction_index as usize];
             for message in &receipt.l2_to_l1_messages {
-                if self.filter_l2_to_l1_message(message) {
+                if self.filter_l2_to_l1_message(message, receipt.execution_status) {
                     let transaction = transaction.clone();
                     let receipt = receipt.clone();
                     let message = message.clone();
@@ -385,16 +372,32 @@ where
         }
     }
 
-    fn filter_transaction(&self, tx: &v1alpha2::Transaction) -> bool {
-        self.filter.transactions.iter().any(|f| f.matches(tx))
+    fn filter_transaction(&self, tx: &v1alpha2::Transaction, tx_status: i32) -> bool {
+        self.filter.transactions.iter().any(|f| {
+            let include_if_success_or_reverted =
+                tx_status != v1alpha2::ExecutionStatus::Reverted as i32 || f.include_reverted;
+            include_if_success_or_reverted && f.matches(tx)
+        })
     }
 
-    fn filter_event(&self, event: &v1alpha2::Event) -> Option<&v1alpha2::EventFilter> {
-        self.filter.events.iter().find(|f| f.matches(event))
+    fn filter_event(
+        &self,
+        event: &v1alpha2::Event,
+        tx_status: i32,
+    ) -> Option<&v1alpha2::EventFilter> {
+        self.filter.events.iter().find(|f| {
+            let include_if_success_or_reverted =
+                tx_status != v1alpha2::ExecutionStatus::Reverted as i32 || f.include_reverted();
+            include_if_success_or_reverted && f.matches(event)
+        })
     }
 
-    fn filter_l2_to_l1_message(&self, message: &v1alpha2::L2ToL1Message) -> bool {
-        self.filter.messages.iter().any(|f| f.matches(message))
+    fn filter_l2_to_l1_message(&self, message: &v1alpha2::L2ToL1Message, tx_status: i32) -> bool {
+        self.filter.messages.iter().any(|f| {
+            let include_if_success_or_reverted =
+                tx_status != v1alpha2::ExecutionStatus::Reverted as i32 || f.include_reverted;
+            include_if_success_or_reverted && f.matches(message)
+        })
     }
 
     fn storage_diffs(
