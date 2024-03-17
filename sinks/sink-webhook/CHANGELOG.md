@@ -6,6 +6,15 @@ The format is based on [Common Changelog](https://common-changelog.org/), and
 this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2024-03-17
+
+_Fix compatibility with GLIBC < 2.38 (Ubuntu 22.04)._
+
+### Fixed
+
+-   Compile against GLIBC 2.34 to fix binaries not working on Linuxes
+    that use GLIBC 2.38 (e.g. Ubuntu 22.04).
+
 ## [0.5.0] - 2024-03-15
 
 _Skip webhook invocation if data is `null`._
