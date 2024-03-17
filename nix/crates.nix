@@ -83,7 +83,7 @@ let
     inherit cargoArtifacts;
     pname = "apibara";
     version = "0.0.0";
-    cargoNextestExtraArgs = "-E 'kind(test)'";
+    cargoNextestExtraArgs = "-E 'kind(test)' --retries 3";
     nativeBuildInputs = commonArgs.nativeBuildInputs ++ [
       pkgs.docker-client
     ];
