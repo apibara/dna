@@ -1,0 +1,38 @@
+name: CI Pipeline
+
+concurrency:
+  group: pipeline-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+on:
+  merge_group:
+
+  pull_request:
+    branches:
+      - "main"
+    types:
+      - opened
+      - synchronize
+
+  push:
+    branches:
+      - "main"
+
+jobs:
+  check:
+    name: "Checks"
+    uses: ./.github/workflows/check.yml
+
+  build-linux-x86_64:
+    needs: check
+    name: "Linux x86_64: Build"
+    uses: ./.github/workflows/build.yml
+    with:
+      os: warp-ubuntu-latest-x64-4x
+
+  # build-macos-aarch64:
+  #   needs: check
+  #   name: "MacOS aarch64: Build"
+  #   uses: ./.github/workflows/build.yml
+  #   with:
+  #     os: macos-latest
