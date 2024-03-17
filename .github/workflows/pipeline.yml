@@ -22,6 +22,10 @@ jobs:
   check:
     name: "Checks"
     uses: ./.github/workflows/check.yml
+    with:
+      os: warp-ubuntu-latest-x64-4x
+    secrets:
+      cachix-token: "${{ secrets.CACHIX_AUTH_TOKEN }}"
 
   build-linux-x86_64:
     needs: check
@@ -29,6 +33,8 @@ jobs:
     uses: ./.github/workflows/build.yml
     with:
       os: warp-ubuntu-latest-x64-4x
+    secrets:
+      cachix-token: "${{ secrets.CACHIX_AUTH_TOKEN }}"
 
   # build-macos-aarch64:
   #   needs: check

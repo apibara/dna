@@ -2,11 +2,18 @@ name: Checks (on Linux)
 
 on:
   workflow_call:
+    inputs:
+      os:
+        required: true
+        type: string
+    secrets:
+      cachix-token:
+        required: true
 
 jobs:
   lint:
     name: Run linters and code checks
-    runs-on: warp-ubuntu-latest-x64-4x
+    runs-on: "${{ inputs.os }}"
     steps:
       - uses: actions/checkout@v4
       - uses: cachix/install-nix-action@v25
@@ -15,12 +22,12 @@ jobs:
       - uses: cachix/cachix-action@v14
         with:
           name: apibara-public
-          authToken: "${{ secrets.CACHIX_AUTH_TOKEN }}"
+          authToken: "${{ secrets.cachix-token }}"
       - run: nix flake check -L --accept-flake-config
 
   unit-test:
     name: Run unit tests
-    runs-on: warp-ubuntu-latest-x64-4x
+    runs-on: "${{ inputs.os }}"
     steps:
       - uses: actions/checkout@v4
       - uses: cachix/install-nix-action@v25
@@ -29,12 +36,12 @@ jobs:
       - uses: cachix/cachix-action@v14
         with:
           name: apibara-public
-          authToken: "${{ secrets.CACHIX_AUTH_TOKEN }}"
+          authToken: "${{ secrets.cachix-token }}"
       - run: nix build .#unit-tests -L --accept-flake-config
 
   integration-test:
     name: Run integration tests
-    runs-on: warp-ubuntu-latest-x64-4x
+    runs-on: "${{ inputs.os }}"
     needs:
       - lint
       - unit-test
@@ -46,5 +53,5 @@ jobs:
       - uses: cachix/cachix-action@v14
         with:
           name: apibara-public
-          authToken: "${{ secrets.CACHIX_AUTH_TOKEN }}"
+          authToken: "${{ secrets.cachix-token }}"
       - run: nix build .#integration-tests -L --accept-flake-config

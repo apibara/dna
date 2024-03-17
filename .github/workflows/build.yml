@@ -6,6 +6,9 @@ on:
       os:
         required: true
         type: string
+    secrets:
+      cachix-token:
+        required: true
 
 jobs:
   build:
@@ -19,5 +22,5 @@ jobs:
       - uses: cachix/cachix-action@v14
         with:
           name: apibara-public
-          authToken: "${{ secrets.CACHIX_AUTH_TOKEN }}"
+          authToken: "${{ secrets.cachix-token }}"
       - run: nix build .#all-crates -L --accept-flake-config
