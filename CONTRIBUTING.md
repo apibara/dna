@@ -63,7 +63,15 @@ You can use all the standard cargo commands for development. Before submitting
 your PR, ensure all the projects build with Nix. For example:
 
 ```
-nix build .#apibara-starknet
+nix build .#all-crates
+```
+
+You can use nix to run tests in the same environment that will be used in GitHub Actions.
+
+```
+nix build .#unit-tests
+
+nix build .#integration-tests
 ```
 
 **Committing changes**
@@ -74,16 +82,12 @@ commit message. Usually, we prefer a single commit for each unit of work, so use
 If the commit is large, please briefly describe why you made this change.
 
 ```
-starknet: change X to Y
+sink: change X to Y
 
 This change is needed because ...
 ```
 
 Don't use any prefix if your change concerns CI or the build system.
-
-We recommend splitting significant contributions up into many independent
-stacked changes. Our team recommends using
-[Graphite for stacked changes](https://graphite.dev/).
 
 ## Code Review
 
@@ -93,14 +97,23 @@ review, and we will review it as soon as possible.
 The review process helps us keep the project's code quality high, so expect to
 receive comments and suggestions on improving the code.
 
+**Pull Request description**
+
+Using the starting template, update the pull request message to summarize your
+changes and how to test everything is working correctly.
+
+This will help us when:
+
+-   reviewing the PR to more easily understand why a change is needed.
+-   testing the changes locally before merging.
+-   making a new release, your message will become part of the CHANGELOG.
+
 **Updating your Pull Request**
 
 After updating the code with your changes, amend the previous commit:
 
 ```
 git commit --amend
-# or with graphite
-gt commit amend # gt ca also works
 ```
 
 This step ensures that git history always looks clean and tidy. Push changes to
@@ -116,28 +129,4 @@ and thousands of end users 🎊
 
 ## Making a release
 
-Releases are prepared manually to ensure changes are communicated effectively.
-
-**1. Update crate version**
-
-Update crate version, following
-[Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
-**2. Update changelog**
-
-Update the `CHANGELOG.md` file in the target crate, following
-[Common Changelog](https://common-changelog.org/). Make sure to include the link
-to the release that will be created in Step 5.
-
-**3. Open a Pull Request**
-
-Open a Pull Request with the release changes.
-
-**4. Merge & wait for CI**
-
-Nothing much to do here.
-
-**5. Create GitHub Release**
-
-Create a release on GitHub, creating a new tag in the format
-`<crate>/v<version>` (e.g. `operator/v1.2.3`).
+We are in the process of updating how releases are made.
