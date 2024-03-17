@@ -79,14 +79,27 @@ let
     cargoNextestExtraArgs = "-E 'kind(lib)'";
   });
 
-  integrationTests = craneLib.cargoNextest (commonArgs // {
+  integrationTestsArchive = craneLib.mkCargoDerivation (commonArgs // {
     inherit cargoArtifacts;
-    pname = "apibara";
+    pname = "apibara-nextest-archive";
     version = "0.0.0";
-    cargoNextestExtraArgs = "-E 'kind(test)' --retries 3";
-    nativeBuildInputs = commonArgs.nativeBuildInputs ++ [
-      pkgs.docker-client
-    ];
+    doCheck = true;
+
+    nativeBuildInputs = (commonArgs.nativeBuildInputs or [ ]) ++ [ pkgs.cargo-nextest ];
+
+    buildPhaseCargoCommand = ''
+      mkdir -p $out
+      cargo nextest --version
+    '';
+
+    # Work around Nextest bug: https://github.com/nextest-rs/nextest/issues/267
+    preCheck = pkgs.lib.optionalString pkgs.stdenv.isDarwin ''
+      export DYLD_FALLBACK_LIBRARY_PATH=$(${pkgs.rustc}/bin/rustc --print sysroot)/lib
+    '';
+
+    checkPhaseCargoCommand = ''
+      cargo nextest archive --cargo-profile $CARGO_PROFILE --archive-format tar-zst --archive-file $out/archive.tar.zst
+    '';
   });
 
   /* Build a crate from a path, optionally overriding the binary name.
@@ -241,6 +254,30 @@ in
         allCrates
       ];
     });
+
+    # Integration tests require an internet connection, which is
+    # not available inside the Nix build environment.
+    # Use the generated nextest archive and run the tests outside of
+    # the build environment.
+    integration =
+      let
+        runTests = pkgs.writeScriptBin "run-integration-tests" ''
+          echo "Using archive at ${integrationTestsArchive}"
+          cargo nextest run \
+            --archive-file ${integrationTestsArchive}/archive.tar.zst\
+            --workspace-remap=. \
+            -E 'kind(test)'
+        '';
+      in
+      pkgs.mkShell (buildArgs // {
+        inputsFrom = [
+          integrationTestsArchive
+        ];
+
+        nativeBuildInputs = (integrationTestsArchive.nativeBuildInputs or [ ]) ++ [ runTests ];
+
+        ARCHIVE_PATH = "${integrationTestsArchive}/archive.tar.zst";
+      });
   };
 
   binaries = builtins.attrNames binariesUniversal;
@@ -248,6 +285,6 @@ in
   packages = images // binariesUniversal // {
     all-crates = allCrates;
     unit-tests = unitTests;
-    integration-tests = integrationTests;
+    integration-tests-archive = integrationTestsArchive;
   };
 }
