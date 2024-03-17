@@ -117,14 +117,8 @@
           inherit crane crates;
           workspaceDir = ./.;
         };
-
-        ci = pkgs.callPackage ./nix/ci.nix {
-          binaries = builtCrates.binaries;
-        };
       in
       {
-        inherit (ci) pipeline;
-
         # format with `nix fmt`
         formatter = pkgs.nixpkgs-fmt;
 
@@ -132,7 +126,7 @@
         checks = builtCrates.checks;
 
         # development shells. start with `nix develop`.
-        devShells = (builtCrates.shell // ci.shell);
+        devShells = builtCrates.shell;
 
         # all packages.
         # show them with `nix flake show`.
