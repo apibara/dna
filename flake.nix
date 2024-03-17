@@ -2,7 +2,7 @@
   description = "Apibara development environment";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-23.11";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-23.05";
     flake-utils = {
       url = "github:numtide/flake-utils";
     };
@@ -11,7 +11,7 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     crane = {
-      url = "github:ipetkov/crane";
+      url = "github:fracek/crane/5be1e3c664";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
