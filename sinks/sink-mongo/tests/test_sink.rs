@@ -433,7 +433,6 @@ async fn test_handle_data_in_entity_mode() -> Result<(), SinkError> {
         assert_eq!(new_doc.get_str("v0").unwrap(), "a");
         assert_eq!(new_doc.get_str("v1").unwrap(), "a");
     }
-
     Ok(())
 }
 
@@ -716,6 +715,72 @@ async fn test_invalidate_batch_mode() -> Result<(), SinkError> {
 
     let all_docs = new_docs(&Some(new_cursor(0)), &new_cursor(num_batches * batch_size));
     assert_eq!(all_docs, get_all_docs(sink.collection("test")?).await,);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_handle_empty_data() -> Result<(), SinkError> {
+    let docker = clients::Cli::default();
+    let mongo = docker.run(new_mongo_image());
+    let port = mongo.get_host_port_ipv4(27017);
+
+    let options = SinkMongoOptions {
+        connection_string: Some(format!("mongodb://localhost:{}", port)),
+        database: Some("test".into()),
+        collection_name: Some("test".into()),
+        collection_names: None,
+        entity_mode: Some(false),
+        invalidate: None,
+        batch_seconds: None,
+    };
+
+    let mut sink = MongoSink::from_options(options).await?;
+    let finality = DataFinality::DataStatusAccepted;
+    let cursor = Some(new_cursor(4));
+    let end_cursor = new_cursor(5);
+    let batch = json!([]);
+
+    let ctx = Context {
+        cursor,
+        end_cursor,
+        finality,
+    };
+
+    sink.handle_data(&ctx, &batch).await?;
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_handle_empty_data_in_entity_mode() -> Result<(), SinkError> {
+    let docker = clients::Cli::default();
+    let mongo = docker.run(new_mongo_image());
+    let port = mongo.get_host_port_ipv4(27017);
+
+    let options = SinkMongoOptions {
+        connection_string: Some(format!("mongodb://localhost:{}", port)),
+        database: Some("test".into()),
+        collection_name: Some("test".into()),
+        collection_names: None,
+        entity_mode: Some(true),
+        invalidate: None,
+        batch_seconds: None,
+    };
+
+    let mut sink = MongoSink::from_options(options).await?;
+    let finality = DataFinality::DataStatusAccepted;
+    let cursor = Some(new_cursor(4));
+    let end_cursor = new_cursor(5);
+    let batch = json!([]);
+
+    let ctx = Context {
+        cursor,
+        end_cursor,
+        finality,
+    };
+
+    sink.handle_data(&ctx, &batch).await?;
 
     Ok(())
 }
