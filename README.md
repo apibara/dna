@@ -29,53 +29,91 @@ We provide a collection of integrations that send data directly where it's
 needed. Our integrations support all data from genesis block to the current
 pending block and they ensure data is kept up-to-date.
 
-- **Webhook**: call an HTTP endpoint for each batch of data.
-- **PostgreSQL**: stream data into a specific table, keeping it up-to-date on
-  new blocks and chain reorganizations.
-- **MongoDB**: store data into a specific collection, keeping it up-to-date on
-  new blocks and chain reorganizations.
-- **Parquet**: generate Parquet files to be used for data analysis.
+-   **Webhook**: call an HTTP endpoint for each batch of data.
+-   **PostgreSQL**: stream data into a specific table, keeping it up-to-date on
+    new blocks and chain reorganizations.
+-   **MongoDB**: store data into a specific collection, keeping it up-to-date on
+    new blocks and chain reorganizations.
+-   **Parquet**: generate Parquet files to be used for data analysis.
 
 ## Getting started
 
 You can get started using Apibara by installing the official CLI tool.
-
-If you'd like to interact with the DNA protocol directly, you can use one of the
-official SDKs:
-
-- [Typescript](https://www.apibara.com/docs/typescript-sdk)
-- [Python](https://www.apibara.com/docs/python-sdk)
+We provide [detailed instructions in the official documentation](https://www.apibara.com/docs).
 
 ## Docker images
 
-We publish docker images on quay.io:
+We publish docker images on quay.io. Images are available for both the x86_64
+and aarch64 architectures.
 
-- [Starknet DNA](https://quay.io/repository/apibara/starknet?tab=tags)
+**Sinks**
+
+-   [MongoDB](https://quay.io/repository/apibara/sink-mongo?tab=tags)
+-   [PostgreSQL](https://quay.io/repository/apibara/sink-postgres?tab=tags)
+-   [Parquet](https://quay.io/repository/apibara/sink-parquet?tab=tags)
+-   [Webhook](https://quay.io/repository/apibara/sink-webhook?tab=tags)
+
+**Server**
+
+-   [Starknet DNA](https://quay.io/repository/apibara/starknet?tab=tags)
+
+## Contributing
+
+We are open to contributions.
+
+-   Read the
+    [CONTRIBUTING.md](https://github.com/apibara/dna/blob/main/CONTRIBUTING.md)
+    guide to learn more about the process.
+-   Some contributions are [rewarded on OnlyDust](https://app.onlydust.com/p/apibara).
+    If you're interested in paid contributions, get in touch before submitting a PR.
 
 ## Development
 
 Apibara DNA is developed against stable Rust. We provide a
 [nix](https://nixos.org/) environment to simplify installing all dependencies
-required by DNA.
+required by the project.
 
-- if you have nix installed, simply run `nix develop`.
-- otherwise, you can launch a devcontainer which installs and configures nix for
-  you.
+-   if you have nix installed, simply run `nix develop`.
+-   if you don't have nix installed, you should install Rust using your favorite
+    tool.
+
+## Platform Support
+
+**Tier 1**
+
+These platforms are tested against every pull request.
+
+-   linux-x86_64
+-   macos-aarch64
+
+**Tier 2**
+
+These platform are tested on new releases.
+
+-   linux-aarch64 - used for multi-arch docker images.
+
+**Unsupported**
+
+These platforms are not supported.
+
+-   windows - if you're a developer using Windows, we recommend the [Windows
+    Subsystem for Linux (WSL)](https://learn.microsoft.com/en-us/windows/wsl/).
+-   macos-x86_64 - given the slowness of CI runners for this platform, we cannot
+    provide builds for it.
 
 ## Project Structure
 
 The project is comprised of several crates, refer to their READMEs to learn more
 about each one of them.
 
-- `core`: types shared by all other crates.
-- `starknet`: StarkNet source node.
-- `sdk`: connect to streams using Rust.
-- `sink-common`: base crate to develop custom sinks.
-- `sink-*`: sink implementations.
+-   `core`: types shared by all other crates.
+-   `starknet`: StarkNet source node.
+-   `sdk`: connect to streams using Rust.
+-   `sinks`: contains the code for all sinks.
 
 ## License
 
-Copyright 2023 GNC Labs Limited
+Copyright 2024 GNC Labs Limited
 
 Licensed under the Apache License, Version 2.0 (the "License"); you may not use
 this file except in compliance with the License. You may obtain a copy of the
