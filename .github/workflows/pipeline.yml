@@ -36,14 +36,14 @@ jobs:
     secrets:
       cachix-token: "${{ secrets.CACHIX_AUTH_TOKEN }}"
 
-  build-linux-aarch64:
-    needs: check
-    name: "Linux aarch64: Build"
-    uses: ./.github/workflows/build.yml
-    with:
-      os: warp-ubuntu-latest-arm64-4x
-    secrets:
-      cachix-token: "${{ secrets.CACHIX_AUTH_TOKEN }}"
+  # build-linux-aarch64:
+  #   needs: check
+  #   name: "Linux aarch64: Build"
+  #   uses: ./.github/workflows/build.yml
+  #   with:
+  #     os: warp-ubuntu-latest-arm64-4x
+  #   secrets:
+  #     cachix-token: "${{ secrets.CACHIX_AUTH_TOKEN }}"
 
   build-macos-aarch64:
     needs: check
