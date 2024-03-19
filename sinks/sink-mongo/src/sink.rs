@@ -203,15 +203,10 @@ impl MongoSink {
         end_cursor: &Cursor,
         values: &[Value],
     ) -> Result<(), SinkError> {
-        // TODO: sometimes, the function fails because it tries to insert empty data
-        // I noticed this especially when persistence is enabled and the sink is restarted
-        // See the error below:
-        // 2024-01-29T14:18:19.602299Z  WARN failed to handle data err=mongo sink operation failed
-        // ├╴at sinks/sink-mongo/src/sink.rs:313:18
-        // ├╴failed to insert data (logs)
-        // │
-        // ╰─▶ Kind: An invalid argument was provided: No documents provided to insert_many, labels: {}
-        //     ╰╴at sinks/sink-mongo/src/sink.rs:313:18
+        // If there are no values, we don't need to do anything.
+        if values.is_empty() {
+            return Ok(());
+        }
 
         if self.collections.len() > 1 {
             let missing_collection_key =
