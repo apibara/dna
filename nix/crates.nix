@@ -240,8 +240,39 @@ let
     in
     pkgs.lib.attrsets.mapAttrs' mkUniversal binaries;
 
-  # Binaries as packages.
-  # binaryPackages = builtins.mapAttrs (_: crate: crate.bin) binaries;
+  # Ubuntu-based Docker images.
+  imagesUbuntu =
+    let
+      # Base image.
+      # Args obtained with:
+      # nix-prefetch-docker ubuntu 22.04
+      ubuntu = pkgs.dockerTools.pullImage {
+        imageName = "ubuntu";
+        imageDigest = "sha256:77906da86b60585ce12215807090eb327e7386c8fafb5402369e421f44eff17e";
+        sha256 = "0vgrb2lwxxxncw0k8kc0019zpg32bdq7d427lszzdnpdy98pfvbc";
+        finalImageName = "ubuntu";
+        finalImageTag = "22.04";
+      };
+
+      mkUbuntuImage = name: value: {
+        name = "${name}-image-ubuntu";
+        value = pkgs.dockerTools.buildImage {
+          name = name;
+          # we're publishing images, so make it less confusing
+          tag = "latest-ubuntu";
+          created = "now";
+          fromImage = ubuntu;
+          copyToRoot = pkgs.buildEnv {
+            name = "${name}-image-ubuntu-root";
+            pathsToLink = [ "/bin" ];
+            paths = [
+              value
+            ];
+          };
+        };
+      };
+    in
+    pkgs.lib.attrsets.mapAttrs' mkUbuntuImage binariesUniversal;
 in
 {
   checks = {
@@ -282,7 +313,7 @@ in
 
   binaries = builtins.attrNames binariesUniversal;
 
-  packages = images // binariesUniversal // {
+  packages = images // imagesUbuntu // binariesUniversal // {
     all-crates = allCrates;
     unit-tests = unitTests;
     integration-tests-archive = integrationTestsArchive;
