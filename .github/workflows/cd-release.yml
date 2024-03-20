@@ -1,0 +1,169 @@
+name: Release a target
+
+on:
+  workflow_call:
+    inputs:
+      target:
+        required: true
+        type: string
+      major:
+        required: true
+        type: string
+      minor:
+        required: true
+        type: string
+      patch:
+        required: true
+        type: string
+    secrets:
+      cachix-token:
+        required: true
+      quay-username:
+        required: true
+      quay-password:
+        required: true
+
+jobs:
+  # Step 1: build the target for all platforms
+
+  build-linux-x86_64:
+    name: "Linux x86_64: Build"
+    uses: ./.github/workflows/build.yml
+    with:
+      os: warp-ubuntu-latest-x64-4x
+      target: ${{ inputs.target }}
+    secrets:
+      cachix-token: "${{ secrets.cachix-token }}"
+
+  build-linux-aarch64:
+    name: "Linux aarch64: Build"
+    uses: ./.github/workflows/build.yml
+    with:
+      os: warp-ubuntu-latest-arm64-8x
+      target: ${{ inputs.target }}
+    secrets:
+      cachix-token: "${{ secrets.cachix-token }}"
+
+  build-macos-aarch64:
+    name: "MacOS aarch64: Build"
+    uses: ./.github/workflows/build.yml
+    with:
+      os: warp-macos-latest-arm64-6x
+      target: ${{ inputs.target }}
+    secrets:
+      cachix-token: "${{ secrets.cachix-token }}"
+
+  # Step 2a: create release archive for all platforms
+
+  build-linux-x86_64-archive:
+    name: "Linux x86_64: Build archive"
+    needs: build-linux-x86_64
+    uses: ./.github/workflows/build.yml
+    with:
+      os: warp-ubuntu-latest-x64-4x
+      target: ${{ inputs.target }}-archive
+      artifact_name: "${{ inputs.target }}-x86_64-linux"
+    secrets:
+      cachix-token: "${{ secrets.cachix-token }}"
+
+  build-linux-aarch64-archive:
+    name: "Linux aarch64: Build archive"
+    needs: build-linux-aarch64
+    uses: ./.github/workflows/build.yml
+    with:
+      os: warp-ubuntu-latest-arm64-8x
+      target: ${{ inputs.target }}-archive
+      artifact_name: "${{ inputs.target }}-aarch64-linux"
+    secrets:
+      cachix-token: "${{ secrets.cachix-token }}"
+
+  build-macos-aarch64-archive:
+    name: "MacOS aarch64: Build archive"
+    needs: build-macos-aarch64
+    uses: ./.github/workflows/build.yml
+    with:
+      os: warp-macos-latest-arm64-6x
+      target: ${{ inputs.target }}-archive
+      artifact_name: "${{ inputs.target }}-aarch64-macos"
+    secrets:
+      cachix-token: "${{ secrets.cachix-token }}"
+
+  # Step 2b: create Docker image for all (Linux) platforms.
+
+  build-linux-x86_64-image:
+    name: "Linux x86_64: Build Docker image"
+    needs: build-linux-x86_64
+    uses: ./.github/workflows/build.yml
+    with:
+      os: warp-ubuntu-latest-x64-4x
+      target: ${{ inputs.target }}-image
+      artifact_name: "${{ inputs.target }}-x86_64-image"
+    secrets:
+      cachix-token: "${{ secrets.cachix-token }}"
+
+  build-linux-aarch64-image:
+    name: "Linux aarch64: Build Docker image"
+    needs: build-linux-aarch64
+    uses: ./.github/workflows/build.yml
+    with:
+      os: warp-ubuntu-latest-arm64-8x
+      target: ${{ inputs.target }}-image
+      artifact_name: "${{ inputs.target }}-aarch64-image"
+    secrets:
+      cachix-token: "${{ secrets.cachix-token }}"
+
+  # Step 3a: publish docker images
+
+  publish-docker-images:
+    name: "Publish Docker images"
+    needs: [build-linux-x86_64-image, build-linux-aarch64-image]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set $USER if needed
+        run: |
+          if [ -z "$USER" ]; then
+            echo "USER=runner" >> "$GITHUB_ENV"
+          fi
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v25
+        with:
+          nix_path: nixpkgs=channel:nixos-23.11
+      - uses: cachix/cachix-action@v14
+        with:
+          name: apibara-public
+          authToken: "${{ secrets.cachix-token }}"
+      - name: Download Docker image for x86_64
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.target }}-x86_64-image
+          path: /tmp/image/x86_64
+      - name: Download Docker image for aarch64
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.target }}-aarch64-image
+          path: /tmp/image/aarch64
+      - name: Publish Docker images
+        run: nix develop .#ci --accept-flake-config -c publish-docker-image
+        env:
+          QUAY_USERNAME: ${{ secrets.quay-username }}
+          QUAY_PASSWORD: ${{ secrets.quay-password }}
+          IMAGE_NAME: ${{ inputs.target }}
+          IMAGE_VERSION_MAJOR: ${{ inputs.major }}
+          IMAGE_VERSION_MINOR: ${{ inputs.minor }}
+          IMAGE_VERSION_PATCH: ${{ inputs.patch }}
+          IMAGE_ARCHIVE_x86_64: /tmp/image/x86_64/${{ inputs.target }}.tar.gz
+          IMAGE_ARCHIVE_aarch64: /tmp/image/aarch64/${{ inputs.target }}.tar.gz
+
+  # Step 3b: publish binaries
+
+  publish-binaries:
+    name: "Publish binaries"
+    needs:
+      - build-linux-x86_64-archive
+      - build-linux-aarch64-archive
+      - build-macos-aarch64-archive
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish binaries
+        run: |
+          echo "Publishing binaries ${{ inputs.target }}:${{ inputs.major }}.${{ inputs.minor }}.${{ inputs.patch }}"

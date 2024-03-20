@@ -174,7 +174,7 @@ We switched to merge commits for PRs for the following reasons:
     learn more about backporting fixes.
 -   Start by opening a PR from `main` into `release`. This PR should contain no
     changes other than changes to the CHANGELOGs and version numbers.
--   The `release-check.yml` pipeline is executed. This pipeline simply builds the
+-   The `cd-check.yml` pipeline is executed. This pipeline simply builds the
     binaries (we follow the ["not rocket
     science"](https://graydon2.dreamwidth.org/1597.html) rule).
 -   Once the PR is merged, nothing happens.
