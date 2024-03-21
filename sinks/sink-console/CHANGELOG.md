@@ -6,6 +6,15 @@ The format is based on [Common Changelog](https://common-changelog.org/), and
 this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.5] - 2024-03-21
+
+_Update dependencies used to build the binary._
+
+### Changed
+
+-   This release simply updates the dependencies used to build the binary.
+    You should not expect any significant change.
+
 ## [0.4.4] - 2024-01-27
 
 _Read and write data from the filesystem._
