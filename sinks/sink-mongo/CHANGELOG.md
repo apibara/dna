@@ -6,6 +6,20 @@ The format is based on [Common Changelog](https://common-changelog.org/), and
 this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.2] - 2024-03-21
+
+_Fix issue when transform does not return any data._
+
+### Fixed
+
+-   Fix a MongoDB error if the sink received no data from the transform
+    function. This usually happens once the indexer reaches the tip of the chain.
+
+### Added
+
+-   Support secure connections when connecting to Redis for persistence.
+    You can now use Redis connection strings that start with `rediss://`.
+
 ## [0.6.1] - 2024-03-17
 
 _Fix compatibility with GLIBC < 2.38 (Ubuntu 22.04)._
