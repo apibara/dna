@@ -28,6 +28,7 @@ jobs:
   unit-test:
     name: Run unit tests
     runs-on: "${{ inputs.os }}"
+    needs: lint
     steps:
       - uses: actions/checkout@v4
       - uses: cachix/install-nix-action@v25
