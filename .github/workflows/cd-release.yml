@@ -164,6 +164,29 @@ jobs:
       - build-macos-aarch64-archive
     runs-on: ubuntu-latest
     steps:
-      - name: Publish binaries
+      - name: Download binary for Linux x86_64
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.target }}-x86_64-linux
+          path: /tmp/bin/x86_64-linux
+      - name: Download binary for Linux aarch64
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.target }}-aarch64-linux
+          path: /tmp/bin/aarch64-linux
+      - name: Download binary for MacOS aarch64
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.target }}-aarch64-macos
+          path: /tmp/bin/aarch64-macos
+      - name: Rename binaries
         run: |
-          echo "Publishing binaries ${{ inputs.target }}:${{ inputs.major }}.${{ inputs.minor }}.${{ inputs.patch }}"
+          mkdir /tmp/artifacts
+          cp /tmp/bin/x86_64-linux/${{ inputs.target }}.gz /tmp/artifacts/${{ inputs.target }}-x86_64-linux.gz
+          cp /tmp/bin/aarch64-linux/${{ inputs.target }}.gz /tmp/artifacts/${{ inputs.target }}-aarch64-linux.gz
+          cp /tmp/bin/aarch64-macos/${{ inputs.target }}.gz /tmp/artifacts/${{ inputs.target }}-aarch64-macos.gz
+      - name: Upload binaries to release
+        uses: svenstaro/upload-release-action@v2
+        with:
+          file: /tmp/artifacts/*
+          file_glob: true
