@@ -57,10 +57,16 @@ nix develop
 You will then be in a bash shell with the correct Cargo, rust version, and all
 the required external libraries and tools (like the `protoc` compiler).
 
+Nix may ask you to accept an "untrusted substituter": this is the nix way of
+asking if you trust our public build cache that will save you from rebuilding
+the project from scratch. Unless you have good reason to not trust us, you should
+accept it!
+
 **Building & Testing**
 
-You can use all the standard cargo commands for development. Before submitting
-your PR, ensure all the projects build with Nix. For example:
+You can use all the standard cargo commands for development.
+
+Before submitting your PR, ensure all the projects build with Nix. For example:
 
 ```
 nix build .#all-crates
@@ -70,8 +76,15 @@ You can use nix to run tests in the same environment that will be used in GitHub
 
 ```
 nix build .#unit-tests
+```
 
-nix build .#integration-tests
+Integration tests require connecting to the Docker daemon and for this reason they
+cannot be run inside a nix build environment. The CI runs them in two steps: first
+it builds a nextest archive and then runs tests from it.
+
+```
+nix build .#integration-tests-archive
+nix develop .#integration -c run-integration-tests
 ```
 
 **Committing changes**
@@ -127,6 +140,88 @@ After your PR is in good shape, we will merge it into the main branch and ship
 it. Congratulations, the code you wrote is now used by hundreds of developers
 and thousands of end users 🎊
 
+## Merging PRs
+
+> [!NOTE]  
+> This section is only relevant if you're a maintainer.
+
+This repository uses merge commits when merging PRs. When merging PRs you MUST
+do the following:
+
+-   Change the merge commit title to a brief description of the PR. In most cases
+    you can use the PR title.
+-   Change the merge commit description to an actual description of the PR
+    content. If you can, describe how to test the changes are working. If the
+    contributor filled out `PULL_REQUEST_TEMPLATE` correctly you can reuse their
+    content (removing the comments between `<!-- -->`).
+
+We switched to merge commits for PRs for the following reasons:
+
+-   It's hard to keep contributors commit clean.
+-   There's a lot of context added in a PR and rebase workflows lose that
+    information.
+-   Crafting CHANGELOGs becomes easier, simply read through `git log --merges`.
+-   The code being tested in the CI is the same code that will land in `main`.
+    This means we don't need to re-run all tests and checks.
+
 ## Making a release
 
-We are in the process of updating how releases are made.
+> [!NOTE]  
+> We are in the process of updating how releases are made.
+> This is just a draft of the release process.
+
+-   Releases are cut from the `release` branch for normal releases. See below to
+    learn more about backporting fixes.
+-   Start by opening a PR from `main` into `release`. This PR should contain no
+    changes other than changes to the CHANGELOGs and version numbers.
+-   The `cd-check.yml` pipeline is executed. This pipeline simply builds the
+    binaries (we follow the ["not rocket
+    science"](https://graydon2.dreamwidth.org/1597.html) rule).
+-   Once the PR is merged, nothing happens.
+-   To actually make a release, create a new release on GitHub targeting the
+    `release` branch. Releases must have a tag name starting with the project name
+    and followed by the version number, e.g. `sink-console/v1.0.0`. Mark the release
+    as pre-release.
+-   Pushing a new tag triggers the `release.yml` pipeline. This pipeline builds
+    the binaries for Linux and MacOS and uploads them to the release. Docker images
+    are also built and uploaded. The release pre-release status will be removed
+    automatically.
+
+The release workflow MUST allow us to release fixes for older version of the
+software:
+
+-   We want to support DNA v1 for a few months after the release of V2.
+-   We want to introduce more breaking changes if they make the software better,
+    but we want users to upgrade software at their own pace.
+-   We need to hotfix older versions of the software that are still used by
+    paying customers.
+
+Once it becomes necessary to backport changes, we create a new `release/<name>`
+branch for that stream of changes.
+
+-   `release/v1`: contains DNA v1-related changes.
+-   `release/starknet-rpc-0_6`: contains changes to the Starknet RPC 0.6
+    ingestion code.
+
+Visualized, the end-to-end git workflow is the following:
+
+```txt
+feat/xyz                o---o   \
+                       /     \   \
+feat/abc      o-----o /       \   \
+             /       x         \   \
+main     ---o-------o-A---------B---C----
+                                     \
+release  -----------------------------D---
+```
+
+With the following:
+
+-   `feat/abc` and `feat/xyz` are feature branches.
+-   `A` is the merge commit for `feat/abc` into `main`.
+-   `B` is the merge commit for `feat/xyz` into `main`.
+-   `C` is the commit with the CHANGELOG and version update. In practice, this
+    commit also comes from a branch and PR but we didn't include it in the diagram
+    to keep it clean.
+-   `D` is the merge commit into `release`. This commit will be tagged and the
+    release built off of it.

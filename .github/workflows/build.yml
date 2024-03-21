@@ -6,13 +6,21 @@ on:
       os:
         required: true
         type: string
+      target:
+        required: false
+        type: string
+        default: "all-crates"
+      artifact_name:
+        required: false
+        type: string
+        default: ""
     secrets:
       cachix-token:
         required: true
 
 jobs:
   build:
-    name: Build all crates
+    name: "Build ${{ inputs.target }}"
     runs-on: "${{ inputs.os }}"
     steps:
       - name: Set $USER if needed
@@ -28,4 +36,9 @@ jobs:
         with:
           name: apibara-public
           authToken: "${{ secrets.cachix-token }}"
-      - run: nix build .#all-crates -L --accept-flake-config
+      - run: nix build .#${{ inputs.target }} -L --accept-flake-config
+      - uses: actions/upload-artifact@v4
+        if: ${{ inputs.artifact_name != '' }}
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: result/*
