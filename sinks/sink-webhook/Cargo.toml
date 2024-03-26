@@ -34,4 +34,4 @@ tracing.workspace = true
 jemallocator.workspace = true
 
 [dev-dependencies]
-wiremock = "0.5.19"
+wiremock.workspace = true

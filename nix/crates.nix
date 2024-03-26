@@ -23,6 +23,7 @@ let
       llvmPackages.libclang.lib
       pkg-config
       protobuf
+      flatbuffers
       rustToolchain
       openssl
       jq
@@ -321,6 +322,9 @@ in
     default = pkgs.mkShell (buildArgs // {
       inputsFrom = [
         allCrates
+      ];
+      buildInputs = with pkgs; [
+        tokio-console
       ];
     });
 

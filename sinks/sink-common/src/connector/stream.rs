@@ -1,5 +1,7 @@
-use apibara_sdk::{ClientBuilder, StreamClient};
-use error_stack::Result;
+use apibara_dna_protocol::dna::dna_stream_client::DnaStreamClient;
+use error_stack::{Result, ResultExt};
+use tonic::transport::Channel;
+use tracing::error;
 
 use crate::{error::SinkError, SinkErrorReportExt, StreamConfiguration};
 
@@ -25,7 +27,8 @@ impl StreamClientFactory {
         }
     }
 
-    pub async fn new_stream_client(&self) -> Result<StreamClient, SinkError> {
+    pub async fn new_stream_client(&self) -> Result<DnaStreamClient<Channel>, SinkError> {
+        /*
         let mut stream_builder = ClientBuilder::default()
             .with_max_message_size(
                 self.stream_configuration.max_message_size_bytes.as_u64() as usize
@@ -39,11 +42,13 @@ impl StreamClientFactory {
         } else {
             stream_builder
         };
+        */
+        error!("StreamClientFactory::new_stream_client not implemented");
 
-        let client = stream_builder
-            .connect(self.stream_configuration.stream_url.clone())
+        let client = DnaStreamClient::connect(self.stream_configuration.stream_url.clone())
             .await
-            .map_err(|err| err.temporary("failed to connect to stream"))?;
+            .change_context(SinkError::Temporary)
+            .attach_printable("failed to connect to stream")?;
 
         Ok(client)
     }

@@ -6,7 +6,12 @@ authors.workspace = true
 repository.workspace = true
 license.workspace = true
 
+[features]
+default = []
+tokio_console = ["dep:console-subscriber"]
+
 [dependencies]
+console-subscriber = { version = "0.2.0", optional = true }
 error-stack.workspace = true
 opentelemetry.workspace = true
 opentelemetry-otlp.workspace = true

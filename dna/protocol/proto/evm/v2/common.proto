@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+package apibara.evm.v2;
+
+// An address of 160 bits.
+//
+// As a separate type so that the API is clearer.
+message Address {
+  fixed64 lo_lo = 1;
+  fixed64 lo_hi = 2;
+  fixed32 hi = 3;
+}
+
+// A bloom filter of 256 bytes.
+message Bloom {
+  fixed64 lo_lo = 1;
+  fixed64 lo_hi = 2;
+  fixed64 hi_lo = 3;
+  fixed64 hi_hi = 4;
+}
+
+// Unsigned integer of 128 bits.
+message U128 {
+  fixed64 lo = 1;
+  fixed64 hi = 2;
+}
+
+// Unsigned integer of 256 bits.
+message U256 {
+  fixed64 lo_lo = 1;
+  fixed64 lo_hi = 2;
+  fixed64 hi_lo = 3;
+  fixed64 hi_hi = 4;
+}
+
+// Byte array of 256 bits.
+message B256 {
+  fixed64 lo_lo = 1;
+  fixed64 lo_hi = 2;
+  fixed64 hi_lo = 3;
+  fixed64 hi_hi = 4;
+}

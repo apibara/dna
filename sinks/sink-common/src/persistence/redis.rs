@@ -1,10 +1,11 @@
-use apibara_core::filter::Filter;
 use async_trait::async_trait;
 use error_stack::Result;
 use redis::Commands;
 use tracing::warn;
 
-use crate::{common::PersistenceClient, PersistedState, SinkError, SinkErrorResultExt};
+use crate::{
+    common::PersistenceClient, filter::Filter, PersistedState, SinkError, SinkErrorResultExt,
+};
 
 pub struct RedisPersistence {
     client: redis::Client,

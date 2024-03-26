@@ -7,33 +7,40 @@ license = "Apache-2.0"
 [workspace]
 resolver = "2"
 members = [
-    "core",
+    # Common
     "observability",
-    "node",
-    "sdk",
-    "starknet",
-    "script",
+    # DNA
+    "dna/protocol",
+    "dna/common",
+    "dna/evm",
+    # "dna/starknet",
+    # Sink and indexers
+    "sinks/script",
     "sinks/sink-common",
     "sinks/sink-options-derive",
     "sinks/sink-options-derive-tests",
     "sinks/sink-console",
-    "sinks/sink-webhook",
+    # "sinks/sink-webhook",
     "sinks/sink-mongo",
-    "sinks/sink-parquet",
-    "sinks/sink-postgres",
+    # "sinks/sink-parquet",
+    # "sinks/sink-postgres",
+    "cli",
+    # Runners
     "runners/runner-common",
     "runners/runner-local",
+    # Operator
     "operator",
-    "cli",
 ]
 
 [workspace.dependencies]
 assert_matches = "1.5.0"
 anstyle = "1.0.1"
 arrayvec = "0.7.2"
-async-compression = "0.4"
+async-channel = "2.1.1"
+async-compression = { version = "0.4.6", features = ["tokio", "zstd"] }
 async-stream = "0.3.5"
 async-trait = "0.1.57"
+bytes = "1.5.0"
 byteorder = "1.4.3"
 byte-unit = "4.0.14"
 clap = { version = "4.3.3", features = [
@@ -48,6 +55,8 @@ ctrlc = { version = "3.2.3", features = ["termination"] }
 dirs = "4.0.0"
 dotenvy = "0.15.7"
 error-stack = "0.4.1"
+flate2 = "1.0"
+flatbuffers = { version = "23.5.26", features = ["serialize"] }
 futures = "0.3.23"
 futures-util = "0.3.26"
 governor = "0.6.0"
@@ -55,8 +64,10 @@ hex = { version = "0.4.3", features = ["serde"] }
 http = "0.2.9"
 hyper = "0.14.20"
 lazy_static = "1.4.0"
+lru = "0.12.3"
 jemallocator = { version = "0.5.0" }
 mockall = "0.11.4"
+nanoid = "0.4.0"
 opentelemetry = { version = "0.18.0", features = [
     "trace",
     "metrics",
@@ -78,6 +89,7 @@ reqwest = { version = "0.11.16", default-features = false, features = [
     "rustls-tls",
 ] }
 regex = "1.9.1"
+roaring = "0.10.2"
 serde = "1.0.155"
 serde_json = "1.0.94"
 # starknet = { git = "https://github.com/xJonathanLEI/starknet-rs", rev = "6cadb1986" }
@@ -109,6 +121,8 @@ tracing-tree = "0.2.2"
 quickcheck = "1.0.3"
 quickcheck_macros = "1.0.0"
 warp = "0.3.5"
+wiremock = "0.5.19"
+url = "2.3"
 
 [patch.crates-io]
 # https://github.com/tov/libffi-rs/pull/80

@@ -1,0 +1,27 @@
+[package]
+name = "apibara-dna-protocol"
+version = "0.1.0"
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[lib]
+name = "apibara_dna_protocol"
+path = "src/lib.rs"
+
+[dependencies]
+error-stack.workspace = true
+hex.workspace = true
+pbjson.workspace = true
+pbjson-types.workspace = true
+prost.workspace = true
+serde.workspace = true
+tonic.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[build-dependencies]
+tonic-build.workspace = true
+pbjson-build.workspace = true

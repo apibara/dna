@@ -1,10 +1,10 @@
-use apibara_core::{filter::Filter, node::v1alpha2::Cursor};
+use apibara_dna_protocol::dna::Cursor;
 use async_trait::async_trait;
 use error_stack::Result;
 use prost::Message;
 use serde::{Deserialize, Serialize};
 
-use crate::SinkError;
+use crate::{filter::Filter, SinkError};
 
 #[derive(Clone, PartialEq, Message, Deserialize, Serialize)]
 pub struct PersistedState<F: Message + Default> {
