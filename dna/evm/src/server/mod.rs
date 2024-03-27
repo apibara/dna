@@ -4,15 +4,12 @@ use std::net::SocketAddr;
 
 use apibara_dna_common::{
     error::{DnaError, Result},
+    server::SnapshotSyncService,
     storage::StorageBackend,
 };
-use apibara_dna_protocol::ingestion::{ingestion_client::IngestionClient, SubscribeRequest};
 use error_stack::ResultExt;
-use futures_util::{StreamExt, TryStreamExt};
-use tokio::pin;
 use tokio_util::sync::CancellationToken;
 use tonic::transport::Server as TonicServer;
-use tracing::info;
 
 use crate::server::service::Service;
 
@@ -21,7 +18,7 @@ where
     S: StorageBackend + Send + Sync + 'static,
     <S as StorageBackend>::Reader: Unpin + Send,
 {
-    ingestion_server: String,
+    ingestion_server_address: String,
     storage: S,
 }
 
@@ -30,47 +27,19 @@ where
     S: StorageBackend + Send + Sync + 'static + Clone,
     <S as StorageBackend>::Reader: Unpin + Send,
 {
-    pub fn new(ingestion_server: impl Into<String>, storage: S) -> Self {
+    pub fn new(ingestion_server_address: impl Into<String>, storage: S) -> Self {
         Self {
-            ingestion_server: ingestion_server.into(),
+            ingestion_server_address: ingestion_server_address.into(),
             storage,
         }
     }
 
     pub async fn start(self, addr: SocketAddr, ct: CancellationToken) -> Result<()> {
-        let mut client = IngestionClient::connect(self.ingestion_server)
-            .await
-            .change_context(DnaError::Fatal)
-            .attach_printable("failed to connect to ingestion server")?;
+        let snapshot_sync_service = SnapshotSyncService::new(self.ingestion_server_address)?;
 
-        let ingestion_changes = client
-            .subscribe(SubscribeRequest::default())
-            .await
-            .change_context(DnaError::Fatal)
-            .attach_printable("failed to subscribe to ingestion changes")?
-            .into_inner()
-            .take_until({
-                let ct = ct.clone();
-                async move { ct.cancelled().await }
-            });
+        let snapshot_sync_client = snapshot_sync_service.start(ct.clone());
 
-        pin!(ingestion_changes);
-
-        let Some(message) = ingestion_changes
-            .try_next()
-            .await
-            .change_context(DnaError::Fatal)
-            .attach_printable("failed to read ingestion stream")?
-            .and_then(|m| m.as_snapshot().cloned())
-        else {
-            return Err(DnaError::Fatal)
-                .attach_printable("no snapshot received")
-                .change_context(DnaError::Fatal);
-        };
-
-        info!(message = ?message, "received snapshot");
-
-        let dna_service = Service::new(self.storage).into_service();
+        let dna_service = Service::new(self.storage, snapshot_sync_client).into_service();
 
         let server_task = TonicServer::builder()
             .add_service(dna_service)
