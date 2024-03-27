@@ -1,4 +1,5 @@
 use apibara_dna_common::error::DnaError;
+use apibara_dna_common::server::SnapshotSyncClient;
 use apibara_dna_common::storage::StorageBackend;
 use apibara_dna_common::{error::Result, segment::SnapshotReader};
 use apibara_dna_protocol::dna::{stream_data_response, Cursor, Data, DataFinality};
@@ -29,6 +30,7 @@ where
     <S as StorageBackend>::Reader: Unpin + Send,
 {
     storage: S,
+    snapshot_client: SnapshotSyncClient,
 }
 
 impl<S> Service<S>
@@ -36,8 +38,11 @@ where
     S: StorageBackend + Send + Sync + 'static + Clone,
     <S as StorageBackend>::Reader: Unpin + Send,
 {
-    pub fn new(storage: S) -> Self {
-        Self { storage }
+    pub fn new(storage: S, snapshot_client: SnapshotSyncClient) -> Self {
+        Self {
+            storage,
+            snapshot_client,
+        }
     }
 
     pub fn into_service(self) -> dna_stream_server::DnaStreamServer<Service<S>> {
@@ -72,6 +77,9 @@ where
             .collect::<std::result::Result<Vec<evm::Filter>, _>>()
             .map_err(|_| tonic::Status::invalid_argument("failed to decode filter"))?;
 
+        // TODO: use this + retry.
+        let xxx = self.snapshot_client.subscribe().await.unwrap();
+
         tokio::spawn(
             do_stream_data(self.storage.clone(), starting_block_number, filters, tx).inspect_err(
                 |err| {
@@ -90,12 +98,6 @@ where
         error!("status not implemented");
         Ok(tonic::Response::new(StatusResponse::default()))
     }
-}
-
-fn assert_send<'u, R>(
-    fut: impl 'u + Send + Future<Output = R>,
-) -> impl 'u + Send + Future<Output = R> {
-    fut
 }
 
 async fn do_stream_data<S>(
