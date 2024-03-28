@@ -27,25 +27,20 @@ impl<S: Sink + Send + Sync> SinkWithBackoff<S> {
         batch: &Value,
         ct: CancellationToken,
     ) -> Result<CursorAction, SinkError> {
-        // info!("handling data with backoff: {:?}", &self.backoff);
         for duration in &self.backoff {
-            // info!("trying to handle data, duration: {:?}", duration);
             match self.inner.handle_data(ctx, batch).await {
                 Ok(action) => return Ok(action),
                 Err(err) => {
                     warn!(err = ?err, "failed to handle data");
                     if ct.is_cancelled() {
-                        // info!("cancelled while handling data");
                         return Err(err)
                             .change_context(SinkError::Fatal)
                             .attach_printable("failed to handle data (cancelled)");
                     }
                     tokio::select! {
                         _ = tokio::time::sleep(duration) => {
-                            // info!("retrying to handle data after sleeping");
                         },
                         _ = ct.cancelled() => {
-                            // info!("cancelled while retrying to handle data");
                             return Ok(CursorAction::Skip);
                         }
                     };
@@ -54,6 +49,36 @@ impl<S: Sink + Send + Sync> SinkWithBackoff<S> {
         }
 
         Err(SinkError::Fatal).attach_printable("handle data failed after retry")
+    }
+
+    pub async fn handle_replace(
+        &mut self,
+        ctx: &Context,
+        batch: &Value,
+        ct: CancellationToken,
+    ) -> Result<CursorAction, SinkError> {
+        for duration in &self.backoff {
+            match self.inner.handle_replace(ctx, batch).await {
+                Ok(action) => return Ok(action),
+                Err(err) => {
+                    warn!(err = ?err, "failed to handle data");
+                    if ct.is_cancelled() {
+                        return Err(err)
+                            .change_context(SinkError::Fatal)
+                            .attach_printable("failed to handle replace data (cancelled)");
+                    }
+                    tokio::select! {
+                        _ = tokio::time::sleep(duration) => {
+                        },
+                        _ = ct.cancelled() => {
+                            return Ok(CursorAction::Skip);
+                        }
+                    };
+                }
+            }
+        }
+
+        Err(SinkError::Fatal).attach_printable("handle replace data failed after retry")
     }
 
     pub async fn handle_invalidate(
