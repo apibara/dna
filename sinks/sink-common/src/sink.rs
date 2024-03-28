@@ -41,6 +41,15 @@ pub trait Sink {
         batch: &Value,
     ) -> Result<CursorAction, Self::Error>;
 
+    async fn handle_replace(
+        &mut self,
+        ctx: &Context,
+        batch: &Value,
+    ) -> Result<CursorAction, Self::Error> {
+        self.handle_invalidate(&ctx.cursor).await?;
+        self.handle_data(ctx, batch).await
+    }
+
     async fn handle_invalidate(&mut self, cursor: &Option<Cursor>) -> Result<(), Self::Error>;
 
     async fn cleanup(&mut self) -> Result<(), Self::Error> {

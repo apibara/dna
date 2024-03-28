@@ -376,11 +376,9 @@ async fn test_handle_data_in_entity_mode() -> Result<(), SinkError> {
     let options = SinkMongoOptions {
         connection_string: Some(format!("mongodb://localhost:{}", port)),
         database: Some("test".into()),
-        collection_name: None,
         collection_names: Some(collection_names.clone()),
         entity_mode: Some(true),
-        invalidate: None,
-        batch_seconds: None,
+        ..Default::default()
     };
 
     let mut sink = MongoSink::from_options(options).await?;
@@ -531,11 +529,9 @@ async fn test_handle_invalidate_in_entity_mode() -> Result<(), SinkError> {
     let options = SinkMongoOptions {
         connection_string: Some(format!("mongodb://localhost:{}", port)),
         database: Some("test".into()),
-        collection_name: None,
         collection_names: Some(collection_names.clone()),
         entity_mode: Some(true),
-        invalidate: None,
-        batch_seconds: None,
+        ..Default::default()
     };
 
     let mut sink = MongoSink::from_options(options).await?;

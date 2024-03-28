@@ -176,12 +176,6 @@ where
         state: &mut PersistedState<F>,
         ct: CancellationToken,
     ) -> Result<(CursorAction, StreamAction), SinkError> {
-        if self.needs_invalidation {
-            self.handle_invalidate(context.cursor.clone(), state, ct.clone())
-                .await?;
-            self.needs_invalidation = false;
-        }
-
         // fatal error since if the sink is restarted it will receive the same data again.
         let json_batch = batch
             .into_iter()
@@ -206,7 +200,12 @@ where
             }
         }
 
-        let mut action = self.sink.handle_data(&context, &data, ct).await?;
+        let mut action = if self.needs_invalidation {
+            self.needs_invalidation = false;
+            self.sink.handle_replace(&context, &data, ct).await?
+        } else {
+            self.sink.handle_data(&context, &data, ct).await?
+        };
 
         // If it's pending, don't store the cursor.
         if context.finality.is_pending() {
