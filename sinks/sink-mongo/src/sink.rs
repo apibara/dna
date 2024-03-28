@@ -6,7 +6,7 @@ use apibara_sink_common::{Context, CursorAction, DisplayCursor, Sink, ValueExt};
 use apibara_sink_common::{SinkError, SinkErrorResultExt};
 use async_trait::async_trait;
 use error_stack::{Result, ResultExt};
-use futures_util::TryStreamExt;
+use futures_util::{FutureExt, TryStreamExt};
 use mongodb::bson::{doc, to_document, Bson, Document};
 use mongodb::ClientSession;
 use std::collections::HashMap;
@@ -15,7 +15,7 @@ use mongodb::options::{UpdateModifications, UpdateOptions};
 use mongodb::{options::ClientOptions, Client, Collection};
 
 use serde_json::Value;
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::configuration::SinkMongoOptions;
 
@@ -46,6 +46,7 @@ pub struct MongoSink {
     client: Client,
     mode: Mode,
     pub batcher: Batcher,
+    replace_data_inside_transaction: bool,
 }
 
 enum Mode {
@@ -107,6 +108,9 @@ impl Sink for MongoSink {
             mode,
             invalidate: options.invalidate,
             batcher: Batcher::by_seconds(options.batch_seconds.unwrap_or_default()),
+            replace_data_inside_transaction: options
+                .replace_data_inside_transaction
+                .unwrap_or(false),
         })
     }
 
@@ -115,6 +119,91 @@ impl Sink for MongoSink {
         ctx: &Context,
         batch: &Value,
     ) -> Result<CursorAction, Self::Error> {
+        let mut session = self
+            .client
+            .start_session(None)
+            .await
+            .runtime_error("failed to create mongo session")?;
+
+        self.handle_data_with_session(&mut session, ctx, batch)
+            .await
+    }
+
+    async fn handle_replace(
+        &mut self,
+        ctx: &Context,
+        batch: &Value,
+    ) -> Result<CursorAction, Self::Error> {
+        let mut session = self
+            .client
+            .start_session(None)
+            .await
+            .runtime_error("failed to create mongo session")?;
+
+        if self.replace_data_inside_transaction {
+            session
+            .with_transaction(
+                self,
+                |session, sink| {
+                    async move {
+                        sink.handle_invalidate_with_session(session, &ctx.cursor)
+                            .await
+                            .map_err(|err| {
+                                error!(err = ?err, "failed to invalidate data inside replace transaction");
+                                mongodb::error::Error::custom(err)
+                            })?;
+
+                        sink.handle_data_with_session(session, ctx, batch)
+                            .await
+                            .map_err(|err| {
+                                error!(err = ?err, "failed to insert data inside replace transaction");
+                                mongodb::error::Error::custom(err)
+                            })
+                    }
+                    .boxed()
+                },
+                None,
+            )
+            .await
+            .runtime_error("failed to replace data inside transaction")
+        } else {
+            let mut session = self
+                .client
+                .start_session(None)
+                .await
+                .runtime_error("failed to create mongo session")?;
+            self.handle_invalidate_with_session(&mut session, &ctx.cursor)
+                .await?;
+            self.handle_data_with_session(&mut session, ctx, batch)
+                .await
+        }
+    }
+
+    async fn handle_invalidate(&mut self, cursor: &Option<Cursor>) -> Result<(), Self::Error> {
+        let mut session = self
+            .client
+            .start_session(None)
+            .await
+            .runtime_error("failed to create mongo session")?;
+
+        self.handle_invalidate_with_session(&mut session, cursor)
+            .await
+    }
+}
+
+impl MongoSink {
+    pub fn collection(&self, collection_name: &str) -> Result<&Collection<Document>, SinkError> {
+        self.collections
+            .get(collection_name)
+            .runtime_error(&format!("collection '{collection_name}' not found"))
+    }
+
+    async fn handle_data_with_session(
+        &mut self,
+        session: &mut ClientSession,
+        ctx: &Context,
+        batch: &Value,
+    ) -> Result<CursorAction, SinkError> {
         info!(ctx = %ctx, "handling data");
         let batch = batch
             .as_array_of_objects()
@@ -122,14 +211,15 @@ impl Sink for MongoSink {
             .to_vec();
 
         if ctx.finality != DataFinality::DataStatusFinalized {
-            self.insert_data(&ctx.end_cursor, &batch).await?;
+            self.insert_data(session, &ctx.end_cursor, &batch).await?;
+
             return Ok(CursorAction::Persist);
         }
 
         match self.batcher.handle_data(ctx, &batch).await {
             Ok((action, None)) => Ok(action),
             Ok((action, Some((end_cursor, batch)))) => {
-                self.insert_data(&end_cursor, &batch).await?;
+                self.insert_data(session, &end_cursor, &batch).await?;
                 self.batcher.buffer.clear();
                 Ok(action)
             }
@@ -137,20 +227,22 @@ impl Sink for MongoSink {
         }
     }
 
-    async fn handle_invalidate(&mut self, cursor: &Option<Cursor>) -> Result<(), Self::Error> {
+    async fn handle_invalidate_with_session(
+        &mut self,
+        session: &mut ClientSession,
+        cursor: &Option<Cursor>,
+    ) -> Result<(), SinkError> {
         debug!(cursor = %DisplayCursor(cursor), "handling invalidate");
 
         if self.batcher.is_batching() && !self.batcher.is_flushed() {
-            self.insert_data(&self.batcher.buffer.end_cursor, &self.batcher.buffer.data)
-                .await?;
+            self.insert_data(
+                session,
+                &self.batcher.buffer.end_cursor,
+                &self.batcher.buffer.data,
+            )
+            .await?;
             self.batcher.buffer.clear();
         }
-
-        let mut session = self
-            .client
-            .start_session(None)
-            .await
-            .runtime_error("failed to create mongo session")?;
 
         let (mut delete_query, mut unclamp_query) = if let Some(cursor) = cursor {
             // convert to u32 because that's the maximum bson can handle
@@ -173,7 +265,7 @@ impl Sink for MongoSink {
 
         for collection in self.collections.values() {
             collection
-                .delete_many_with_session(delete_query.clone(), None, &mut session)
+                .delete_many_with_session(delete_query.clone(), None, session)
                 .await
                 .runtime_error("failed to invalidate data (delete)")?;
             collection
@@ -181,7 +273,7 @@ impl Sink for MongoSink {
                     unclamp_query.clone(),
                     unset_cursor_to.clone(),
                     None,
-                    &mut session,
+                    session,
                 )
                 .await
                 .runtime_error("failed to invalidate data (update)")?;
@@ -189,17 +281,10 @@ impl Sink for MongoSink {
 
         Ok(())
     }
-}
-
-impl MongoSink {
-    pub fn collection(&self, collection_name: &str) -> Result<&Collection<Document>, SinkError> {
-        self.collections
-            .get(collection_name)
-            .runtime_error(&format!("collection '{collection_name}' not found"))
-    }
 
     pub async fn insert_data(
         &self,
+        session: &mut ClientSession,
         end_cursor: &Cursor,
         values: &[Value],
     ) -> Result<(), SinkError> {
@@ -261,19 +346,10 @@ impl MongoSink {
             docs_map.insert(collection_name, docs);
         }
 
-        let mut session = self
-            .client
-            .start_session(None)
-            .await
-            .runtime_error("failed to create mongo session")?;
-
         match &self.mode {
-            Mode::Standard => {
-                self.insert_logs_data(end_cursor, docs_map, &mut session)
-                    .await
-            }
+            Mode::Standard => self.insert_logs_data(end_cursor, docs_map, session).await,
             Mode::Entity => {
-                self.insert_entities_data(end_cursor, docs_map, &mut session)
+                self.insert_entities_data(end_cursor, docs_map, session)
                     .await
             }
         }
