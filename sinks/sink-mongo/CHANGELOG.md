@@ -6,6 +6,17 @@ The format is based on [Common Changelog](https://common-changelog.org/), and
 this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2024-03-28
+
+_Add flag to replace pending data inside transaction._
+
+### Added
+
+-   Add `--replace-data-inside-transaction` (env:
+    `MONGO_REPLACE_DATA_INSIDE_TRANSACTION`) flag to replace pending data in one
+    transaction. Notice that MongoDB transactions require a MongoDB deployment with
+    replication turned on.
+
 ## [0.6.2] - 2024-03-21
 
 _Fix issue when transform does not return any data._
