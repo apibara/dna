@@ -264,6 +264,8 @@ impl ToProto<v1alpha2::BlockHeader> for models::BlockWithTxs {
         let sequencer_address = self.sequencer_address.into();
         let starknet_version = self.starknet_version.clone();
         let l1_gas_price = self.l1_gas_price.to_proto();
+        let l1_data_gas_price = self.l1_data_gas_price.to_proto();
+        let l1_data_availability_mode = self.l1_da_mode.to_proto();
 
         v1alpha2::BlockHeader {
             block_hash: Some(block_hash),
@@ -274,6 +276,8 @@ impl ToProto<v1alpha2::BlockHeader> for models::BlockWithTxs {
             timestamp: Some(timestamp),
             starknet_version,
             l1_gas_price: Some(l1_gas_price),
+            l1_data_gas_price: Some(l1_data_gas_price),
+            l1_data_availability_mode: l1_data_availability_mode as i32,
         }
     }
 }
@@ -289,6 +293,8 @@ impl ToProto<v1alpha2::BlockHeader> for models::PendingBlockWithTxs {
         let sequencer_address = self.sequencer_address.into();
         let starknet_version = self.starknet_version.clone();
         let l1_gas_price = self.l1_gas_price.to_proto();
+        let l1_data_gas_price = self.l1_data_gas_price.to_proto();
+        let l1_data_availability_mode = self.l1_da_mode.to_proto();
 
         v1alpha2::BlockHeader {
             block_hash: Some(block_hash),
@@ -299,6 +305,8 @@ impl ToProto<v1alpha2::BlockHeader> for models::PendingBlockWithTxs {
             timestamp: Some(timestamp),
             starknet_version,
             l1_gas_price: Some(l1_gas_price),
+            l1_data_gas_price: Some(l1_data_gas_price),
+            l1_data_availability_mode: l1_data_availability_mode as i32,
         }
     }
 }
@@ -364,6 +372,17 @@ impl ToProto<v1alpha2::BlockStatus> for models::BlockStatus {
             BlockStatus::AcceptedOnL2 => v1alpha2::BlockStatus::AcceptedOnL2,
             BlockStatus::AcceptedOnL1 => v1alpha2::BlockStatus::AcceptedOnL1,
             BlockStatus::Rejected => v1alpha2::BlockStatus::Rejected,
+        }
+    }
+}
+
+impl ToProto<v1alpha2::L1DataAvailabilityMode> for models::L1DataAvailabilityMode {
+    fn to_proto(&self) -> v1alpha2::L1DataAvailabilityMode {
+        use models::L1DataAvailabilityMode;
+
+        match self {
+            L1DataAvailabilityMode::Blob => v1alpha2::L1DataAvailabilityMode::Blob,
+            L1DataAvailabilityMode::Calldata => v1alpha2::L1DataAvailabilityMode::Calldata,
         }
     }
 }
@@ -843,119 +862,9 @@ impl ToProto<v1alpha2::ExecutionStatus> for models::TransactionExecutionStatus {
     }
 }
 
-impl ToProto<v1alpha2::TransactionReceipt> for models::MaybePendingTransactionReceipt {
+impl ToProto<v1alpha2::TransactionReceipt> for models::TransactionReceiptWithBlockInfo {
     fn to_proto(&self) -> v1alpha2::TransactionReceipt {
-        use models::MaybePendingTransactionReceipt;
-
-        match self {
-            MaybePendingTransactionReceipt::PendingReceipt(receipt) => receipt.to_proto(),
-            MaybePendingTransactionReceipt::Receipt(receipt) => receipt.to_proto(),
-        }
-    }
-}
-
-impl ToProto<v1alpha2::TransactionReceipt> for models::PendingTransactionReceipt {
-    fn to_proto(&self) -> v1alpha2::TransactionReceipt {
-        use models::PendingTransactionReceipt;
-
-        match self {
-            PendingTransactionReceipt::Invoke(invoke) => invoke.to_proto(),
-            PendingTransactionReceipt::L1Handler(l1_handler) => l1_handler.to_proto(),
-            PendingTransactionReceipt::Declare(declare) => declare.to_proto(),
-            PendingTransactionReceipt::DeployAccount(deploy) => deploy.to_proto(),
-        }
-    }
-}
-
-impl ToProto<v1alpha2::TransactionReceipt> for models::PendingInvokeTransactionReceipt {
-    fn to_proto(&self) -> v1alpha2::TransactionReceipt {
-        let transaction_hash = self.transaction_hash.into();
-        let actual_fee_paid = self.actual_fee.to_proto();
-        let actual_fee = actual_fee_paid.amount.clone();
-        let l2_to_l1_messages = messages_to_proto(&self.messages_sent);
-        let events = events_to_proto(&self.events);
-        let (execution_status, revert_reason) = execution_result_to_proto(&self.execution_result);
-
-        v1alpha2::TransactionReceipt {
-            transaction_index: 0,
-            transaction_hash: Some(transaction_hash),
-            actual_fee,
-            actual_fee_paid: Some(actual_fee_paid),
-            l2_to_l1_messages,
-            events,
-            contract_address: None,
-            revert_reason,
-            execution_status: execution_status.into(),
-        }
-    }
-}
-
-impl ToProto<v1alpha2::TransactionReceipt> for models::PendingL1HandlerTransactionReceipt {
-    fn to_proto(&self) -> v1alpha2::TransactionReceipt {
-        let transaction_hash = self.transaction_hash.into();
-        let actual_fee_paid = self.actual_fee.to_proto();
-        let actual_fee = actual_fee_paid.amount.clone();
-        let l2_to_l1_messages = messages_to_proto(&self.messages_sent);
-        let events = events_to_proto(&self.events);
-        let (execution_status, revert_reason) = execution_result_to_proto(&self.execution_result);
-
-        v1alpha2::TransactionReceipt {
-            transaction_index: 0,
-            transaction_hash: Some(transaction_hash),
-            actual_fee,
-            actual_fee_paid: Some(actual_fee_paid),
-            l2_to_l1_messages,
-            events,
-            contract_address: None,
-            execution_status: execution_status.into(),
-            revert_reason,
-        }
-    }
-}
-
-impl ToProto<v1alpha2::TransactionReceipt> for models::PendingDeclareTransactionReceipt {
-    fn to_proto(&self) -> v1alpha2::TransactionReceipt {
-        let transaction_hash = self.transaction_hash.into();
-        let actual_fee_paid = self.actual_fee.to_proto();
-        let actual_fee = actual_fee_paid.amount.clone();
-        let l2_to_l1_messages = messages_to_proto(&self.messages_sent);
-        let events = events_to_proto(&self.events);
-        let (execution_status, revert_reason) = execution_result_to_proto(&self.execution_result);
-
-        v1alpha2::TransactionReceipt {
-            transaction_index: 0,
-            transaction_hash: Some(transaction_hash),
-            actual_fee,
-            actual_fee_paid: Some(actual_fee_paid),
-            l2_to_l1_messages,
-            events,
-            contract_address: None,
-            execution_status: execution_status.into(),
-            revert_reason,
-        }
-    }
-}
-
-impl ToProto<v1alpha2::TransactionReceipt> for models::PendingDeployAccountTransactionReceipt {
-    fn to_proto(&self) -> v1alpha2::TransactionReceipt {
-        let transaction_hash = self.transaction_hash.into();
-        let actual_fee_paid = self.actual_fee.to_proto();
-        let actual_fee = actual_fee_paid.amount.clone();
-        let l2_to_l1_messages = messages_to_proto(&self.messages_sent);
-        let events = events_to_proto(&self.events);
-        let (execution_status, revert_reason) = execution_result_to_proto(&self.execution_result);
-
-        v1alpha2::TransactionReceipt {
-            transaction_index: 0,
-            transaction_hash: Some(transaction_hash),
-            actual_fee,
-            actual_fee_paid: Some(actual_fee_paid),
-            l2_to_l1_messages,
-            events,
-            contract_address: None,
-            execution_status: execution_status.into(),
-            revert_reason,
-        }
+        self.receipt.to_proto()
     }
 }
 
@@ -981,6 +890,7 @@ impl ToProto<v1alpha2::TransactionReceipt> for models::InvokeTransactionReceipt 
         let l2_to_l1_messages = messages_to_proto(&self.messages_sent);
         let events = events_to_proto(&self.events);
         let (execution_status, revert_reason) = execution_result_to_proto(&self.execution_result);
+        let execution_resources = self.execution_resources.to_proto();
 
         v1alpha2::TransactionReceipt {
             transaction_index: 0,
@@ -992,6 +902,7 @@ impl ToProto<v1alpha2::TransactionReceipt> for models::InvokeTransactionReceipt 
             contract_address: None,
             execution_status: execution_status.into(),
             revert_reason,
+            execution_resources: Some(execution_resources),
         }
     }
 }
@@ -1004,6 +915,7 @@ impl ToProto<v1alpha2::TransactionReceipt> for models::L1HandlerTransactionRecei
         let l2_to_l1_messages = messages_to_proto(&self.messages_sent);
         let events = events_to_proto(&self.events);
         let (execution_status, revert_reason) = execution_result_to_proto(&self.execution_result);
+        let execution_resources = self.execution_resources.to_proto();
 
         v1alpha2::TransactionReceipt {
             transaction_index: 0,
@@ -1015,6 +927,7 @@ impl ToProto<v1alpha2::TransactionReceipt> for models::L1HandlerTransactionRecei
             contract_address: None,
             execution_status: execution_status.into(),
             revert_reason,
+            execution_resources: Some(execution_resources),
         }
     }
 }
@@ -1027,6 +940,7 @@ impl ToProto<v1alpha2::TransactionReceipt> for models::DeclareTransactionReceipt
         let l2_to_l1_messages = messages_to_proto(&self.messages_sent);
         let events = events_to_proto(&self.events);
         let (execution_status, revert_reason) = execution_result_to_proto(&self.execution_result);
+        let execution_resources = self.execution_resources.to_proto();
 
         v1alpha2::TransactionReceipt {
             transaction_index: 0,
@@ -1038,6 +952,7 @@ impl ToProto<v1alpha2::TransactionReceipt> for models::DeclareTransactionReceipt
             contract_address: None,
             execution_status: execution_status.into(),
             revert_reason,
+            execution_resources: Some(execution_resources),
         }
     }
 }
@@ -1051,6 +966,7 @@ impl ToProto<v1alpha2::TransactionReceipt> for models::DeployTransactionReceipt 
         let events = events_to_proto(&self.events);
         let contract_address = self.contract_address.into();
         let (execution_status, revert_reason) = execution_result_to_proto(&self.execution_result);
+        let execution_resources = self.execution_resources.to_proto();
 
         v1alpha2::TransactionReceipt {
             transaction_index: 0,
@@ -1062,6 +978,7 @@ impl ToProto<v1alpha2::TransactionReceipt> for models::DeployTransactionReceipt 
             contract_address: Some(contract_address),
             execution_status: execution_status.into(),
             revert_reason,
+            execution_resources: Some(execution_resources),
         }
     }
 }
@@ -1075,6 +992,7 @@ impl ToProto<v1alpha2::TransactionReceipt> for models::DeployAccountTransactionR
         let events = events_to_proto(&self.events);
         let contract_address = self.contract_address.into();
         let (execution_status, revert_reason) = execution_result_to_proto(&self.execution_result);
+        let execution_resources = self.execution_resources.to_proto();
 
         v1alpha2::TransactionReceipt {
             transaction_index: 0,
@@ -1086,6 +1004,7 @@ impl ToProto<v1alpha2::TransactionReceipt> for models::DeployAccountTransactionR
             contract_address: Some(contract_address),
             execution_status: execution_status.into(),
             revert_reason,
+            execution_resources: Some(execution_resources),
         }
     }
 }
@@ -1108,6 +1027,59 @@ impl ToProto<v1alpha2::PriceUnit> for models::PriceUnit {
         match self {
             PriceUnit::Fri => v1alpha2::PriceUnit::Fri,
             PriceUnit::Wei => v1alpha2::PriceUnit::Wei,
+        }
+    }
+}
+
+impl ToProto<v1alpha2::ExecutionResources> for models::ExecutionResources {
+    fn to_proto(&self) -> v1alpha2::ExecutionResources {
+        let computation = self.computation_resources.to_proto();
+        let data_availability = self.data_resources.to_proto();
+
+        v1alpha2::ExecutionResources {
+            computation: Some(computation),
+            data_availability: Some(data_availability),
+        }
+    }
+}
+
+impl ToProto<v1alpha2::ComputationResources> for models::ComputationResources {
+    fn to_proto(&self) -> v1alpha2::ComputationResources {
+        let steps = self.steps;
+        let memory_holes = self.memory_holes.unwrap_or_default();
+        let range_check_builtin_applications =
+            self.range_check_builtin_applications.unwrap_or_default();
+        let pedersen_builtin_applications = self.pedersen_builtin_applications.unwrap_or_default();
+        let poseidon_builtin_applications = self.poseidon_builtin_applications.unwrap_or_default();
+        let ec_op_builtin_applications = self.ec_op_builtin_applications.unwrap_or_default();
+        let ecdsa_builtin_applications = self.ecdsa_builtin_applications.unwrap_or_default();
+        let bitwise_builtin_applications = self.bitwise_builtin_applications.unwrap_or_default();
+        let keccak_builtin_applications = self.keccak_builtin_applications.unwrap_or_default();
+        let segment_arena_builtin = self.segment_arena_builtin.unwrap_or_default();
+
+        v1alpha2::ComputationResources {
+            steps,
+            memory_holes,
+            range_check_builtin_applications,
+            pedersen_builtin_applications,
+            poseidon_builtin_applications,
+            ec_op_builtin_applications,
+            ecdsa_builtin_applications,
+            bitwise_builtin_applications,
+            keccak_builtin_applications,
+            segment_arena_builtin,
+        }
+    }
+}
+
+impl ToProto<v1alpha2::DataAvailabilityResources> for models::DataResources {
+    fn to_proto(&self) -> v1alpha2::DataAvailabilityResources {
+        let l1_gas = self.data_availability.l1_gas;
+        let l1_data_gas = self.data_availability.l1_data_gas;
+
+        v1alpha2::DataAvailabilityResources {
+            l1_gas,
+            l1_data_gas,
         }
     }
 }
