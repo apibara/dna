@@ -6,6 +6,15 @@ The format is based on [Common Changelog](https://common-changelog.org/), and
 this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2024-04-09
+
+_Support Starknet 0.13.1 and the new RPC 0.7.1 data._
+
+### Added
+
+-   Add the new blob-related fields in the Starknet RPC 0.7.1 spec.
+-   Add fields related to execution resources in `TransactionReceipt`.
+
 ## [0.6.2] - 2024-03-21
 
 _Add support for secure Redis persistence._
