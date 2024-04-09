@@ -6,6 +6,22 @@ The format is based on [Common Changelog](https://common-changelog.org/), and
 this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] - 2024-04-09
+
+_Add support for RPC v0.7.1._
+
+### Added
+
+-   Add fields related to the new blob DA layer.
+-   Add execution resources fields to `TransactionReceipt`. You can use this fields to
+    retrieve how many resources (like Cairo steps, builtin applications, or L1 gas) each
+    transaction used.
+
+### Changed
+
+-   The ingestion service now uses Starknet RPC v0.7.1. To ensure that you're using
+    the right version, append `/rpc/v0_7` to the RPC url.
+
 ## [1.5.0] - 2024-03-15
 
 _Stream reverted transactions and events._

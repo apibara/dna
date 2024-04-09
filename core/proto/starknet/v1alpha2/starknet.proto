@@ -42,6 +42,19 @@ message BlockHeader {
   string starknet_version = 7;
   // Price of L1 gas in the block.
   ResourcePrice l1_gas_price = 8;
+  // Price of L1 data gas in the block.
+  ResourcePrice l1_data_gas_price = 9;
+  // L1 data availability mode.
+  L1DataAvailabilityMode l1_data_availability_mode = 10;
+}
+
+enum L1DataAvailabilityMode {
+  // Unknown DA.
+  L1_DATA_AVAILABILITY_MODE_UNSPECIFIED = 0;
+  // Data published via blobs.
+  L1_DATA_AVAILABILITY_MODE_BLOB = 1;
+  // Data published via calldata.
+  L1_DATA_AVAILABILITY_MODE_CALLDATA = 2;
 }
 
 // Status of a block.
@@ -228,7 +241,7 @@ message TransactionReceipt {
   // Transaction's indexe in the list of transactions in a block.
   uint64 transaction_index = 2;
   // Feed paid.
-  FieldElement actual_fee = 3 [ deprecated = true ];
+  FieldElement actual_fee = 3;
   // Messages sent to L1 in the transactions.
   repeated L2ToL1Message l2_to_l1_messages = 4;
   // Events emitted in the transaction.
@@ -241,6 +254,8 @@ message TransactionReceipt {
   string revert_reason = 8;
   // Feed paid.
   FeePayment actual_fee_paid = 9;
+  // The resources consumed by the transaction.
+  ExecutionResources execution_resources = 10;
 }
 
 // Message sent from L2 to L1 together with its transaction and receipt.
@@ -391,6 +406,45 @@ enum PriceUnit {
   PRICE_UNIT_WEI = 1;
   // FRI.
   PRICE_UNIT_FRI = 2;
+}
+
+// Execution resources.
+message ExecutionResources {
+  // Computation resources.
+  ComputationResources computation = 1;
+  // Data availability resources.
+  DataAvailabilityResources data_availability = 2;
+}
+
+// Computation resources.
+message ComputationResources {
+  // The number of Cairo steps used.
+  uint64 steps = 1;
+  // The number of unused memory cells.
+  uint64 memory_holes = 2;
+  // The number of RANGE_CHECK builtin instances.
+  uint64 range_check_builtin_applications = 3;
+  // The number of Pedersen builtin instances.
+  uint64 pedersen_builtin_applications = 4;
+  // The number of Poseidon builtin instances.
+  uint64 poseidon_builtin_applications = 5;
+  // The number of EC_OP builtin instances.
+  uint64 ec_op_builtin_applications = 6;
+  // The number of ECDSA builtin instances.
+  uint64 ecdsa_builtin_applications = 7;
+  // The number of BITWISE builtin instances.
+  uint64 bitwise_builtin_applications = 8;
+  // The number of KECCAK builtin instances.
+  uint64 keccak_builtin_applications = 9;
+  // The number of accesses to the segment arena.
+  uint64 segment_arena_builtin = 10;
+}
+
+message DataAvailabilityResources {
+  // The gas consumed by this transaction's data, 0 if it uses data gas for DA.
+  uint64 l1_gas = 1;
+  // The data gas consumed by this transaction's data, 0 if it uses gas for DA.
+  uint64 l1_data_gas = 2;
 }
 
 message ResourceBoundsMapping {
