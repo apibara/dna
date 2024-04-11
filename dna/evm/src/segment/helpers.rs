@@ -45,6 +45,13 @@ impl store::B256 {
         let hex = bytes.encode_hex::<String>();
         format!("0x{hex}")
     }
+
+    pub fn from_hex(hex: &str) -> Result<Self> {
+        let num = models::B256::from_hex(hex)
+            .change_context(DnaError::Fatal)
+            .attach_printable_lazy(|| "failed to parse hex to B256 {hex}")?;
+        Ok(num.into())
+    }
 }
 
 impl PartialOrd for store::Address {
@@ -61,6 +68,20 @@ impl Ord for store::Address {
     }
 }
 
+impl PartialOrd for store::B256 {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Eq for store::B256 {}
+
+impl Ord for store::B256 {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0.cmp(&other.0)
+    }
+}
+
 impl std::fmt::Display for store::Address {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.as_hex())
@@ -69,6 +90,7 @@ impl std::fmt::Display for store::Address {
 
 pub trait SegmentGroupExt {
     fn get_log_by_address(&self, address: &store::Address) -> Option<RoaringBitmap>;
+    fn get_log_by_topic(&self, topic: &store::B256) -> Option<RoaringBitmap>;
 }
 
 impl<'a> SegmentGroupExt for store::SegmentGroup<'a> {
@@ -76,6 +98,19 @@ impl<'a> SegmentGroupExt for store::SegmentGroup<'a> {
         let logs = self.log_by_address().unwrap_or_default();
         let Some(bitmap_data) = logs
             .binary_search_by_key(address, |kv| kv.key())
+            .and_then(|kv| kv.bitmap())
+        else {
+            return None;
+        };
+        let bitmap = RoaringBitmap::deserialize_from(bitmap_data.bytes())
+            .expect("failed to deserialize bitmap");
+        Some(bitmap)
+    }
+
+    fn get_log_by_topic(&self, topic: &store::B256) -> Option<RoaringBitmap> {
+        let logs = self.log_by_topic().unwrap_or_default();
+        let Some(bitmap_data) = logs
+            .binary_search_by_key(topic, |kv| kv.key())
             .and_then(|kv| kv.bitmap())
         else {
             return None;
