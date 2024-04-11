@@ -119,7 +119,7 @@ impl SnapshotState {
 }
 
 mod worker {
-    use std::{f32::consts::E, sync::Arc, time::Duration};
+    use std::{sync::Arc, time::Duration};
 
     use apibara_dna_protocol::ingestion::{ingestion_client::IngestionClient, SubscribeRequest};
     use error_stack::{Result, ResultExt};
