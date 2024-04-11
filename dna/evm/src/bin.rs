@@ -4,7 +4,9 @@ use apibara_dna_common::{
     error::{DnaError, ReportExt, Result},
     ingestion::IngestionServer,
     segment::{SegmentArgs, SnapshotReader},
-    storage::{AzureStorageBackendBuilder, LocalStorageBackend, StorageBackend},
+    storage::{
+        AzureStorageBackendBuilder, LocalStorageBackend, S3StorageBackendBuilder, StorageBackend,
+    },
 };
 use apibara_dna_evm::{
     ingestion::{ChainTracker, Ingestor, IngestorOptions, RpcProviderService},
@@ -77,6 +79,8 @@ struct StorageArgs {
     local_dir: Option<PathBuf>,
     #[arg(long, env)]
     azure_container: Option<String>,
+    #[arg(long, env)]
+    s3_bucket: Option<String>,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -170,6 +174,14 @@ async fn run_ingestion(args: StartIngestionArgs) -> Result<()> {
             .change_context(DnaError::Fatal)
             .attach_printable("failed to build Azure storage backend")
             .attach_printable("hint: have you set the AZURE_STORAGE_ACCOUNT_NAME and AZURE_STORAGE_ACCOUNT_KEY environment variables?")?;
+        run_ingestion_with_storage(args, storage).await
+    } else if let Some(s3_bucket) = &output.s3_bucket {
+        let storage = S3StorageBackendBuilder::from_env()
+            .with_bucket_name(s3_bucket)
+            .build()
+            .change_context(DnaError::Fatal)
+            .attach_printable("failed to build S3 storage backend")
+            .attach_printable("hint: have you set the AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY environment variables?")?;
         run_ingestion_with_storage(args, storage).await
     } else {
         Err(DnaError::Configuration)
