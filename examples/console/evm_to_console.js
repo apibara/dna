@@ -1,6 +1,6 @@
 export const config = {
   streamUrl: "http://localhost:7070",
-  startingBlock: 3_000_000,
+  startingBlock: 0,
   network: "evm",
   filter: {
     header: { weak: false },
@@ -10,7 +10,7 @@ export const config = {
       },
     ],
   },
-  sinkType: "mongo",
+  sinkType: "console",
   sinkOptions: {
     database: "test",
     collectionName: "headers",
