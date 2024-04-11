@@ -110,6 +110,10 @@ struct IngestorArgs {
 struct InspectArgs {
     #[clap(flatten)]
     storage: StorageArgs,
+    #[arg(long, env)]
+    pub starting_block: Option<u64>,
+    #[arg(long, env)]
+    pub ending_block: Option<u64>,
     /// Print found data.
     #[arg(long, env)]
     pub log: bool,
@@ -316,8 +320,13 @@ where
         let segment_options = snapshot.segment_options;
         let starting_block_number =
             segment_options.segment_group_start(snapshot.first_block_number);
+        let starting_block_number =
+            u64::max(starting_block_number, args.starting_block.unwrap_or(0));
+
         let ending_block_number = starting_block_number
             + snapshot.group_count as u64 * segment_options.segment_group_blocks() as u64;
+        let ending_block_number =
+            u64::min(ending_block_number, args.ending_block.unwrap_or(u64::MAX));
 
         let mut segment_group_reader =
             SegmentGroupReader::new(storage.clone(), segment_options.clone(), 1024 * 1024 * 1024);
@@ -359,13 +368,15 @@ where
             None
         };
 
-        /*
         let topic_filter = if let Some(topic) = args.logs.topic {
-            todo!()
+            info!(topic, "Filter by topic");
+            let topic = store::B256::from_hex(&topic)
+                .change_context(DnaError::Fatal)
+                .attach_printable("failed to parse topic")?;
+            Some(topic)
         } else {
             None
         };
-        */
 
         let mut current_block_number = starting_block_number;
 
@@ -376,6 +387,10 @@ where
         let mut transaction_count = 0;
         let mut withdrawal_count = 0;
         let mut segment_read_count = 0;
+        info!(
+            starting_block_number,
+            ending_block_number, "Inspecting blocks"
+        );
         while current_block_number < ending_block_number {
             let current_segment_group_start =
                 segment_options.segment_group_start(current_block_number);
@@ -405,6 +420,10 @@ where
                     .unwrap_or_default();
                 debug!(address = %address, address_bitmap = ?address_bitmap, "read address bitmap");
                 block_bitmap |= address_bitmap;
+            } else if let Some(topic) = &topic_filter {
+                let topic_bitmap = segment_group.get_log_by_topic(topic).unwrap_or_default();
+                debug!(topic_bitmap = ?topic_bitmap, "read topic bitmap");
+                block_bitmap |= topic_bitmap;
             }
 
             // Skip as many segments in the group as possible.
@@ -431,7 +450,7 @@ where
                 None
             };
 
-            let mut log_segment = if address_filter.is_some() {
+            let mut log_segment = if address_filter.is_some() || topic_filter.is_some() {
                 Some(
                     log_segment_reader
                         .read(current_segment_start)
@@ -494,14 +513,27 @@ where
                 debug!(block_number, "inspect block");
 
                 if let Some(log_segment) = log_segment.as_ref() {
-                    let target_address = address_filter.as_ref().unwrap();
-
                     let index = block_number - log_segment.first_block_number() as u32;
                     let block_logs = log_segment.blocks().unwrap_or_default().get(index as usize);
 
                     for log in block_logs.logs().unwrap_or_default() {
-                        let address = log.address().expect("address is missing");
-                        if address != target_address {
+                        let mut include_log = false;
+
+                        if let Some(target_address) = address_filter.as_ref() {
+                            let address = log.address().expect("address is missing");
+                            if address == target_address {
+                                include_log = true;
+                            }
+                        }
+
+                        if let Some(target_topic) = topic_filter.as_ref() {
+                            let topics = log.topics().unwrap_or_default();
+                            if topics.iter().find(|t| t == &target_topic).is_some() {
+                                include_log = true;
+                            }
+                        }
+
+                        if !include_log {
                             continue;
                         }
 
