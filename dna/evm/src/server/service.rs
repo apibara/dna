@@ -1,5 +1,8 @@
+use std::time::Duration;
+
 use apibara_dna_common::error::DnaError;
-use apibara_dna_common::server::SnapshotSyncClient;
+use apibara_dna_common::segment::SegmentOptions;
+use apibara_dna_common::server::{SnapshotState, SnapshotSyncClient};
 use apibara_dna_common::storage::StorageBackend;
 use apibara_dna_common::{error::Result, segment::SnapshotReader};
 use apibara_dna_protocol::dna::{stream_data_response, Cursor, Data, DataFinality};
@@ -9,15 +12,17 @@ use apibara_dna_protocol::{
     },
     evm,
 };
-use error_stack::ResultExt;
+use bytes::buf;
+use error_stack::{Report, ResultExt};
 use futures_util::{Future, TryFutureExt};
 use prost::Message;
 use roaring::RoaringBitmap;
-use tokio::sync::mpsc;
+use tokio::sync::{broadcast, mpsc};
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::Request;
 use tracing::{debug, error, info, warn};
 
+use crate::segment::store::{self, LogSegment};
 use crate::segment::{
     BlockHeaderSegmentReader, LogSegmentReader, SegmentGroupReader, TransactionSegmentReader,
 };
@@ -47,6 +52,18 @@ where
 
     pub fn into_service(self) -> dna_stream_server::DnaStreamServer<Service<S>> {
         dna_stream_server::DnaStreamServer::new(self)
+    }
+
+    #[tracing::instrument(skip_all, err(Debug))]
+    async fn subscribe_to_snapshot(
+        &self,
+    ) -> Result<(SnapshotState, broadcast::Receiver<SnapshotState>)> {
+        // TODO: add retry logic.
+        self.snapshot_client
+            .subscribe()
+            .await
+            .ok_or::<Report<DnaError>>(DnaError::Fatal.into())
+            .attach_printable("failed to subscribe to snapshot")
     }
 }
 
@@ -78,14 +95,25 @@ where
             .map_err(|_| tonic::Status::invalid_argument("failed to decode filter"))?;
 
         // TODO: use this + retry.
-        let xxx = self.snapshot_client.subscribe().await.unwrap();
+        let (starting_snapshot, snapshot_rx) =
+            self.subscribe_to_snapshot().await.map_err(|err| {
+                warn!(err = ?err, "failed to subscribe to snapshot");
+                tonic::Status::internal("internal server error")
+            })?;
+
+        let producer = StreamProducer::init(self.storage.clone(), filters, snapshot_rx, tx.clone())
+            .await
+            .map_err(|err| {
+                warn!(err = ?err, "failed to initialize stream producer");
+                tonic::Status::internal("internal server error")
+            })?;
 
         tokio::spawn(
-            do_stream_data(self.storage.clone(), starting_block_number, filters, tx).inspect_err(
-                |err| {
-                    warn!(?err, "stream data error");
-                },
-            ),
+            producer
+                .start(starting_block_number, starting_snapshot)
+                .inspect_err(|err| {
+                    error!(err = ?err, "stream_data error");
+                }),
         );
 
         Ok(tonic::Response::new(ReceiverStream::new(rx)))
@@ -100,6 +128,210 @@ where
     }
 }
 
+struct StreamProducer<S>
+where
+    S: StorageBackend + Send + Sync + 'static + Clone,
+    <S as StorageBackend>::Reader: Unpin + Send + 'static,
+{
+    storage: S,
+    filters: Vec<evm::Filter>,
+    segment_options: SegmentOptions,
+    snapshot_rx: broadcast::Receiver<SnapshotState>,
+    response_tx: mpsc::Sender<TonicResult<StreamDataResponse>>,
+}
+
+impl<S> StreamProducer<S>
+where
+    S: StorageBackend + Send + Sync + 'static + Clone,
+    <S as StorageBackend>::Reader: Unpin + Send + 'static,
+{
+    pub async fn init(
+        storage: S,
+        filters: Vec<evm::Filter>,
+        snapshot_rx: broadcast::Receiver<SnapshotState>,
+        response_tx: mpsc::Sender<TonicResult<StreamDataResponse>>,
+    ) -> Result<Self> {
+        let segment_options = {
+            let mut snapshot_reader = SnapshotReader::new(storage.clone());
+            let snapshot = snapshot_reader.snapshot_state().await?;
+            snapshot.segment_options
+        };
+
+        let producer = StreamProducer {
+            storage,
+            filters,
+            snapshot_rx,
+            response_tx,
+            segment_options,
+        };
+
+        Ok(producer)
+    }
+
+    #[tracing::instrument(name = "stream_data", skip_all, err(Debug))]
+    pub async fn start(
+        self,
+        starting_block_number: u64,
+        starting_snapshot: SnapshotState,
+    ) -> Result<()> {
+        info!(num_filters = %self.filters.len(), "starting data stream");
+
+        // TODO: this needs to be configurable.
+        let buffer_size = 1024 * 1024 * 1024;
+
+        let mut segment_group_reader = SegmentGroupReader::new(
+            self.storage.clone(),
+            self.segment_options.clone(),
+            buffer_size,
+        );
+
+        let mut current_block_number = starting_block_number;
+        let mut block_bitmap = RoaringBitmap::new();
+
+        let mut header_segment_reader = BlockHeaderSegmentReader::new(
+            self.storage.clone(),
+            self.segment_options.clone(),
+            buffer_size,
+        );
+        let mut log_segment_reader = LogSegmentReader::new(
+            self.storage.clone(),
+            self.segment_options.clone(),
+            buffer_size,
+        );
+        let mut transaction_segment_reader = TransactionSegmentReader::new(
+            self.storage.clone(),
+            self.segment_options.clone(),
+            buffer_size,
+        );
+
+        while current_block_number < starting_snapshot.sealed_block_number {
+            let segment_group_end = {
+                let current_segment_group_start = self
+                    .segment_options
+                    .segment_group_start(current_block_number);
+
+                debug!(current_segment_group_start, "reading new segment group");
+
+                let segment_group = segment_group_reader
+                    .read(current_segment_group_start)
+                    .await
+                    .change_context(DnaError::Fatal)
+                    .attach_printable("failed to read segment group")?;
+
+                self.fill_segment_group_bitmap(&segment_group, &mut block_bitmap)
+                    .await?
+            };
+
+            // Skip as many segments in the group as possible.
+            if let Some(starting_block) = block_bitmap.min() {
+                current_block_number = starting_block as u64;
+            } else {
+                debug!(segment_group_end, "no blocks to read. skip ahead");
+                current_block_number = segment_group_end;
+                continue;
+            }
+
+            let mut current_segment_start =
+                self.segment_options.segment_start(current_block_number);
+            debug!(current_segment_start, "reading starting segment");
+
+            let mut header_segment = header_segment_reader
+                .read(current_segment_start)
+                .await
+                .change_context(DnaError::Fatal)
+                .attach_printable("failed to read header segment")?;
+
+            for block_number in block_bitmap.iter() {
+                if current_segment_start < self.segment_options.segment_start(block_number as u64) {
+                    current_segment_start = self.segment_options.segment_start(block_number as u64);
+                    debug!(current_segment_start, "reading new segment");
+                    header_segment = header_segment_reader
+                        .read(current_segment_start)
+                        .await
+                        .change_context(DnaError::Fatal)
+                        .attach_printable("failed to read header segment")?;
+                }
+                debug!(block_number, "inspect block");
+
+                let header = {
+                    let index = block_number - header_segment.first_block_number() as u32;
+                    let header = header_segment
+                        .headers()
+                        .unwrap_or_default()
+                        .get(index as usize);
+
+                    evm::BlockHeader {
+                        number: header.number(),
+                        hash: header.hash().map(|h| evm::B256::from_bytes(&h.0)),
+                        nonce: header.nonce(),
+                        ..Default::default()
+                    }
+                };
+
+                let block = evm::Block {
+                    header: Some(header),
+                    ..Default::default()
+                };
+
+                let data = Data {
+                    data: vec![block.encode_to_vec()],
+                    finality: DataFinality::Finalized as i32,
+                    cursor: Some(Cursor {
+                        order_key: block_number as u64,
+                        unique_key: vec![],
+                    }),
+                    end_cursor: Some(Cursor {
+                        order_key: block_number as u64,
+                        unique_key: vec![],
+                    }),
+                };
+
+                let Ok(_) = self
+                    .response_tx
+                    .send(Ok(StreamDataResponse {
+                        message: Some(stream_data_response::Message::Data(data)),
+                    }))
+                    .await
+                else {
+                    // channel closed. stop streaming.
+                    return Ok(());
+                };
+            }
+
+            current_block_number = segment_group_end;
+        }
+
+        Ok(())
+    }
+
+    async fn fill_segment_group_bitmap<'a>(
+        &self,
+        segment_group: &store::SegmentGroup<'a>,
+        block_bitmap: &mut RoaringBitmap,
+    ) -> Result<u64> {
+        block_bitmap.clear();
+
+        let group_start = segment_group.first_block_number();
+        let segment_group_blocks = self.segment_options.segment_group_blocks();
+        let group_end = group_start + segment_group_blocks;
+
+        // TODO: read block bitmap
+        for filter in &self.filters {
+            if let Some(header) = filter.header.as_ref() {
+                if !header.weak() {
+                    block_bitmap.insert_range(group_start as u32..group_end as u32);
+                    break;
+                }
+            }
+
+            todo!();
+        }
+
+        Ok(group_end)
+    }
+}
+
+/*
 async fn do_stream_data<S>(
     storage: S,
     starting_block_number: u64,
@@ -241,3 +473,5 @@ where
 
     Ok(())
 }
+
+*/
