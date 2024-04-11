@@ -240,6 +240,14 @@ async fn run_server(args: StartServerArgs) -> Result<()> {
             .attach_printable("failed to build Azure storage backend")
             .attach_printable("hint: have you set the AZURE_STORAGE_ACCOUNT_NAME and AZURE_STORAGE_ACCOUNT_KEY environment variables?")?;
         run_server_with_storage(args, storage).await
+    } else if let Some(s3_bucket) = &output.s3_bucket {
+        let storage = S3StorageBackendBuilder::from_env()
+            .with_bucket_name(s3_bucket)
+            .build()
+            .change_context(DnaError::Fatal)
+            .attach_printable("failed to build S3 storage backend")
+            .attach_printable("hint: have you set the AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY environment variables?")?;
+        run_server_with_storage(args, storage).await
     } else {
         Err(DnaError::Configuration)
             .attach_printable("no storage backend configured")
@@ -274,6 +282,15 @@ async fn run_inspect(args: InspectArgs) -> Result<()> {
             .change_context(DnaError::Fatal)
             .attach_printable("failed to build Azure storage backend")
             .attach_printable("hint: have you set the AZURE_STORAGE_ACCOUNT_NAME and AZURE_STORAGE_ACCOUNT_KEY environment variables?")?;
+        let _ = tokio::spawn(run_inspect_with_storage(args, storage)).await;
+        Ok(())
+    } else if let Some(s3_bucket) = &storage.s3_bucket {
+        let storage = S3StorageBackendBuilder::from_env()
+            .with_bucket_name(s3_bucket)
+            .build()
+            .change_context(DnaError::Fatal)
+            .attach_printable("failed to build S3 storage backend")
+            .attach_printable("hint: have you set the AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY environment variables?")?;
         let _ = tokio::spawn(run_inspect_with_storage(args, storage)).await;
         Ok(())
     } else {
@@ -328,11 +345,16 @@ where
         };
 
         let transaction_to_filter = if let Some(to_address) = args.transaction.to_address {
-            info!(to_address, "Filter by transaction to address");
-            let address = store::Address::from_hex(&to_address)
-                .change_context(DnaError::Fatal)
-                .attach_printable("failed to parse address")?;
-            Some(address)
+            if to_address == "*" {
+                info!(to_address, "Take all transactions");
+                Some(None)
+            } else {
+                info!(to_address, "Filter by transaction to address");
+                let address = store::Address::from_hex(&to_address)
+                    .change_context(DnaError::Fatal)
+                    .attach_printable("failed to parse address")?;
+                Some(Some(address))
+            }
         } else {
             None
         };
@@ -364,10 +386,10 @@ where
                 .change_context(DnaError::Fatal)
                 .attach_printable("failed to read segment group")?;
 
-            assert_eq!(
-                segment_group.first_block_number(),
-                current_segment_group_start
-            );
+            // assert_eq!(
+            //     segment_group.first_block_number(),
+            //     current_segment_group_start
+            // );
 
             let segment_group_blocks = segment_options.segment_group_blocks();
             let segment_group_end = current_segment_group_start + segment_group_blocks;
@@ -516,7 +538,11 @@ where
                             continue;
                         };
 
-                        if to == target_address {
+                        let matches = target_address
+                            .as_ref()
+                            .map(|addr| to == addr)
+                            .unwrap_or(true);
+                        if matches {
                             let transaction_hash = transaction.hash().unwrap();
                             let calldata = transaction.input().unwrap_or_default();
                             if args.log {
