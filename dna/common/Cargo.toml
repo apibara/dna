@@ -23,7 +23,8 @@ flatbuffers.workspace = true
 futures-util.workspace = true
 lru.workspace = true
 # Make clients cloneable
-object_store = { git = "https://github.com/fracek/arrow-rs", rev = "662d63ffa", features = [
+object_store = { git = "https://github.com/fracek/arrow-rs", rev = "52ec42ac", features = [
+    "aws",
     "azure",
 ] }
 tokio.workspace = true

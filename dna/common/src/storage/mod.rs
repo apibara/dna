@@ -6,10 +6,12 @@ use tokio::io::{AsyncRead, AsyncWrite};
 
 use crate::error::Result;
 
+mod aws;
 mod azure;
 mod cached;
 mod local;
 
+pub use self::aws::{S3StorageBackend, S3StorageBackendBuilder};
 pub use self::azure::{AzureStorageBackend, AzureStorageBackendBuilder};
 pub use self::cached::{CacheOptions, CachedStorage};
 pub use self::local::LocalStorageBackend;
