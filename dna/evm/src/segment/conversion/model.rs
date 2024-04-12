@@ -1,3 +1,4 @@
+//! Conversion between store and model.
 use crate::{ingestion::models, segment::store};
 
 impl From<models::B256> for store::B256 {

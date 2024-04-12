@@ -19,7 +19,6 @@ use apibara_dna_evm::{
 use apibara_observability::init_opentelemetry;
 use clap::{Args, Parser, Subcommand};
 use error_stack::ResultExt;
-use futures_util::Future;
 use roaring::RoaringBitmap;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info};
@@ -304,377 +303,361 @@ async fn run_inspect(args: InspectArgs) -> Result<()> {
     }
 }
 
-fn run_inspect_with_storage<S>(
-    args: InspectArgs,
-    storage: S,
-) -> impl Future<Output = Result<()>> + Send
+async fn run_inspect_with_storage<S>(args: InspectArgs, storage: S) -> Result<()>
 where
     S: StorageBackend + Clone + Send + Sync + 'static,
     <S as StorageBackend>::Reader: Unpin + Send,
     <S as StorageBackend>::Writer: Send,
 {
-    async move {
-        let mut snapshot_reader = SnapshotReader::new(storage.clone());
-        let snapshot = snapshot_reader.snapshot_state().await?;
+    let mut snapshot_reader = SnapshotReader::new(storage.clone());
+    let snapshot = snapshot_reader.snapshot_state().await?;
 
-        let segment_options = snapshot.segment_options;
-        let starting_block_number =
-            segment_options.segment_group_start(snapshot.first_block_number);
-        let starting_block_number =
-            u64::max(starting_block_number, args.starting_block.unwrap_or(0));
+    let segment_options = snapshot.segment_options;
+    let starting_block_number = segment_options.segment_group_start(snapshot.first_block_number);
+    let starting_block_number = u64::max(starting_block_number, args.starting_block.unwrap_or(0));
 
-        let ending_block_number = starting_block_number
-            + snapshot.group_count as u64 * segment_options.segment_group_blocks() as u64;
-        let ending_block_number =
-            u64::min(ending_block_number, args.ending_block.unwrap_or(u64::MAX));
+    let ending_block_number = starting_block_number
+        + snapshot.group_count as u64 * segment_options.segment_group_blocks() as u64;
+    let ending_block_number = u64::min(ending_block_number, args.ending_block.unwrap_or(u64::MAX));
 
-        let mut segment_group_reader =
-            SegmentGroupReader::new(storage.clone(), segment_options.clone(), 1024 * 1024 * 1024);
-        let mut header_segment_reader = BlockHeaderSegmentReader::new(
-            storage.clone(),
-            segment_options.clone(),
-            1024 * 1024 * 1024,
-        );
-        let mut log_segment_reader =
-            LogSegmentReader::new(storage.clone(), segment_options.clone(), 1024 * 1024 * 1024);
-        let mut transaction_segment_reader = TransactionSegmentReader::new(
-            storage.clone(),
-            segment_options.clone(),
-            1024 * 1024 * 1024,
-        );
+    let mut segment_group_reader =
+        SegmentGroupReader::new(storage.clone(), segment_options.clone(), 1024 * 1024 * 1024);
+    let mut header_segment_reader =
+        BlockHeaderSegmentReader::new(storage.clone(), segment_options.clone(), 1024 * 1024 * 1024);
+    let mut log_segment_reader =
+        LogSegmentReader::new(storage.clone(), segment_options.clone(), 1024 * 1024 * 1024);
+    let mut transaction_segment_reader =
+        TransactionSegmentReader::new(storage.clone(), segment_options.clone(), 1024 * 1024 * 1024);
 
-        let address_filter = if let Some(address) = args.logs.address {
-            info!(address, "Filter by log address");
-            let address = store::Address::from_hex(&address)
+    let address_filter = if let Some(address) = args.logs.address {
+        info!(address, "Filter by log address");
+        let address = store::Address::from_hex(&address)
+            .change_context(DnaError::Fatal)
+            .attach_printable("failed to parse address")?;
+        Some(address)
+    } else {
+        None
+    };
+
+    let transaction_to_filter = if let Some(to_address) = args.transaction.to_address {
+        if to_address == "*" {
+            info!(to_address, "Take all transactions");
+            Some(None)
+        } else {
+            info!(to_address, "Filter by transaction to address");
+            let address = store::Address::from_hex(&to_address)
                 .change_context(DnaError::Fatal)
                 .attach_printable("failed to parse address")?;
-            Some(address)
-        } else {
-            None
-        };
+            Some(Some(address))
+        }
+    } else {
+        None
+    };
 
-        let transaction_to_filter = if let Some(to_address) = args.transaction.to_address {
-            if to_address == "*" {
-                info!(to_address, "Take all transactions");
-                Some(None)
-            } else {
-                info!(to_address, "Filter by transaction to address");
-                let address = store::Address::from_hex(&to_address)
+    let topic_filter = if let Some(topic) = args.logs.topic {
+        info!(topic, "Filter by topic");
+        let topic = store::B256::from_hex(&topic)
+            .change_context(DnaError::Fatal)
+            .attach_printable("failed to parse topic")?;
+        Some(topic)
+    } else {
+        None
+    };
+
+    let mut current_block_number = starting_block_number;
+
+    let start_time = Instant::now();
+
+    let mut block_bitmap = RoaringBitmap::new();
+    let mut event_count = 0;
+    let mut transaction_count = 0;
+    let mut withdrawal_count = 0;
+    let mut segment_read_count = 0;
+    info!(
+        starting_block_number,
+        ending_block_number, "Inspecting blocks"
+    );
+    while current_block_number < ending_block_number {
+        let current_segment_group_start = segment_options.segment_group_start(current_block_number);
+        debug!(current_segment_group_start, "reading new segment group");
+        let segment_group = segment_group_reader
+            .read(current_segment_group_start)
+            .await
+            .change_context(DnaError::Fatal)
+            .attach_printable("failed to read segment group")?;
+
+        // assert_eq!(
+        //     segment_group.first_block_number(),
+        //     current_segment_group_start
+        // );
+
+        let segment_group_blocks = segment_options.segment_group_blocks();
+        let segment_group_end = current_segment_group_start + segment_group_blocks;
+
+        block_bitmap.clear();
+        // TODO: use bitmap for transactions.
+        if args.header.header || transaction_to_filter.is_some() {
+            block_bitmap.insert_range(current_segment_group_start as u32..segment_group_end as u32);
+        } else if let Some(address) = &address_filter {
+            let address_bitmap = segment_group
+                .get_log_by_address(address)
+                .unwrap_or_default();
+            debug!(address = %address, address_bitmap = ?address_bitmap, "read address bitmap");
+            block_bitmap |= address_bitmap;
+        } else if let Some(topic) = &topic_filter {
+            let topic_bitmap = segment_group.get_log_by_topic(topic).unwrap_or_default();
+            debug!(topic_bitmap = ?topic_bitmap, "read topic bitmap");
+            block_bitmap |= topic_bitmap;
+        }
+
+        // Skip as many segments in the group as possible.
+        if let Some(starting_block) = block_bitmap.min() {
+            current_block_number = starting_block as u64;
+        } else {
+            debug!(segment_group_end, "no blocks to read. skip ahead");
+            current_block_number = segment_group_end;
+            continue;
+        }
+
+        let mut current_segment_start = segment_options.segment_start(current_block_number);
+        debug!(current_segment_start, "reading starting segment");
+
+        let mut header_segment = if args.header.header {
+            Some(
+                header_segment_reader
+                    .read(current_segment_start)
+                    .await
                     .change_context(DnaError::Fatal)
-                    .attach_printable("failed to parse address")?;
-                Some(Some(address))
-            }
+                    .attach_printable("failed to read header segment")?,
+            )
         } else {
             None
         };
 
-        let topic_filter = if let Some(topic) = args.logs.topic {
-            info!(topic, "Filter by topic");
-            let topic = store::B256::from_hex(&topic)
-                .change_context(DnaError::Fatal)
-                .attach_printable("failed to parse topic")?;
-            Some(topic)
+        let mut log_segment = if address_filter.is_some() || topic_filter.is_some() {
+            Some(
+                log_segment_reader
+                    .read(current_segment_start)
+                    .await
+                    .change_context(DnaError::Fatal)
+                    .attach_printable("failed to log segment")?,
+            )
         } else {
             None
         };
 
-        let mut current_block_number = starting_block_number;
+        let mut transaction_segment = if transaction_to_filter.is_some() {
+            Some(
+                transaction_segment_reader
+                    .read(current_segment_start)
+                    .await
+                    .change_context(DnaError::Fatal)
+                    .attach_printable("failed to read transaction segment")?,
+            )
+        } else {
+            None
+        };
 
-        let start_time = Instant::now();
+        for block_number in block_bitmap.iter() {
+            if current_segment_start < segment_options.segment_start(block_number as u64) {
+                current_segment_start = segment_options.segment_start(block_number as u64);
+                segment_read_count += 1;
+                debug!(current_segment_start, "reading new segment");
+                if header_segment.is_some() {
+                    header_segment = Some(
+                        header_segment_reader
+                            .read(current_segment_start)
+                            .await
+                            .change_context(DnaError::Fatal)
+                            .attach_printable("failed to read header segment")?,
+                    )
+                };
 
-        let mut block_bitmap = RoaringBitmap::new();
-        let mut event_count = 0;
-        let mut transaction_count = 0;
-        let mut withdrawal_count = 0;
-        let mut segment_read_count = 0;
-        info!(
-            starting_block_number,
-            ending_block_number, "Inspecting blocks"
-        );
-        while current_block_number < ending_block_number {
-            let current_segment_group_start =
-                segment_options.segment_group_start(current_block_number);
-            debug!(current_segment_group_start, "reading new segment group");
-            let segment_group = segment_group_reader
-                .read(current_segment_group_start)
-                .await
-                .change_context(DnaError::Fatal)
-                .attach_printable("failed to read segment group")?;
+                if log_segment.is_some() {
+                    log_segment = Some(
+                        log_segment_reader
+                            .read(current_segment_start)
+                            .await
+                            .change_context(DnaError::Fatal)
+                            .attach_printable("failed to read log segment")?,
+                    )
+                };
 
-            // assert_eq!(
-            //     segment_group.first_block_number(),
-            //     current_segment_group_start
-            // );
-
-            let segment_group_blocks = segment_options.segment_group_blocks();
-            let segment_group_end = current_segment_group_start + segment_group_blocks;
-
-            block_bitmap.clear();
-            // TODO: use bitmap for transactions.
-            if args.header.header || transaction_to_filter.is_some() {
-                block_bitmap
-                    .insert_range(current_segment_group_start as u32..segment_group_end as u32);
-            } else if let Some(address) = &address_filter {
-                let address_bitmap = segment_group
-                    .get_log_by_address(address)
-                    .unwrap_or_default();
-                debug!(address = %address, address_bitmap = ?address_bitmap, "read address bitmap");
-                block_bitmap |= address_bitmap;
-            } else if let Some(topic) = &topic_filter {
-                let topic_bitmap = segment_group.get_log_by_topic(topic).unwrap_or_default();
-                debug!(topic_bitmap = ?topic_bitmap, "read topic bitmap");
-                block_bitmap |= topic_bitmap;
+                if transaction_segment.is_some() {
+                    transaction_segment = Some(
+                        transaction_segment_reader
+                            .read(current_segment_start)
+                            .await
+                            .change_context(DnaError::Fatal)
+                            .attach_printable("failed to read transaction segment")?,
+                    )
+                };
             }
 
-            // Skip as many segments in the group as possible.
-            if let Some(starting_block) = block_bitmap.min() {
-                current_block_number = starting_block as u64;
-            } else {
-                debug!(segment_group_end, "no blocks to read. skip ahead");
-                current_block_number = segment_group_end;
-                continue;
-            }
+            debug!(block_number, "inspect block");
 
-            let mut current_segment_start = segment_options.segment_start(current_block_number);
-            debug!(current_segment_start, "reading starting segment");
+            if let Some(log_segment) = log_segment.as_ref() {
+                let index = block_number - log_segment.first_block_number() as u32;
+                let block_logs = log_segment.blocks().unwrap_or_default().get(index as usize);
 
-            let mut header_segment = if args.header.header {
-                Some(
-                    header_segment_reader
-                        .read(current_segment_start)
-                        .await
-                        .change_context(DnaError::Fatal)
-                        .attach_printable("failed to read header segment")?,
-                )
-            } else {
-                None
-            };
+                for log in block_logs.logs().unwrap_or_default() {
+                    let mut include_log = false;
 
-            let mut log_segment = if address_filter.is_some() || topic_filter.is_some() {
-                Some(
-                    log_segment_reader
-                        .read(current_segment_start)
-                        .await
-                        .change_context(DnaError::Fatal)
-                        .attach_printable("failed to log segment")?,
-                )
-            } else {
-                None
-            };
-
-            let mut transaction_segment = if transaction_to_filter.is_some() {
-                Some(
-                    transaction_segment_reader
-                        .read(current_segment_start)
-                        .await
-                        .change_context(DnaError::Fatal)
-                        .attach_printable("failed to read transaction segment")?,
-                )
-            } else {
-                None
-            };
-
-            for block_number in block_bitmap.iter() {
-                if current_segment_start < segment_options.segment_start(block_number as u64) {
-                    current_segment_start = segment_options.segment_start(block_number as u64);
-                    segment_read_count += 1;
-                    debug!(current_segment_start, "reading new segment");
-                    if header_segment.is_some() {
-                        header_segment = Some(
-                            header_segment_reader
-                                .read(current_segment_start)
-                                .await
-                                .change_context(DnaError::Fatal)
-                                .attach_printable("failed to read header segment")?,
-                        )
-                    };
-
-                    if log_segment.is_some() {
-                        log_segment = Some(
-                            log_segment_reader
-                                .read(current_segment_start)
-                                .await
-                                .change_context(DnaError::Fatal)
-                                .attach_printable("failed to read log segment")?,
-                        )
-                    };
-
-                    if transaction_segment.is_some() {
-                        transaction_segment = Some(
-                            transaction_segment_reader
-                                .read(current_segment_start)
-                                .await
-                                .change_context(DnaError::Fatal)
-                                .attach_printable("failed to read transaction segment")?,
-                        )
-                    };
-                }
-
-                debug!(block_number, "inspect block");
-
-                if let Some(log_segment) = log_segment.as_ref() {
-                    let index = block_number - log_segment.first_block_number() as u32;
-                    let block_logs = log_segment.blocks().unwrap_or_default().get(index as usize);
-
-                    for log in block_logs.logs().unwrap_or_default() {
-                        let mut include_log = false;
-
-                        if let Some(target_address) = address_filter.as_ref() {
-                            let address = log.address().expect("address is missing");
-                            if address == target_address {
-                                include_log = true;
-                            }
-                        }
-
-                        if let Some(target_topic) = topic_filter.as_ref() {
-                            let topics = log.topics().unwrap_or_default();
-                            if topics.iter().find(|t| t == &target_topic).is_some() {
-                                include_log = true;
-                            }
-                        }
-
-                        if !include_log {
-                            continue;
-                        }
-
-                        let _topics = log.topics().unwrap_or_default();
-                        let _data = log.data().unwrap_or_default();
-
-                        let log_index = log.log_index();
-                        let transaction_index = log.transaction_index();
-                        let transaction_hash = log.transaction_hash().unwrap();
-
-                        if args.log {
-                            info!(
-                                block_number,
-                                transaction_index,
-                                log_index,
-                                transaction_hash = %transaction_hash.as_hex(),
-                                "    log"
-                            );
-                        }
-
-                        event_count += 1;
-                    }
-                }
-                if let Some(transaction_segment) = transaction_segment.as_ref() {
-                    let target_address = transaction_to_filter.as_ref().unwrap();
-
-                    let index = block_number - transaction_segment.first_block_number() as u32;
-                    let block_transactions = transaction_segment
-                        .blocks()
-                        .unwrap_or_default()
-                        .get(index as usize);
-                    for transaction in block_transactions.transactions().unwrap_or_default() {
-                        let Some(to) = transaction.to() else {
-                            continue;
-                        };
-
-                        let matches = target_address
-                            .as_ref()
-                            .map(|addr| to == addr)
-                            .unwrap_or(true);
-                        if matches {
-                            let transaction_hash = transaction.hash().unwrap();
-                            let calldata = transaction.input().unwrap_or_default();
-                            if args.log {
-                                info!(
-                                    block_number,
-                                    transaction_hash = %transaction_hash.as_hex(),
-                                    calldata_len = calldata.len(),
-                                    "    transaction"
-                                );
-                            }
-
-                            transaction_count += 1;
+                    if let Some(target_address) = address_filter.as_ref() {
+                        let address = log.address().expect("address is missing");
+                        if address == target_address {
+                            include_log = true;
                         }
                     }
-                }
 
-                if let Some(header_segment) = header_segment.as_ref() {
-                    let index = block_number - header_segment.first_block_number() as u32;
-                    let header = header_segment
-                        .headers()
-                        .unwrap_or_default()
-                        .get(index as usize);
+                    if let Some(target_topic) = topic_filter.as_ref() {
+                        let topics = log.topics().unwrap_or_default();
+                        if topics.iter().any(|t| t == target_topic) {
+                            include_log = true;
+                        }
+                    }
 
-                    let miner = header.miner().expect("miner is missing");
+                    if !include_log {
+                        continue;
+                    }
+
+                    let _topics = log.topics().unwrap_or_default();
+                    let _data = log.data().unwrap_or_default();
+
+                    let log_index = log.log_index();
+                    let transaction_index = log.transaction_index();
+                    let transaction_hash = log.transaction_hash().unwrap();
 
                     if args.log {
                         info!(
-                            number = header.number(),
-                            miner = %miner.as_hex(),
-                            "block"
+                            block_number,
+                            transaction_index,
+                            log_index,
+                            transaction_hash = %transaction_hash.as_hex(),
+                            "    log"
                         );
                     }
 
-                    for withdrawal in header.withdrawals().unwrap_or_default() {
-                        withdrawal_count += 1;
-                        let amount = withdrawal.amount().unwrap();
+                    event_count += 1;
+                }
+            }
+            if let Some(transaction_segment) = transaction_segment.as_ref() {
+                let target_address = transaction_to_filter.as_ref().unwrap();
+
+                let index = block_number - transaction_segment.first_block_number() as u32;
+                let block_transactions = transaction_segment
+                    .blocks()
+                    .unwrap_or_default()
+                    .get(index as usize);
+                for transaction in block_transactions.transactions().unwrap_or_default() {
+                    let Some(to) = transaction.to() else {
+                        continue;
+                    };
+
+                    let matches = target_address
+                        .as_ref()
+                        .map(|addr| to == addr)
+                        .unwrap_or(true);
+                    if matches {
+                        let transaction_hash = transaction.hash().unwrap();
+                        let calldata = transaction.input().unwrap_or_default();
                         if args.log {
                             info!(
-                                index = withdrawal.index(),
-                                validator_index = withdrawal.validator_index(),
-                                address = %withdrawal.address().unwrap().as_hex(),
-                                amount = ?amount,
-                                "    withdrawal"
+                                block_number,
+                                transaction_hash = %transaction_hash.as_hex(),
+                                calldata_len = calldata.len(),
+                                "    transaction"
                             );
                         }
+
+                        transaction_count += 1;
                     }
                 }
             }
 
-            current_block_number = segment_group_end;
+            if let Some(header_segment) = header_segment.as_ref() {
+                let index = block_number - header_segment.first_block_number() as u32;
+                let header = header_segment
+                    .headers()
+                    .unwrap_or_default()
+                    .get(index as usize);
+
+                let miner = header.miner().expect("miner is missing");
+
+                if args.log {
+                    info!(
+                        number = header.number(),
+                        miner = %miner.as_hex(),
+                        "block"
+                    );
+                }
+
+                for withdrawal in header.withdrawals().unwrap_or_default() {
+                    withdrawal_count += 1;
+                    let amount = withdrawal.amount().unwrap();
+                    if args.log {
+                        info!(
+                            index = withdrawal.index(),
+                            validator_index = withdrawal.validator_index(),
+                            address = %withdrawal.address().unwrap().as_hex(),
+                            amount = ?amount,
+                            "    withdrawal"
+                        );
+                    }
+                }
+            }
         }
 
-        let elapsed = start_time.elapsed();
-
-        let block_count = current_block_number - starting_block_number;
-        let block_sec = block_count as f64 / elapsed.as_secs_f64();
-
-        info!(
-            elapsed = ?elapsed,
-            block_count,
-            block_sec = format!("{block_sec:.0}"),
-            "block count"
-        );
-
-        let event_sec = event_count as f64 / elapsed.as_secs_f64();
-
-        info!(
-            elapsed = ?elapsed,
-            event_count,
-            event_sec = format!("{event_sec:.0}"),
-            "event count"
-        );
-
-        let withdrawal_sec = withdrawal_count as f64 / elapsed.as_secs_f64();
-
-        info!(
-            elapsed = ?elapsed,
-            withdrawal_count,
-            withdrawal_sec = format!("{withdrawal_sec:.0}"),
-            "withdrawal count"
-        );
-
-        let transaction_sec = transaction_count as f64 / elapsed.as_secs_f64();
-
-        info!(
-            elapsed = ?elapsed,
-            transaction_count,
-            transaction_sec = format!("{transaction_sec:.0}"),
-            "transaction count"
-        );
-
-        let segment_read_sec = segment_read_count as f64 / elapsed.as_secs_f64();
-
-        info!(
-            elapsed = ?elapsed,
-            segment_read_count,
-            segment_read_sec = format!("{segment_read_sec:.0}"),
-            "segment read count"
-        );
-
-        Ok(())
+        current_block_number = segment_group_end;
     }
+
+    let elapsed = start_time.elapsed();
+
+    let block_count = current_block_number - starting_block_number;
+    let block_sec = block_count as f64 / elapsed.as_secs_f64();
+
+    info!(
+        elapsed = ?elapsed,
+        block_count,
+        block_sec = format!("{block_sec:.0}"),
+        "block count"
+    );
+
+    let event_sec = event_count as f64 / elapsed.as_secs_f64();
+
+    info!(
+        elapsed = ?elapsed,
+        event_count,
+        event_sec = format!("{event_sec:.0}"),
+        "event count"
+    );
+
+    let withdrawal_sec = withdrawal_count as f64 / elapsed.as_secs_f64();
+
+    info!(
+        elapsed = ?elapsed,
+        withdrawal_count,
+        withdrawal_sec = format!("{withdrawal_sec:.0}"),
+        "withdrawal count"
+    );
+
+    let transaction_sec = transaction_count as f64 / elapsed.as_secs_f64();
+
+    info!(
+        elapsed = ?elapsed,
+        transaction_count,
+        transaction_sec = format!("{transaction_sec:.0}"),
+        "transaction count"
+    );
+
+    let segment_read_sec = segment_read_count as f64 / elapsed.as_secs_f64();
+
+    info!(
+        elapsed = ?elapsed,
+        segment_read_count,
+        segment_read_sec = format!("{segment_read_sec:.0}"),
+        "segment read count"
+    );
+
+    Ok(())
 }
