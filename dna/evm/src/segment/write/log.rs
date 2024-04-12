@@ -6,7 +6,7 @@ use tokio::io::{AsyncWrite, AsyncWriteExt};
 
 use crate::{
     ingestion::models,
-    segment::{conversion::U64Ext, store},
+    segment::{conversion::model::U64Ext, store},
 };
 
 pub struct LogSegmentBuilder<'a> {

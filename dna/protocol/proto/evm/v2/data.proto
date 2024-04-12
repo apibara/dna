@@ -27,7 +27,7 @@ message BlockHeader {
   // Hash of the block.
   B256 hash = 2;
   // Hash of the parent block.
-  uint64 parent_hash = 3;
+  B256 parent_hash = 3;
   // Hash of the uncles.
   B256 uncles_hash = 4;
   // Author of the block.
@@ -57,7 +57,7 @@ message BlockHeader {
   // Base fee per unit of gas.
   U256 base_fee_per_gas = 17;
   // Withdrawals root hash.
-  U256 withdrawals_root = 18;
+  B256 withdrawals_root = 18;
 
   // Additional fields.
 

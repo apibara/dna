@@ -12,12 +12,7 @@ message Address {
 }
 
 // A bloom filter of 256 bytes.
-message Bloom {
-  fixed64 lo_lo = 1;
-  fixed64 lo_hi = 2;
-  fixed64 hi_lo = 3;
-  fixed64 hi_hi = 4;
-}
+message Bloom { bytes value = 1; }
 
 // Unsigned integer of 128 bits.
 message U128 {

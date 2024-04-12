@@ -200,7 +200,6 @@ macro_rules! impl_u256_scalar {
     };
 }
 
-impl_u256_scalar!(Bloom);
 impl_u256_scalar!(U256);
 impl_u256_scalar!(B256);
 
