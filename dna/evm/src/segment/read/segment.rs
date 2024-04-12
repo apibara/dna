@@ -19,6 +19,9 @@ pub struct LogSegmentReader<S: StorageBackend>(SegmentReader<S>);
 /// Read a transaction segment.
 pub struct TransactionSegmentReader<S: StorageBackend>(SegmentReader<S>);
 
+/// Read a transaction receipt segment.
+pub struct ReceiptSegmentReader<S: StorageBackend>(SegmentReader<S>);
+
 impl<S> BlockHeaderSegmentReader<S>
 where
     S: StorageBackend,
@@ -68,6 +71,23 @@ where
     pub async fn read(&mut self, segment_start: u64) -> Result<store::TransactionSegment<'_>> {
         self.0
             .read::<store::TransactionSegment>(segment_start, "transaction")
+            .await
+    }
+}
+
+impl<S> ReceiptSegmentReader<S>
+where
+    S: StorageBackend,
+    <S as StorageBackend>::Reader: Unpin,
+{
+    pub fn new(storage: S, segment_options: SegmentOptions, buffer_size: usize) -> Self {
+        let inner = SegmentReader::new(storage, segment_options, buffer_size);
+        Self(inner)
+    }
+
+    pub async fn read(&mut self, segment_start: u64) -> Result<store::ReceiptSegment<'_>> {
+        self.0
+            .read::<store::ReceiptSegment>(segment_start, "receipt")
             .await
     }
 }

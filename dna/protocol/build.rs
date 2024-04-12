@@ -40,7 +40,7 @@ fn main() -> Result<()> {
         .exclude([
             ".apibara.evm.v2.Address",
             ".apibara.evm.v2.U128",
-            ".apibara.evm.v2.Bloom",
+            // ".apibara.evm.v2.Bloom",
             ".apibara.evm.v2.U256",
             ".apibara.evm.v2.B256",
         ])

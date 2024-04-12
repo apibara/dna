@@ -12,9 +12,9 @@ impl Filter for evm::Filter {
         // default to weak headers.
         if let Some(header) = self.header.as_mut() {
             if let Some(other_header) = other.header {
-                let self_weak = header.weak.unwrap_or(true);
-                let other_weak = other_header.weak.unwrap_or(true);
-                header.weak = Some(self_weak || other_weak);
+                let self_always = header.always.unwrap_or(false);
+                let other_always = other_header.always.unwrap_or(false);
+                header.always = Some(self_always || other_always);
             }
         } else {
             self.header = other.header;

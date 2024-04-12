@@ -1,3 +1,4 @@
+mod filter;
 mod service;
 
 use std::net::SocketAddr;

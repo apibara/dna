@@ -6,7 +6,7 @@ use tokio::io::{AsyncWrite, AsyncWriteExt};
 
 use crate::{ingestion::models, segment::store};
 
-use crate::segment::conversion::{U128Ext, U64Ext};
+use crate::segment::conversion::model::{U128Ext, U64Ext};
 
 pub struct TransactionSegmentBuilder<'a> {
     builder: FlatBufferBuilder<'a>,

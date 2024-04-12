@@ -5,7 +5,7 @@ use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::CancellationToken;
 
-use crate::{core::Cursor, segment::conversion::U64Ext};
+use crate::{core::Cursor, segment::conversion::model::U64Ext};
 
 use super::{models, RpcProvider};
 
