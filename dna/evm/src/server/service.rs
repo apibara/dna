@@ -229,6 +229,11 @@ where
                     .change_context(DnaError::Fatal)
                     .attach_printable("failed to read segment group")?;
 
+                assert_eq!(
+                    segment_group.first_block_number(),
+                    current_segment_group_start
+                );
+
                 self.fill_segment_group_bitmap(&segment_group, &mut block_bitmap)
                     .await?
             };
