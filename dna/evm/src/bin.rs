@@ -386,10 +386,10 @@ where
             .change_context(DnaError::Fatal)
             .attach_printable("failed to read segment group")?;
 
-        // assert_eq!(
-        //     segment_group.first_block_number(),
-        //     current_segment_group_start
-        // );
+        assert_eq!(
+            segment_group.first_block_number(),
+            current_segment_group_start
+        );
 
         let segment_group_blocks = segment_options.segment_group_blocks();
         let segment_group_end = current_segment_group_start + segment_group_blocks;
