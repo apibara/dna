@@ -10,7 +10,7 @@ use error_stack::ResultExt;
 use futures_util::TryFutureExt;
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 use crate::{
     ingestion::models,
@@ -185,6 +185,7 @@ where
         block_number: u64,
     ) -> Result<Option<IngestionEvent>> {
         use models::BlockTransactions;
+        debug!(block_number, "ingesting block by number");
 
         let mut block = if self.options.get_block_by_number_with_transactions {
             self.provider
@@ -240,7 +241,8 @@ where
             .write(&format!("segment/{segment_name}"), &mut self.storage)
             .await?;
         let index = self.segment_builder.take_index();
-        self.segment_group_builder.add_segment(block_number);
+        self.segment_group_builder
+            .add_segment(segment_options.segment_start(block_number));
         self.segment_group_builder.add_index(&index);
         self.segment_builder.reset();
 
