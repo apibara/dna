@@ -22,7 +22,7 @@ pub struct Segment {
 }
 
 #[derive(Debug, Clone)]
-pub enum IngestionEvent {
+pub enum SnapshotChange {
     Started(Snapshot),
     GroupSealed(SealGroup),
     SegmentAdded(Segment),

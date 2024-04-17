@@ -6,7 +6,7 @@ use tonic::async_trait;
 
 use crate::error::{DnaError, Result};
 
-use super::{LocalStorageBackend, StorageBackend};
+use super::{AppStorageBackend, LocalStorageBackend, StorageBackend};
 
 pub struct CacheOptions {
     pub prefix: String,
@@ -35,6 +35,8 @@ where
     remote_storage: RS,
     caches: Vec<CacheState>,
 }
+
+pub type CachedAppStorageBackend = CachedStorage<AppStorageBackend>;
 
 impl<RS> CachedStorage<RS>
 where
