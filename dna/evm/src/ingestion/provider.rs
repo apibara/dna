@@ -26,6 +26,11 @@ pub mod models {
     };
 }
 
+/// The RPC provider service is a middleware that provides a rate-limited
+/// interface to an Ethereum RPC provider.
+///
+/// The rate-limit is global and shared across all workers, so the service is
+/// started once and shared across multiple workers.
 pub struct RpcProviderService {
     provider: Arc<Provider<BoxTransport>>,
     rate_limit: u32,

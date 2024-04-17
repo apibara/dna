@@ -16,20 +16,20 @@ use tracing::{error, info};
 
 use crate::error::{DnaError, Result};
 
-use super::{IngestionEvent, Snapshot};
+use super::{Snapshot, SnapshotChange};
 
 type TonicResult<T> = std::result::Result<T, tonic::Status>;
 
 pub struct IngestionServer<S>
 where
-    S: Stream<Item = IngestionEvent> + Send + Sync + 'static,
+    S: Stream<Item = SnapshotChange> + Send + Sync + 'static,
 {
     ingestion_stream: S,
 }
 
 impl<S> IngestionServer<S>
 where
-    S: Stream<Item = IngestionEvent> + Send + Sync + 'static,
+    S: Stream<Item = SnapshotChange> + Send + Sync + 'static,
 {
     pub fn new(ingestion_stream: S) -> Self {
         IngestionServer { ingestion_stream }
@@ -164,14 +164,14 @@ async fn update_shared_state<S>(
     ct: CancellationToken,
 ) -> Result<()>
 where
-    S: Stream<Item = IngestionEvent> + Send + Sync + 'static,
+    S: Stream<Item = SnapshotChange> + Send + Sync + 'static,
 {
     let ingestion_stream = ingestion_stream.take_until(ct.cancelled()).fuse();
     pin!(ingestion_stream);
 
     while let Some(event) = ingestion_stream.next().await {
         match event {
-            IngestionEvent::Started(snapshot) => {
+            SnapshotChange::Started(snapshot) => {
                 let mut state = state.lock().await;
                 if state.snapshot.is_some() {
                     return Err(DnaError::Fatal)
@@ -179,7 +179,7 @@ where
                 }
                 state.snapshot = Some(snapshot);
             }
-            IngestionEvent::GroupSealed(group) => {
+            SnapshotChange::GroupSealed(group) => {
                 let mut state = state.lock().await;
                 let Some(snapshot) = &mut state.snapshot else {
                     return Err(DnaError::Fatal)
@@ -211,7 +211,7 @@ where
                         .attach_printable("failed to send group sealed event to subscriber")?;
                 }
             }
-            IngestionEvent::SegmentAdded(segment) => {
+            SnapshotChange::SegmentAdded(segment) => {
                 let mut state = state.lock().await;
                 let Some(snapshot) = &mut state.snapshot else {
                     return Err(DnaError::Fatal).attach_printable(
