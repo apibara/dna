@@ -9,6 +9,6 @@ pub use self::read::{
     BlockHeaderSegmentReader, LogSegmentReader, ReceiptSegmentReader, SegmentGroupReader,
     TransactionSegmentReader,
 };
-pub use self::write::{SegmentBuilder, SegmentGroupBuilder, SegmentIndex};
+pub use self::write::{SegmentBuilder, SegmentGroupBuilder, SegmentIndex, SingleBlockBuilder};
 
 pub use self::helpers::SegmentGroupExt;

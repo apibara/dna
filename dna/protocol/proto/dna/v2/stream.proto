@@ -1,7 +1,7 @@
 // Apibara DNA server V2
 syntax = "proto3";
 
-package apibara.dna.v2;
+package dna.v2.stream;
 
 import "v2/common.proto";
 
@@ -9,13 +9,14 @@ service DnaStream {
   // Stream data from the server.
   rpc StreamData(StreamDataRequest) returns (stream StreamDataResponse);
   // Get DNA server status.
-  rpc Status(StatusRequest) returns (StatusResponse);
+  rpc Status(dna.v2.common.StatusRequest)
+      returns (dna.v2.common.StatusResponse);
 }
 
 // Request data to be streamed.
 message StreamDataRequest {
   // Cursor to start streaming from.
-  Cursor starting_cursor = 1;
+  dna.v2.common.Cursor starting_cursor = 1;
   // Return data with the specified finality.
   // If not specified, defaults to `DATA_FINALITY_ACCEPTED`.
   optional DataFinality finality = 2;
@@ -36,7 +37,7 @@ message StreamDataResponse {
 // Invalidate data after the given cursor.
 message Invalidate {
   // The cursor of the message before the now invalid data.
-  Cursor cursor = 1;
+  dna.v2.common.Cursor cursor = 1;
 }
 
 // A single block of data.
@@ -48,9 +49,9 @@ message Invalidate {
 // empty.
 message Data {
   // Cursor that generated this block of data.
-  Cursor cursor = 1;
+  dna.v2.common.Cursor cursor = 1;
   // Block cursor. Use this cursor to resume the stream.
-  Cursor end_cursor = 2;
+  dna.v2.common.Cursor end_cursor = 2;
   // The finality status of the block.
   DataFinality finality = 3;
   // The block data.

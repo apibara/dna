@@ -32,7 +32,7 @@ impl<'a> LogSegmentBuilder<'a> {
         let logs = receipts
             .iter()
             .flat_map(|receipt| receipt.logs.iter())
-            .map(|log| self.add_single_log(log))
+            .map(|log| store::LogBuilder::create_log(&mut self.builder, log))
             .collect::<Vec<_>>();
         let logs = self.builder.create_vector(&logs);
 
@@ -71,19 +71,31 @@ impl<'a> LogSegmentBuilder<'a> {
         self.blocks.clear();
         self.builder.reset();
     }
+}
 
-    fn add_single_log(&mut self, log: &models::Log) -> WIPOffset<store::Log<'a>> {
+pub trait LogBuilderExt<'a: 'b, 'b> {
+    fn create_log(
+        builder: &'b mut FlatBufferBuilder<'a>,
+        log: &models::Log,
+    ) -> WIPOffset<store::Log<'a>>;
+}
+
+impl<'a: 'b, 'b> LogBuilderExt<'a, 'b> for store::LogBuilder<'a, 'b> {
+    fn create_log(
+        builder: &'b mut FlatBufferBuilder<'a>,
+        log: &models::Log,
+    ) -> WIPOffset<store::Log<'a>> {
         let topics = {
             let topics: Vec<store::B256> = log
                 .topics
                 .iter()
                 .map(|uncle| uncle.into())
                 .collect::<Vec<_>>();
-            self.builder.create_vector(&topics)
+            builder.create_vector(&topics)
         };
-        let data = self.builder.create_vector(&log.data.0);
+        let data = builder.create_vector(&log.data.0);
 
-        let mut out = store::LogBuilder::new(&mut self.builder);
+        let mut out = store::LogBuilder::new(builder);
 
         out.add_address(&log.address.into());
         out.add_topics(topics);

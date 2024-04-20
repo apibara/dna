@@ -1,7 +1,7 @@
 // EVM DNA definitions (filter).
 syntax = "proto3";
 
-package apibara.evm.v2;
+package evm.v2;
 
 import "v2/common.proto";
 

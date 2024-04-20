@@ -1,5 +1,5 @@
 //! Conversion between store and model.
-use crate::{ingestion::models, segment::store};
+use crate::{core::Cursor, ingestion::models, segment::store};
 
 impl From<models::B256> for store::B256 {
     fn from(value: models::B256) -> Self {
@@ -92,6 +92,24 @@ impl U128Ext for models::U128 {
     fn into_u128(self) -> store::U128 {
         let bytes = self.to_be_bytes();
         store::U128(bytes)
+    }
+}
+
+pub trait HeaderExt {
+    fn cursor(&self) -> Option<Cursor>;
+}
+
+impl HeaderExt for models::Header {
+    fn cursor(&self) -> Option<Cursor> {
+        let Some(hash) = self.hash else {
+            return None;
+        };
+
+        let Some(number) = self.number else {
+            return None;
+        };
+
+        Some(Cursor::new(number.as_u64(), hash))
     }
 }
 

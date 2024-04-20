@@ -36,30 +36,88 @@ impl<'a> BlockHeaderSegmentBuilder<'a> {
 
         self.block_count += 1;
 
+        self.headers.push(store::BlockHeaderBuilder::create_header(
+            &mut self.builder,
+            block,
+        ));
+    }
+
+    pub async fn write_segment<W: AsyncWrite + Unpin>(&mut self, writer: &mut W) -> Result<()> {
+        let first_block_number = self
+            .first_block_number
+            .ok_or(DnaError::Fatal)
+            .attach_printable("writing header segment but no block ingested")?;
+
+        let headers = self.builder.create_vector(&self.headers);
+        let mut segment = store::BlockHeaderSegmentBuilder::new(&mut self.builder);
+        segment.add_first_block_number(first_block_number);
+        segment.add_headers(headers);
+
+        let segment = segment.finish();
+        self.builder.finish(segment, None);
+
+        writer
+            .write_all(self.builder.finished_data())
+            .await
+            .change_context(DnaError::Io)
+            .attach_printable("failed to write header segment")?;
+
+        Ok(())
+    }
+
+    pub fn reset(&mut self) {
+        self.first_block_number = None;
+        self.block_count = 0;
+        self.headers.clear();
+        self.builder.reset();
+    }
+}
+
+pub trait BlockHeaderBuilderExt<'a: 'b, 'b> {
+    fn create_header(
+        builder: &'b mut FlatBufferBuilder<'a>,
+        header: &models::Block,
+    ) -> WIPOffset<store::BlockHeader<'a>>;
+}
+
+impl<'a: 'b, 'b> BlockHeaderBuilderExt<'a, 'b> for store::BlockHeaderBuilder<'a, 'b> {
+    fn create_header(
+        builder: &'b mut FlatBufferBuilder<'a>,
+        block: &models::Block,
+    ) -> WIPOffset<store::BlockHeader<'a>> {
         let header = &block.header;
 
-        let extra_data = self.builder.create_vector(&header.extra_data.0);
+        let extra_data = builder.create_vector(&header.extra_data.0);
         let uncles = {
             let uncles: Vec<store::B256> = block
                 .uncles
                 .iter()
                 .map(|uncle| uncle.into())
                 .collect::<Vec<_>>();
-            self.builder.create_vector(&uncles)
+            builder.create_vector(&uncles)
         };
         let withdrawals = if let Some(withdrawals) = &block.withdrawals {
             let withdrawals = withdrawals
                 .iter()
-                .map(|withdrawal| self.create_withdrawal(withdrawal))
+                .map(|withdrawal| {
+                    let mut out = store::WithdrawalBuilder::new(builder);
+                    out.add_index(withdrawal.index);
+                    out.add_validator_index(withdrawal.validator_index);
+                    out.add_address(&withdrawal.address.into());
+                    out.add_amount(&models::U256::from(withdrawal.amount).into());
+                    out.finish()
+                })
                 .collect::<Vec<_>>();
-            Some(self.builder.create_vector(&withdrawals))
+            Some(builder.create_vector(&withdrawals))
         } else {
             None
         };
 
-        let mut out = store::BlockHeaderBuilder::new(&mut self.builder);
+        let mut out = store::BlockHeaderBuilder::new(builder);
 
-        out.add_number(block_number);
+        if let Some(number) = header.number {
+            out.add_number(number.as_u64());
+        }
         if let Some(hash) = header.hash {
             out.add_hash(&hash.into());
         }
@@ -107,48 +165,6 @@ impl<'a> BlockHeaderSegmentBuilder<'a> {
             out.add_parent_beacon_block_root(&parent_beacon_block_root.into());
         }
 
-        self.headers.push(out.finish());
-    }
-
-    fn create_withdrawal(
-        &mut self,
-        withdrawal: &models::Withdrawal,
-    ) -> WIPOffset<store::Withdrawal<'a>> {
-        let mut out = store::WithdrawalBuilder::new(&mut self.builder);
-        out.add_index(withdrawal.index);
-        out.add_validator_index(withdrawal.validator_index);
-        out.add_address(&withdrawal.address.into());
-        out.add_amount(&models::U256::from(withdrawal.amount).into());
         out.finish()
-    }
-
-    pub async fn write_segment<W: AsyncWrite + Unpin>(&mut self, writer: &mut W) -> Result<()> {
-        let first_block_number = self
-            .first_block_number
-            .ok_or(DnaError::Fatal)
-            .attach_printable("writing header segment but no block ingested")?;
-
-        let headers = self.builder.create_vector(&self.headers);
-        let mut segment = store::BlockHeaderSegmentBuilder::new(&mut self.builder);
-        segment.add_first_block_number(first_block_number);
-        segment.add_headers(headers);
-
-        let segment = segment.finish();
-        self.builder.finish(segment, None);
-
-        writer
-            .write_all(self.builder.finished_data())
-            .await
-            .change_context(DnaError::Io)
-            .attach_printable("failed to write header segment")?;
-
-        Ok(())
-    }
-
-    pub fn reset(&mut self) {
-        self.first_block_number = None;
-        self.block_count = 0;
-        self.headers.clear();
-        self.builder.reset();
     }
 }

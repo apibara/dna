@@ -16,6 +16,8 @@ mod receipt_segment_generated;
 pub use self::receipt_segment_generated::*;
 mod block_receipts_generated;
 pub use self::block_receipts_generated::*;
+mod single_block_generated;
+pub use self::single_block_generated::*;
 mod address_bitmap_item_generated;
 pub use self::address_bitmap_item_generated::*;
 mod topic_bitmap_item_generated;

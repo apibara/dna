@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package apibara.dna.v2;
+package dna.v2.common;
 
 // A cursor over the stream content.
 message Cursor {
