@@ -31,7 +31,7 @@ impl<'a> ReceiptSegmentBuilder<'a> {
 
         let receipts = receipts
             .iter()
-            .map(|tx| self.add_single_receipt(tx))
+            .map(|rx| store::TransactionReceiptBuilder::create_receipt(&mut self.builder, rx))
             .collect::<Vec<_>>();
 
         let receipts = self.builder.create_vector(&receipts);
@@ -71,12 +71,21 @@ impl<'a> ReceiptSegmentBuilder<'a> {
         self.blocks.clear();
         self.builder.reset();
     }
+}
 
-    fn add_single_receipt(
-        &mut self,
+pub trait TransactionReceiptBuilderExt<'a: 'b, 'b> {
+    fn create_receipt(
+        builder: &'b mut FlatBufferBuilder<'a>,
+        receipt: &models::TransactionReceipt,
+    ) -> WIPOffset<store::TransactionReceipt<'a>>;
+}
+
+impl<'a: 'b, 'b> TransactionReceiptBuilderExt<'a, 'b> for store::TransactionReceiptBuilder<'a, 'b> {
+    fn create_receipt(
+        builder: &'b mut FlatBufferBuilder<'a>,
         receipt: &models::TransactionReceipt,
     ) -> WIPOffset<store::TransactionReceipt<'a>> {
-        let mut out = store::TransactionReceiptBuilder::new(&mut self.builder);
+        let mut out = store::TransactionReceiptBuilder::new(builder);
 
         if let Some(transaction_hash) = receipt.transaction_hash {
             out.add_transaction_hash(&transaction_hash.into());

@@ -1,4 +1,4 @@
-tonic::include_proto!("apibara.ingestion.v2");
+tonic::include_proto!("dna.v2.ingestion");
 
 pub const INGESTION_DESCRIPTOR_SET: &[u8] =
     tonic::include_file_descriptor_set!("ingestion_v2_descriptor");

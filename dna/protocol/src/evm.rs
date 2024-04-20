@@ -1,8 +1,8 @@
 use error_stack::{report, Result, ResultExt};
 use serde::{de::Deserialize, ser::Serialize};
 
-tonic::include_proto!("apibara.evm.v2");
-tonic::include_proto!("apibara.evm.v2.serde");
+tonic::include_proto!("evm.v2");
+tonic::include_proto!("evm.v2.serde");
 
 #[derive(Debug)]
 pub struct DecodeError;

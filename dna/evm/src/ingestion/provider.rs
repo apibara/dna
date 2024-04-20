@@ -21,8 +21,8 @@ pub mod models {
         Address, Bloom, FixedBytes,
     };
     pub use alloy_rpc_types::{
-        AccessListItem, Block, BlockId, BlockNumberOrTag, BlockTransactions, Log, Transaction,
-        TransactionReceipt, Withdrawal,
+        AccessListItem, Block, BlockId, BlockNumberOrTag, BlockTransactions, Header, Log,
+        Transaction, TransactionReceipt, Withdrawal,
     };
 }
 

@@ -102,6 +102,7 @@ impl SnapshotSyncClient {
 
 impl SnapshotState {
     pub fn from_proto(message: ingestion::Snapshot) -> Self {
+        /*
         let blocks_in_segment_group = (message.segment_size * message.group_size) as u64;
 
         // Last (non-inclusive) block number of the sealed segment group.
@@ -115,6 +116,8 @@ impl SnapshotState {
             sealed_block_number,
             segmented_block_number: sealed_block_number,
         }
+        */
+        todo!();
     }
 }
 
@@ -206,6 +209,7 @@ mod worker {
                 use apibara_dna_protocol::ingestion::subscribe_response::Message;
 
                 // Use message to update state
+                /*
                 match message.message {
                     Some(Message::Snapshot(_snapshot)) => {
                         return Err(WorkerError::Temporary).attach_printable(
@@ -245,6 +249,8 @@ mod worker {
                         "snapshot sync client state is missing. This should never happen.",
                     );
                 };
+                */
+                todo!();
             }
 
             if ct.is_cancelled() {

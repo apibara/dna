@@ -1,6 +1,7 @@
 use apibara_dna_common::{
-    ingestion::{Snapshot, SnapshotChange},
+    ingestion::{IngestionState, Snapshot, SnapshotChange},
     segment::SegmentOptions,
+    server::SnapshotState,
     storage::{LocalStorageBackend, StorageBackend},
 };
 use futures_util::Stream;
@@ -38,9 +39,12 @@ where
         tokio::spawn(async move {
             tx.send(SnapshotChange::Started(Snapshot {
                 revision: 0,
-                first_block_number: 0,
                 segment_options: SegmentOptions::default(),
-                group_count: 0,
+                ingestion: IngestionState {
+                    first_block_number: 0,
+                    extra_segment_count: 0,
+                    group_count: 0,
+                },
             }))
             .await
             .unwrap();

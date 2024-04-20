@@ -67,6 +67,13 @@ table BlockReceipts {
   receipts:[TransactionReceipt];
 }
 
+table SingleBlock {
+  header:BlockHeader;
+  transactions:[Transaction];
+  receipts:[TransactionReceipt];
+  logs:[Log];
+}
+
 table AddressBitmapItem {
   // The address.
   key:Address;

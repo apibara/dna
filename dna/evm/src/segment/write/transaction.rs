@@ -1,7 +1,6 @@
+use apibara_dna_common::error::{DnaError, Result};
 use error_stack::ResultExt;
 use flatbuffers::{FlatBufferBuilder, WIPOffset};
-
-use apibara_dna_common::error::{DnaError, Result};
 use tokio::io::{AsyncWrite, AsyncWriteExt};
 
 use crate::{ingestion::models, segment::store};
@@ -30,7 +29,7 @@ impl<'a> TransactionSegmentBuilder<'a> {
 
         let transactions = transactions
             .iter()
-            .map(|tx| self.add_single_transaction(tx))
+            .map(|tx| store::TransactionBuilder::create_transaction(&mut self.builder, tx))
             .collect::<Vec<_>>();
 
         let transactions = self.builder.create_vector(&transactions);
@@ -70,19 +69,52 @@ impl<'a> TransactionSegmentBuilder<'a> {
         self.blocks.clear();
         self.builder.reset();
     }
+}
 
-    fn add_single_transaction(
-        &mut self,
+pub trait TransactionBuilderExt<'a: 'b, 'b> {
+    fn create_transaction(
+        builder: &'b mut FlatBufferBuilder<'a>,
+        transaction: &models::Transaction,
+    ) -> WIPOffset<store::Transaction<'a>>;
+}
+
+impl<'a: 'b, 'b> TransactionBuilderExt<'a, 'b> for store::TransactionBuilder<'a, 'b> {
+    fn create_transaction(
+        builder: &'b mut FlatBufferBuilder<'a>,
         transaction: &models::Transaction,
     ) -> WIPOffset<store::Transaction<'a>> {
-        let input = self.builder.create_vector(&transaction.input.0);
-        let signature = self.create_signature(transaction);
+        let input = builder.create_vector(&transaction.input.0);
+        let signature = {
+            let mut out = store::SignatureBuilder::new(builder);
+            if let Some(signature) = transaction.signature {
+                out.add_r(&signature.r.into());
+                out.add_s(&signature.s.into());
+                out.add_v(&signature.v.into());
+                if let Some(y_parity) = signature.y_parity {
+                    out.add_y_parity(y_parity.0);
+                }
+            }
+            out.finish()
+        };
+
         let access_list = if let Some(access_list) = &transaction.access_list {
             let items = access_list
                 .iter()
-                .map(|item| self.create_access_list_item(item))
+                .map(|item| {
+                    let storage_keys: Vec<store::B256> = item
+                        .storage_keys
+                        .iter()
+                        .map(|key| key.into())
+                        .collect::<Vec<_>>();
+                    let storage_keys = builder.create_vector(&storage_keys);
+
+                    let mut out = store::AccessListItemBuilder::new(builder);
+                    out.add_address(&item.address.into());
+                    out.add_storage_keys(storage_keys);
+                    out.finish()
+                })
                 .collect::<Vec<_>>();
-            Some(self.builder.create_vector(&items))
+            Some(builder.create_vector(&items))
         } else {
             None
         };
@@ -93,10 +125,10 @@ impl<'a> TransactionSegmentBuilder<'a> {
                 .iter()
                 .map(|hash| hash.into())
                 .collect::<Vec<_>>();
-            self.builder.create_vector(&hashes)
+            builder.create_vector(&hashes)
         };
 
-        let mut out = store::TransactionBuilder::new(&mut self.builder);
+        let mut out = store::TransactionBuilder::new(builder);
 
         out.add_hash(&transaction.hash.into());
         out.add_nonce(transaction.nonce.as_u64());
@@ -133,39 +165,6 @@ impl<'a> TransactionSegmentBuilder<'a> {
         }
         out.add_blob_versioned_hashes(blob_versioned_hashes);
 
-        out.finish()
-    }
-
-    fn create_signature(
-        &mut self,
-        transaction: &models::Transaction,
-    ) -> WIPOffset<store::Signature<'a>> {
-        let mut out = store::SignatureBuilder::new(&mut self.builder);
-        if let Some(signature) = transaction.signature {
-            out.add_r(&signature.r.into());
-            out.add_s(&signature.s.into());
-            out.add_v(&signature.v.into());
-            if let Some(y_parity) = signature.y_parity {
-                out.add_y_parity(y_parity.0);
-            }
-        }
-        out.finish()
-    }
-
-    fn create_access_list_item(
-        &mut self,
-        item: &models::AccessListItem,
-    ) -> WIPOffset<store::AccessListItem<'a>> {
-        let storage_keys: Vec<store::B256> = item
-            .storage_keys
-            .iter()
-            .map(|key| key.into())
-            .collect::<Vec<_>>();
-        let storage_keys = self.builder.create_vector(&storage_keys);
-
-        let mut out = store::AccessListItemBuilder::new(&mut self.builder);
-        out.add_address(&item.address.into());
-        out.add_storage_keys(storage_keys);
         out.finish()
     }
 }
