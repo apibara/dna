@@ -12,13 +12,19 @@ fn main() -> Result<()> {
         .build_client(true)
         .build_server(true)
         .file_descriptor_set_path(out_dir.join(DNA_STREAM_DESCRIPTOR_FILE))
-        .compile(&["proto/dna/v2/stream.proto"], &["proto/dna/"])?;
+        .compile(
+            &["proto/dna/v2/common.proto", "proto/dna/v2/stream.proto"],
+            &["proto/dna/"],
+        )?;
 
     tonic_build::configure()
         .build_client(true)
         .build_server(true)
         .file_descriptor_set_path(out_dir.join(INGESTION_DESCRIPTOR_FILE))
-        .compile(&["proto/dna/v2/ingestion.proto"], &["proto/dna/"])?;
+        .compile(
+            &["proto/dna/v2/ingestion.proto", "proto/dna/v2/common.proto"],
+            &["proto/dna/"],
+        )?;
 
     /*
      * EVM
@@ -38,13 +44,12 @@ fn main() -> Result<()> {
     pbjson_build::Builder::new()
         .register_descriptors(&evm_descriptor_set)?
         .exclude([
-            ".apibara.evm.v2.Address",
-            ".apibara.evm.v2.U128",
-            // ".apibara.evm.v2.Bloom",
-            ".apibara.evm.v2.U256",
-            ".apibara.evm.v2.B256",
+            ".evm.v2.Address",
+            ".evm.v2.U128",
+            ".evm.v2.U256",
+            ".evm.v2.B256",
         ])
-        .build(&[".apibara"])?;
+        .build(&[".evm"])?;
 
     Ok(())
 }

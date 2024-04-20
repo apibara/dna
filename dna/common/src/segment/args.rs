@@ -26,9 +26,6 @@ impl SegmentArgs {
         if let Some(segment_group_size) = self.segment_group_size {
             options.group_size = segment_group_size;
         }
-        if let Some(segment_target_num_digits) = self.segment_target_num_digits {
-            options.target_num_digits = segment_target_num_digits;
-        }
 
         options
     }

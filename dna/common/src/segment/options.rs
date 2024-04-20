@@ -1,12 +1,14 @@
+use serde::{Deserialize, Serialize};
+
+pub const TARGET_NUM_DIGITS: usize = 9;
+
 /// Options for creating segments and segment groups.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SegmentOptions {
     /// Segment size, in blocks.
     pub segment_size: usize,
     /// Group size, in segments.
     pub group_size: usize,
-    /// Target number of digits in the filename.
-    pub target_num_digits: usize,
 }
 
 impl Default for SegmentOptions {
@@ -14,7 +16,6 @@ impl Default for SegmentOptions {
         Self {
             segment_size: 100,
             group_size: 100,
-            target_num_digits: 9,
         }
     }
 }
@@ -51,7 +52,7 @@ impl SegmentOptions {
     /// Format the segment name.
     pub fn format_segment_name(&self, block_number: u64) -> String {
         let start = self.segment_start(block_number);
-        let formatted = format!("{:0>width$}", start, width = self.target_num_digits);
+        let formatted = format!("{:0>width$}", start, width = TARGET_NUM_DIGITS);
         format!(
             "{}-{}",
             underscore_separated_thousands(&formatted),
@@ -82,7 +83,6 @@ mod tests {
     pub fn test_segment_start() {
         let options = SegmentOptions {
             segment_size: 100,
-            target_num_digits: 6,
             ..Default::default()
         };
         assert_eq!(options.segment_start(0), 0);
@@ -93,7 +93,6 @@ mod tests {
 
         let options = SegmentOptions {
             segment_size: 250,
-            target_num_digits: 6,
             ..Default::default()
         };
         assert_eq!(options.segment_start(0), 0);
@@ -112,7 +111,6 @@ mod tests {
         let options = SegmentOptions {
             segment_size: 100,
             group_size: 250,
-            target_num_digits: 6,
         };
 
         assert_eq!(options.segment_group_start(0), 0);
@@ -128,23 +126,20 @@ mod tests {
     pub fn test_segment_name() {
         let options = SegmentOptions {
             segment_size: 100,
-            target_num_digits: 6,
             ..Default::default()
         };
-        assert_eq!(options.format_segment_name(100), "000_100-100");
+        assert_eq!(options.format_segment_name(100), "000_000_100-100");
 
         let options = SegmentOptions {
             segment_size: 100,
-            target_num_digits: 9,
             ..Default::default()
         };
-        assert_eq!(options.format_segment_name(100_100), "000_100_100-100");
+        assert_eq!(options.format_segment_name(999_999_999), "999_999_900-100");
 
         let options = SegmentOptions {
             segment_size: 100,
-            target_num_digits: 7,
             ..Default::default()
         };
-        assert_eq!(options.format_segment_name(100), "0_000_100-100");
+        assert_eq!(options.format_segment_name(10_010), "000_010_000-100");
     }
 }

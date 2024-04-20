@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package apibara.evm.v2;
+package evm.v2;
 
 // An address of 160 bits.
 //

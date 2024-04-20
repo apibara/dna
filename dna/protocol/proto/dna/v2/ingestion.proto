@@ -22,7 +22,7 @@
 // - blocks that are not part of a segment yet.
 syntax = "proto3";
 
-package apibara.ingestion.v2;
+package dna.v2.ingestion;
 
 service Ingestion {
   // Subscribe to data changes.
@@ -45,14 +45,26 @@ message SubscribeResponse {
 message Snapshot {
   // Snapshot revision.
   uint64 revision = 1;
+  // Segment options.
+  SegmentOptions segment_options = 2;
+  // Ingestion state.
+  IngestionState ingestion = 3;
+}
+
+message SegmentOptions {
+  // Segment size, in blocks.
+  uint32 segment_size = 1;
+  // Group size, in segments.
+  uint32 group_size = 2;
+}
+
+message IngestionState {
   // First block number in the snapshot.
-  uint64 first_block_number = 2;
-  // Number of blocks in each segment.
-  uint32 segment_size = 3;
-  // Number of segments in each group.
-  uint32 group_size = 4;
+  uint64 first_block_number = 1;
   // Number of sealed groups ingested.
-  uint32 group_count = 5;
+  uint32 group_count = 2;
+  // Number of segments not yet sealed.
+  uint32 extra_segment_count = 3;
 }
 
 // Add the given segment to the current unsealed group.

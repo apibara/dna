@@ -186,7 +186,8 @@ where
                         .attach_printable("received group sealed event but ingestion not started");
                 };
                 snapshot.revision = group.revision;
-                snapshot.group_count += 1;
+                // snapshot.group_count += 1;
+                todo!();
 
                 let group_name = snapshot
                     .segment_options

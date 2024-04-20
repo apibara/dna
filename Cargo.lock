@@ -423,6 +423,8 @@ dependencies = [
  "object_store",
  "pbjson-build",
  "reqwest",
+ "serde",
+ "serde_json",
  "tempdir",
  "testcontainers",
  "tokio",
