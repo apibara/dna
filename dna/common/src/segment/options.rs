@@ -1,3 +1,4 @@
+use apibara_dna_protocol::dna::ingestion;
 use serde::{Deserialize, Serialize};
 
 pub const TARGET_NUM_DIGITS: usize = 9;
@@ -58,6 +59,13 @@ impl SegmentOptions {
             underscore_separated_thousands(&formatted),
             self.segment_size
         )
+    }
+
+    pub fn to_proto(&self) -> ingestion::SegmentOptions {
+        ingestion::SegmentOptions {
+            segment_size: self.segment_size as u32,
+            group_size: self.group_size as u32,
+        }
     }
 }
 

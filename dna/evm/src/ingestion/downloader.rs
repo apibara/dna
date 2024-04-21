@@ -2,6 +2,7 @@ use std::mem;
 
 use alloy_primitives::B256;
 use apibara_dna_common::{
+    core::Cursor,
     error::{DnaError, Result},
     storage::{LocalStorageBackend, StorageBackend},
 };
@@ -13,9 +14,8 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, error};
 
 use crate::{
-    core::Cursor,
     ingestion::models,
-    segment::{conversion::model::HeaderExt, SingleBlockBuilder},
+    segment::{conversion::model::GetCursor, SingleBlockBuilder},
 };
 
 use super::{ChainChange, RpcIngestionOptions, RpcProvider};
@@ -28,6 +28,7 @@ pub enum BlockNumberOrHash {
 
 #[derive(Debug, Clone)]
 pub enum BlockEvent {
+    Started { finalized: Cursor },
     Finalized(Cursor),
     Ingested(Cursor),
     Invalidate,
@@ -123,6 +124,15 @@ where
             (f, true)
         } else {
             (future::pending().boxed(), false)
+        };
+
+        let Ok(_) = tx
+            .send(BlockEvent::Started {
+                finalized: finalized.clone(),
+            })
+            .await
+        else {
+            return Ok(());
         };
 
         loop {
@@ -233,7 +243,7 @@ impl InnerDownloader {
         builder.add_receipts(&receipts);
 
         // Same for writer. We should not clone it every time.
-        let prefix = format!("blocks/{}-{}", cursor.number, cursor.hash);
+        let prefix = format!("blocks/{}-{}", cursor.number, cursor.hash_as_hex());
         debug!(prefix, "writing single block");
         let mut writer = self.storage.clone().put(prefix, "block").await?;
         builder.write_block(&mut writer).await?;
