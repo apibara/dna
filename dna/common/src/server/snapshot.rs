@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use apibara_dna_protocol::ingestion;
+use apibara_dna_protocol::dna::ingestion;
 use bytes::Bytes;
 use error_stack::ResultExt;
 use tokio::sync::{broadcast, Mutex};
@@ -124,7 +124,9 @@ impl SnapshotState {
 mod worker {
     use std::{sync::Arc, time::Duration};
 
-    use apibara_dna_protocol::ingestion::{ingestion_client::IngestionClient, SubscribeRequest};
+    use apibara_dna_protocol::dna::ingestion::{
+        ingestion_client::IngestionClient, SubscribeRequest,
+    };
     use error_stack::{Result, ResultExt};
     use futures_util::{StreamExt, TryStreamExt};
     use tokio::sync::Mutex;
@@ -206,7 +208,7 @@ mod worker {
                 .await
                 .change_context(WorkerError::Temporary)?
             {
-                use apibara_dna_protocol::ingestion::subscribe_response::Message;
+                use apibara_dna_protocol::dna::ingestion::subscribe_response::Message;
 
                 // Use message to update state
                 /*

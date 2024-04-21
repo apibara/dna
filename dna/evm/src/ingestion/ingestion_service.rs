@@ -7,7 +7,6 @@ use apibara_dna_common::{
 use error_stack::ResultExt;
 use futures_util::Stream;
 use tokio::io::AsyncReadExt;
-use tokio_stream::StreamExt;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
@@ -84,8 +83,8 @@ where
         )
         .start(snapshot.starting_block_number(), ct.clone());
 
-        let snapshot_changes =
-            SegmenterService::new(self.local_cache, self.storage, block_stream).start(ct.clone());
+        let snapshot_changes = SegmenterService::new(self.local_cache, self.storage, block_stream)
+            .start(snapshot, ct.clone());
 
         let address = "0.0.0.0:7000".parse().expect("parse address");
         IngestionServer::new(snapshot_changes)

@@ -1,9 +1,7 @@
-use std::io::Read;
-
-use apibara_dna_protocol::ingestion;
+use apibara_dna_protocol::dna::ingestion;
 use serde::{Deserialize, Serialize};
 
-use crate::segment::SegmentOptions;
+use crate::{core::Cursor, segment::SegmentOptions};
 
 /// Ingestion status.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -38,10 +36,18 @@ pub struct Segment {
 }
 
 #[derive(Debug, Clone)]
+pub struct IngestedBlock {
+    pub cursor: Cursor,
+}
+
+#[derive(Debug, Clone)]
 pub enum SnapshotChange {
     Started(Snapshot),
-    GroupSealed(SealGroup),
-    SegmentAdded(Segment),
+    StateChanged {
+        new_state: IngestionState,
+        finalized: Cursor,
+    },
+    BlockIngested(IngestedBlock),
 }
 
 impl Snapshot {
@@ -62,7 +68,8 @@ impl Snapshot {
     pub fn to_proto(&self) -> ingestion::Snapshot {
         ingestion::Snapshot {
             revision: self.revision,
-            ..Default::default()
+            segment_options: self.segment_options.to_proto().into(),
+            ingestion: self.ingestion.to_proto().into(),
         }
     }
 
@@ -71,6 +78,16 @@ impl Snapshot {
             message: Some(ingestion::subscribe_response::Message::Snapshot(
                 self.to_proto(),
             )),
+        }
+    }
+}
+
+impl IngestionState {
+    pub fn to_proto(&self) -> ingestion::IngestionState {
+        ingestion::IngestionState {
+            first_block_number: self.first_block_number,
+            group_count: self.group_count,
+            extra_segment_count: self.extra_segment_count,
         }
     }
 }

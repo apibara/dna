@@ -21,6 +21,7 @@ clap.workspace = true
 error-stack.workspace = true
 flatbuffers.workspace = true
 futures-util.workspace = true
+hex.workspace = true
 lru.workspace = true
 # Make clients cloneable
 object_store = { git = "https://github.com/fracek/arrow-rs", rev = "52ec42ac", features = [
