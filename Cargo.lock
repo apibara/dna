@@ -417,6 +417,7 @@ dependencies = [
  "error-stack",
  "flatbuffers",
  "futures-util",
+ "hex",
  "jemallocator",
  "lru",
  "nanoid",

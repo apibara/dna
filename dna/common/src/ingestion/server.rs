@@ -1,20 +1,24 @@
 use std::{net::SocketAddr, sync::Arc};
 
-use apibara_dna_protocol::ingestion::{
-    self, ingestion_file_descriptor_set, ingestion_server, SubscribeRequest, SubscribeResponse,
+use apibara_dna_protocol::dna::ingestion::{
+    ingestion_file_descriptor_set, ingestion_server, subscribe_response, BlockIngested,
+    StateChanged, SubscribeRequest, SubscribeResponse,
 };
 use error_stack::ResultExt;
 use futures_util::{Stream, StreamExt, TryFutureExt};
 use tokio::{
     pin,
-    sync::{broadcast, mpsc, Mutex},
+    sync::{broadcast, mpsc, Mutex, MutexGuard},
 };
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::CancellationToken;
 use tonic::{transport::Server as TonicServer, Request};
 use tracing::{error, info};
 
-use crate::error::{DnaError, Result};
+use crate::{
+    core::Cursor,
+    error::{DnaError, Result},
+};
 
 use super::{Snapshot, SnapshotChange};
 
@@ -42,17 +46,18 @@ where
             .change_context(DnaError::Fatal)
             .attach_printable("failed to create gRPC reflection service")?;
 
-        let (tx, _) = broadcast::channel(128);
-        let shared_state = Arc::new(Mutex::new(IngestionState { tx, snapshot: None }));
+        let shared_state = SharedIngestionServerState::new();
 
         let update_task = tokio::spawn(
-            update_shared_state(shared_state.clone(), self.ingestion_stream, ct.clone())
+            shared_state
+                .clone()
+                .update_from_stream(self.ingestion_stream, ct.clone())
                 .inspect_err(|err| {
                     error!(%err, "ingestion stream error");
                 }),
         );
 
-        let ingestion_service = Service::new(shared_state.clone()).into_service();
+        let ingestion_service = Service::new(shared_state).into_service();
 
         info!(addr = %addr, "starting ingestion server");
 
@@ -81,19 +86,21 @@ where
     }
 }
 
-struct IngestionState {
-    tx: broadcast::Sender<TonicResult<SubscribeResponse>>,
+struct IngestionServerState {
+    tx: broadcast::Sender<subscribe_response::Message>,
     snapshot: Option<Snapshot>,
+    cursors: Vec<Cursor>,
 }
 
-type SharedIngestionState = Arc<Mutex<IngestionState>>;
+#[derive(Clone)]
+struct SharedIngestionServerState(Arc<Mutex<IngestionServerState>>);
 
 struct Service {
-    state: SharedIngestionState,
+    state: SharedIngestionServerState,
 }
 
 impl Service {
-    pub fn new(state: SharedIngestionState) -> Self {
+    pub fn new(state: SharedIngestionServerState) -> Self {
         Service { state }
     }
 
@@ -119,7 +126,19 @@ impl ingestion_server::Ingestion for Service {
         };
 
         let message = snapshot.to_response();
+
+        let blocks = state
+            .cursors
+            .iter()
+            .map(|cursor| BlockIngested {
+                cursor: Some(cursor.clone().into()),
+                data: b"deadbeef".to_vec(),
+            })
+            .map(|ingested| subscribe_response::Message::BlockIngested(ingested))
+            .collect::<Vec<_>>();
+
         let (tx, rx) = mpsc::channel(128);
+
         tokio::spawn({
             let mut event_rx = state.tx.subscribe();
             async move {
@@ -128,11 +147,25 @@ impl ingestion_server::Ingestion for Service {
                     .await
                     .map_err(|_| tonic::Status::internal("failed to send initial snapshot"))?;
 
+                for block in blocks {
+                    let message = SubscribeResponse {
+                        message: Some(block),
+                    };
+
+                    tx.send(Ok(message))
+                        .await
+                        .map_err(|_| tonic::Status::internal("failed to send initial blocks"))?;
+                }
+
                 // Consume ingestion stream and forward it to subscriber.
                 loop {
                     match event_rx.recv().await {
                         Ok(message) => {
-                            tx.send(message).await.map_err(|_| {
+                            let response = SubscribeResponse {
+                                message: Some(message),
+                            };
+
+                            tx.send(Ok(response)).await.map_err(|_| {
                                 tonic::Status::internal("failed to send message to subscriber")
                             })?;
                         }
@@ -158,93 +191,280 @@ impl ingestion_server::Ingestion for Service {
     }
 }
 
-async fn update_shared_state<S>(
-    state: SharedIngestionState,
-    ingestion_stream: S,
-    ct: CancellationToken,
-) -> Result<()>
-where
-    S: Stream<Item = SnapshotChange> + Send + Sync + 'static,
-{
-    let ingestion_stream = ingestion_stream.take_until(ct.cancelled()).fuse();
-    pin!(ingestion_stream);
+impl SharedIngestionServerState {
+    pub fn new() -> Self {
+        let (tx, _) = broadcast::channel(128);
+        let state = IngestionServerState {
+            tx,
+            snapshot: None,
+            cursors: Vec::new(),
+        };
+        SharedIngestionServerState(Arc::new(Mutex::new(state)))
+    }
 
-    while let Some(event) = ingestion_stream.next().await {
+    async fn lock(&self) -> MutexGuard<'_, IngestionServerState> {
+        self.0.lock().await
+    }
+
+    async fn update_from_stream<S>(self, ingestion_stream: S, ct: CancellationToken) -> Result<()>
+    where
+        S: Stream<Item = SnapshotChange> + Send + Sync + 'static,
+    {
+        let ingestion_stream = ingestion_stream.take_until(ct.cancelled()).fuse();
+        pin!(ingestion_stream);
+
+        let Some(event) = ingestion_stream.next().await else {
+            return Ok(());
+        };
+
         match event {
             SnapshotChange::Started(snapshot) => {
-                let mut state = state.lock().await;
-                if state.snapshot.is_some() {
-                    return Err(DnaError::Fatal)
-                        .attach_printable("received started event but ingestion already started");
-                }
+                let mut state = self.lock().await;
                 state.snapshot = Some(snapshot);
             }
-            SnapshotChange::GroupSealed(group) => {
-                let mut state = state.lock().await;
-                let Some(snapshot) = &mut state.snapshot else {
-                    return Err(DnaError::Fatal)
-                        .attach_printable("received group sealed event but ingestion not started");
-                };
-                snapshot.revision = group.revision;
-                // snapshot.group_count += 1;
-                todo!();
-
-                let group_name = snapshot
-                    .segment_options
-                    .format_segment_group_name(group.first_block_number);
-
-                let message = {
-                    use ingestion::subscribe_response::Message;
-                    let message = ingestion::SealGroup {
-                        group_name,
-                        first_block_number: group.first_block_number,
-                    };
-                    ingestion::SubscribeResponse {
-                        message: Some(Message::SealGroup(message)),
-                    }
-                };
-
-                if state.tx.receiver_count() > 0 {
-                    state
-                        .tx
-                        .send(Ok(message))
-                        .map_err(|_| DnaError::Fatal)
-                        .attach_printable("failed to send group sealed event to subscriber")?;
-                }
+            _ => {
+                return Err(DnaError::Fatal)
+                    .attach_printable("expected first event to be SnapshotChange::Started");
             }
-            SnapshotChange::SegmentAdded(segment) => {
-                let mut state = state.lock().await;
-                let Some(snapshot) = &mut state.snapshot else {
-                    return Err(DnaError::Fatal).attach_printable(
-                        "received segment added event but ingestion not started",
-                    );
-                };
+        }
 
-                let segment_name = snapshot
-                    .segment_options
-                    .format_segment_name(segment.first_block_number);
+        while let Some(event) = ingestion_stream.next().await {
+            match event {
+                SnapshotChange::StateChanged {
+                    new_state,
+                    finalized,
+                } => {
+                    let mut state = self.lock().await;
 
-                let message = {
-                    use ingestion::subscribe_response::Message;
-                    let message = ingestion::AddSegmentToGroup {
-                        segment_name,
-                        first_block_number: segment.first_block_number,
+                    let (new_state_proto, first_non_segmented_block_number) = {
+                        let snapshot = state
+                            .snapshot
+                            .as_mut()
+                            .ok_or(DnaError::Fatal)
+                            .attach_printable("received state update message with no snapshot")?;
+
+                        let new_state_proto = new_state.to_proto();
+                        snapshot.ingestion = new_state;
+                        (new_state_proto, snapshot.starting_block_number())
                     };
-                    ingestion::SubscribeResponse {
-                        message: Some(Message::AddSegmentToGroup(message)),
-                    }
-                };
 
-                if state.tx.receiver_count() > 0 {
-                    state
-                        .tx
-                        .send(Ok(message))
-                        .map_err(|_| DnaError::Fatal)
-                        .attach_printable("failed to segment event to subscriber")?;
+                    let cursors = std::mem::take(&mut state.cursors);
+
+                    let (removed_cursors, cursors) = cursors
+                        .into_iter()
+                        .partition(|cursor| cursor.number < first_non_segmented_block_number);
+
+                    state.cursors = cursors;
+                    let removed_cursors = removed_cursors.into_iter().map(Into::into).collect();
+
+                    let state_changed = StateChanged {
+                        new_state: Some(new_state_proto),
+                        removed_cursors,
+                        finalized: Some(finalized.into()),
+                    };
+                    state.send(subscribe_response::Message::StateChanged(state_changed));
+                }
+                SnapshotChange::BlockIngested(block) => {
+                    let cursor = block.cursor;
+                    let mut state = self.lock().await;
+                    state.cursors.push(cursor.clone());
+
+                    // TODO: read data from FS
+                    let block_ingested = BlockIngested {
+                        cursor: Some(cursor.into()),
+                        data: b"deadbeef".to_vec(),
+                    };
+                    state.send(subscribe_response::Message::BlockIngested(block_ingested));
+                }
+                _ => {
+                    return Err(DnaError::Fatal)
+                        .attach_printable("unexpected event in ingestion stream")
+                        .attach_printable_lazy(|| format!("event: {:?}", event));
                 }
             }
         }
-    }
 
-    Ok(())
+        Ok(())
+    }
+}
+
+impl IngestionServerState {
+    fn send(&self, value: subscribe_response::Message) {
+        let _ = self.tx.send(value);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use apibara_dna_protocol::dna::ingestion::subscribe_response::Message;
+    use tokio::{sync::mpsc, time::timeout};
+    use tokio_util::sync::CancellationToken;
+
+    use crate::{
+        core::Cursor,
+        ingestion::{IngestedBlock, IngestionState, Snapshot, SnapshotChange},
+        segment::SegmentOptions,
+    };
+
+    use super::SharedIngestionServerState;
+
+    const DEFAULT_TIMEOUT: Duration = Duration::from_secs(1);
+
+    #[tokio::test]
+    pub async fn test_update_shared_ingestion_state() {
+        let ct = CancellationToken::new();
+        let (ingestion_tx, ingestion_rx) = mpsc::channel(128);
+        let ingestion_stream = tokio_stream::wrappers::ReceiverStream::new(ingestion_rx);
+        let shared_state = SharedIngestionServerState::new();
+
+        let task_handle = tokio::spawn(
+            shared_state
+                .clone()
+                .update_from_stream(ingestion_stream, ct.clone()),
+        );
+
+        // Snapshot starts empty.
+        {
+            let state = shared_state.lock().await;
+            assert!(state.snapshot.is_none());
+        }
+
+        ingestion_tx
+            .send(SnapshotChange::Started(Snapshot {
+                revision: 10,
+                segment_options: SegmentOptions {
+                    group_size: 10,
+                    segment_size: 100,
+                },
+                ingestion: IngestionState {
+                    first_block_number: 1_000_000,
+                    group_count: 10,
+                    extra_segment_count: 4,
+                },
+            }))
+            .await
+            .unwrap();
+
+        // Wait for process to receive message and update its snapshot.
+        {
+            for i in 0.. {
+                assert!(i < 10, "timeout waiting for snapshot to be set");
+                let state = shared_state.lock().await;
+                if state.snapshot.is_some() {
+                    break;
+                }
+                tokio::time::sleep(DEFAULT_TIMEOUT).await;
+            }
+        }
+
+        let mut update_rx = shared_state.lock().await.tx.subscribe();
+
+        // Check that state changes are sent to subscribers.
+        {
+            ingestion_tx
+                .send(SnapshotChange::StateChanged {
+                    new_state: IngestionState {
+                        first_block_number: 1_000_000,
+                        group_count: 10,
+                        extra_segment_count: 8,
+                    },
+                    finalized: Cursor::new(1_010_800, vec![]),
+                })
+                .await
+                .unwrap();
+
+            let message = timeout(DEFAULT_TIMEOUT, update_rx.recv())
+                .await
+                .expect("timeout")
+                .unwrap();
+            let state_changed = if let Message::StateChanged(state_changed) = message {
+                state_changed
+            } else {
+                panic!("expected StateChanged message, got: {:?}", message);
+            };
+
+            let new_state = state_changed.new_state.unwrap();
+            assert_eq!(new_state.first_block_number, 1_000_000);
+            assert_eq!(new_state.group_count, 10);
+            assert_eq!(new_state.extra_segment_count, 8);
+            assert!(state_changed.removed_cursors.is_empty());
+        }
+
+        // Check snapshot state.
+        {
+            let state = shared_state.lock().await;
+            let snapshot = state.snapshot.clone().unwrap();
+            assert_eq!(snapshot.starting_block_number(), 1_010_800);
+        }
+
+        // Send some ingested blocks between 1_010_850 and 1_010_950
+        {
+            for i in 1_010_800..1_010_950 {
+                let cursor = Cursor::new(i, i.to_be_bytes().to_vec());
+                ingestion_tx
+                    .send(SnapshotChange::BlockIngested(IngestedBlock { cursor }))
+                    .await
+                    .unwrap();
+            }
+
+            for i in 1_010_800..1_010_950 {
+                let message = timeout(DEFAULT_TIMEOUT, update_rx.recv())
+                    .await
+                    .expect("timeout")
+                    .unwrap();
+
+                let ingested = if let Message::BlockIngested(ingested) = message {
+                    ingested
+                } else {
+                    panic!("expected BlockIngested message, got: {:?}", message);
+                };
+
+                assert_eq!(ingested.cursor.unwrap().order_key, i);
+            }
+        }
+
+        // After that, send a state changed to signal a segment has been ingested.
+        // This usually happens one the blocks have been ingested, but since they
+        // are not finalized they cannot be segmented.
+        {
+            ingestion_tx
+                .send(SnapshotChange::StateChanged {
+                    new_state: IngestionState {
+                        first_block_number: 1_000_000,
+                        group_count: 10,
+                        extra_segment_count: 9,
+                    },
+                    finalized: Cursor::new(1_010_800, vec![]),
+                })
+                .await
+                .unwrap();
+
+            let message = timeout(DEFAULT_TIMEOUT, update_rx.recv())
+                .await
+                .expect("timeout")
+                .unwrap();
+            let state_changed = if let Message::StateChanged(state_changed) = message {
+                state_changed
+            } else {
+                panic!("expected StateChanged message, got: {:?}", message);
+            };
+
+            let new_state = state_changed.new_state.unwrap();
+            assert_eq!(new_state.first_block_number, 1_000_000);
+            assert_eq!(new_state.group_count, 10);
+            assert_eq!(new_state.extra_segment_count, 9);
+
+            // Same as segment length.
+            assert_eq!(state_changed.removed_cursors.len(), 100);
+            for (cursor, expected_number) in state_changed.removed_cursors.iter().zip(1_010_800..) {
+                assert_eq!(cursor.order_key, expected_number);
+            }
+        }
+
+        ct.cancel();
+
+        task_handle.await.unwrap().unwrap();
+    }
 }

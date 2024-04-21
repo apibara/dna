@@ -24,6 +24,8 @@ syntax = "proto3";
 
 package dna.v2.ingestion;
 
+import "v2/common.proto";
+
 service Ingestion {
   // Subscribe to data changes.
   rpc Subscribe(SubscribeRequest) returns (stream SubscribeResponse);
@@ -34,10 +36,9 @@ message SubscribeRequest {}
 message SubscribeResponse {
   oneof message {
     Snapshot snapshot = 1;
-    AddSegmentToGroup add_segment_to_group = 2;
-    SealGroup seal_group = 3;
-    AddImmediateData add_immediate_data = 4;
-    Invalidate invalidate = 5;
+    StateChanged state_changed = 2;
+    BlockIngested block_ingested = 3;
+    Invalidate invalidate = 4;
   }
 }
 
@@ -67,35 +68,19 @@ message IngestionState {
   uint32 extra_segment_count = 3;
 }
 
-// Add the given segment to the current unsealed group.
-//
-// The client can delete all immediate data that is now in the segment.
-message AddSegmentToGroup {
-  // Segment name.
-  string segment_name = 1;
-  // First block number in the segment.
-  uint64 first_block_number = 2;
+message StateChanged {
+  // New ingestion state.
+  IngestionState new_state = 1;
+  // New finalized block cursor.
+  dna.v2.common.Cursor finalized = 2;
+  // Blocks that can be safely removed because they are now included in a
+  // segment.
+  repeated dna.v2.common.Cursor removed_cursors = 3;
 }
 
-// Seal the current group, starting a new unsealed group.
-//
-// The client can start using the sealed group to quickly
-// skip ahead when streaming data.
-message SealGroup {
-  // Group name.
-  string group_name = 2;
-  // First block number in the current group.
-  uint64 first_block_number = 3;
-}
-
-// Add data about a single block that is not part of a segment.
-message AddImmediateData {
-  // Block number.
-  uint64 block_number = 1;
-  // Block hash.
-  bytes block_hash = 2;
-  // Block data, encoded as Flatbuffers.
-  bytes data = 3;
+message BlockIngested {
+  dna.v2.common.Cursor cursor = 1;
+  bytes data = 2;
 }
 
 // Invalidate all blocks after the given block number.

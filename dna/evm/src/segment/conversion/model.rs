@@ -1,5 +1,7 @@
 //! Conversion between store and model.
-use crate::{core::Cursor, ingestion::models, segment::store};
+use apibara_dna_common::core::Cursor;
+
+use crate::{ingestion::models, segment::store};
 
 impl From<models::B256> for store::B256 {
     fn from(value: models::B256) -> Self {
@@ -95,11 +97,11 @@ impl U128Ext for models::U128 {
     }
 }
 
-pub trait HeaderExt {
+pub trait GetCursor {
     fn cursor(&self) -> Option<Cursor>;
 }
 
-impl HeaderExt for models::Header {
+impl GetCursor for models::Header {
     fn cursor(&self) -> Option<Cursor> {
         let Some(hash) = self.hash else {
             return None;
@@ -109,7 +111,13 @@ impl HeaderExt for models::Header {
             return None;
         };
 
-        Some(Cursor::new(number.as_u64(), hash))
+        Some(Cursor::new(number.as_u64(), hash.to_vec()))
+    }
+}
+
+impl GetCursor for models::Block {
+    fn cursor(&self) -> Option<Cursor> {
+        self.header.cursor()
     }
 }
 

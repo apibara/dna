@@ -1,13 +1,16 @@
-use apibara_dna_common::error::{DnaError, Result};
+use apibara_dna_common::{
+    core::Cursor,
+    error::{DnaError, Result},
+};
 use error_stack::ResultExt;
 use futures_util::Stream;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::CancellationToken;
 
-use crate::{core::Cursor, segment::conversion::model::U64Ext};
+use crate::segment::conversion::model::GetCursor;
 
-use super::{models, RpcProvider};
+use super::RpcProvider;
 
 pub struct ChainTracker {
     provider: RpcProvider,
@@ -44,8 +47,16 @@ async fn track_chain(
     tx: mpsc::Sender<ChainChange>,
     ct: CancellationToken,
 ) -> Result<()> {
-    let mut head = provider.get_latest_block().await?.cursor();
-    let mut finalized = provider.get_finalized_block().await?.cursor();
+    let mut head = provider
+        .get_latest_block()
+        .await?
+        .cursor()
+        .expect("no head block");
+    let mut finalized = provider
+        .get_finalized_block()
+        .await?
+        .cursor()
+        .expect("no finalized block");
 
     let change = ChainChange::Initialize {
         head: head.clone(),
@@ -63,7 +74,7 @@ async fn track_chain(
         tokio::select! {
             _ = ct.cancelled() => break,
             _ = head_timeout.tick() => {
-                let new_head = provider.get_latest_block().await?.cursor();
+                let new_head = provider.get_latest_block().await?.cursor().expect("no head block");
                 if new_head != head {
                     head = new_head;
                     let change = ChainChange::NewHead(head.clone());
@@ -71,7 +82,7 @@ async fn track_chain(
                 }
             }
             _ = finalized_timeout.tick() => {
-                let new_finalized = provider.get_finalized_block().await?.cursor();
+                let new_finalized = provider.get_finalized_block().await?.cursor().expect("no finalized block");
                 if new_finalized != finalized {
                     finalized = new_finalized;
                     let change = ChainChange::NewFinalized(finalized.clone());
@@ -82,17 +93,4 @@ async fn track_chain(
     }
 
     Ok(())
-}
-
-pub trait BlockExt {
-    fn cursor(&self) -> Cursor;
-}
-
-impl BlockExt for models::Block {
-    fn cursor(&self) -> Cursor {
-        Cursor::new(
-            self.header.number.unwrap_or_default().as_u64(),
-            self.header.hash.unwrap_or_default(),
-        )
-    }
 }
