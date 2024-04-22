@@ -1,10 +1,6 @@
 table SegmentGroup {
   // The first block number in the segment group.
   first_block_number:uint64;
-  // Number of blocks in each segment.
-  segment_size:uint32;
-  // Number of segments in the segment group.
-  segment_count:uint32;
 
   // Roaring bitmap used to quickly lookup which blocks in the segment group
   // have logs for the given ADDRESS.

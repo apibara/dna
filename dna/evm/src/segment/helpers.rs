@@ -88,6 +88,12 @@ impl std::fmt::Display for store::Address {
     }
 }
 
+impl std::fmt::Display for store::B256 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_hex())
+    }
+}
+
 pub trait SegmentGroupExt {
     fn get_log_by_address(&self, address: &store::Address) -> Option<RoaringBitmap>;
     fn get_log_by_topic(&self, topic: &store::B256) -> Option<RoaringBitmap>;
