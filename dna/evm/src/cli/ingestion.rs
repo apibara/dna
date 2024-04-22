@@ -1,13 +1,8 @@
-use std::path::PathBuf;
-
 use apibara_dna_common::{
-    error::Result,
-    segment::SegmentArgs,
-    storage::{CachedStorage, StorageBackend},
+    error::Result, ingestion::IngestionServer, segment::SegmentArgs, storage::StorageBackend,
 };
 use clap::Args;
 use error_stack::ResultExt;
-use futures_util::StreamExt;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
@@ -80,36 +75,24 @@ where
     let ct = CancellationToken::new();
 
     let provider = args.rpc.to_provider_service()?.start(ct.clone());
-    let mut chain_changes = ChainTracker::new(provider.clone()).start(ct.clone());
+    let chain_changes = ChainTracker::new(provider.clone()).start(ct.clone());
 
     let local_cache_storage = args.cache.to_local_storage_backend();
 
-    let ingestion_stream =
-        IngestionService::new(provider, local_cache_storage, storage, chain_changes)
-            .with_options(args.ingestion.to_ingestion_options())
-            .start(ct.clone())
-            .await?;
-    /*
-    let ingestor_options = IngestorOptions::default()
-        .with_segment_options(args.segment.to_segment_options())
-        .with_starting_block(args.starting_block.unwrap_or_default())
-        .with_get_block_by_number_with_transactions(
-            args.ingestor.rpc_get_block_by_number_with_transactions,
-        )
-        .with_get_block_receipts_by_number(args.ingestor.rpc_get_block_receipts_by_number);
+    let ingestion_stream = IngestionService::new(
+        provider,
+        local_cache_storage.clone(),
+        storage,
+        chain_changes,
+    )
+    .with_options(args.ingestion.to_ingestion_options())
+    .start(ct.clone())
+    .await?;
 
-    let ingestion_stream = Ingestor::new(provider, storage, chain_changes)
-        .with_options(ingestor_options)
-        .start(ct.clone());
-
-    let server = IngestionServer::new(ingestion_stream);
-
-    let address = "0.0.0.0:7007".parse().expect("parse address");
-
-    server.start(address, ct).await?;
-    */
-
-    Ok(())
+    let address = "0.0.0.0:7000".parse().expect("parse address");
+    IngestionServer::new(local_cache_storage, ingestion_stream)
+        .start(address, ct)
+        .await
 }
 
 impl IngestionArgs {

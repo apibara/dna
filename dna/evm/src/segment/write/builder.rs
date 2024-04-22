@@ -5,17 +5,11 @@ use apibara_dna_common::{
 use error_stack::ResultExt;
 use tokio::io::AsyncWriteExt;
 
-use crate::{
-    ingestion::models,
-    segment::store::{self, SingleBlock},
-};
+use crate::{ingestion::models, segment::store::SingleBlock};
 
 use super::{
-    header::{self, BlockHeaderSegmentBuilder},
-    index::SegmentIndex,
-    log::LogSegmentBuilder,
-    receipt::ReceiptSegmentBuilder,
-    transaction::TransactionSegmentBuilder,
+    header::BlockHeaderSegmentBuilder, index::SegmentIndex, log::LogSegmentBuilder,
+    receipt::ReceiptSegmentBuilder, transaction::TransactionSegmentBuilder,
 };
 
 pub struct SegmentBuilder<'a> {
@@ -60,6 +54,7 @@ impl<'a> SegmentBuilder<'a> {
 
         if let Some(logs) = &block.logs() {
             self.log.copy_logs_from_iter(block_number, logs.iter());
+            self.index.add_logs_sad_face(block_number, logs.iter());
         }
     }
 
