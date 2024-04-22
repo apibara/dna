@@ -29,6 +29,23 @@ impl<'a> BlockHeaderSegmentBuilder<'a> {
         self.block_count
     }
 
+    pub fn copy_block_header<'b>(
+        &mut self,
+        block_number: u64,
+        block_header: &store::BlockHeader<'b>,
+    ) {
+        if self.first_block_number.is_none() {
+            self.first_block_number = Some(block_number);
+        }
+
+        self.block_count += 1;
+
+        self.headers.push(store::BlockHeaderBuilder::copy_header(
+            &mut self.builder,
+            block_header,
+        ));
+    }
+
     pub fn add_block_header(&mut self, block_number: u64, block: &models::Block) {
         if self.first_block_number.is_none() {
             self.first_block_number = Some(block_number);
@@ -77,6 +94,11 @@ pub trait BlockHeaderBuilderExt<'a: 'b, 'b> {
     fn create_header(
         builder: &'b mut FlatBufferBuilder<'a>,
         header: &models::Block,
+    ) -> WIPOffset<store::BlockHeader<'a>>;
+
+    fn copy_header<'c>(
+        builder: &'b mut FlatBufferBuilder<'a>,
+        header: &store::BlockHeader<'c>,
     ) -> WIPOffset<store::BlockHeader<'a>>;
 }
 
@@ -163,6 +185,102 @@ impl<'a: 'b, 'b> BlockHeaderBuilderExt<'a, 'b> for store::BlockHeaderBuilder<'a,
         }
         if let Some(parent_beacon_block_root) = header.parent_beacon_block_root {
             out.add_parent_beacon_block_root(&parent_beacon_block_root.into());
+        }
+
+        out.finish()
+    }
+
+    fn copy_header<'c>(
+        builder: &'b mut FlatBufferBuilder<'a>,
+        header: &store::BlockHeader<'c>,
+    ) -> WIPOffset<store::BlockHeader<'a>> {
+        let extra_data =
+            builder.create_vector_from_iter(header.extra_data().unwrap_or_default().iter());
+
+        let uncles = builder.create_vector_from_iter(header.uncles().unwrap_or_default().iter());
+        let withdrawals = {
+            let items = header
+                .withdrawals()
+                .unwrap_or_default()
+                .iter()
+                .map(|w| {
+                    let mut out = store::WithdrawalBuilder::new(builder);
+                    out.add_index(w.index());
+                    out.add_validator_index(w.validator_index());
+                    if let Some(address) = w.address() {
+                        out.add_address(address);
+                    }
+                    if let Some(amount) = w.amount() {
+                        out.add_amount(amount);
+                    }
+                    out.finish()
+                })
+                .collect::<Vec<_>>();
+            builder.create_vector(&items)
+        };
+
+        let mut out = store::BlockHeaderBuilder::new(builder);
+
+        out.add_number(header.number());
+        if let Some(hash) = header.hash() {
+            out.add_hash(hash);
+        }
+        if let Some(parent_hash) = header.parent_hash() {
+            out.add_parent_hash(parent_hash);
+        }
+        if let Some(uncles_hash) = header.uncles_hash() {
+            out.add_uncles_hash(uncles_hash);
+        }
+        if let Some(miner) = header.miner() {
+            out.add_miner(miner);
+        }
+        if let Some(state_root) = header.state_root() {
+            out.add_state_root(state_root);
+        }
+        if let Some(transactions_root) = header.transactions_root() {
+            out.add_transactions_root(transactions_root);
+        }
+        if let Some(receipts_root) = header.receipts_root() {
+            out.add_receipts_root(receipts_root);
+        }
+        if let Some(logs_bloom) = header.logs_bloom() {
+            out.add_logs_bloom(logs_bloom);
+        }
+        if let Some(difficulty) = header.difficulty() {
+            out.add_difficulty(difficulty);
+        }
+        if let Some(gas_limit) = header.gas_limit() {
+            out.add_gas_limit(gas_limit);
+        }
+        if let Some(gas_used) = header.gas_used() {
+            out.add_gas_used(gas_used);
+        }
+        if let Some(timestamp) = header.timestamp() {
+            out.add_timestamp(timestamp);
+        }
+        out.add_extra_data(extra_data);
+        if let Some(mix_hash) = header.mix_hash() {
+            out.add_mix_hash(mix_hash);
+        }
+        out.add_nonce(header.nonce());
+        if let Some(base_fee_per_gas) = header.base_fee_per_gas() {
+            out.add_base_fee_per_gas(base_fee_per_gas);
+        }
+        if let Some(withdrawals_root) = header.withdrawals_root() {
+            out.add_withdrawals_root(withdrawals_root);
+        }
+        if let Some(total_difficulty) = header.total_difficulty() {
+            out.add_total_difficulty(total_difficulty);
+        }
+        out.add_uncles(uncles);
+        if let Some(size) = header.size_() {
+            out.add_size_(size);
+        }
+        out.add_withdrawals(withdrawals);
+        out.add_blob_gas_used(header.blob_gas_used());
+        out.add_excess_blob_gas(header.excess_blob_gas());
+        if let Some(parent_beacon_block_root) = header.parent_beacon_block_root() {
+            out.add_parent_beacon_block_root(parent_beacon_block_root);
         }
 
         out.finish()

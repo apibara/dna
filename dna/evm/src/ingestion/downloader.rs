@@ -11,7 +11,7 @@ use futures_util::{future, FutureExt, Stream, TryFutureExt};
 use tokio::{io::AsyncWriteExt, sync::mpsc};
 use tokio_stream::{wrappers::ReceiverStream, StreamExt};
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error};
+use tracing::{debug, error, info};
 
 use crate::{
     ingestion::models,
@@ -115,6 +115,7 @@ where
                 .attach_printable("finalized block is behind the starting block");
         }
 
+        info!(first_block_number, head = %head, finalized = %finalized, "starting block downloader");
         let mut current_block_number = first_block_number;
         let (mut download_fut, mut is_downloading) = if current_block_number < head.number {
             let f = downloader
@@ -241,6 +242,7 @@ impl InnerDownloader {
         builder.add_block_header(&block);
         builder.add_transactions(&transactions);
         builder.add_receipts(&receipts);
+        builder.add_logs(&receipts);
 
         // Same for writer. We should not clone it every time.
         let prefix = format!("blocks/{}-{}", cursor.number, cursor.hash_as_hex());

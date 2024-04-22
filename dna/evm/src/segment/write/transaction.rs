@@ -22,6 +22,28 @@ impl<'a> TransactionSegmentBuilder<'a> {
         }
     }
 
+    pub fn copy_transactions_from_iter<'b>(
+        &mut self,
+        block_number: u64,
+        src_transactions: impl ExactSizeIterator<Item = store::Transaction<'b>>,
+    ) {
+        if self.first_block_number.is_none() {
+            self.first_block_number = Some(block_number);
+        }
+
+        let transactions = src_transactions
+            .map(|tx| store::TransactionBuilder::copy_transaction(&mut self.builder, &tx))
+            .collect::<Vec<_>>();
+
+        let transactions = self.builder.create_vector(&transactions);
+
+        let mut block = store::BlockTransactionsBuilder::new(&mut self.builder);
+        block.add_block_number(block_number);
+        block.add_transactions(transactions);
+
+        self.blocks.push(block.finish());
+    }
+
     pub fn add_transactions(&mut self, block_number: u64, transactions: &[models::Transaction]) {
         if self.first_block_number.is_none() {
             self.first_block_number = Some(block_number);
@@ -75,6 +97,11 @@ pub trait TransactionBuilderExt<'a: 'b, 'b> {
     fn create_transaction(
         builder: &'b mut FlatBufferBuilder<'a>,
         transaction: &models::Transaction,
+    ) -> WIPOffset<store::Transaction<'a>>;
+
+    fn copy_transaction<'c>(
+        builder: &'b mut FlatBufferBuilder<'a>,
+        transaction: &store::Transaction<'c>,
     ) -> WIPOffset<store::Transaction<'a>>;
 }
 
@@ -162,6 +189,89 @@ impl<'a: 'b, 'b> TransactionBuilderExt<'a, 'b> for store::TransactionBuilder<'a,
         }
         if let Some(max_fee_per_blob_gas) = transaction.max_fee_per_blob_gas {
             out.add_max_fee_per_blob_gas(&max_fee_per_blob_gas.into_u128());
+        }
+        out.add_blob_versioned_hashes(blob_versioned_hashes);
+
+        out.finish()
+    }
+
+    fn copy_transaction<'c>(
+        builder: &'b mut FlatBufferBuilder<'a>,
+        transaction: &store::Transaction<'c>,
+    ) -> WIPOffset<store::Transaction<'a>> {
+        let input = builder.create_vector_from_iter(transaction.input().unwrap_or_default().iter());
+        let signature = {
+            let mut out = store::SignatureBuilder::new(builder);
+            if let Some(sig) = transaction.signature() {
+                if let Some(r) = sig.r() {
+                    out.add_r(r);
+                }
+                if let Some(s) = sig.s() {
+                    out.add_s(s);
+                }
+                if let Some(v) = sig.v() {
+                    out.add_v(v);
+                }
+                out.add_y_parity(sig.y_parity());
+            }
+            out.finish()
+        };
+        let access_list = {
+            let items = transaction
+                .access_list()
+                .unwrap_or_default()
+                .iter()
+                .map(|item| {
+                    let storage_keys = builder
+                        .create_vector_from_iter(item.storage_keys().unwrap_or_default().iter());
+                    let mut out = store::AccessListItemBuilder::new(builder);
+                    if let Some(address) = item.address() {
+                        out.add_address(address);
+                    }
+                    out.add_storage_keys(storage_keys);
+                    out.finish()
+                })
+                .collect::<Vec<_>>();
+            builder.create_vector(&items)
+        };
+        let blob_versioned_hashes = builder.create_vector_from_iter(
+            transaction
+                .blob_versioned_hashes()
+                .unwrap_or_default()
+                .iter(),
+        );
+
+        let mut out = store::TransactionBuilder::new(builder);
+        if let Some(hash) = transaction.hash() {
+            out.add_hash(hash);
+        }
+        out.add_nonce(transaction.nonce());
+        out.add_transaction_index(transaction.transaction_index());
+        if let Some(from) = transaction.from() {
+            out.add_from(from);
+        }
+        if let Some(to) = transaction.to() {
+            out.add_to(to);
+        }
+        if let Some(value) = transaction.value() {
+            out.add_value(value);
+        }
+        if let Some(gas_price) = transaction.gas_price() {
+            out.add_gas_price(gas_price);
+        }
+        if let Some(max_fee_per_gas) = transaction.max_fee_per_gas() {
+            out.add_max_fee_per_gas(max_fee_per_gas);
+        }
+        if let Some(max_priority_fee_per_gas) = transaction.max_priority_fee_per_gas() {
+            out.add_max_priority_fee_per_gas(max_priority_fee_per_gas);
+        }
+        out.add_input(input);
+        out.add_signature(signature);
+        out.add_chain_id(transaction.chain_id());
+        out.add_access_list(access_list);
+        out.add_transaction_type(transaction.transaction_type());
+        if let Some(max_fee_per_blob_gas) = transaction.max_fee_per_blob_gas() {
+            out.add_max_fee_per_blob_gas(max_fee_per_blob_gas);
         }
         out.add_blob_versioned_hashes(blob_versioned_hashes);
 

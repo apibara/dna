@@ -5,11 +5,17 @@ use apibara_dna_common::{
 use error_stack::ResultExt;
 use tokio::io::AsyncWriteExt;
 
-use crate::ingestion::models;
+use crate::{
+    ingestion::models,
+    segment::store::{self, SingleBlock},
+};
 
 use super::{
-    header::BlockHeaderSegmentBuilder, index::SegmentIndex, log::LogSegmentBuilder,
-    receipt::ReceiptSegmentBuilder, transaction::TransactionSegmentBuilder,
+    header::{self, BlockHeaderSegmentBuilder},
+    index::SegmentIndex,
+    log::LogSegmentBuilder,
+    receipt::ReceiptSegmentBuilder,
+    transaction::TransactionSegmentBuilder,
 };
 
 pub struct SegmentBuilder<'a> {
@@ -35,6 +41,26 @@ impl<'a> Default for SegmentBuilder<'a> {
 impl<'a> SegmentBuilder<'a> {
     pub fn header_count(&self) -> usize {
         self.header.block_count()
+    }
+
+    pub fn add_single_block<'b>(&mut self, block_number: u64, block: &SingleBlock<'b>) {
+        if let Some(header) = &block.header() {
+            self.header.copy_block_header(block_number, header);
+        }
+
+        if let Some(transactions) = &block.transactions() {
+            self.transaction
+                .copy_transactions_from_iter(block_number, transactions.iter());
+        }
+
+        if let Some(receipts) = &block.receipts() {
+            self.receipt
+                .copy_receipts_from_iter(block_number, receipts.iter());
+        }
+
+        if let Some(logs) = &block.logs() {
+            self.log.copy_logs_from_iter(block_number, logs.iter());
+        }
     }
 
     pub fn add_block_header(&mut self, block_number: u64, header: &models::Block) {
