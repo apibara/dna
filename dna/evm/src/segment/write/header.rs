@@ -153,7 +153,7 @@ impl<'a: 'b, 'b> BlockHeaderBuilderExt<'a, 'b> for store::BlockHeaderBuilder<'a,
         out.add_difficulty(&header.difficulty.into());
         out.add_gas_limit(&header.gas_limit.into());
         out.add_gas_used(&header.gas_used.into());
-        out.add_timestamp(&header.timestamp.into());
+        out.add_timestamp(header.timestamp.as_u64());
         out.add_extra_data(extra_data);
         if let Some(mix_hash) = header.mix_hash {
             out.add_mix_hash(&mix_hash.into());
@@ -255,9 +255,7 @@ impl<'a: 'b, 'b> BlockHeaderBuilderExt<'a, 'b> for store::BlockHeaderBuilder<'a,
         if let Some(gas_used) = header.gas_used() {
             out.add_gas_used(gas_used);
         }
-        if let Some(timestamp) = header.timestamp() {
-            out.add_timestamp(timestamp);
-        }
+        out.add_timestamp(header.timestamp());
         out.add_extra_data(extra_data);
         if let Some(mix_hash) = header.mix_hash() {
             out.add_mix_hash(mix_hash);
