@@ -44,6 +44,19 @@ impl LocalStorageBackend {
 
         Ok(())
     }
+
+    pub async fn remove_prefix(&mut self, prefix: impl AsRef<str> + Send) -> Result<()> {
+        let target_dir = self.target_dir(prefix.as_ref());
+
+        tokio::fs::remove_dir_all(&target_dir)
+            .await
+            .change_context(DnaError::Io)
+            .attach_printable("failed to delete storage directory")
+            .attach_printable_lazy(|| format!("prefix: {:?}", prefix.as_ref()))
+            .attach_printable_lazy(|| format!("dir: {:?}", target_dir))?;
+
+        Ok(())
+    }
 }
 
 #[async_trait]
