@@ -58,7 +58,7 @@ impl<'a> SingleBlockBuilder<'a> {
             .collect::<Vec<_>>();
     }
 
-    pub async fn write_block<W: AsyncWrite + Unpin>(&mut self, writer: &mut W) -> Result<()> {
+    pub async fn write_block<W: AsyncWrite + Unpin>(&mut self, writer: &mut W) -> Result<usize> {
         let header = self
             .header
             .ok_or(DnaError::Fatal)
@@ -76,13 +76,14 @@ impl<'a> SingleBlockBuilder<'a> {
         let single = single.finish();
         self.builder.finish(single, None);
 
+        let data_size = self.builder.finished_data().len();
         writer
             .write_all(self.builder.finished_data())
             .await
             .change_context(DnaError::Io)
             .attach_printable("failed to write single block")?;
 
-        Ok(())
+        Ok(data_size)
     }
 
     pub fn reset(&mut self) {

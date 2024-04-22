@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{os::unix::fs::MetadataExt, path::PathBuf};
 
 use async_compression::tokio::{bufread::ZstdDecoder, write::ZstdEncoder};
 use async_trait::async_trait;

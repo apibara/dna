@@ -8,7 +8,7 @@ use apibara_dna_common::{
 };
 use error_stack::ResultExt;
 use futures_util::{future, FutureExt, Stream, TryFutureExt};
-use tokio::sync::mpsc;
+use tokio::{io::AsyncWriteExt, sync::mpsc};
 use tokio_stream::{wrappers::ReceiverStream, StreamExt};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error};
@@ -244,9 +244,10 @@ impl InnerDownloader {
 
         // Same for writer. We should not clone it every time.
         let prefix = format!("blocks/{}-{}", cursor.number, cursor.hash_as_hex());
-        debug!(prefix, "writing single block");
-        let mut writer = self.storage.clone().put(prefix, "block").await?;
-        builder.write_block(&mut writer).await?;
+        let mut writer = self.storage.clone().put(&prefix, "block").await?;
+        let data_size = builder.write_block(&mut writer).await?;
+        writer.shutdown().await.change_context(DnaError::Io)?;
+        debug!(prefix, data_size, "wrote single block");
         builder.reset();
 
         Ok(cursor)
