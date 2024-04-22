@@ -7,17 +7,19 @@ use apibara_dna_protocol::dna::ingestion::{
 use error_stack::ResultExt;
 use futures_util::{Stream, StreamExt, TryFutureExt};
 use tokio::{
+    io::AsyncReadExt,
     pin,
     sync::{broadcast, mpsc, Mutex, MutexGuard},
 };
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::CancellationToken;
 use tonic::{transport::Server as TonicServer, Request};
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 use crate::{
     core::Cursor,
     error::{DnaError, Result},
+    storage::{LocalStorageBackend, StorageBackend},
 };
 
 use super::{Snapshot, SnapshotChange};
@@ -29,14 +31,18 @@ where
     S: Stream<Item = SnapshotChange> + Send + Sync + 'static,
 {
     ingestion_stream: S,
+    storage: LocalStorageBackend,
 }
 
 impl<S> IngestionServer<S>
 where
     S: Stream<Item = SnapshotChange> + Send + Sync + 'static,
 {
-    pub fn new(ingestion_stream: S) -> Self {
-        IngestionServer { ingestion_stream }
+    pub fn new(storage: LocalStorageBackend, ingestion_stream: S) -> Self {
+        IngestionServer {
+            storage,
+            ingestion_stream,
+        }
     }
 
     pub async fn start(self, addr: SocketAddr, ct: CancellationToken) -> Result<()> {
@@ -46,7 +52,7 @@ where
             .change_context(DnaError::Fatal)
             .attach_printable("failed to create gRPC reflection service")?;
 
-        let shared_state = SharedIngestionServerState::new();
+        let shared_state = SharedIngestionServerState::new(self.storage);
 
         let update_task = tokio::spawn(
             shared_state
@@ -88,6 +94,7 @@ where
 
 struct IngestionServerState {
     tx: broadcast::Sender<subscribe_response::Message>,
+    storage: LocalStorageBackend,
     snapshot: Option<Snapshot>,
     cursors: Vec<Cursor>,
 }
@@ -127,15 +134,27 @@ impl ingestion_server::Ingestion for Service {
 
         let message = snapshot.to_response();
 
-        let blocks = state
-            .cursors
-            .iter()
-            .map(|cursor| BlockIngested {
+        let mut blocks = Vec::new();
+        for cursor in state.cursors.iter() {
+            let prefix = format!("blocks/{}-{}", cursor.number, cursor.hash_as_hex());
+            let mut reader = state
+                .storage
+                .clone()
+                .get(prefix, "block")
+                .await
+                .map_err(|_| tonic::Status::internal("failed to read block from storage"))?;
+            let mut data = Vec::new();
+            reader
+                .read_to_end(&mut data)
+                .await
+                .map_err(|_| tonic::Status::internal("failed to read block from storage"))?;
+            debug!(cursor = ?cursor, data = data.len(), "sending block to subscriber");
+            let ingested = BlockIngested {
                 cursor: Some(cursor.clone().into()),
-                data: b"deadbeef".to_vec(),
-            })
-            .map(|ingested| subscribe_response::Message::BlockIngested(ingested))
-            .collect::<Vec<_>>();
+                data,
+            };
+            blocks.push(subscribe_response::Message::BlockIngested(ingested));
+        }
 
         let (tx, rx) = mpsc::channel(128);
 
@@ -192,9 +211,10 @@ impl ingestion_server::Ingestion for Service {
 }
 
 impl SharedIngestionServerState {
-    pub fn new() -> Self {
+    pub fn new(storage: LocalStorageBackend) -> Self {
         let (tx, _) = broadcast::channel(128);
         let state = IngestionServerState {
+            storage,
             tx,
             snapshot: None,
             cursors: Vec::new(),
@@ -269,12 +289,25 @@ impl SharedIngestionServerState {
                     let mut state = self.lock().await;
                     state.cursors.push(cursor.clone());
 
-                    // TODO: read data from FS
-                    let block_ingested = BlockIngested {
-                        cursor: Some(cursor.into()),
-                        data: b"deadbeef".to_vec(),
+                    if state.tx.receiver_count() == 0 {
+                        continue;
+                    }
+
+                    let prefix = format!("blocks/{}-{}", cursor.number, cursor.hash_as_hex());
+                    let mut reader = state.storage.clone().get(&prefix, "block").await?;
+                    let mut data = Vec::new();
+                    reader
+                        .read_to_end(&mut data)
+                        .await
+                        .change_context(DnaError::Fatal)
+                        .attach_printable("failed to read block from storage")?;
+                    debug!(prefix, data = data.len(), "sending block to subscriber");
+                    let ingested = BlockIngested {
+                        cursor: Some(cursor.clone().into()),
+                        data,
                     };
-                    state.send(subscribe_response::Message::BlockIngested(block_ingested));
+
+                    state.send(subscribe_response::Message::BlockIngested(ingested));
                 }
                 _ => {
                     return Err(DnaError::Fatal)
@@ -306,6 +339,7 @@ mod tests {
         core::Cursor,
         ingestion::{IngestedBlock, IngestionState, Snapshot, SnapshotChange},
         segment::SegmentOptions,
+        storage::LocalStorageBackend,
     };
 
     use super::SharedIngestionServerState;
@@ -315,9 +349,10 @@ mod tests {
     #[tokio::test]
     pub async fn test_update_shared_ingestion_state() {
         let ct = CancellationToken::new();
+        let storage = LocalStorageBackend::new("/tmp/dna-test-update-shared-ingestion-state");
         let (ingestion_tx, ingestion_rx) = mpsc::channel(128);
         let ingestion_stream = tokio_stream::wrappers::ReceiverStream::new(ingestion_rx);
-        let shared_state = SharedIngestionServerState::new();
+        let shared_state = SharedIngestionServerState::new(storage);
 
         let task_handle = tokio::spawn(
             shared_state
