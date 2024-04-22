@@ -83,11 +83,12 @@ where
         )
         .start(snapshot.starting_block_number(), ct.clone());
 
-        let snapshot_changes = SegmenterService::new(self.local_cache, self.storage, block_stream)
-            .start(snapshot, ct.clone());
+        let snapshot_changes =
+            SegmenterService::new(self.local_cache.clone(), self.storage, block_stream)
+                .start(snapshot, ct.clone());
 
         let address = "0.0.0.0:7000".parse().expect("parse address");
-        IngestionServer::new(snapshot_changes)
+        IngestionServer::new(self.local_cache.clone(), snapshot_changes)
             .start(address, ct)
             .await
     }
