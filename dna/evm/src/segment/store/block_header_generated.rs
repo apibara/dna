@@ -70,6 +70,7 @@ impl<'a> BlockHeader<'a> {
         builder.add_excess_blob_gas(args.excess_blob_gas);
         builder.add_blob_gas_used(args.blob_gas_used);
         builder.add_nonce(args.nonce);
+        builder.add_timestamp(args.timestamp);
         builder.add_number(args.number);
         if let Some(x) = args.parent_beacon_block_root {
             builder.add_parent_beacon_block_root(x);
@@ -97,9 +98,6 @@ impl<'a> BlockHeader<'a> {
         }
         if let Some(x) = args.extra_data {
             builder.add_extra_data(x);
-        }
-        if let Some(x) = args.timestamp {
-            builder.add_timestamp(x);
         }
         if let Some(x) = args.gas_used {
             builder.add_gas_used(x);
@@ -229,11 +227,15 @@ impl<'a> BlockHeader<'a> {
         unsafe { self._tab.get::<U256>(BlockHeader::VT_GAS_USED, None) }
     }
     #[inline]
-    pub fn timestamp(&self) -> Option<&'a U256> {
+    pub fn timestamp(&self) -> u64 {
         // Safety:
         // Created from valid Table for this object
         // which contains a valid value in this slot
-        unsafe { self._tab.get::<U256>(BlockHeader::VT_TIMESTAMP, None) }
+        unsafe {
+            self._tab
+                .get::<u64>(BlockHeader::VT_TIMESTAMP, Some(0))
+                .unwrap()
+        }
     }
     #[inline]
     pub fn extra_data(&self) -> Option<flatbuffers::Vector<'a, u8>> {
@@ -383,7 +385,7 @@ impl flatbuffers::Verifiable for BlockHeader<'_> {
             .visit_field::<U256>("difficulty", Self::VT_DIFFICULTY, false)?
             .visit_field::<U256>("gas_limit", Self::VT_GAS_LIMIT, false)?
             .visit_field::<U256>("gas_used", Self::VT_GAS_USED, false)?
-            .visit_field::<U256>("timestamp", Self::VT_TIMESTAMP, false)?
+            .visit_field::<u64>("timestamp", Self::VT_TIMESTAMP, false)?
             .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, u8>>>(
                 "extra_data",
                 Self::VT_EXTRA_DATA,
@@ -427,7 +429,7 @@ pub struct BlockHeaderArgs<'a> {
     pub difficulty: Option<&'a U256>,
     pub gas_limit: Option<&'a U256>,
     pub gas_used: Option<&'a U256>,
-    pub timestamp: Option<&'a U256>,
+    pub timestamp: u64,
     pub extra_data: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, u8>>>,
     pub mix_hash: Option<&'a B256>,
     pub nonce: u64,
@@ -461,7 +463,7 @@ impl<'a> Default for BlockHeaderArgs<'a> {
             difficulty: None,
             gas_limit: None,
             gas_used: None,
-            timestamp: None,
+            timestamp: 0,
             extra_data: None,
             mix_hash: None,
             nonce: 0,
@@ -544,9 +546,9 @@ impl<'a: 'b, 'b> BlockHeaderBuilder<'a, 'b> {
             .push_slot_always::<&U256>(BlockHeader::VT_GAS_USED, gas_used);
     }
     #[inline]
-    pub fn add_timestamp(&mut self, timestamp: &U256) {
+    pub fn add_timestamp(&mut self, timestamp: u64) {
         self.fbb_
-            .push_slot_always::<&U256>(BlockHeader::VT_TIMESTAMP, timestamp);
+            .push_slot::<u64>(BlockHeader::VT_TIMESTAMP, timestamp, 0);
     }
     #[inline]
     pub fn add_extra_data(
