@@ -47,6 +47,7 @@ impl<S, C> IngestionService<S, C>
 where
     S: StorageBackend + Send + Sync + 'static,
     <S as StorageBackend>::Reader: Unpin + Send,
+    <S as StorageBackend>::Writer: Send,
     C: Stream<Item = ChainChange> + Unpin + Send + Sync + 'static,
 {
     pub fn new(
