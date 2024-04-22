@@ -10,10 +10,15 @@ use apibara_dna_common::{
 };
 use error_stack::ResultExt;
 use futures_util::{Stream, TryFutureExt};
-use tokio::sync::mpsc;
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    sync::mpsc,
+};
 use tokio_stream::{wrappers::ReceiverStream, StreamExt};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
+
+use crate::segment::{store, SegmentBuilder};
 
 use super::downloader::BlockEvent;
 
@@ -43,6 +48,7 @@ struct SegmentData {
 impl<S, I> SegmenterService<S, I>
 where
     S: StorageBackend + Send + Sync + 'static,
+    <S as StorageBackend>::Writer: Send,
     I: Stream<Item = BlockEvent> + Unpin + Send + Sync + 'static,
 {
     pub fn new(local_storage: LocalStorageBackend, storage: S, ingestion_events: I) -> Self {
@@ -237,7 +243,7 @@ where
 
         let segment_options = &self.snapshot.segment_options;
 
-        let Some(_first_cursor) = segment_data.cursors.first() else {
+        let Some(first_cursor) = segment_data.cursors.first() else {
             return Ok(false);
         };
 
@@ -259,9 +265,8 @@ where
             return Ok(false);
         }
 
+        let current_segment_start = segment_options.segment_start(first_cursor.number);
         let next_segment_start = segment_options.segment_start(last_cursor.number + 1);
-
-        info!("writing segment");
         let cursors_to_segment = {
             let cursors = std::mem::take(&mut segment_data.cursors);
             let mut cursors_to_segment = Vec::new();
@@ -290,15 +295,42 @@ where
         );
 
         // TODO: write blocks to segment.
+        info!(segment_start = current_segment_start, "writing segment");
+        let mut buffer = Vec::new();
+        let mut segment_builder = SegmentBuilder::default();
         for cursor in cursors_to_segment {
-            debug!(cursor = ?cursor, "writing block to segment");
+            debug!(cursor = ?cursor, "copying block to segment");
+            let prefix = format!("blocks/{}-{}", cursor.number, cursor.hash_as_hex());
+            let mut reader = self.local_storage.get(&prefix, "block").await?;
+
+            buffer.clear();
+            reader
+                .read_to_end(&mut buffer)
+                .await
+                .change_context(DnaError::Io)
+                .attach_printable("failed to read block")
+                .attach_printable_lazy(|| format!("prefix: {prefix}"))?;
+
+            let single_block = flatbuffers::root::<store::SingleBlock>(&buffer).unwrap();
+            segment_builder.add_single_block(cursor.number, &single_block);
         }
+
+        assert_eq!(segment_builder.header_count(), segment_options.segment_size);
+        let segment_name = segment_options.format_segment_name(current_segment_start);
+        segment_builder
+            .write(&format!("segment/{segment_name}"), &mut self.storage)
+            .await?;
+
+        let index = segment_builder.take_index();
+
+        // TODO: add index to segment group builder.
 
         self.snapshot.revision += 1;
         self.snapshot.ingestion.extra_segment_count += 1;
 
         if current_group_start == next_group_start {
-            // TODO: update snapshot on disk.
+            self.write_snapshot().await?;
+
             return Ok(true);
         }
 
@@ -308,9 +340,31 @@ where
         self.snapshot.ingestion.group_count += 1;
         self.snapshot.ingestion.extra_segment_count = 0;
 
-        // TOO: update snapshot on disk.
+        self.write_snapshot().await?;
 
         self.segment = None;
         Ok(true)
+    }
+
+    async fn write_snapshot(&mut self) -> Result<()> {
+        let mut writer = self.storage.put("", "snapshot").await?;
+
+        let snapshot_bytes = self
+            .snapshot
+            .to_vec()
+            .change_context(DnaError::Fatal)
+            .attach_printable("failed to serialize snapshot")?;
+        writer
+            .write_all(&snapshot_bytes)
+            .await
+            .change_context(DnaError::Io)
+            .attach_printable("failed to write snapshot")?;
+        writer
+            .shutdown()
+            .await
+            .change_context(DnaError::Io)
+            .attach_printable("failed to shutdown snapshot writer")?;
+
+        Ok(())
     }
 }

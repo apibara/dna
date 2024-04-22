@@ -24,6 +24,28 @@ impl<'a> ReceiptSegmentBuilder<'a> {
         }
     }
 
+    pub fn copy_receipts_from_iter<'b>(
+        &mut self,
+        block_number: u64,
+        src_receipts: impl ExactSizeIterator<Item = store::TransactionReceipt<'b>>,
+    ) {
+        if self.first_block_number.is_none() {
+            self.first_block_number = Some(block_number);
+        }
+
+        let receipts = src_receipts
+            .map(|rx| store::TransactionReceiptBuilder::copy_receipt(&mut self.builder, &rx))
+            .collect::<Vec<_>>();
+
+        let receipts = self.builder.create_vector(&receipts);
+
+        let mut block = store::BlockReceiptsBuilder::new(&mut self.builder);
+        block.add_block_number(block_number);
+        block.add_receipts(receipts);
+
+        self.blocks.push(block.finish());
+    }
+
     pub fn add_receipts(&mut self, block_number: u64, receipts: &[models::TransactionReceipt]) {
         if self.first_block_number.is_none() {
             self.first_block_number = Some(block_number);
@@ -78,6 +100,11 @@ pub trait TransactionReceiptBuilderExt<'a: 'b, 'b> {
         builder: &'b mut FlatBufferBuilder<'a>,
         receipt: &models::TransactionReceipt,
     ) -> WIPOffset<store::TransactionReceipt<'a>>;
+
+    fn copy_receipt<'c>(
+        builder: &'b mut FlatBufferBuilder<'a>,
+        receipt: &store::TransactionReceipt<'c>,
+    ) -> WIPOffset<store::TransactionReceipt<'a>>;
 }
 
 impl<'a: 'b, 'b> TransactionReceiptBuilderExt<'a, 'b> for store::TransactionReceiptBuilder<'a, 'b> {
@@ -113,6 +140,49 @@ impl<'a: 'b, 'b> TransactionReceiptBuilderExt<'a, 'b> for store::TransactionRece
         }
         if let Some(blob_gas_price) = receipt.blob_gas_price {
             out.add_blob_gas_price(&blob_gas_price.into());
+        }
+
+        out.finish()
+    }
+
+    fn copy_receipt<'c>(
+        builder: &'b mut FlatBufferBuilder<'a>,
+        receipt: &store::TransactionReceipt<'c>,
+    ) -> WIPOffset<store::TransactionReceipt<'a>> {
+        let mut out = store::TransactionReceiptBuilder::new(builder);
+
+        if let Some(transaction_hash) = receipt.transaction_hash() {
+            out.add_transaction_hash(transaction_hash);
+        }
+        out.add_transaction_index(receipt.transaction_index());
+        if let Some(cumulative_gas_used) = receipt.cumulative_gas_used() {
+            out.add_cumulative_gas_used(cumulative_gas_used);
+        }
+        if let Some(gas_used) = receipt.gas_used() {
+            out.add_gas_used(gas_used);
+        }
+        if let Some(effective_gas_price) = receipt.effective_gas_price() {
+            out.add_effective_gas_price(effective_gas_price);
+        }
+        if let Some(from) = receipt.from() {
+            out.add_from(from);
+        }
+        if let Some(to) = receipt.to() {
+            out.add_to(to);
+        }
+        if let Some(contract_address) = receipt.contract_address() {
+            out.add_contract_address(contract_address);
+        }
+        if let Some(logs_bloom) = receipt.logs_bloom() {
+            out.add_logs_bloom(logs_bloom);
+        }
+        out.add_status_code(receipt.status_code());
+        out.add_transaction_type(receipt.transaction_type());
+        if let Some(blob_gas_used) = receipt.blob_gas_used() {
+            out.add_blob_gas_used(blob_gas_used);
+        }
+        if let Some(blob_gas_price) = receipt.blob_gas_price() {
+            out.add_blob_gas_price(blob_gas_price);
         }
 
         out.finish()

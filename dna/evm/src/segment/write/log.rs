@@ -24,6 +24,28 @@ impl<'a> LogSegmentBuilder<'a> {
         }
     }
 
+    pub fn copy_logs_from_iter<'b>(
+        &mut self,
+        block_number: u64,
+        src_logs: impl ExactSizeIterator<Item = store::Log<'b>>,
+    ) {
+        if self.first_block_number.is_none() {
+            self.first_block_number = Some(block_number);
+        }
+
+        let logs = src_logs
+            .map(|log| store::LogBuilder::copy_log(&mut self.builder, &log))
+            .collect::<Vec<_>>();
+
+        let logs = self.builder.create_vector(&logs);
+
+        let mut block = store::BlockLogsBuilder::new(&mut self.builder);
+        block.add_block_number(block_number);
+        block.add_logs(logs);
+
+        self.blocks.push(block.finish());
+    }
+
     pub fn add_logs(&mut self, block_number: u64, receipts: &[models::TransactionReceipt]) {
         if self.first_block_number.is_none() {
             self.first_block_number = Some(block_number);
@@ -78,6 +100,11 @@ pub trait LogBuilderExt<'a: 'b, 'b> {
         builder: &'b mut FlatBufferBuilder<'a>,
         log: &models::Log,
     ) -> WIPOffset<store::Log<'a>>;
+
+    fn copy_log<'c>(
+        builder: &'b mut FlatBufferBuilder<'a>,
+        log: &store::Log<'c>,
+    ) -> WIPOffset<store::Log<'a>>;
 }
 
 impl<'a: 'b, 'b> LogBuilderExt<'a, 'b> for store::LogBuilder<'a, 'b> {
@@ -108,6 +135,28 @@ impl<'a: 'b, 'b> LogBuilderExt<'a, 'b> for store::LogBuilder<'a, 'b> {
         }
         if let Some(transaction_hash) = log.transaction_hash {
             out.add_transaction_hash(&transaction_hash.into());
+        }
+
+        out.finish()
+    }
+
+    fn copy_log<'c>(
+        builder: &'b mut FlatBufferBuilder<'a>,
+        log: &store::Log<'c>,
+    ) -> WIPOffset<store::Log<'a>> {
+        let topics = builder.create_vector_from_iter(log.topics().unwrap_or_default().iter());
+        let data = builder.create_vector_from_iter(log.data().unwrap_or_default().iter());
+
+        let mut out = store::LogBuilder::new(builder);
+        if let Some(address) = log.address() {
+            out.add_address(address);
+        }
+        out.add_topics(topics);
+        out.add_data(data);
+        out.add_log_index(log.log_index());
+        out.add_transaction_index(log.transaction_index());
+        if let Some(transaction_hash) = log.transaction_hash() {
+            out.add_transaction_hash(transaction_hash);
         }
 
         out.finish()

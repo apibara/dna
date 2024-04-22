@@ -56,6 +56,10 @@ impl Snapshot {
         serde_json::from_str(s)
     }
 
+    pub fn to_vec(&self) -> Result<Vec<u8>, serde_json::Error> {
+        serde_json::to_vec(self)
+    }
+
     /// Returns the first block numbers that should be ingested.
     pub fn starting_block_number(&self) -> u64 {
         let sg_count = self.segment_options.segment_group_blocks();
