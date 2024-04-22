@@ -225,25 +225,20 @@ where
 
     /// Actually write segment if needed. Returns `true` if it wrote a segment.
     async fn do_write_segment_if_needed(&mut self) -> Result<bool> {
-        // If segment is full and cursor is finalized:
-        // - Read blocks and build segment
-        // - Write segment to storage
-        // - Delete blocks from local storage
-        // - Update group
-        // - maybe write group
-        // - write snapshot
-        // Always emit relevant events.
         let Some(segment_data) = self.segment.as_mut() else {
+            debug!("done: no segment data");
             return Ok(false);
         };
 
         if segment_data.cursors.is_empty() {
+            debug!("done: no cursors");
             return Ok(false);
         }
 
         let segment_options = &self.snapshot.segment_options;
 
         let Some(first_cursor) = segment_data.cursors.first() else {
+            debug!("done: no first cursor");
             return Ok(false);
         };
 
@@ -252,6 +247,7 @@ where
             .iter()
             .nth(segment_options.segment_size - 1)
         else {
+            debug!("done: not enough cursors");
             return Ok(false);
         };
 
@@ -260,7 +256,7 @@ where
             debug!(
                 last = last_cursor.number,
                 finalized = self.finalized.number,
-                "data is not finalized yet"
+                "done: data is not finalized yet"
             );
             return Ok(false);
         }
@@ -295,7 +291,7 @@ where
         );
 
         let mut buffer = Vec::new();
-        for cursor in cursors_to_segment {
+        for cursor in &cursors_to_segment {
             debug!(cursor = ?cursor, "copying block to segment");
             let prefix = format!("blocks/{}-{}", cursor.number, cursor.hash_as_hex());
             let mut reader = self.local_storage.get(&prefix, "block").await?;
@@ -324,6 +320,13 @@ where
 
         info!(segment_name, "segment written");
 
+        // Delete blocks from local storage.
+        for cursor in &cursors_to_segment {
+            debug!(cursor = ?cursor, "delete old block data");
+            let prefix = format!("blocks/{}-{}", cursor.number, cursor.hash_as_hex());
+            self.local_storage.remove_prefix(prefix).await?;
+        }
+
         let index = self.segment_builder.take_index();
         self.segment_group_builder
             .add_segment(current_segment_start);
@@ -349,9 +352,15 @@ where
         self.snapshot.ingestion.group_count += 1;
         self.snapshot.ingestion.extra_segment_count = 0;
 
+        // If there are still cursors to process, start a new segment group.
+        if let Some(first_cursor) = segment_data.cursors.first() {
+            segment_data.group_start = first_cursor.clone();
+        } else {
+            self.segment = None;
+        }
+
         self.write_snapshot().await?;
 
-        self.segment = None;
         Ok(true)
     }
 
