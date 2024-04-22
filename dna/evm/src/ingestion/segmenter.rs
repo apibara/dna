@@ -1,11 +1,7 @@
-use std::time::Duration;
-
 use apibara_dna_common::{
     core::Cursor,
     error::{DnaError, Result},
-    ingestion::{IngestedBlock, IngestionState, SealGroup, Segment, Snapshot, SnapshotChange},
-    segment::SegmentOptions,
-    server::SnapshotState,
+    ingestion::{IngestedBlock, Snapshot, SnapshotChange},
     storage::{LocalStorageBackend, StorageBackend},
 };
 use error_stack::ResultExt;
@@ -18,7 +14,7 @@ use tokio_stream::{wrappers::ReceiverStream, StreamExt};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
 
-use crate::segment::{store, SegmentBuilder};
+use crate::segment::{store, SegmentBuilder, SegmentGroupBuilder};
 
 use super::downloader::BlockEvent;
 
@@ -38,6 +34,8 @@ struct Worker<S: StorageBackend + Send + Sync + 'static> {
     snapshot: Snapshot,
     finalized: Cursor,
     segment: Option<SegmentData>,
+    segment_builder: SegmentBuilder<'static>,
+    segment_group_builder: SegmentGroupBuilder<'static>,
 }
 
 struct SegmentData {
@@ -114,6 +112,8 @@ where
             snapshot: starting_snapshot,
             finalized,
             segment: None,
+            segment_builder: SegmentBuilder::default(),
+            segment_group_builder: SegmentGroupBuilder::default(),
         };
 
         loop {
@@ -294,10 +294,7 @@ where
                 + 1,
         );
 
-        // TODO: write blocks to segment.
-        info!(segment_start = current_segment_start, "writing segment");
         let mut buffer = Vec::new();
-        let mut segment_builder = SegmentBuilder::default();
         for cursor in cursors_to_segment {
             debug!(cursor = ?cursor, "copying block to segment");
             let prefix = format!("blocks/{}-{}", cursor.number, cursor.hash_as_hex());
@@ -312,18 +309,26 @@ where
                 .attach_printable_lazy(|| format!("prefix: {prefix}"))?;
 
             let single_block = flatbuffers::root::<store::SingleBlock>(&buffer).unwrap();
-            segment_builder.add_single_block(cursor.number, &single_block);
+            self.segment_builder
+                .add_single_block(cursor.number, &single_block);
         }
 
-        assert_eq!(segment_builder.header_count(), segment_options.segment_size);
+        assert_eq!(
+            self.segment_builder.header_count(),
+            segment_options.segment_size
+        );
         let segment_name = segment_options.format_segment_name(current_segment_start);
-        segment_builder
+        self.segment_builder
             .write(&format!("segment/{segment_name}"), &mut self.storage)
             .await?;
 
-        let index = segment_builder.take_index();
+        info!(segment_name, "segment written");
 
-        // TODO: add index to segment group builder.
+        let index = self.segment_builder.take_index();
+        self.segment_group_builder
+            .add_segment(current_segment_start);
+        self.segment_group_builder.add_index(&index);
+        self.segment_builder.reset();
 
         self.snapshot.revision += 1;
         self.snapshot.ingestion.extra_segment_count += 1;
@@ -334,9 +339,13 @@ where
             return Ok(true);
         }
 
-        info!(segment_group = current_group_start, "writing segment group");
+        let group_name = segment_options.format_segment_group_name(current_group_start);
+        self.segment_group_builder
+            .write(&group_name, &mut self.storage)
+            .await?;
+        self.segment_group_builder.reset();
+        info!(group_name, "segment group written");
 
-        // TODO: write segment group to storage.
         self.snapshot.ingestion.group_count += 1;
         self.snapshot.ingestion.extra_segment_count = 0;
 

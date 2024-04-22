@@ -1,6 +1,6 @@
 use apibara_dna_common::{
     error::{DnaError, Result},
-    ingestion::{IngestionServer, IngestionState, Snapshot},
+    ingestion::{IngestionState, Snapshot, SnapshotChange},
     segment::SegmentOptions,
     storage::{LocalStorageBackend, StorageBackend},
 };
@@ -70,7 +70,10 @@ where
         self
     }
 
-    pub async fn start(mut self, ct: CancellationToken) -> Result<()> {
+    pub async fn start(
+        mut self,
+        ct: CancellationToken,
+    ) -> Result<impl Stream<Item = SnapshotChange>> {
         info!("Starting ingestion service");
 
         let snapshot = self.starting_snapshot().await?;
@@ -88,10 +91,7 @@ where
             SegmenterService::new(self.local_cache.clone(), self.storage, block_stream)
                 .start(snapshot, ct.clone());
 
-        let address = "0.0.0.0:7000".parse().expect("parse address");
-        IngestionServer::new(self.local_cache.clone(), snapshot_changes)
-            .start(address, ct)
-            .await
+        Ok(snapshot_changes)
     }
 
     /// Read the starting snapshot from storage, if any.

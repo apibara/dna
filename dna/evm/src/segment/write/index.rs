@@ -17,6 +17,30 @@ pub struct SegmentIndex {
 }
 
 impl SegmentIndex {
+    pub fn add_logs_sad_face<'a>(
+        &mut self,
+        block_number: u64,
+        logs: impl Iterator<Item = store::Log<'a>>,
+    ) {
+        for log in logs {
+            if let Some(address) = log.address() {
+                let address = address.into();
+                self.log_by_address
+                    .entry(address)
+                    .or_default()
+                    .insert(block_number as u32);
+            }
+
+            if let Some(topic) = log.topics().unwrap_or_default().iter().next() {
+                let topic = topic.into();
+                self.log_by_topic
+                    .entry(topic)
+                    .or_default()
+                    .insert(block_number as u32);
+            }
+        }
+    }
+
     pub fn add_logs(&mut self, block_number: u64, receipts: &[models::TransactionReceipt]) {
         for receipt in receipts {
             for log in &receipt.logs {

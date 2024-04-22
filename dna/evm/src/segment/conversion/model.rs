@@ -15,6 +15,12 @@ impl From<&models::B256> for store::B256 {
     }
 }
 
+impl From<&store::B256> for models::B256 {
+    fn from(value: &store::B256) -> Self {
+        models::B256::new(value.0)
+    }
+}
+
 impl From<models::U256> for store::U256 {
     fn from(value: models::U256) -> Self {
         store::U256(value.to_be_bytes())
@@ -42,6 +48,12 @@ impl From<models::Address> for store::Address {
 impl From<&models::Address> for store::Address {
     fn from(value: &models::Address) -> Self {
         store::Address(value.0.into())
+    }
+}
+
+impl From<&store::Address> for models::Address {
+    fn from(value: &store::Address) -> Self {
+        models::Address(value.0.into())
     }
 }
 
