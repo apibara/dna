@@ -28,10 +28,8 @@ impl<'a> flatbuffers::Follow<'a> for SegmentGroup<'a> {
 
 impl<'a> SegmentGroup<'a> {
     pub const VT_FIRST_BLOCK_NUMBER: flatbuffers::VOffsetT = 4;
-    pub const VT_SEGMENT_SIZE: flatbuffers::VOffsetT = 6;
-    pub const VT_SEGMENT_COUNT: flatbuffers::VOffsetT = 8;
-    pub const VT_LOG_BY_ADDRESS: flatbuffers::VOffsetT = 10;
-    pub const VT_LOG_BY_TOPIC: flatbuffers::VOffsetT = 12;
+    pub const VT_LOG_BY_ADDRESS: flatbuffers::VOffsetT = 6;
+    pub const VT_LOG_BY_TOPIC: flatbuffers::VOffsetT = 8;
 
     pub const fn get_fully_qualified_name() -> &'static str {
         "SegmentGroup"
@@ -54,8 +52,6 @@ impl<'a> SegmentGroup<'a> {
         if let Some(x) = args.log_by_address {
             builder.add_log_by_address(x);
         }
-        builder.add_segment_count(args.segment_count);
-        builder.add_segment_size(args.segment_size);
         builder.finish()
     }
 
@@ -67,28 +63,6 @@ impl<'a> SegmentGroup<'a> {
         unsafe {
             self._tab
                 .get::<u64>(SegmentGroup::VT_FIRST_BLOCK_NUMBER, Some(0))
-                .unwrap()
-        }
-    }
-    #[inline]
-    pub fn segment_size(&self) -> u32 {
-        // Safety:
-        // Created from valid Table for this object
-        // which contains a valid value in this slot
-        unsafe {
-            self._tab
-                .get::<u32>(SegmentGroup::VT_SEGMENT_SIZE, Some(0))
-                .unwrap()
-        }
-    }
-    #[inline]
-    pub fn segment_count(&self) -> u32 {
-        // Safety:
-        // Created from valid Table for this object
-        // which contains a valid value in this slot
-        unsafe {
-            self._tab
-                .get::<u32>(SegmentGroup::VT_SEGMENT_COUNT, Some(0))
                 .unwrap()
         }
     }
@@ -129,8 +103,6 @@ impl flatbuffers::Verifiable for SegmentGroup<'_> {
         use self::flatbuffers::Verifiable;
         v.visit_table(pos)?
             .visit_field::<u64>("first_block_number", Self::VT_FIRST_BLOCK_NUMBER, false)?
-            .visit_field::<u32>("segment_size", Self::VT_SEGMENT_SIZE, false)?
-            .visit_field::<u32>("segment_count", Self::VT_SEGMENT_COUNT, false)?
             .visit_field::<flatbuffers::ForwardsUOffset<
                 flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<AddressBitmapItem>>,
             >>("log_by_address", Self::VT_LOG_BY_ADDRESS, false)?
@@ -143,8 +115,6 @@ impl flatbuffers::Verifiable for SegmentGroup<'_> {
 }
 pub struct SegmentGroupArgs<'a> {
     pub first_block_number: u64,
-    pub segment_size: u32,
-    pub segment_count: u32,
     pub log_by_address: Option<
         flatbuffers::WIPOffset<
             flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<AddressBitmapItem<'a>>>,
@@ -161,8 +131,6 @@ impl<'a> Default for SegmentGroupArgs<'a> {
     fn default() -> Self {
         SegmentGroupArgs {
             first_block_number: 0,
-            segment_size: 0,
-            segment_count: 0,
             log_by_address: None,
             log_by_topic: None,
         }
@@ -178,16 +146,6 @@ impl<'a: 'b, 'b> SegmentGroupBuilder<'a, 'b> {
     pub fn add_first_block_number(&mut self, first_block_number: u64) {
         self.fbb_
             .push_slot::<u64>(SegmentGroup::VT_FIRST_BLOCK_NUMBER, first_block_number, 0);
-    }
-    #[inline]
-    pub fn add_segment_size(&mut self, segment_size: u32) {
-        self.fbb_
-            .push_slot::<u32>(SegmentGroup::VT_SEGMENT_SIZE, segment_size, 0);
-    }
-    #[inline]
-    pub fn add_segment_count(&mut self, segment_count: u32) {
-        self.fbb_
-            .push_slot::<u32>(SegmentGroup::VT_SEGMENT_COUNT, segment_count, 0);
     }
     #[inline]
     pub fn add_log_by_address(
@@ -232,8 +190,6 @@ impl core::fmt::Debug for SegmentGroup<'_> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         let mut ds = f.debug_struct("SegmentGroup");
         ds.field("first_block_number", &self.first_block_number());
-        ds.field("segment_size", &self.segment_size());
-        ds.field("segment_count", &self.segment_count());
         ds.field("log_by_address", &self.log_by_address());
         ds.field("log_by_topic", &self.log_by_topic());
         ds.finish()
