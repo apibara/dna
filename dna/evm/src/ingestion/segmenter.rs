@@ -62,7 +62,7 @@ where
         starting_snapshot: Snapshot,
         ct: CancellationToken,
     ) -> impl Stream<Item = SnapshotChange> {
-        let (tx, rx) = mpsc::channel(128);
+        let (tx, rx) = mpsc::channel(1024);
 
         tokio::spawn(
             self.segmenter_loop(starting_snapshot, tx, ct)
@@ -238,7 +238,10 @@ where
         let segment_options = &self.snapshot.segment_options;
 
         let Some(first_cursor) = segment_data.cursors.first() else {
-            debug!("done: no first cursor");
+            debug!(
+                cursors_len = segment_data.cursors.len(),
+                "done: no first cursor"
+            );
             return Ok(false);
         };
 
@@ -247,7 +250,10 @@ where
             .iter()
             .nth(segment_options.segment_size - 1)
         else {
-            debug!("done: not enough cursors");
+            debug!(
+                cursors_len = segment_data.cursors.len(),
+                "done: not enough cursors"
+            );
             return Ok(false);
         };
 

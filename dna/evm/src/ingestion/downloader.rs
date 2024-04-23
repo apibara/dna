@@ -75,7 +75,7 @@ where
         first_block_number: u64,
         ct: CancellationToken,
     ) -> impl Stream<Item = BlockEvent> {
-        let (tx, rx) = mpsc::channel(128);
+        let (tx, rx) = mpsc::channel(1024);
 
         tokio::spawn(
             self.download_loop(first_block_number, tx, ct)
@@ -143,7 +143,7 @@ where
                     let ingested = result.attach_printable("block download failed")?;
 
                     let Ok(_) = tx.send(BlockEvent::Ingested(ingested)).await else {
-                        break;
+                        todo!();
                     };
 
                     if current_block_number < head.number {
@@ -170,12 +170,12 @@ where
                         }
                         ChainChange::NewFinalized(new_finalized) => {
                             let Ok(_) = tx.send(BlockEvent::Finalized(new_finalized)).await else {
-                                break;
+                                todo!();
                             };
                         }
                         ChainChange::Invalidate => {
                             let Ok(_) = tx.send(BlockEvent::Invalidate).await else {
-                                break;
+                                todo!();
                             };
                         }
                         _ => {}
