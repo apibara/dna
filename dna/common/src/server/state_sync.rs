@@ -136,6 +136,10 @@ mod worker {
                 todo!();
             };
 
+            // Don't delete blocks right after they become invalid since they may still
+            // be in use by clients. Remove them after a couple more messages.
+            let mut prev_removed_cursors: Vec<Cursor> = Vec::new();
+
             while let Some(message) = response
                 .try_next()
                 .await
@@ -160,7 +164,8 @@ mod worker {
                             .collect();
                         debug!(?finalized, ?new_state, removed_cursors = %removed_cursors.len(), "state changed");
 
-                        for cursor in removed_cursors {
+                        // Remove old cursors from storage.
+                        for cursor in prev_removed_cursors.drain(..) {
                             let prefix =
                                 format!("blocks/{}-{}", cursor.number, cursor.hash_as_hex());
                             if self
@@ -176,6 +181,8 @@ mod worker {
                                     .attach_printable("failed to remove block from storage")?;
                             }
                         }
+
+                        prev_removed_cursors = removed_cursors;
 
                         let Ok(_) = self
                             .tx
