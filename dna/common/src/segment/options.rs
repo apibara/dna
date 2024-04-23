@@ -61,10 +61,19 @@ impl SegmentOptions {
         )
     }
 
+    /// Converts `self` to its protobuf representation.
     pub fn to_proto(&self) -> ingestion::SegmentOptions {
         ingestion::SegmentOptions {
             segment_size: self.segment_size as u32,
             group_size: self.group_size as u32,
+        }
+    }
+
+    /// Creates a `SegmentOptions` from its protobuf representation.
+    pub fn from_proto(proto: &ingestion::SegmentOptions) -> Self {
+        Self {
+            segment_size: proto.segment_size as usize,
+            group_size: proto.group_size as usize,
         }
     }
 }

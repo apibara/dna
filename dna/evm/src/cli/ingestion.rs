@@ -89,7 +89,7 @@ where
     .start(ct.clone())
     .await?;
 
-    let address = "0.0.0.0:7000".parse().expect("parse address");
+    let address = "0.0.0.0:7001".parse().expect("parse address");
     IngestionServer::new(local_cache_storage, ingestion_stream)
         .start(address, ct)
         .await

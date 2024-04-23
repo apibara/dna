@@ -1,3 +1,3 @@
-mod snapshot;
+mod state_sync;
 
-pub use self::snapshot::{SnapshotState, SnapshotSyncClient, SnapshotSyncService};
+pub use self::state_sync::IngestionStateSyncServer;
