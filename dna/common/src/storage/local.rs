@@ -29,6 +29,11 @@ impl LocalStorageBackend {
         self.target_dir(prefix).join(filename)
     }
 
+    pub async fn prefix_exists(&mut self, prefix: impl AsRef<str> + Send) -> Result<bool> {
+        let target_dir = self.root.join(prefix.as_ref());
+        Ok(target_dir.exists())
+    }
+
     pub async fn remove(
         &mut self,
         prefix: impl AsRef<str> + Send,

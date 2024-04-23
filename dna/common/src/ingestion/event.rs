@@ -25,17 +25,6 @@ pub struct IngestionState {
 }
 
 #[derive(Debug, Clone)]
-pub struct SealGroup {
-    pub revision: u64,
-    pub first_block_number: u64,
-}
-
-#[derive(Debug, Clone)]
-pub struct Segment {
-    pub first_block_number: u64,
-}
-
-#[derive(Debug, Clone)]
 pub struct IngestedBlock {
     pub cursor: Cursor,
 }
@@ -84,6 +73,17 @@ impl Snapshot {
             )),
         }
     }
+
+    pub fn from_proto(proto: &ingestion::Snapshot) -> Option<Self> {
+        let segment_options = proto.segment_options.as_ref()?;
+        let ingestion_state = proto.ingestion.as_ref()?;
+
+        Some(Self {
+            revision: proto.revision,
+            segment_options: SegmentOptions::from_proto(segment_options),
+            ingestion: IngestionState::from_proto(ingestion_state),
+        })
+    }
 }
 
 impl IngestionState {
@@ -93,6 +93,20 @@ impl IngestionState {
             group_count: self.group_count,
             extra_segment_count: self.extra_segment_count,
         }
+    }
+
+    pub fn from_proto(proto: &ingestion::IngestionState) -> Self {
+        IngestionState {
+            first_block_number: proto.first_block_number,
+            group_count: proto.group_count,
+            extra_segment_count: proto.extra_segment_count,
+        }
+    }
+}
+
+impl From<ingestion::IngestionState> for IngestionState {
+    fn from(value: ingestion::IngestionState) -> Self {
+        IngestionState::from_proto(&value)
     }
 }
 

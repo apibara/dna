@@ -37,3 +37,12 @@ impl From<Cursor> for dna::common::Cursor {
         }
     }
 }
+
+impl From<dna::common::Cursor> for Cursor {
+    fn from(value: dna::common::Cursor) -> Self {
+        Self {
+            number: value.order_key,
+            hash: value.unique_key,
+        }
+    }
+}
