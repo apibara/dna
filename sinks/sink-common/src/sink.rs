@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use apibara_dna_protocol::dna::{Cursor, DataFinality};
+use apibara_dna_protocol::dna::{common::Cursor, stream::DataFinality};
 use async_trait::async_trait;
 use error_stack::Result;
 use serde::de::DeserializeOwned;

@@ -1,4 +1,4 @@
-use apibara_dna_protocol::dna::dna_stream_client::DnaStreamClient;
+use apibara_dna_protocol::dna::stream::dna_stream_client::DnaStreamClient;
 use error_stack::{Result, ResultExt};
 use tonic::transport::Channel;
 use tracing::error;
