@@ -1,6 +1,9 @@
 use std::marker::PhantomData;
 
-use apibara_dna_protocol::dna::{Cursor, StreamDataRequest, StreamDataResponse};
+use apibara_dna_protocol::dna::{
+    common::Cursor,
+    stream::{StreamDataRequest, StreamDataResponse},
+};
 use apibara_script::Script;
 use error_stack::{Result, ResultExt};
 use prost::Message;
@@ -145,7 +148,7 @@ where
         state: &mut PersistedState<F>,
         ct: CancellationToken,
     ) -> Result<(CursorAction, StreamAction), SinkError> {
-        use apibara_dna_protocol::dna::stream_data_response::Message;
+        use apibara_dna_protocol::dna::stream::stream_data_response::Message;
 
         match message.message.ok_or(SinkError::Temporary)? {
             Message::Data(data) => {
@@ -176,7 +179,7 @@ where
             }
             Message::SystemMessage(system_message) => {
                 if let Some(output) = system_message.output {
-                    use apibara_dna_protocol::dna::system_message::Output;
+                    use apibara_dna_protocol::dna::stream::system_message::Output;
                     match output {
                         Output::Stdout(message) => {
                             info!("system message: {}", message);

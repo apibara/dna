@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use apibara_dna_protocol::dna::dna_stream_client::DnaStreamClient;
+use apibara_dna_protocol::dna::stream::dna_stream_client::DnaStreamClient;
 use error_stack::{Result, ResultExt};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;

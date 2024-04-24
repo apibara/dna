@@ -1,5 +1,5 @@
 export const config = {
-  streamUrl: "http://localhost:7070",
+  streamUrl: "http://localhost:7007",
   startingBlock: 5_000_000,
   network: "evm",
   filter: {

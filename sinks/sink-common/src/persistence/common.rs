@@ -1,4 +1,4 @@
-use apibara_dna_protocol::dna::Cursor;
+use apibara_dna_protocol::dna::common::Cursor;
 use async_trait::async_trait;
 use error_stack::Result;
 use prost::Message;
