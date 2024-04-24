@@ -1,6 +1,9 @@
 use std::time::{Duration, Instant};
 
-use apibara_dna_protocol::dna::{self, dna_stream_client::DnaStreamClient, Cursor, StatusRequest};
+use apibara_dna_protocol::dna::{
+    common::{Cursor, StatusRequest},
+    stream::dna_stream_client::DnaStreamClient,
+};
 use apibara_observability::ObservableGauge;
 use error_stack::{Result, ResultExt};
 use tokio::sync::{mpsc, oneshot};

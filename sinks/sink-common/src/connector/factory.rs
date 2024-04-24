@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use apibara_dna_protocol::dna::Cursor;
+use apibara_dna_protocol::dna::common::Cursor;
 use apibara_script::Script;
 use error_stack::{Result, ResultExt};
 use prost::Message;

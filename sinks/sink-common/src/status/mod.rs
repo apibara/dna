@@ -4,7 +4,7 @@ mod service;
 
 use std::{net::SocketAddr, pin::Pin};
 
-use apibara_dna_protocol::dna::dna_stream_client::DnaStreamClient;
+use apibara_dna_protocol::dna::stream::dna_stream_client::DnaStreamClient;
 use error_stack::Result;
 use futures::Future;
 use tokio::net::TcpListener;

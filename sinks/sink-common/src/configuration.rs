@@ -1,7 +1,7 @@
 use std::{env, fmt, net::AddrParseError, path::PathBuf, str::FromStr, time::Duration, vec};
 
 use apibara_dna_protocol::{
-    dna::{Cursor, DataFinality},
+    dna::{common::Cursor, stream::DataFinality},
     evm,
 };
 use apibara_script::ScriptOptions as IndexerOptions;

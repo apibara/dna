@@ -49,13 +49,17 @@ impl Snapshot {
         serde_json::to_vec(self)
     }
 
+    /// Returns the first block that is not part of a group.
+    pub fn first_non_grouped_block_number(&self) -> u64 {
+        self.ingestion.first_block_number
+            + self.ingestion.group_count as u64 * self.segment_options.segment_group_blocks()
+    }
+
     /// Returns the first block numbers that should be ingested.
     pub fn starting_block_number(&self) -> u64 {
-        let sg_count = self.segment_options.segment_group_blocks();
-        let blocks_sealed_count = self.ingestion.group_count as u64 * sg_count;
         let blocks_extra_count =
             self.ingestion.extra_segment_count as u64 * self.segment_options.segment_size as u64;
-        self.ingestion.first_block_number + blocks_sealed_count + blocks_extra_count
+        self.first_non_grouped_block_number() + blocks_extra_count
     }
 
     pub fn to_proto(&self) -> ingestion::Snapshot {

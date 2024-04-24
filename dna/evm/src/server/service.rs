@@ -1,14 +1,21 @@
-use std::collections::{BTreeMap, HashSet};
+use std::{
+    collections::{BTreeMap, HashSet},
+    time::Duration,
+};
 
-use apibara_dna_common::error::DnaError;
-use apibara_dna_common::segment::SegmentOptions;
-use apibara_dna_common::server::{SnapshotState, SnapshotSyncClient};
-use apibara_dna_common::storage::StorageBackend;
-use apibara_dna_common::{error::Result, segment::SnapshotReader};
-use apibara_dna_protocol::dna::{stream_data_response, Cursor, Data, DataFinality};
+use apibara_dna_common::{
+    core::Cursor,
+    error::{DnaError, Result},
+    ingestion::Snapshot,
+    segment::SegmentOptions,
+    storage::{LocalStorageBackend, StorageBackend},
+};
 use apibara_dna_protocol::{
     dna::{
-        dna_stream_server, StatusRequest, StatusResponse, StreamDataRequest, StreamDataResponse,
+        common::{StatusRequest, StatusResponse},
+        stream::{
+            self, dna_stream_server, stream_data_response, StreamDataRequest, StreamDataResponse,
+        },
     },
     evm,
 };
@@ -21,55 +28,55 @@ use tokio_stream::wrappers::ReceiverStream;
 use tonic::Request;
 use tracing::{debug, error, info, warn};
 
-use crate::segment::{
-    store, BlockHeaderSegmentReader, LogSegmentReader, ReceiptSegmentReader, SegmentGroupExt,
-    SegmentGroupReader, TransactionSegmentReader,
+use crate::{
+    segment::{
+        store, BlockHeaderSegmentReader, LogSegmentReader, ReceiptSegmentReader, SegmentGroupExt,
+        SegmentGroupReader, TransactionSegmentReader,
+    },
+    server::cursor_producer::NextBlock,
 };
 
+use super::cursor_producer::{self, BlockNumberOrCursor, CursorProducer};
 use super::filter::SegmentFilter;
 
 type TonicResult<T> = std::result::Result<T, tonic::Status>;
 
-pub struct Service<S>
+const DEFAULT_BUFFER_SIZE: usize = 1024 * 1024 * 1024;
+
+pub struct DnaService<S>
 where
     S: StorageBackend + Send + Sync + 'static,
     <S as StorageBackend>::Reader: Unpin + Send,
 {
     storage: S,
-    snapshot_client: SnapshotSyncClient,
+    local_storage: LocalStorageBackend,
+    cursor_producer: CursorProducer,
 }
 
-impl<S> Service<S>
+impl<S> DnaService<S>
 where
     S: StorageBackend + Send + Sync + 'static + Clone,
     <S as StorageBackend>::Reader: Unpin + Send,
 {
-    pub fn new(storage: S, snapshot_client: SnapshotSyncClient) -> Self {
+    pub fn new(
+        storage: S,
+        local_storage: LocalStorageBackend,
+        cursor_producer: CursorProducer,
+    ) -> Self {
         Self {
             storage,
-            snapshot_client,
+            local_storage,
+            cursor_producer,
         }
     }
 
-    pub fn into_service(self) -> dna_stream_server::DnaStreamServer<Service<S>> {
+    pub fn into_service(self) -> dna_stream_server::DnaStreamServer<DnaService<S>> {
         dna_stream_server::DnaStreamServer::new(self)
-    }
-
-    #[tracing::instrument(skip_all, err(Debug))]
-    async fn subscribe_to_snapshot(
-        &self,
-    ) -> Result<(SnapshotState, broadcast::Receiver<SnapshotState>)> {
-        // TODO: add retry logic.
-        self.snapshot_client
-            .subscribe()
-            .await
-            .ok_or::<Report<DnaError>>(DnaError::Fatal.into())
-            .attach_printable("failed to subscribe to snapshot")
     }
 }
 
 #[tonic::async_trait]
-impl<S> dna_stream_server::DnaStream for Service<S>
+impl<S> dna_stream_server::DnaStream for DnaService<S>
 where
     S: StorageBackend + Send + Sync + 'static + Clone,
     <S as StorageBackend>::Reader: Unpin + Send,
@@ -80,13 +87,39 @@ where
         &self,
         request: Request<StreamDataRequest>,
     ) -> TonicResult<tonic::Response<Self::StreamDataStream>> {
+        let cursor_producer = self.cursor_producer.clone();
+
         let (tx, rx) = mpsc::channel(128);
         let request = request.into_inner();
 
-        let starting_block_number = request
-            .starting_cursor
-            .map(|c| c.order_key + 1)
-            .unwrap_or_default();
+        let starting_block = match request.starting_cursor {
+            Some(cursor) => {
+                let cursor: Cursor = cursor.into();
+                if cursor.hash.is_empty() {
+                    (cursor.number + 1).into()
+                } else {
+                    cursor.into()
+                }
+            }
+            None => BlockNumberOrCursor::Number(0),
+        };
+
+        if !cursor_producer.is_block_available(&starting_block).await {
+            let most_recent = cursor_producer.most_recent_available_block().await;
+            match most_recent {
+                None => {
+                    return Err(tonic::Status::failed_precondition(
+                        "no block is available yet",
+                    ));
+                }
+                Some(block) => {
+                    return Err(tonic::Status::invalid_argument(format!(
+                        "starting block not yet available. most recent block: {}",
+                        block.number()
+                    )));
+                }
+            }
+        }
 
         let filters = request
             .filter
@@ -95,27 +128,17 @@ where
             .collect::<std::result::Result<Vec<evm::Filter>, _>>()
             .map_err(|_| tonic::Status::invalid_argument("failed to decode filter"))?;
 
-        // TODO: use this + retry.
-        let (starting_snapshot, snapshot_rx) =
-            self.subscribe_to_snapshot().await.map_err(|err| {
-                warn!(err = ?err, "failed to subscribe to snapshot");
-                tonic::Status::internal("internal server error")
-            })?;
-
-        let producer = StreamProducer::init(self.storage.clone(), filters, snapshot_rx, tx.clone())
-            .await
-            .map_err(|err| {
-                warn!(err = ?err, "failed to initialize stream producer");
-                tonic::Status::internal("internal server error")
-            })?;
-
-        tokio::spawn(
-            producer
-                .start(starting_block_number, starting_snapshot)
-                .inspect_err(|err| {
-                    error!(err = ?err, "stream_data error");
-                }),
+        let producer = StreamProducer::init(
+            filters,
+            tx,
+            self.storage.clone(),
+            self.local_storage.clone(),
+            cursor_producer,
         );
+
+        tokio::spawn(producer.start(starting_block).inspect_err(|err| {
+            error!(err = ?err, "stream_data error");
+        }));
 
         Ok(tonic::Response::new(ReceiverStream::new(rx)))
     }
@@ -135,9 +158,9 @@ where
     <S as StorageBackend>::Reader: Unpin + Send + 'static,
 {
     storage: S,
+    local_storage: LocalStorageBackend,
     filters: Vec<SegmentFilter>,
-    segment_options: SegmentOptions,
-    snapshot_rx: broadcast::Receiver<SnapshotState>,
+    cursor_producer: CursorProducer,
     response_tx: mpsc::Sender<TonicResult<StreamDataResponse>>,
 }
 
@@ -146,42 +169,93 @@ where
     S: StorageBackend + Send + Sync + 'static + Clone,
     <S as StorageBackend>::Reader: Unpin + Send + 'static,
 {
-    pub async fn init(
-        storage: S,
+    pub fn init(
         filters: Vec<evm::Filter>,
-        snapshot_rx: broadcast::Receiver<SnapshotState>,
         response_tx: mpsc::Sender<TonicResult<StreamDataResponse>>,
-    ) -> Result<Self> {
-        let segment_options = {
-            let mut snapshot_reader = SnapshotReader::new(storage.clone());
-            let snapshot = snapshot_reader.snapshot_state().await?;
-            snapshot.segment_options
-        };
-
+        storage: S,
+        local_storage: LocalStorageBackend,
+        cursor_producer: CursorProducer,
+    ) -> Self {
         let filters = filters.into_iter().map(SegmentFilter::new).collect();
 
-        let producer = StreamProducer {
-            storage,
+        StreamProducer {
             filters,
-            snapshot_rx,
+            storage,
+            local_storage,
+            cursor_producer,
             response_tx,
-            segment_options,
+        }
+    }
+
+    async fn send_message(&self, message: stream_data_response::Message) {
+        let response = StreamDataResponse {
+            message: Some(message),
+        };
+        let _ = self.response_tx.send(Ok(response)).await;
+    }
+
+    pub async fn send_system_message(&self, message: impl Into<String>, is_err: bool) {
+        use stream::{system_message::Output, SystemMessage};
+        let inner = if is_err {
+            Output::Stderr(message.into())
+        } else {
+            Output::Stdout(message.into())
+        };
+        let message = SystemMessage {
+            output: Some(inner),
         };
 
-        Ok(producer)
+        self.send_message(stream_data_response::Message::SystemMessage(message))
+            .await;
     }
 
     #[tracing::instrument(name = "stream_data", skip_all, err(Debug))]
-    pub async fn start(
-        self,
-        starting_block_number: u64,
-        starting_snapshot: SnapshotState,
-    ) -> Result<()> {
+    pub async fn start(self, starting_block: BlockNumberOrCursor) -> Result<()> {
         info!(num_filters = %self.filters.len(), "starting data stream");
 
         // TODO: this needs to be configurable.
-        let buffer_size = 1024 * 1024 * 1024;
 
+        let mut current_block = starting_block;
+
+        loop {
+            // NOTICE THAT IT SKIPS ONE BLOCK WHEN GOING FROM SEGMENT TO SINGLE BLOCKS.
+            match self.cursor_producer.next_block(&current_block).await? {
+                NextBlock::NotReady => {
+                    self.send_system_message(
+                        "server is starting up. stream will begin shortly",
+                        false,
+                    )
+                    .await;
+                    tokio::time::sleep(Duration::from_secs(2)).await;
+                }
+                NextBlock::HeadReached => {
+                    self.send_system_message("head reached", false).await;
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                }
+                NextBlock::SegmentGroup(starting_block, segment_options) => {
+                    self.send_system_message(format!("segment group {}", starting_block), false)
+                        .await;
+
+                    current_block =
+                        (starting_block + segment_options.segment_group_blocks()).into();
+                    // self.stream_segment_group(starting_block).await?;
+                }
+                NextBlock::Segment(starting_block, segment_options) => {
+                    self.send_system_message(format!("segment {}", starting_block), false)
+                        .await;
+
+                    current_block = (starting_block + segment_options.segment_size as u64).into();
+                    // self.stream_segment(starting_block).await?;
+                }
+                NextBlock::Block(cursor) => {
+                    self.send_system_message(format!("single block {}", cursor), false)
+                        .await;
+                    current_block = cursor.into();
+                }
+                NextBlock::Invalidate => {}
+            }
+        }
+        /*
         let mut segment_group_reader = SegmentGroupReader::new(
             self.storage.clone(),
             self.segment_options.clone(),
@@ -584,10 +658,12 @@ where
 
             current_block_number = segment_group_end;
         }
+        */
 
         Ok(())
     }
 
+    /*
     async fn fill_segment_group_bitmap<'a>(
         &self,
         segment_group: &store::SegmentGroup<'a>,
@@ -638,4 +714,5 @@ where
 
         Ok(group_end)
     }
+    */
 }
