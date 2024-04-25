@@ -3,14 +3,14 @@ use std::sync::Arc;
 use apibara_dna_common::{
     core::Cursor,
     error::{DnaError, Result},
-    ingestion::{IngestionState, Snapshot, SnapshotChange},
+    ingestion::{Snapshot, SnapshotChange},
     segment::SegmentOptions,
 };
 use error_stack::ResultExt;
-use futures_util::{stream::Next, Stream, StreamExt};
+use futures_util::{Stream, StreamExt};
 use tokio::{
     pin,
-    sync::{broadcast, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard},
+    sync::{RwLock, RwLockReadGuard, RwLockWriteGuard},
 };
 use tokio_util::sync::CancellationToken;
 
@@ -108,10 +108,6 @@ impl CursorProducer {
             BlockNumberOrCursor::Cursor(cursor) => cursor.number + 1,
         };
 
-        println!(
-            "block_number: {} {:?}",
-            block_number, cursor_state.snapshot.ingestion
-        );
         if block_number < cursor_state.snapshot.ingestion.first_block_number {
             return false;
         }
@@ -122,6 +118,15 @@ impl CursorProducer {
     pub async fn most_recent_available_block(&self) -> Option<BlockNumberOrCursor> {
         let state = self.inner.read().await;
         state.as_ref().map(|s| s.most_recent_available_block())
+    }
+
+    pub async fn is_block_finalized(&self, cursor: &Cursor) -> bool {
+        let state = self.inner.read().await;
+        state
+            .as_ref()
+            .and_then(|state| state.finalized.as_ref())
+            .map(|finalized| finalized.number >= cursor.number)
+            .unwrap_or(false)
     }
 
     pub async fn next_block(&self, current: &BlockNumberOrCursor) -> Result<NextBlock> {
@@ -165,6 +170,12 @@ impl CursorProducer {
         } else {
             Ok(NextBlock::HeadReached)
         }
+    }
+
+    pub async fn segment_options(&self) -> Option<SegmentOptions> {
+        let state = self.inner.read().await;
+
+        state.as_ref().map(|s| s.snapshot.segment_options.clone())
     }
 }
 
