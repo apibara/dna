@@ -8,6 +8,13 @@ pub struct Cursor {
 }
 
 impl Cursor {
+    pub fn new_finalized(number: u64) -> Self {
+        Self {
+            number,
+            hash: Vec::new(),
+        }
+    }
+
     pub fn new(number: u64, hash: Vec<u8>) -> Self {
         Self { number, hash }
     }
