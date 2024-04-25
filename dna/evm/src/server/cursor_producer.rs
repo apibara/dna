@@ -131,32 +131,36 @@ impl CursorProducer {
             return Ok(NextBlock::NotReady);
         };
 
-        let number = current.number();
+        let next_block_number = current.number() + 1;
 
         let segment_options = &state.snapshot.segment_options;
 
-        if number < state.snapshot.ingestion.first_block_number {
+        if next_block_number < state.snapshot.ingestion.first_block_number {
             return Err(DnaError::Fatal)
                 .attach_printable("requested block is before the first block");
         }
 
-        if number < state.snapshot.first_non_grouped_block_number() {
-            let next_starting_group = segment_options.segment_group_start(number);
+        if next_block_number < state.snapshot.first_non_grouped_block_number() {
+            let next_starting_group = segment_options.segment_group_start(next_block_number);
             return Ok(NextBlock::SegmentGroup(
                 next_starting_group,
                 segment_options.clone(),
             ));
         }
 
-        if number < state.snapshot.starting_block_number() {
-            let next_segment_start = segment_options.segment_start(number);
+        if next_block_number < state.snapshot.starting_block_number() {
+            let next_segment_start = segment_options.segment_start(next_block_number);
             return Ok(NextBlock::Segment(
                 next_segment_start,
                 segment_options.clone(),
             ));
         }
 
-        if let Some(next_cursor) = state.extra_cursors.iter().find(|c| c.number == number + 1) {
+        if let Some(next_cursor) = state
+            .extra_cursors
+            .iter()
+            .find(|c| c.number == next_block_number)
+        {
             Ok(NextBlock::Block(next_cursor.clone()))
         } else {
             Ok(NextBlock::HeadReached)

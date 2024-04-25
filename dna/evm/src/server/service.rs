@@ -233,19 +233,28 @@ where
                     tokio::time::sleep(Duration::from_secs(1)).await;
                 }
                 NextBlock::SegmentGroup(starting_block, segment_options) => {
-                    self.send_system_message(format!("segment group {}", starting_block), false)
-                        .await;
-
                     current_block =
-                        (starting_block + segment_options.segment_group_blocks()).into();
-                    // self.stream_segment_group(starting_block).await?;
+                        (starting_block + segment_options.segment_group_blocks() - 1).into();
+
+                    self.send_system_message(
+                        format!(
+                            "segment group {} - {}",
+                            starting_block,
+                            current_block.number()
+                        ),
+                        false,
+                    )
+                    .await;
                 }
                 NextBlock::Segment(starting_block, segment_options) => {
-                    self.send_system_message(format!("segment {}", starting_block), false)
-                        .await;
+                    current_block =
+                        (starting_block + segment_options.segment_size as u64 - 1).into();
 
-                    current_block = (starting_block + segment_options.segment_size as u64).into();
-                    // self.stream_segment(starting_block).await?;
+                    self.send_system_message(
+                        format!("segment {} - {}", starting_block, current_block.number()),
+                        false,
+                    )
+                    .await;
                 }
                 NextBlock::Block(cursor) => {
                     self.send_system_message(format!("single block {}", cursor), false)
