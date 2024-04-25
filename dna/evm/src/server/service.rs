@@ -266,7 +266,7 @@ where
                     tokio::time::sleep(Duration::from_secs(2)).await;
                 }
                 NextBlock::HeadReached => {
-                    self.send_system_message("head reached", false).await;
+                    debug!("head reached. waiting for new head");
                     tokio::time::sleep(Duration::from_secs(1)).await;
                 }
                 NextBlock::SegmentGroup(starting_block, segment_options) => {

@@ -1,8 +1,12 @@
 use std::collections::{BTreeMap, HashSet};
 
 use apibara_dna_protocol::evm;
+use flatbuffers::ForwardsUOffset;
 
-use crate::segment::{store::SingleBlock, BlockSegment, BlockSegmentReaderOptions};
+use crate::segment::{
+    store::{self, SingleBlock},
+    BlockSegment, BlockSegmentReaderOptions,
+};
 
 pub struct SegmentFilter {
     inner: evm::Filter,
@@ -84,249 +88,58 @@ impl SegmentFilter {
         let block_transactions = block_segment
             .transactions
             .as_ref()
-            .map(|s| s.blocks().unwrap_or_default().get(relative_index));
+            .map(|s| s.blocks().unwrap_or_default().get(relative_index))
+            .and_then(|b| b.transactions());
         let block_logs = block_segment
             .logs
             .as_ref()
-            .map(|s| s.blocks().unwrap_or_default().get(relative_index));
+            .map(|s| s.blocks().unwrap_or_default().get(relative_index))
+            .and_then(|b| b.logs());
         let block_receipts = block_segment
             .receipts
             .as_ref()
-            .map(|s| s.blocks().unwrap_or_default().get(relative_index));
+            .map(|s| s.blocks().unwrap_or_default().get(relative_index))
+            .and_then(|b| b.receipts());
 
-        let mut withdrawals = Vec::new();
-        if self.has_withdrawals() {
-            'withdrawal: for (withdrawal_index, withdrawal) in
-                header.withdrawals().unwrap_or_default().iter().enumerate()
-            {
-                let withdrawal_address: evm::Address = withdrawal
-                    .address()
-                    .expect("withdrawal must have address")
-                    .into();
-                let withdrawal_validator = withdrawal.validator_index();
+        let work_item = WorkItem {
+            header,
+            transactions: block_transactions,
+            logs: block_logs,
+            receipts: block_receipts,
+        };
 
-                for withdrawal_filter in self.withdrawals() {
-                    let should_include_by_address = withdrawal_filter
-                        .address
-                        .as_ref()
-                        .map(|addr| addr == &withdrawal_address);
-
-                    let should_include_by_validator = withdrawal_filter
-                        .validator_index
-                        .as_ref()
-                        .map(|validator| *validator == withdrawal_validator);
-
-                    let should_include =
-                        match (should_include_by_address, should_include_by_validator) {
-                            (None, None) => true,
-                            (Some(a), Some(b)) => a && b,
-                            (Some(a), None) => a,
-                            (None, Some(b)) => b,
-                        };
-
-                    if should_include {
-                        let mut withdrawal: evm::Withdrawal = withdrawal.into();
-                        withdrawal.withdrawal_index = withdrawal_index as u64;
-                        withdrawals.push(withdrawal);
-                        continue 'withdrawal;
-                    }
-                }
-            }
-        }
-
-        // Since transactions, logs, and receipts can reference each other, we need to
-        // keep track of the indices of data we need to include in the response.
-        let mut required_transactions: HashSet<u64> = HashSet::new();
-        let mut required_logs: HashSet<u64> = HashSet::new();
-        let mut required_receipts: HashSet<u64> = HashSet::new();
-
-        let mut transactions = BTreeMap::new();
-
-        if self.has_transactions() {
-            let block_transactions = block_transactions.expect("missing transaction segment");
-
-            for (transaction_index, transaction) in block_transactions
-                .transactions()
-                .unwrap_or_default()
-                .iter()
-                .enumerate()
-            {
-                let transaction_index = transaction_index as u64;
-                let from = transaction
-                    .from()
-                    .expect("transaction must have from")
-                    .into();
-                let to = transaction.to().map(Into::into);
-
-                for transaction_filter in self.transactions() {
-                    if transactions.contains_key(&transaction_index) {
-                        if transaction_filter.include_logs.unwrap_or(false) {
-                            required_logs.insert(transaction_index);
-                        }
-                        if transaction_filter.include_receipt.unwrap_or(false) {
-                            required_receipts.insert(transaction_index);
-                        }
-
-                        continue;
-                    }
-
-                    let should_include_by_from =
-                        transaction_filter.from.as_ref().map(|f| f == &from);
-
-                    let should_include_by_to = match (&transaction_filter.to, &to) {
-                        (None, _) => None,
-                        (Some(a), Some(b)) => Some(a == b),
-                        _ => Some(false),
-                    };
-
-                    let should_include = match (should_include_by_from, should_include_by_to) {
-                        (None, None) => true,
-                        (Some(a), Some(b)) => a && b,
-                        (Some(a), None) => a,
-                        (None, Some(b)) => b,
-                    };
-
-                    if should_include {
-                        let t: evm::Transaction = transaction.into();
-                        assert_eq!(t.transaction_index, transaction_index);
-                        transactions.insert(transaction_index, t);
-
-                        if transaction_filter.include_logs.unwrap_or(false) {
-                            required_logs.insert(transaction_index);
-                        }
-                        if transaction_filter.include_receipt.unwrap_or(false) {
-                            required_receipts.insert(transaction_index);
-                        }
-
-                        continue;
-                    }
-                }
-            }
-        }
-
-        let mut logs = BTreeMap::<u64, _>::new();
-        if self.has_logs() {
-            let block_logs = block_logs.expect("missing log segment");
-
-            for log in block_logs.logs().unwrap_or_default() {
-                let address = log.address().expect("log must have address").into();
-                let topics: Vec<evm::B256> = log
-                    .topics()
-                    .unwrap_or_default()
-                    .iter()
-                    .map(Into::into)
-                    .collect();
-
-                for log_filter in self.logs() {
-                    if logs.contains_key(&log.log_index()) {
-                        if log_filter.include_transaction.unwrap_or(false) {
-                            required_transactions.insert(log.transaction_index());
-                        }
-
-                        if log_filter.include_receipt.unwrap_or(false) {
-                            required_receipts.insert(log.transaction_index());
-                        }
-                        continue;
-                    }
-
-                    let should_include_by_address =
-                        log_filter.address.as_ref().map(|addr| addr == &address);
-
-                    let should_include_by_topics =
-                        {
-                            if log_filter.topics.is_empty() {
-                                None
-                            } else if log_filter.topics.len() > topics.len() {
-                                Some(false)
-                            } else {
-                                Some(log_filter.topics.iter().zip(topics.iter()).all(|(f, t)| {
-                                    f.value.as_ref().map(|fv| fv == t).unwrap_or(true)
-                                }))
-                            }
-                        };
-
-                    let should_include = match (should_include_by_address, should_include_by_topics)
-                    {
-                        (None, None) => true,
-                        (Some(a), Some(b)) => a && b,
-                        (Some(a), None) => a,
-                        (None, Some(b)) => b,
-                    };
-
-                    if should_include {
-                        let l: evm::Log = log.into();
-                        logs.insert(log.log_index(), l);
-
-                        if log_filter.include_transaction.unwrap_or(false) {
-                            required_transactions.insert(log.transaction_index());
-                        }
-
-                        if log_filter.include_receipt.unwrap_or(false) {
-                            required_receipts.insert(log.transaction_index());
-                        }
-
-                        continue;
-                    }
-                }
-            }
-        }
-
-        // Fill additional data required by the filters.
-        for transaction_index in required_transactions {
-            let block_transactions = block_transactions.expect("missing transaction segment");
-            for transaction in block_transactions.transactions().unwrap_or_default() {
-                let should_include = transaction.transaction_index() == transaction_index
-                    && !transactions.contains_key(&transaction_index);
-                if should_include {
-                    let t: evm::Transaction = transaction.into();
-                    transactions.insert(transaction_index, t);
-                }
-            }
-        }
-
-        for transaction_index in required_logs {
-            let block_logs = block_logs.expect("missing log segment");
-            for log in block_logs.logs().unwrap_or_default() {
-                let should_include = log.transaction_index() == transaction_index
-                    && !logs.contains_key(&log.log_index());
-                if should_include {
-                    let l: evm::Log = log.into();
-                    logs.insert(log.log_index(), l);
-                }
-            }
-        }
-
-        let mut receipts = BTreeMap::<u64, _>::new();
-        for transaction_index in required_receipts {
-            let block_receipts = block_receipts.expect("missing receipt segment");
-            for receipt in block_receipts.receipts().unwrap_or_default() {
-                if receipt.transaction_index() == transaction_index {
-                    let r: evm::TransactionReceipt = receipt.into();
-                    receipts.insert(transaction_index, r);
-                }
-            }
-        }
-
-        Some(evm::Block {
-            header: Some(header.into()),
-            withdrawals,
-            transactions: transactions.into_values().collect(),
-            logs: logs.into_values().collect(),
-            receipts: receipts.into_values().collect(),
-        })
+        work_item.filter_block(&self)
     }
 
     pub fn filter_single_block_data<'a>(&self, block: &SingleBlock<'a>) -> Option<evm::Block> {
         let header = block.header().expect("missing header");
+        let work_item = WorkItem {
+            header,
+            transactions: block.transactions(),
+            logs: block.logs(),
+            receipts: block.receipts(),
+        };
+        work_item.filter_block(&self)
+    }
+}
 
-        let block_transactions = block.transactions();
-        let block_logs = block.logs();
-        let block_receipts = block.receipts();
+struct WorkItem<'a> {
+    header: store::BlockHeader<'a>,
+    transactions: Option<flatbuffers::Vector<'a, ForwardsUOffset<store::Transaction<'a>>>>,
+    logs: Option<flatbuffers::Vector<'a, ForwardsUOffset<store::Log<'a>>>>,
+    receipts: Option<flatbuffers::Vector<'a, ForwardsUOffset<store::TransactionReceipt<'a>>>>,
+}
 
+impl<'a> WorkItem<'a> {
+    pub fn filter_block(&self, filter: &SegmentFilter) -> Option<evm::Block> {
         let mut withdrawals = Vec::new();
-        if self.has_withdrawals() {
-            'withdrawal: for (withdrawal_index, withdrawal) in
-                header.withdrawals().unwrap_or_default().iter().enumerate()
+        if filter.has_withdrawals() {
+            'withdrawal: for (withdrawal_index, withdrawal) in self
+                .header
+                .withdrawals()
+                .unwrap_or_default()
+                .iter()
+                .enumerate()
             {
                 let withdrawal_address: evm::Address = withdrawal
                     .address()
@@ -334,7 +147,7 @@ impl SegmentFilter {
                     .into();
                 let withdrawal_validator = withdrawal.validator_index();
 
-                for withdrawal_filter in self.withdrawals() {
+                for withdrawal_filter in filter.withdrawals() {
                     let should_include_by_address = withdrawal_filter
                         .address
                         .as_ref()
@@ -371,10 +184,10 @@ impl SegmentFilter {
 
         let mut transactions = BTreeMap::new();
 
-        if self.has_transactions() {
-            for (transaction_index, transaction) in
-                block_transactions.unwrap_or_default().iter().enumerate()
-            {
+        if filter.has_transactions() {
+            let block_transactions = self.transactions.expect("missing transaction data");
+
+            for (transaction_index, transaction) in block_transactions.iter().enumerate() {
                 let transaction_index = transaction_index as u64;
                 let from = transaction
                     .from()
@@ -382,7 +195,7 @@ impl SegmentFilter {
                     .into();
                 let to = transaction.to().map(Into::into);
 
-                for transaction_filter in self.transactions() {
+                for transaction_filter in filter.transactions() {
                     if transactions.contains_key(&transaction_index) {
                         if transaction_filter.include_logs.unwrap_or(false) {
                             required_logs.insert(transaction_index);
@@ -429,8 +242,10 @@ impl SegmentFilter {
         }
 
         let mut logs = BTreeMap::<u64, _>::new();
-        if self.has_logs() {
-            for log in block_logs.unwrap_or_default() {
+        if filter.has_logs() {
+            let block_logs = self.logs.expect("missing log data");
+
+            for log in block_logs.iter() {
                 let address = log.address().expect("log must have address").into();
                 let topics: Vec<evm::B256> = log
                     .topics()
@@ -439,7 +254,7 @@ impl SegmentFilter {
                     .map(Into::into)
                     .collect();
 
-                for log_filter in self.logs() {
+                for log_filter in filter.logs() {
                     if logs.contains_key(&log.log_index()) {
                         if log_filter.include_transaction.unwrap_or(false) {
                             required_transactions.insert(log.transaction_index());
@@ -495,7 +310,8 @@ impl SegmentFilter {
 
         // Fill additional data required by the filters.
         for transaction_index in required_transactions {
-            for transaction in block_transactions.unwrap_or_default() {
+            let block_transactions = self.transactions.expect("missing transaction data");
+            for transaction in block_transactions.iter() {
                 let should_include = transaction.transaction_index() == transaction_index
                     && !transactions.contains_key(&transaction_index);
                 if should_include {
@@ -506,7 +322,8 @@ impl SegmentFilter {
         }
 
         for transaction_index in required_logs {
-            for log in block_logs.unwrap_or_default() {
+            let block_logs = self.logs.expect("missing log data");
+            for log in block_logs.iter() {
                 let should_include = log.transaction_index() == transaction_index
                     && !logs.contains_key(&log.log_index());
                 if should_include {
@@ -518,7 +335,8 @@ impl SegmentFilter {
 
         let mut receipts = BTreeMap::<u64, _>::new();
         for transaction_index in required_receipts {
-            for receipt in block_receipts.unwrap_or_default() {
+            let block_receipts = self.receipts.expect("missing receipt data");
+            for receipt in block_receipts.iter() {
                 if receipt.transaction_index() == transaction_index {
                     let r: evm::TransactionReceipt = receipt.into();
                     receipts.insert(transaction_index, r);
@@ -526,12 +344,22 @@ impl SegmentFilter {
             }
         }
 
-        Some(evm::Block {
-            header: Some(header.into()),
-            withdrawals,
-            transactions: transactions.into_values().collect(),
-            logs: logs.into_values().collect(),
-            receipts: receipts.into_values().collect(),
-        })
+        let should_send_block = filter.has_required_header()
+            | ((transactions.len() > 0)
+                | (logs.len() > 0)
+                | (receipts.len() > 0)
+                | (withdrawals.len() > 0));
+
+        if should_send_block {
+            Some(evm::Block {
+                header: Some(self.header.into()),
+                withdrawals,
+                transactions: transactions.into_values().collect(),
+                logs: logs.into_values().collect(),
+                receipts: receipts.into_values().collect(),
+            })
+        } else {
+            None
+        }
     }
 }
