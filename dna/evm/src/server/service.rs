@@ -1,42 +1,38 @@
-use std::{
-    collections::{BTreeMap, HashSet},
-    time::Duration,
-};
+use std::{ops::RangeInclusive, time::Duration};
 
 use apibara_dna_common::{
     core::Cursor,
     error::{DnaError, Result},
-    ingestion::Snapshot,
-    segment::SegmentOptions,
     storage::{LocalStorageBackend, StorageBackend},
 };
 use apibara_dna_protocol::{
     dna::{
         common::{StatusRequest, StatusResponse},
         stream::{
-            self, dna_stream_server, stream_data_response, StreamDataRequest, StreamDataResponse,
+            self, dna_stream_server, stream_data_response, Data, DataFinality, StreamDataRequest,
+            StreamDataResponse,
         },
     },
     evm,
 };
-use error_stack::{Report, ResultExt};
+use error_stack::ResultExt;
 use futures_util::TryFutureExt;
 use prost::Message;
 use roaring::RoaringBitmap;
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::Request;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error};
 
 use crate::{
     segment::{
-        store, BlockHeaderSegmentReader, LogSegmentReader, ReceiptSegmentReader, SegmentGroupExt,
-        SegmentGroupReader, TransactionSegmentReader,
+        store, BlockSegment, BlockSegmentReader, BlockSegmentReaderOptions, SegmentGroupExt,
+        SegmentGroupReader,
     },
     server::cursor_producer::NextBlock,
 };
 
-use super::cursor_producer::{self, BlockNumberOrCursor, CursorProducer};
+use super::cursor_producer::{BlockNumberOrCursor, CursorProducer};
 use super::filter::SegmentFilter;
 
 type TonicResult<T> = std::result::Result<T, tonic::Status>;
@@ -209,16 +205,53 @@ where
             .await;
     }
 
+    pub async fn send_data(&self, data: Data) {
+        self.send_message(stream_data_response::Message::Data(data))
+            .await;
+    }
+
     #[tracing::instrument(name = "stream_data", skip_all, err(Debug))]
-    pub async fn start(self, starting_block: BlockNumberOrCursor) -> Result<()> {
-        info!(num_filters = %self.filters.len(), "starting data stream");
+    pub async fn start(self, stream_starting_block: BlockNumberOrCursor) -> Result<()> {
+        debug!(num_filters = %self.filters.len(), "starting data stream");
 
-        // TODO: this needs to be configurable.
+        let mut current_block = stream_starting_block.clone();
 
-        let mut current_block = starting_block;
+        let segment_options = 'outer: loop {
+            for _ in 0..5 {
+                if let Some(segment_options) = self.cursor_producer.segment_options().await {
+                    break 'outer segment_options;
+                }
+                tokio::time::sleep(Duration::from_secs(1)).await;
+            }
+
+            return Err(DnaError::Fatal).attach_printable("failed to get segment options");
+        };
+
+        let mut segment_group_reader = SegmentGroupReader::new(
+            self.storage.clone(),
+            segment_options.clone(),
+            DEFAULT_BUFFER_SIZE,
+        );
+
+        let mut block_segment_reader = {
+            let options = self
+                .filters
+                .iter()
+                .fold(BlockSegmentReaderOptions::default(), |options, filter| {
+                    filter.block_segment_reader_options().merge(&options)
+                });
+            debug!(?options, "create block segment reader");
+            BlockSegmentReader::new(self.storage.clone(), segment_options.clone(), options)
+        };
+
+        let mut block_bitmap = RoaringBitmap::new();
 
         loop {
-            // NOTICE THAT IT SKIPS ONE BLOCK WHEN GOING FROM SEGMENT TO SINGLE BLOCKS.
+            if self.response_tx.is_closed() {
+                debug!("response channel closed. stopping stream");
+                break;
+            }
+
             match self.cursor_producer.next_block(&current_block).await? {
                 NextBlock::NotReady => {
                     self.send_system_message(
@@ -233,463 +266,154 @@ where
                     tokio::time::sleep(Duration::from_secs(1)).await;
                 }
                 NextBlock::SegmentGroup(starting_block, segment_options) => {
-                    current_block =
-                        (starting_block + segment_options.segment_group_blocks() - 1).into();
+                    let ending_block = starting_block + segment_options.segment_group_blocks() - 1;
 
-                    self.send_system_message(
-                        format!(
-                            "segment group {} - {}",
-                            starting_block,
-                            current_block.number()
-                        ),
-                        false,
-                    )
-                    .await;
+                    let segment_group = segment_group_reader
+                        .read(starting_block)
+                        .await
+                        .change_context(DnaError::Fatal)
+                        .attach_printable("failed to read segment group")?;
+
+                    // assert_eq!(segment_group.first_block_number(), starting_block);
+
+                    // Notice that if the user requested data from block X + Y, the segment
+                    // group may contain blocks between X and X + Y.
+                    // Here we filter those blocks out.
+                    let real_starting_block =
+                        u64::max(stream_starting_block.number(), starting_block);
+                    let block_range = real_starting_block as u32..=ending_block as u32;
+                    self.fill_segment_group_bitmap(&segment_group, &mut block_bitmap, block_range);
+
+                    let mut current_segment_start =
+                        segment_options.segment_start(real_starting_block);
+
+                    let mut block_segment = block_segment_reader
+                        .read(current_segment_start)
+                        .await
+                        .change_context(DnaError::Fatal)
+                        .attach_printable("failed to read block segment")?;
+
+                    'block_iter: for block_number in block_bitmap.iter() {
+                        debug!(
+                            block_number,
+                            current_segment_start,
+                            new_start = %segment_options.segment_start(block_number as u64),
+                            "sending group from block"
+                        );
+
+                        // Avoid useless work.
+                        if self.response_tx.is_closed() {
+                            break 'block_iter;
+                        }
+
+                        if current_segment_start
+                            < segment_options.segment_start(block_number as u64)
+                        {
+                            debug!("reading new segment");
+                            current_segment_start =
+                                segment_options.segment_start(block_number as u64);
+                            block_segment = block_segment_reader
+                                .read(current_segment_start)
+                                .await
+                                .change_context(DnaError::Fatal)
+                                .attach_printable("failed to read block segment")?;
+                        }
+
+                        let relative_index =
+                            block_number - block_segment.header.first_block_number() as u32;
+
+                        self.filter_and_send_segment(
+                            block_number as u64,
+                            relative_index as usize,
+                            &block_segment,
+                        )
+                        .await;
+                    }
+
+                    current_block = ending_block.into();
                 }
                 NextBlock::Segment(starting_block, segment_options) => {
-                    current_block =
-                        (starting_block + segment_options.segment_size as u64 - 1).into();
+                    let ending_block = starting_block + segment_options.segment_size as u64 - 1;
+                    let real_starting_block =
+                        u64::max(stream_starting_block.number(), starting_block);
 
-                    self.send_system_message(
-                        format!("segment {} - {}", starting_block, current_block.number()),
-                        false,
-                    )
-                    .await;
+                    let current_segment_start = segment_options.segment_start(real_starting_block);
+
+                    let block_segment = block_segment_reader
+                        .read(current_segment_start)
+                        .await
+                        .change_context(DnaError::Fatal)
+                        .attach_printable("failed to read block segment")?;
+
+                    'block_iter: for block_number in real_starting_block..=ending_block {
+                        // Avoid useless work.
+                        if self.response_tx.is_closed() {
+                            break 'block_iter;
+                        }
+
+                        let relative_index =
+                            block_number - block_segment.header.first_block_number();
+
+                        self.filter_and_send_segment(
+                            block_number as u64,
+                            relative_index as usize,
+                            &block_segment,
+                        )
+                        .await;
+                    }
+
+                    current_block = ending_block.into();
                 }
                 NextBlock::Block(cursor) => {
+                    // - Fill block.
+                    // - Return data from block.
                     self.send_system_message(format!("single block {}", cursor), false)
                         .await;
-                    current_block = cursor.into();
-                }
-                NextBlock::Invalidate => {}
-            }
-        }
-        /*
-        let mut segment_group_reader = SegmentGroupReader::new(
-            self.storage.clone(),
-            self.segment_options.clone(),
-            buffer_size,
-        );
+                    current_block = cursor.clone().into();
 
-        let mut current_block_number = starting_block_number;
-        let mut block_bitmap = RoaringBitmap::new();
-
-        let mut header_segment_reader = BlockHeaderSegmentReader::new(
-            self.storage.clone(),
-            self.segment_options.clone(),
-            buffer_size,
-        );
-
-        let mut log_segment_reader = LogSegmentReader::new(
-            self.storage.clone(),
-            self.segment_options.clone(),
-            buffer_size,
-        );
-
-        let mut transaction_segment_reader = TransactionSegmentReader::new(
-            self.storage.clone(),
-            self.segment_options.clone(),
-            buffer_size,
-        );
-
-        let mut receipt_segment_reader = ReceiptSegmentReader::new(
-            self.storage.clone(),
-            self.segment_options.clone(),
-            buffer_size,
-        );
-
-        while current_block_number < starting_snapshot.sealed_block_number {
-            let segment_group_end = {
-                let current_segment_group_start = self
-                    .segment_options
-                    .segment_group_start(current_block_number);
-
-                debug!(current_segment_group_start, "reading new segment group");
-
-                let segment_group = segment_group_reader
-                    .read(current_segment_group_start)
-                    .await
-                    .change_context(DnaError::Fatal)
-                    .attach_printable("failed to read segment group")?;
-
-                assert_eq!(
-                    segment_group.first_block_number(),
-                    current_segment_group_start
-                );
-
-                self.fill_segment_group_bitmap(&segment_group, &mut block_bitmap)
-                    .await?
-            };
-
-            // Skip as many segments in the group as possible.
-            if let Some(starting_block) = block_bitmap.min() {
-                current_block_number = starting_block as u64;
-            } else {
-                debug!(segment_group_end, "no blocks to read. skip ahead");
-                current_block_number = segment_group_end;
-                continue;
-            }
-
-            let mut current_segment_start =
-                self.segment_options.segment_start(current_block_number);
-            debug!(current_segment_start, "reading starting segment");
-
-            let mut header_segment = header_segment_reader
-                .read(current_segment_start)
-                .await
-                .change_context(DnaError::Fatal)
-                .attach_printable("failed to read header segment")?;
-
-            let mut log_segment = log_segment_reader
-                .read(current_segment_start)
-                .await
-                .change_context(DnaError::Fatal)
-                .attach_printable("failed to read log segment")?;
-
-            let mut transaction_segment = transaction_segment_reader
-                .read(current_segment_start)
-                .await
-                .change_context(DnaError::Fatal)
-                .attach_printable("failed to read transaction segment")?;
-
-            let mut receipt_segment = receipt_segment_reader
-                .read(current_segment_start)
-                .await
-                .change_context(DnaError::Fatal)
-                .attach_printable("failed to read receipt segment")?;
-
-            for block_number in block_bitmap.iter() {
-                if current_segment_start < self.segment_options.segment_start(block_number as u64) {
-                    current_segment_start = self.segment_options.segment_start(block_number as u64);
-                    debug!(current_segment_start, "reading new segment");
-                    header_segment = header_segment_reader
-                        .read(current_segment_start)
-                        .await
-                        .change_context(DnaError::Fatal)
-                        .attach_printable("failed to read header segment")?;
-
-                    log_segment = log_segment_reader
-                        .read(current_segment_start)
-                        .await
-                        .change_context(DnaError::Fatal)
-                        .attach_printable("failed to read log segment")?;
-
-                    transaction_segment = transaction_segment_reader
-                        .read(current_segment_start)
-                        .await
-                        .change_context(DnaError::Fatal)
-                        .attach_printable("failed to read transaction segment")?;
-
-                    receipt_segment = receipt_segment_reader
-                        .read(current_segment_start)
-                        .await
-                        .change_context(DnaError::Fatal)
-                        .attach_printable("failed to read receipt segment")?;
-                }
-
-                debug!(block_number, "inspect block");
-
-                // Read the header to extract the block number and hash (needed by the cursor).
-                let header_index = block_number - header_segment.first_block_number() as u32;
-                let header = header_segment
-                    .headers()
-                    .unwrap_or_default()
-                    .get(header_index as usize);
-
-                let block_transactions = transaction_segment
-                    .blocks()
-                    .unwrap_or_default()
-                    .get(header_index as usize);
-
-                assert_eq!(block_transactions.block_number(), block_number as u64);
-
-                let block_logs = log_segment
-                    .blocks()
-                    .unwrap_or_default()
-                    .get(header_index as usize);
-
-                assert_eq!(block_logs.block_number(), block_number as u64);
-
-                let block_receipts = receipt_segment
-                    .blocks()
-                    .unwrap_or_default()
-                    .get(header_index as usize);
-
-                assert_eq!(block_receipts.block_number(), block_number as u64);
-
-                let mut blocks = vec![];
-                for filter in &self.filters {
-                    // Withdrawals
-                    let mut withdrawals = Vec::new();
-                    if filter.has_withdrawals() {
-                        'withdrawal: for (withdrawal_index, w) in
-                            header.withdrawals().unwrap_or_default().iter().enumerate()
-                        {
-                            let withdrawal_address =
-                                w.address().expect("withdrawal must have address").into();
-                            let withdrawal_validator = w.validator_index();
-
-                            for withdrawal_filter in filter.withdrawals() {
-                                let should_include_by_address = withdrawal_filter
-                                    .address
-                                    .as_ref()
-                                    .map(|addr| addr == &withdrawal_address);
-
-                                let should_include_by_validator = withdrawal_filter
-                                    .validator_index
-                                    .as_ref()
-                                    .map(|validator| *validator == withdrawal_validator);
-
-                                let should_include = match (
-                                    should_include_by_address,
-                                    should_include_by_validator,
-                                ) {
-                                    (None, None) => true,
-                                    (Some(a), Some(b)) => a && b,
-                                    (Some(a), None) => a,
-                                    (None, Some(b)) => b,
-                                };
-
-                                if should_include {
-                                    let mut w: evm::Withdrawal = w.into();
-                                    w.withdrawal_index = withdrawal_index as u64;
-                                    withdrawals.push(w);
-                                    continue 'withdrawal;
-                                }
-                            }
-                        }
-                    }
-
-                    // Since transactions, logs, and receipts can reference each other, we need to
-                    // keep track of the indices of data we need to include in the response.
-                    let mut required_transactions: HashSet<u64> = HashSet::new();
-                    let mut required_logs: HashSet<u64> = HashSet::new();
-                    let mut required_receipts: HashSet<u64> = HashSet::new();
-
-                    let mut transactions = BTreeMap::new();
-
-                    if filter.has_transactions() {
-                        for (transaction_index, t) in block_transactions
-                            .transactions()
-                            .unwrap_or_default()
-                            .iter()
-                            .enumerate()
-                        {
-                            let transaction_index = transaction_index as u64;
-                            let from = t.from().expect("transaction must have from").into();
-                            let to = t.to().map(Into::into);
-
-                            for transaction_filter in filter.transactions() {
-                                if transactions.contains_key(&transaction_index) {
-                                    if transaction_filter.include_logs.unwrap_or(false) {
-                                        required_logs.insert(transaction_index);
-                                    }
-                                    if transaction_filter.include_receipt.unwrap_or(false) {
-                                        required_receipts.insert(transaction_index);
-                                    }
-
-                                    continue;
-                                }
-
-                                let should_include_by_from =
-                                    transaction_filter.from.as_ref().map(|f| f == &from);
-
-                                let should_include_by_to = match (&transaction_filter.to, &to) {
-                                    (None, _) => None,
-                                    (Some(a), Some(b)) => Some(a == b),
-                                    _ => Some(false),
-                                };
-
-                                let should_include =
-                                    match (should_include_by_from, should_include_by_to) {
-                                        (None, None) => true,
-                                        (Some(a), Some(b)) => a && b,
-                                        (Some(a), None) => a,
-                                        (None, Some(b)) => b,
-                                    };
-
-                                if should_include {
-                                    let t: evm::Transaction = t.into();
-                                    assert_eq!(t.transaction_index, transaction_index);
-                                    transactions.insert(transaction_index, t);
-
-                                    if transaction_filter.include_logs.unwrap_or(false) {
-                                        required_logs.insert(transaction_index);
-                                    }
-                                    if transaction_filter.include_receipt.unwrap_or(false) {
-                                        required_receipts.insert(transaction_index);
-                                    }
-
-                                    continue;
-                                }
-                            }
-                        }
-                    }
-
-                    let mut logs = BTreeMap::<u64, _>::new();
-                    if filter.has_logs() {
-                        for log in block_logs.logs().unwrap_or_default() {
-                            let address = log.address().expect("log must have address").into();
-                            let topics: Vec<evm::B256> = log
-                                .topics()
-                                .unwrap_or_default()
-                                .iter()
-                                .map(Into::into)
-                                .collect();
-
-                            for log_filter in filter.logs() {
-                                if logs.contains_key(&log.log_index()) {
-                                    if log_filter.include_transaction.unwrap_or(false) {
-                                        required_transactions.insert(log.transaction_index());
-                                    }
-
-                                    if log_filter.include_receipt.unwrap_or(false) {
-                                        required_receipts.insert(log.transaction_index());
-                                    }
-                                    continue;
-                                }
-
-                                let should_include_by_address =
-                                    log_filter.address.as_ref().map(|addr| addr == &address);
-
-                                let should_include_by_topics = {
-                                    if log_filter.topics.is_empty() {
-                                        None
-                                    } else if log_filter.topics.len() > topics.len() {
-                                        Some(false)
-                                    } else {
-                                        Some(log_filter.topics.iter().zip(topics.iter()).all(
-                                            |(f, t)| {
-                                                f.value.as_ref().map(|fv| fv == t).unwrap_or(true)
-                                            },
-                                        ))
-                                    }
-                                };
-
-                                let should_include =
-                                    match (should_include_by_address, should_include_by_topics) {
-                                        (None, None) => true,
-                                        (Some(a), Some(b)) => a && b,
-                                        (Some(a), None) => a,
-                                        (None, Some(b)) => b,
-                                    };
-
-                                if should_include {
-                                    let l: evm::Log = log.into();
-                                    logs.insert(log.log_index(), l);
-
-                                    if log_filter.include_transaction.unwrap_or(false) {
-                                        required_transactions.insert(log.transaction_index());
-                                    }
-
-                                    if log_filter.include_receipt.unwrap_or(false) {
-                                        required_receipts.insert(log.transaction_index());
-                                    }
-
-                                    continue;
-                                }
-                            }
-                        }
-                    }
-
-                    // Fill additional data required by the filters.
-                    for transaction_index in required_transactions {
-                        for transaction in block_transactions.transactions().unwrap_or_default() {
-                            let should_include = transaction.transaction_index()
-                                == transaction_index
-                                && !transactions.contains_key(&transaction_index);
-                            if should_include {
-                                let t: evm::Transaction = transaction.into();
-                                transactions.insert(transaction_index, t);
-                            }
-                        }
-                    }
-
-                    for transaction_index in required_logs {
-                        for log in block_logs.logs().unwrap_or_default() {
-                            let should_include = log.transaction_index() == transaction_index
-                                && !logs.contains_key(&log.log_index());
-                            if should_include {
-                                let l: evm::Log = log.into();
-                                logs.insert(log.log_index(), l);
-                            }
-                        }
-                    }
-
-                    let mut receipts = BTreeMap::<u64, _>::new();
-                    for transaction_index in required_receipts {
-                        for receipt in block_receipts.receipts().unwrap_or_default() {
-                            if receipt.transaction_index() == transaction_index {
-                                let r: evm::TransactionReceipt = receipt.into();
-                                receipts.insert(transaction_index, r);
-                            }
-                        }
-                    }
-
-                    let block = {
-                        let header = header.into();
-                        evm::Block {
-                            header: Some(header),
-                            withdrawals,
-                            transactions: transactions.into_values().collect(),
-                            logs: logs.into_values().collect(),
-                            receipts: receipts.into_values().collect(),
-                        }
+                    let finality = if self.cursor_producer.is_block_finalized(&cursor).await {
+                        DataFinality::Finalized
+                    } else {
+                        DataFinality::Accepted
                     };
 
-                    blocks.push(block);
+                    let data = self.filters.iter().map(|_| [0u8; 0].to_vec()).collect();
+                    let data = Data {
+                        data,
+                        finality: finality as i32,
+                        cursor: None,
+                        end_cursor: Some(cursor.into()),
+                    };
+                    self.send_data(data).await;
                 }
-
-                let data = Data {
-                    data: blocks.into_iter().map(|b| b.encode_to_vec()).collect(),
-                    finality: DataFinality::Finalized as i32,
-                    cursor: Some(Cursor {
-                        order_key: block_number as u64,
-                        unique_key: vec![],
-                    }),
-                    end_cursor: Some(Cursor {
-                        order_key: block_number as u64,
-                        unique_key: vec![],
-                    }),
-                };
-
-                let Ok(_) = self
-                    .response_tx
-                    .send(Ok(StreamDataResponse {
-                        message: Some(stream_data_response::Message::Data(data)),
-                    }))
-                    .await
-                else {
-                    // channel closed. stop streaming.
-                    return Ok(());
-                };
+                NextBlock::Invalidate => {
+                    self.send_system_message("chain reorganization not handled. bye.", true)
+                        .await;
+                    todo!();
+                }
             }
-
-            current_block_number = segment_group_end;
         }
-        */
+
+        debug!("streaming complete");
 
         Ok(())
     }
 
-    /*
-    async fn fill_segment_group_bitmap<'a>(
+    fn fill_segment_group_bitmap<'a>(
         &self,
         segment_group: &store::SegmentGroup<'a>,
         block_bitmap: &mut RoaringBitmap,
-    ) -> Result<u64> {
+        block_range: RangeInclusive<u32>,
+    ) {
         block_bitmap.clear();
 
-        let group_start = segment_group.first_block_number();
-        let segment_group_blocks = self.segment_options.segment_group_blocks();
-        let group_end = group_start + segment_group_blocks;
-
+        let first_block_in_range = *block_range.start();
         // Use the indices stored in the segment group to build the block bitmap.
         // TODO: what if an index is missing? We should fill the bitmap densely.
         'filter: for filter in &self.filters {
             if filter.has_required_header() || filter.has_withdrawals() || filter.has_transactions()
             {
-                block_bitmap.insert_range(group_start as u32..group_end as u32);
+                block_bitmap.insert_range(block_range);
                 break 'filter;
             }
 
@@ -699,7 +423,7 @@ where
                     log.topics.is_empty() || log.topics.iter().any(|t| t.value.is_none());
 
                 if any_address && any_topic {
-                    block_bitmap.insert_range(group_start as u32..group_end as u32);
+                    block_bitmap.insert_range(block_range);
                     break 'filter;
                 }
 
@@ -721,7 +445,41 @@ where
             }
         }
 
-        Ok(group_end)
+        if let Some(min_in_range) = block_bitmap.min() {
+            if min_in_range < first_block_in_range {
+                block_bitmap.remove_range(..first_block_in_range);
+            }
+        }
     }
-    */
+
+    async fn filter_and_send_segment<'a>(
+        &self,
+        block_number: u64,
+        relative_index: usize,
+        block_segment: &BlockSegment<'a>,
+    ) {
+        let mut data = Vec::with_capacity(self.filters.len());
+        let mut has_block = false;
+
+        for filter in &self.filters {
+            match filter.filter_segment_block_data(relative_index as usize, &block_segment) {
+                None => data.push(Vec::new()),
+                Some(block) => {
+                    has_block = true;
+                    data.push(block.encode_to_vec());
+                }
+            }
+        }
+
+        if has_block {
+            let data = Data {
+                data,
+                finality: DataFinality::Finalized as i32,
+                cursor: None,
+                end_cursor: Some(Cursor::new_finalized(block_number).into()),
+            };
+
+            self.send_data(data).await;
+        }
+    }
 }

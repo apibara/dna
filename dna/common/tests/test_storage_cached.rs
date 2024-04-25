@@ -35,13 +35,13 @@ pub async fn test_cached_storage() {
 
     assert!(cached.exists("segment/file-0", "test.bin").await.unwrap());
 
-    assert_eq!(cached.cache_size("group"), Some(0));
+    assert_eq!(cached.cache_size("group").await, Some(0));
     assert_ne!(cached.max_cache_size("group"), Some(0));
 
-    assert_eq!(cached.cache_size("segment"), Some(0));
+    assert_eq!(cached.cache_size("segment").await, Some(0));
     assert_ne!(cached.max_cache_size("segment"), Some(0));
 
-    assert_eq!(cached.cache_size(""), None);
+    assert_eq!(cached.cache_size("").await, None);
 
     // Items 1 to 3 all fit in the cache.
     for i in 1..4 {
@@ -55,7 +55,7 @@ pub async fn test_cached_storage() {
 
     assert_eq!(count_files(local_dir.path(), "segment"), 3);
     assert_eq!(
-        cached.cache_size("segment"),
+        cached.cache_size("segment").await,
         Some((1 + 2 + 3) * BASE_SIZE as u64)
     );
 
@@ -71,7 +71,7 @@ pub async fn test_cached_storage() {
 
     assert_eq!(count_files(local_dir.path(), "segment"), 3);
     assert_eq!(
-        cached.cache_size("segment"),
+        cached.cache_size("segment").await,
         Some((2 + 3 + 4) * BASE_SIZE as u64)
     );
 
@@ -87,7 +87,7 @@ pub async fn test_cached_storage() {
 
     assert_eq!(count_files(local_dir.path(), "segment"), 3);
     assert_eq!(
-        cached.cache_size("segment"),
+        cached.cache_size("segment").await,
         Some((2 + 3 + 4) * BASE_SIZE as u64)
     );
 
@@ -102,7 +102,10 @@ pub async fn test_cached_storage() {
     }
 
     assert_eq!(count_files(local_dir.path(), "segment"), 1);
-    assert_eq!(cached.cache_size("segment"), Some(9 * BASE_SIZE as u64));
+    assert_eq!(
+        cached.cache_size("segment").await,
+        Some(9 * BASE_SIZE as u64)
+    );
 
     assert_eq!(count_files(local_dir.path(), "group"), 1);
 
