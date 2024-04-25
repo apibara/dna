@@ -144,8 +144,22 @@ where
         &self,
         _request: Request<StatusRequest>,
     ) -> TonicResult<tonic::Response<StatusResponse>> {
-        error!("status not implemented");
-        Ok(tonic::Response::new(StatusResponse::default()))
+        match self.cursor_producer.most_recent_available_block().await {
+            None => {
+                return Err(tonic::Status::failed_precondition(
+                    "no block is available yet",
+                ));
+            }
+            Some(cursor_or_number) => {
+                let cursor: Cursor = cursor_or_number.into();
+                let response = StatusResponse {
+                    current_head: Some(cursor.clone().into()),
+                    last_ingested: Some(cursor.into()),
+                };
+
+                Ok(tonic::Response::new(response))
+            }
+        }
     }
 }
 

@@ -254,6 +254,18 @@ impl From<Cursor> for BlockNumberOrCursor {
     }
 }
 
+impl From<BlockNumberOrCursor> for Cursor {
+    fn from(value: BlockNumberOrCursor) -> Self {
+        match value {
+            BlockNumberOrCursor::Number(number) => Cursor {
+                number,
+                hash: Default::default(),
+            },
+            BlockNumberOrCursor::Cursor(cursor) => cursor,
+        }
+    }
+}
+
 impl BlockNumberOrCursor {
     pub fn number(&self) -> u64 {
         match self {
