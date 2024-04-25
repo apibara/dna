@@ -26,8 +26,9 @@ use tracing::{debug, error};
 
 use crate::{
     segment::{
-        store, BlockSegment, BlockSegmentReader, BlockSegmentReaderOptions, SegmentGroupExt,
-        SegmentGroupReader,
+        store::{self, SingleBlock},
+        BlockSegment, BlockSegmentReader, BlockSegmentReaderOptions, SegmentGroupExt,
+        SegmentGroupReader, SingleBlockReader,
     },
     server::cursor_producer::NextBlock,
 };
@@ -244,6 +245,9 @@ where
             BlockSegmentReader::new(self.storage.clone(), segment_options.clone(), options)
         };
 
+        let mut single_block_reader =
+            SingleBlockReader::new(self.local_storage.clone(), DEFAULT_BUFFER_SIZE);
+
         let mut block_bitmap = RoaringBitmap::new();
 
         loop {
@@ -365,26 +369,15 @@ where
                     current_block = ending_block.into();
                 }
                 NextBlock::Block(cursor) => {
-                    // - Fill block.
-                    // - Return data from block.
-                    self.send_system_message(format!("single block {}", cursor), false)
-                        .await;
+                    let block = single_block_reader
+                        .read(&cursor)
+                        .await
+                        .change_context(DnaError::Fatal)
+                        .attach_printable("failed to read single block")?;
+
+                    self.filter_and_send_single_block(&cursor, &block).await;
+
                     current_block = cursor.clone().into();
-
-                    let finality = if self.cursor_producer.is_block_finalized(&cursor).await {
-                        DataFinality::Finalized
-                    } else {
-                        DataFinality::Accepted
-                    };
-
-                    let data = self.filters.iter().map(|_| [0u8; 0].to_vec()).collect();
-                    let data = Data {
-                        data,
-                        finality: finality as i32,
-                        cursor: None,
-                        end_cursor: Some(cursor.into()),
-                    };
-                    self.send_data(data).await;
                 }
                 NextBlock::Invalidate => {
                     self.send_system_message("chain reorganization not handled. bye.", true)
@@ -481,5 +474,33 @@ where
 
             self.send_data(data).await;
         }
+    }
+
+    async fn filter_and_send_single_block<'a>(&self, cursor: &Cursor, block: &SingleBlock<'a>) {
+        let mut data = Vec::with_capacity(self.filters.len());
+
+        for filter in &self.filters {
+            match filter.filter_single_block_data(block) {
+                None => data.push(Vec::new()),
+                Some(block) => {
+                    data.push(block.encode_to_vec());
+                }
+            }
+        }
+
+        let finality = if self.cursor_producer.is_block_finalized(cursor).await {
+            DataFinality::Finalized
+        } else {
+            DataFinality::Accepted
+        };
+
+        let data = Data {
+            data,
+            finality: finality as i32,
+            cursor: None,
+            end_cursor: Some(cursor.clone().into()),
+        };
+
+        self.send_data(data).await;
     }
 }
