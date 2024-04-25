@@ -38,6 +38,7 @@ flatbuffers.workspace = true
 governor.workspace = true
 hex.workspace = true
 futures-util.workspace = true
+pbjson-types.workspace = true
 prost.workspace = true
 roaring.workspace = true
 tonic.workspace = true

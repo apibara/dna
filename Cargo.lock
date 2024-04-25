@@ -459,6 +459,7 @@ dependencies = [
  "governor",
  "hex",
  "jemallocator",
+ "pbjson-types",
  "prost 0.11.9",
  "roaring",
  "serde",

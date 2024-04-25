@@ -16,6 +16,11 @@ impl From<&evm::B256> for store::B256 {
 
 impl<'a> From<store::BlockHeader<'a>> for evm::BlockHeader {
     fn from(b: store::BlockHeader<'a>) -> Self {
+        let timestamp = pbjson_types::Timestamp {
+            seconds: b.timestamp() as i64,
+            nanos: 0,
+        };
+
         evm::BlockHeader {
             number: b.number(),
             hash: b.hash().map(Into::into),
@@ -29,7 +34,7 @@ impl<'a> From<store::BlockHeader<'a>> for evm::BlockHeader {
             difficulty: b.difficulty().map(Into::into),
             gas_limit: b.gas_limit().map(Into::into),
             gas_used: b.gas_used().map(Into::into),
-            // timestamp: b.timestamp(),
+            timestamp: timestamp.into(),
             extra_data: b.extra_data().unwrap_or_default().iter().collect(),
             mix_hash: b.mix_hash().map(Into::into),
             nonce: b.nonce(),
@@ -46,7 +51,6 @@ impl<'a> From<store::BlockHeader<'a>> for evm::BlockHeader {
             blob_gas_used: b.blob_gas_used(),
             excess_blob_gas: b.excess_blob_gas(),
             parent_beacon_block_root: b.parent_beacon_block_root().map(Into::into),
-            ..Default::default()
         }
     }
 }
