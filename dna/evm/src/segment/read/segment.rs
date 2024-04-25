@@ -96,7 +96,7 @@ pub struct SegmentReader<S: StorageBackend> {
     storage: S,
     segment_options: SegmentOptions,
     buffer: Vec<u8>,
-    verifies_options: VerifierOptions,
+    verifier_options: VerifierOptions,
 }
 
 impl<S> SegmentReader<S>
@@ -106,17 +106,17 @@ where
 {
     pub fn new(storage: S, segment_options: SegmentOptions, buffer_size: usize) -> Self {
         let buffer = vec![0; buffer_size];
-        let verifies_options = VerifierOptions::default();
+        let verifier_options = VerifierOptions::default();
         Self {
             storage,
             segment_options,
             buffer,
-            verifies_options,
+            verifier_options,
         }
     }
 
     pub fn with_verifier_options(mut self, verifies_options: VerifierOptions) -> Self {
-        self.verifies_options = verifies_options;
+        self.verifier_options = verifies_options;
         self
     }
 
@@ -138,7 +138,7 @@ where
                 .change_context(DnaError::Io)? as usize
         };
 
-        let segment = flatbuffers::root_with_opts::<T>(&self.verifies_options, &self.buffer[..len])
+        let segment = flatbuffers::root_with_opts::<T>(&self.verifier_options, &self.buffer[..len])
             .change_context(DnaError::Fatal)
             .attach_printable_lazy(|| format!("failed to read segment {}", segment_name))?;
 
