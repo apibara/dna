@@ -1,6 +1,6 @@
 use std::{ffi::OsString, sync::Arc};
 
-use apibara_core::node::v1alpha2::{Cursor, DataFinality};
+use apibara_dna_protocol::dna::{common::Cursor, stream::DataFinality};
 use apibara_sink_common::{Context, CursorAction, Sink, SinkError};
 use apibara_sink_parquet::{ParquetSink, SinkParquetConfiguration};
 use arrow::{
@@ -103,7 +103,7 @@ async fn test_handle_data() -> Result<(), SinkError> {
     let parquet_batch_size = 10;
     let (output_dir, mut sink) = new_sink(parquet_batch_size).await;
 
-    let finality = DataFinality::DataStatusFinalized;
+    let finality = DataFinality::Finalized;
 
     let cursor = None;
     let end_cursor = new_cursor(5);

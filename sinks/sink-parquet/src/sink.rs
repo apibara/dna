@@ -3,7 +3,7 @@ use std::collections::HashMap;
 
 use std::sync::Arc;
 
-use apibara_core::node::v1alpha2::{Cursor, DataFinality};
+use apibara_dna_protocol::dna::{common::Cursor, stream::DataFinality};
 use apibara_sink_common::batching::Batcher;
 use apibara_sink_common::{Context, CursorAction, Sink, ValueExt};
 use apibara_sink_common::{SinkError, SinkErrorResultExt};
@@ -199,7 +199,7 @@ impl Sink for ParquetSink {
             .unwrap_or(&Vec::<Value>::new())
             .to_vec();
 
-        if ctx.finality != DataFinality::DataStatusFinalized {
+        if ctx.finality != DataFinality::Finalized {
             self.insert_data(&ctx.end_cursor, &batch).await?;
             return Ok(CursorAction::Persist);
         }
