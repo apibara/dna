@@ -1,18 +1,14 @@
 use std::time::{Duration, Instant};
 
-use apibara_dna_protocol::dna::{
-    common::{Cursor, StatusRequest},
-    stream::dna_stream_client::DnaStreamClient,
-};
+use apibara_dna_protocol::{client::StreamClient, dna::common::Cursor};
 use apibara_observability::ObservableGauge;
 use error_stack::{Result, ResultExt};
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
-use tonic::transport::Channel;
 use tonic_health::pb::health_server::{Health, HealthServer};
 use tracing::info;
 
-use crate::{status::server::StatusServer, SinkError, SinkErrorReportExt, SinkErrorResultExt};
+use crate::{status::server::StatusServer, SinkError, SinkErrorResultExt};
 
 use super::client::{StatusMessage, StatusServerClient};
 
@@ -38,7 +34,7 @@ pub struct Cursors {
 
 pub struct StatusService {
     health_reporter: tonic_health::server::HealthReporter,
-    stream_client: DnaStreamClient<Channel>,
+    stream_client: StreamClient,
     request_rx: mpsc::Receiver<RequestMessage>,
     status_rx: mpsc::Receiver<StatusMessage>,
 }
@@ -51,7 +47,7 @@ pub struct StatusServiceClient {
 
 impl StatusService {
     pub fn new(
-        stream_client: DnaStreamClient<Channel>,
+        stream_client: StreamClient,
     ) -> (
         Self,
         StatusServerClient,
@@ -160,11 +156,10 @@ impl StatusService {
         let dna_status = self
             .stream_client
             .clone()
-            .status(StatusRequest::default())
+            .status()
             .await
             .change_context(SinkError::Status)
-            .attach_printable("failed to get dna status")?
-            .into_inner();
+            .attach_printable("failed to get dna status")?;
 
         Ok(dna_status.current_head)
     }

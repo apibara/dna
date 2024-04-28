@@ -1,6 +1,6 @@
 export const config = {
   streamUrl: "http://localhost:7007",
-  startingBlock: 5_751_000,
+  startingBlock: 5_000_000,
   network: "evm",
   filter: {
     header: {},

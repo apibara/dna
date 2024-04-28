@@ -1,8 +1,8 @@
 use std::marker::PhantomData;
 
-use apibara_dna_protocol::dna::{
-    common::Cursor,
-    stream::{StreamDataRequest, StreamDataResponse},
+use apibara_dna_protocol::{
+    client::StreamMessage,
+    dna::{common::Cursor, stream::StreamDataRequest},
 };
 use apibara_script::Script;
 use error_stack::{Result, ResultExt};
@@ -97,8 +97,7 @@ where
             .stream_data(request)
             .await
             .change_context(SinkError::Temporary)
-            .attach_printable("failed to start stream")?
-            .into_inner();
+            .attach_printable("failed to start stream")?;
 
         self.needs_invalidation = false;
 
@@ -112,7 +111,7 @@ where
                 stream_message = data_stream.try_next() => {
                     match stream_message {
                         Err(err) => {
-                            ret = Err(err).change_context(SinkError::Temporary).attach_printable("data stream error");
+                            ret = Err(err).change_context(SinkError::Temporary).attach_printable("data stream timeout");
                             break;
                         }
                         Ok(None) => {
@@ -144,13 +143,13 @@ where
 
     async fn handle_message(
         &mut self,
-        message: StreamDataResponse,
+        message: StreamMessage,
         state: &mut PersistedState<F>,
         ct: CancellationToken,
     ) -> Result<(CursorAction, StreamAction), SinkError> {
         use apibara_dna_protocol::dna::stream::stream_data_response::Message;
 
-        match message.message.ok_or(SinkError::Temporary)? {
+        match message {
             Message::Data(data) => {
                 let finality = data.finality();
                 let end_cursor = data.end_cursor.unwrap_or_default();
