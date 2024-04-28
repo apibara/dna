@@ -1,4 +1,4 @@
-use apibara_core::node::v1alpha2::{Cursor, DataFinality};
+use apibara_dna_protocol::dna::{common::Cursor, stream::DataFinality};
 use apibara_sink_common::{Context, CursorAction, Sink, SinkError};
 use apibara_sink_mongo::{MongoSink, SinkMongoOptions};
 use error_stack::{Result, ResultExt};
@@ -74,7 +74,7 @@ async fn test_handle_data() -> Result<(), SinkError> {
     for order_key in 0..num_batches {
         let cursor = Some(new_cursor(order_key * batch_size));
         let end_cursor = new_cursor((order_key + 1) * batch_size);
-        let finality = DataFinality::DataStatusFinalized;
+        let finality = DataFinality::Finalized;
         let ctx = Context {
             cursor: cursor.clone(),
             end_cursor: end_cursor.clone(),
@@ -130,7 +130,7 @@ async fn test_handle_data_empty_collection() -> Result<(), SinkError> {
 
     let cursor = Some(new_cursor(0));
     let end_cursor = new_cursor(1);
-    let finality = DataFinality::DataStatusFinalized;
+    let finality = DataFinality::Finalized;
     let ctx = Context {
         cursor: cursor.clone(),
         end_cursor: end_cursor.clone(),
@@ -180,7 +180,7 @@ async fn test_handle_invalidate_all(invalidate_from: &Option<Cursor>) -> Result<
     for order_key in 0..num_batches {
         let cursor = Some(new_cursor(order_key * batch_size));
         let end_cursor = new_cursor((order_key + 1) * batch_size);
-        let finality = DataFinality::DataStatusFinalized;
+        let finality = DataFinality::Finalized;
         let batch = new_batch(&cursor, &end_cursor, &collection_names);
         let ctx = Context {
             cursor: cursor.clone(),
@@ -238,7 +238,7 @@ async fn test_handle_invalidate() -> Result<(), SinkError> {
     for order_key in 0..num_batches {
         let cursor = Some(new_cursor(order_key * batch_size));
         let end_cursor = new_cursor((order_key + 1) * batch_size);
-        let finality = DataFinality::DataStatusFinalized;
+        let finality = DataFinality::Finalized;
         let batch = new_batch(&cursor, &end_cursor, &collection_names);
         let ctx = Context {
             cursor: cursor.clone(),
@@ -313,7 +313,7 @@ async fn test_handle_invalidate_with_extra_condition() -> Result<(), SinkError> 
     for order_key in 0..num_batches {
         let cursor = Some(new_cursor(order_key * batch_size));
         let end_cursor = new_cursor((order_key + 1) * batch_size);
-        let finality = DataFinality::DataStatusFinalized;
+        let finality = DataFinality::Finalized;
         let ctx = Context {
             cursor: cursor.clone(),
             end_cursor: end_cursor.clone(),
@@ -382,7 +382,7 @@ async fn test_handle_data_in_entity_mode() -> Result<(), SinkError> {
     };
 
     let mut sink = MongoSink::from_options(options).await?;
-    let finality = DataFinality::DataStatusFinalized;
+    let finality = DataFinality::Finalized;
 
     for collection_name in &collection_names {
         // Insert the first batch.
@@ -535,7 +535,7 @@ async fn test_handle_invalidate_in_entity_mode() -> Result<(), SinkError> {
     };
 
     let mut sink = MongoSink::from_options(options).await?;
-    let finality = DataFinality::DataStatusFinalized;
+    let finality = DataFinality::Finalized;
 
     for collection_name in &collection_names {
         let cursor = Some(new_cursor(0));

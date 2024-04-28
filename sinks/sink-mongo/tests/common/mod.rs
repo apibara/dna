@@ -5,7 +5,7 @@ use mongodb::{
 };
 use testcontainers::{core::WaitFor, GenericImage};
 
-use apibara_core::node::v1alpha2::Cursor;
+use apibara_dna_protocol::dna::common::Cursor;
 use futures_util::TryStreamExt;
 use mongodb::bson::to_document;
 use serde_json::{json, Value};

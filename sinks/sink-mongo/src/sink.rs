@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use apibara_dna_protocol::dna::{Cursor, DataFinality};
+use apibara_dna_protocol::dna::{common::Cursor, stream::DataFinality};
 use apibara_sink_common::batching::Batcher;
 use apibara_sink_common::{Context, CursorAction, DisplayCursor, Sink, ValueExt};
 use apibara_sink_common::{SinkError, SinkErrorResultExt};
