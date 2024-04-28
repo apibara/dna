@@ -1,7 +1,7 @@
 use apibara_dna_common::{
     error::{DnaError, Result},
     server::IngestionStateSyncServer,
-    storage::{CachedStorage, StorageBackend},
+    storage::{CachedStorage, LocalStorageBackend, StorageBackend},
 };
 use clap::Args;
 use error_stack::ResultExt;
@@ -40,20 +40,23 @@ pub async fn run_server(args: StartServerArgs) -> Result<()> {
         .attach_printable("failed to initialize storage backend")?;
 
     // TODO: check why local cache is not working.
-    // let storage = CachedStorage::new(local_cache_storage.clone(), storage, &[]);
+    let local_cache_storage = args.cache.to_local_storage_backend();
+    let storage = CachedStorage::new(local_cache_storage.clone(), storage, &[]);
 
-    run_server_with_storage(args, storage).await
+    run_server_with_storage(args, storage, local_cache_storage).await
 }
 
-pub async fn run_server_with_storage<S>(args: StartServerArgs, storage: S) -> Result<()>
+pub async fn run_server_with_storage<S>(
+    args: StartServerArgs,
+    storage: S,
+    local_cache_storage: LocalStorageBackend,
+) -> Result<()>
 where
     S: StorageBackend + Clone + Send + Sync + 'static,
     <S as StorageBackend>::Reader: Unpin + Send,
     <S as StorageBackend>::Writer: Send,
 {
     let ct = CancellationToken::new();
-
-    let local_cache_storage = args.cache.to_local_storage_backend();
 
     let ingestion_stream = IngestionStateSyncServer::new(
         args.server.ingestion_server.clone(),

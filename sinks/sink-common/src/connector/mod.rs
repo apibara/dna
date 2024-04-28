@@ -11,7 +11,6 @@ use apibara_script::Script;
 use bytesize::ByteSize;
 use error_stack::Result;
 use exponential_backoff::Backoff;
-use futures::Stream;
 use prost::Message;
 use serde::ser::Serialize;
 use tokio_util::sync::CancellationToken;

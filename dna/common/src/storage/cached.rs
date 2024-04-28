@@ -2,7 +2,10 @@ use std::{num::NonZeroUsize, sync::Arc};
 
 use error_stack::ResultExt;
 use lru::LruCache;
-use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
+use tokio::{
+    io::AsyncWriteExt,
+    sync::{RwLock, RwLockReadGuard, RwLockWriteGuard},
+};
 use tonic::async_trait;
 
 use crate::error::{DnaError, Result};
@@ -227,8 +230,13 @@ where
 
         let size = tokio::io::copy(&mut reader, &mut writer)
             .await
-            .change_context(DnaError::Fatal)
+            .change_context(DnaError::Io)
             .attach_printable("failed to copy remote file to local storage")?;
+        writer
+            .shutdown()
+            .await
+            .change_context(DnaError::Io)
+            .attach_printable("failed to shutdown local storage writer")?;
 
         self.get_new_and_insert(prefix, filename, size).await
     }
