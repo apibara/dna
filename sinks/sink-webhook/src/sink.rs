@@ -1,4 +1,4 @@
-use apibara_core::node::v1alpha2::Cursor;
+use apibara_dna_protocol::dna::common::Cursor;
 use apibara_sink_common::{Context, CursorAction, Sink};
 use apibara_sink_common::{SinkError, SinkErrorResultExt};
 use async_trait::async_trait;

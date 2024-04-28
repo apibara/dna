@@ -676,6 +676,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "apibara-sink-webhook"
+version = "0.6.0"
+dependencies = [
+ "apibara-dna-protocol",
+ "apibara-observability",
+ "apibara-sink-common",
+ "async-trait",
+ "clap",
+ "error-stack",
+ "http 0.2.12",
+ "jemallocator",
+ "prost 0.11.9",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "wiremock",
+]
+
+[[package]]
 name = "arc-swap"
 version = "1.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

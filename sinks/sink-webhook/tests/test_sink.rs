@@ -1,4 +1,4 @@
-use apibara_core::node::v1alpha2::{Cursor, DataFinality};
+use apibara_dna_protocol::dna::{common::Cursor, stream::DataFinality};
 use apibara_sink_common::{Context, Sink, SinkError};
 use apibara_sink_webhook::{SinkWebhookConfiguration, WebhookSink};
 use error_stack::{Result, ResultExt};
@@ -53,7 +53,7 @@ async fn test_handle_data() -> Result<(), SinkError> {
     for order_key in 0..num_batches {
         let cursor = Some(new_cursor(order_key * batch_size));
         let end_cursor = new_cursor((order_key + 1) * batch_size);
-        let finality = DataFinality::DataStatusFinalized;
+        let finality = DataFinality::Finalized;
         let batch = new_batch(&cursor, &end_cursor);
 
         let ctx = Context {
@@ -149,7 +149,7 @@ async fn test_handle_data_raw() -> Result<(), SinkError> {
     for order_key in 0..num_batches {
         let cursor = Some(new_cursor(order_key * batch_size));
         let end_cursor = new_cursor((order_key + 1) * batch_size);
-        let finality = DataFinality::DataStatusFinalized;
+        let finality = DataFinality::Finalized;
         let batch = new_batch(&cursor, &end_cursor);
         let ctx = Context {
             cursor,
@@ -222,7 +222,7 @@ async fn test_handle_data_skips_null_values() -> Result<(), SinkError> {
 
     let cursor = Some(new_cursor(0));
     let end_cursor = new_cursor(2);
-    let finality = DataFinality::DataStatusFinalized;
+    let finality = DataFinality::Finalized;
     let ctx = Context {
         cursor: cursor.clone(),
         end_cursor: end_cursor.clone(),
