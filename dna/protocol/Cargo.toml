@@ -15,9 +15,11 @@ error-stack.workspace = true
 hex.workspace = true
 pbjson.workspace = true
 pbjson-types.workspace = true
+pin-project.workspace = true
 prost.workspace = true
 serde.workspace = true
 tonic.workspace = true
+tokio-stream.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true

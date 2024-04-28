@@ -4,13 +4,13 @@ mod service;
 
 use std::{net::SocketAddr, pin::Pin};
 
-use apibara_dna_protocol::dna::stream::dna_stream_client::DnaStreamClient;
+use apibara_dna_protocol::client::StreamClient;
 use error_stack::Result;
 use futures::Future;
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
 use tokio_util::sync::CancellationToken;
-use tonic::transport::{Channel, Server as TonicServer};
+use tonic::transport::Server as TonicServer;
 use tracing::info;
 
 use crate::{SinkError, SinkErrorReportExt, SinkErrorResultExt};
@@ -36,7 +36,7 @@ impl StatusServer {
     /// Starts the status server.
     pub async fn start(
         self,
-        stream_client: DnaStreamClient<Channel>,
+        stream_client: StreamClient,
         ct: CancellationToken,
     ) -> Result<
         (

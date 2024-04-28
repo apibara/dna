@@ -1,10 +1,9 @@
 use std::time::Duration;
 
-use apibara_dna_protocol::dna::stream::dna_stream_client::DnaStreamClient;
+use apibara_dna_protocol::client::StreamClient;
 use error_stack::{Result, ResultExt};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
-use tonic::transport::Channel;
 use tracing::info;
 
 use crate::{
@@ -24,7 +23,7 @@ impl StateManager {
     pub async fn start(
         mut persistence: Persistence,
         status_server: StatusServer,
-        stream_client: DnaStreamClient<Channel>,
+        stream_client: StreamClient,
         ct: CancellationToken,
     ) -> Result<(StateManager, JoinHandle<Result<(), SinkError>>), SinkError> {
         let persistence = persistence.connect().await?;
