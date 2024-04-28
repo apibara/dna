@@ -20,10 +20,10 @@ members = [
     "sinks/sink-options-derive",
     "sinks/sink-options-derive-tests",
     "sinks/sink-console",
-    # "sinks/sink-webhook",
     "sinks/sink-mongo",
     # "sinks/sink-parquet",
     # "sinks/sink-postgres",
+    "sinks/sink-webhook",
     "cli",
     # Runners
     "runners/runner-common",
