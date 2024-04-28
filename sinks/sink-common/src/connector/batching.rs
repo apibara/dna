@@ -165,10 +165,9 @@ impl Batcher {
 
         if self.should_flush() {
             info!(
-                "handling batch of {} elements after {} seconds: {:?}",
+                "handling batch of {} elements after {} seconds",
                 self.buffer.len(),
                 self.buffer.start_at.elapsed().as_secs(),
-                self.buffer.data,
             );
 
             return Ok((

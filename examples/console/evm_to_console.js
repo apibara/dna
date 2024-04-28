@@ -4,22 +4,9 @@ export const config = {
   network: "evm",
   filter: {
     header: {},
-    // transactions: [
-    //   {
-    //     includeLogs: true,
-    //     includeReceipt: true,
-    //   },
-    // ],
-    // withdrawals: [
-    //   {
-    //     address: "0x25c4a76E7d118705e7Ea2e9b7d8C59930d8aCD3b",
-    //   },
-    // ],
     logs: [
       {
         address: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
-        // includeTransaction: true,
-        // includeReceipt: true,
       },
     ],
   },
@@ -45,9 +32,5 @@ export default function transform({
       timestamp: header.timestamp,
     },
     logs,
-    // withdrawals: (withdrawals ?? []).length,
-    // transactions: (transactions ?? []).length,
-    // receipts: (receipts ?? []).length,
-    // logs: (logs ?? []).length,
   };
 }

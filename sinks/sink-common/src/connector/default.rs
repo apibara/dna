@@ -8,7 +8,6 @@ use apibara_script::Script;
 use error_stack::{Result, ResultExt};
 use prost::Message;
 use serde::Serialize;
-use serde_json::Value;
 use tokio_stream::StreamExt;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};

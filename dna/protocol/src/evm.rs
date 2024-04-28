@@ -28,6 +28,7 @@ macro_rules! impl_scalar_traits {
                 self.to_bytes().hash(state);
             }
         }
+
         impl Serialize for $typ {
             fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
             where
@@ -64,7 +65,12 @@ macro_rules! impl_scalar_helpers {
                 bytes_array[$size - size..].copy_from_slice(bytes);
                 Ok(Self::from_bytes(&bytes_array))
             }
+        }
 
+        impl_scalar_helpers!($typ);
+    };
+    ($typ:ident) => {
+        impl $typ {
             pub fn from_hex(s: &str) -> Result<Self, DecodeError> {
                 // must be at least 0x
                 if !s.starts_with("0x") {
@@ -202,6 +208,21 @@ macro_rules! impl_u256_scalar {
 
 impl_u256_scalar!(U256);
 impl_u256_scalar!(B256);
+
+impl_scalar_traits!(HexData);
+impl_scalar_helpers!(HexData);
+
+impl HexData {
+    pub fn from_slice(bytes: &[u8]) -> Result<HexData, DecodeError> {
+        Ok(HexData {
+            value: bytes.to_vec(),
+        })
+    }
+
+    pub fn to_bytes(&self) -> Vec<u8> {
+        self.value.clone()
+    }
+}
 
 #[cfg(test)]
 mod tests {}
