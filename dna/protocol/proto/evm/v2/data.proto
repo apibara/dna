@@ -49,7 +49,7 @@ message BlockHeader {
   // Timestamp.
   google.protobuf.Timestamp timestamp = 13;
   // Extra data.
-  bytes extra_data = 14;
+  HexData extra_data = 14;
   // Mix hash.
   B256 mix_hash = 15;
   // Nonce.
@@ -114,7 +114,7 @@ message Transaction {
   // Miner's tip.
   U128 max_priority_fee_per_gas = 10;
   // Data.
-  bytes input = 11;
+  HexData input = 11;
   // The signature's r,s,v,yParity values.
   Signature signature = 12;
   // Chain ID.
@@ -164,7 +164,7 @@ message Log {
   // Log topics.
   repeated B256 topics = 2;
   // Additional data.
-  bytes data = 3;
+  HexData data = 3;
   // Index of the log in the block.
   uint64 log_index = 4;
   // Index of the transaction that emitted the log.
