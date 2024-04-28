@@ -233,13 +233,11 @@ where
             .await
             .map_err(|err| err.fatal("failed to transform block data"))?;
 
-        let sink_data = Value::Array(vec![output_data]);
-
         let mut cursor_action = if self.needs_invalidation {
             self.needs_invalidation = false;
-            self.sink.handle_replace(&context, &sink_data, ct).await?
+            self.sink.handle_replace(&context, &output_data, ct).await?
         } else {
-            self.sink.handle_data(&context, &sink_data, ct).await?
+            self.sink.handle_data(&context, &output_data, ct).await?
         };
 
         // If it's pending, don't store the cursor.
