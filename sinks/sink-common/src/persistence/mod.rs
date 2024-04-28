@@ -4,7 +4,7 @@ mod fs;
 mod redis;
 
 pub use self::common::{PersistedState, PersistenceClient as PersistenceClientTrait};
-pub use self::default::NoPersistence;
+pub use self::default::InMemoryPersistence;
 pub use self::fs::DirPersistence;
 pub use self::redis::RedisPersistence;
 
@@ -39,7 +39,7 @@ impl Persistence {
             let client = redis::RedisPersistence::connect(redis_url, sink_id).await?;
             Ok(PersistenceClient::new_redis(client))
         } else {
-            Ok(PersistenceClient::new_none())
+            Ok(PersistenceClient::new_in_memory())
         }
     }
 }
@@ -47,7 +47,7 @@ impl Persistence {
 pub enum PersistenceClient {
     Dir(DirPersistence),
     Redis(RedisPersistence),
-    None(NoPersistence),
+    InMemory(InMemoryPersistence),
 }
 
 impl PersistenceClient {
@@ -59,15 +59,15 @@ impl PersistenceClient {
         Self::Redis(inner)
     }
 
-    pub fn new_none() -> Self {
-        Self::None(NoPersistence)
+    pub fn new_in_memory() -> Self {
+        Self::InMemory(InMemoryPersistence::default())
     }
 
     pub async fn lock(&mut self) -> Result<(), SinkError> {
         match self {
             Self::Dir(inner) => inner.lock().await,
             Self::Redis(inner) => inner.lock().await,
-            Self::None(inner) => inner.lock().await,
+            Self::InMemory(inner) => inner.lock().await,
         }
     }
 
@@ -75,7 +75,7 @@ impl PersistenceClient {
         match self {
             Self::Dir(inner) => inner.unlock().await,
             Self::Redis(inner) => inner.unlock().await,
-            Self::None(inner) => inner.unlock().await,
+            Self::InMemory(inner) => inner.unlock().await,
         }
     }
 
@@ -83,7 +83,7 @@ impl PersistenceClient {
         match self {
             Self::Dir(inner) => inner.get_state().await,
             Self::Redis(inner) => inner.get_state().await,
-            Self::None(inner) => inner.get_state().await,
+            Self::InMemory(inner) => inner.get_state().await,
         }
     }
 
@@ -94,7 +94,7 @@ impl PersistenceClient {
         match self {
             Self::Dir(inner) => inner.put_state(state).await,
             Self::Redis(inner) => inner.put_state(state).await,
-            Self::None(inner) => inner.put_state(state).await,
+            Self::InMemory(inner) => inner.put_state(state).await,
         }
     }
 
@@ -102,7 +102,7 @@ impl PersistenceClient {
         match self {
             Self::Dir(inner) => inner.delete_state().await,
             Self::Redis(inner) => inner.delete_state().await,
-            Self::None(inner) => inner.delete_state().await,
+            Self::InMemory(inner) => inner.delete_state().await,
         }
     }
 }
