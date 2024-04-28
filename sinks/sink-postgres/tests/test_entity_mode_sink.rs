@@ -1,4 +1,4 @@
-use apibara_core::node::v1alpha2::DataFinality;
+use apibara_dna_protocol::dna::stream::DataFinality;
 use apibara_sink_common::{Context, Sink, SinkError};
 use apibara_sink_postgres::PostgresSink;
 use async_trait::async_trait;
@@ -41,7 +41,7 @@ async fn test_entity_mode() -> Result<(), SinkError> {
 
     create_test_table(port).await;
 
-    let finality = DataFinality::DataStatusAccepted;
+    let finality = DataFinality::Finalized;
 
     let mut sink = new_entity_mode_sink(port).await;
     assert_eq!(0, sink.all_rows(0).await.len());
@@ -125,7 +125,7 @@ async fn test_entity_mode_invalidate_genesis() -> Result<(), SinkError> {
 
     create_test_table(port).await;
 
-    let finality = DataFinality::DataStatusAccepted;
+    let finality = DataFinality::Accepted;
 
     let mut sink = new_entity_mode_sink(port).await;
     assert_eq!(0, sink.all_rows(0).await.len());
@@ -168,7 +168,7 @@ async fn test_entity_mode_invalidate() -> Result<(), SinkError> {
 
     create_test_table(port).await;
 
-    let finality = DataFinality::DataStatusAccepted;
+    let finality = DataFinality::Accepted;
 
     let mut sink = new_entity_mode_sink(port).await;
     assert_eq!(0, sink.all_rows(0).await.len());
