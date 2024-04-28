@@ -22,7 +22,7 @@ members = [
     "sinks/sink-console",
     "sinks/sink-mongo",
     "sinks/sink-parquet",
-    # "sinks/sink-postgres",
+    "sinks/sink-postgres",
     "sinks/sink-webhook",
     "cli",
     # Runners

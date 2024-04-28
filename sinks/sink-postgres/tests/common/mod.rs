@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use apibara_core::node::v1alpha2::Cursor;
+use apibara_dna_protocol::dna::common::Cursor;
 use apibara_sink_common::Sink;
 use apibara_sink_postgres::{InvalidateColumn, PostgresSink, SinkPostgresOptions};
 use testcontainers::{core::WaitFor, GenericImage};

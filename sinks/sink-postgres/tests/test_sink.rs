@@ -1,4 +1,4 @@
-use apibara_core::node::v1alpha2::{Cursor, DataFinality};
+use apibara_dna_protocol::dna::{common::Cursor, stream::DataFinality};
 use apibara_sink_common::{Context, CursorAction, Sink, SinkError};
 use apibara_sink_postgres::InvalidateColumn;
 use error_stack::Result;
@@ -132,7 +132,7 @@ async fn test_handle_data() -> Result<(), SinkError> {
     for order_key in 0..num_batches {
         let cursor = Some(new_cursor(order_key * batch_size));
         let end_cursor = new_cursor((order_key + 1) * batch_size);
-        let finality = DataFinality::DataStatusFinalized;
+        let finality = DataFinality::Finalized;
         let batch = new_batch(&cursor, &end_cursor);
 
         all_rows.extend(new_rows(&cursor, &end_cursor));
@@ -180,7 +180,7 @@ async fn test_handle_invalidate_all(invalidate_from: &Option<Cursor>) -> Result<
     for order_key in 0..num_batches {
         let cursor = Some(new_cursor(order_key * batch_size));
         let end_cursor = new_cursor((order_key + 1) * batch_size);
-        let finality = DataFinality::DataStatusFinalized;
+        let finality = DataFinality::Finalized;
         let batch = new_batch(&cursor, &end_cursor);
 
         expected_rows.extend(new_rows(&cursor, &end_cursor));
@@ -236,7 +236,7 @@ async fn test_handle_invalidate() -> Result<(), SinkError> {
     for order_key in 0..num_batches {
         let cursor = Some(new_cursor(order_key * batch_size));
         let end_cursor = new_cursor((order_key + 1) * batch_size);
-        let finality = DataFinality::DataStatusFinalized;
+        let finality = DataFinality::Finalized;
         let batch = new_batch(&cursor, &end_cursor);
 
         all_rows.extend(new_rows(&cursor, &end_cursor));
@@ -295,7 +295,7 @@ async fn test_handle_invalidate_with_additional_condition() -> Result<(), SinkEr
     for order_key in 0..num_batches {
         let cursor = Some(new_cursor(order_key * batch_size));
         let end_cursor = new_cursor((order_key + 1) * batch_size);
-        let finality = DataFinality::DataStatusFinalized;
+        let finality = DataFinality::Finalized;
 
         let batch = new_batch_with_additional_columns(
             &cursor,
@@ -346,7 +346,7 @@ async fn test_handle_data_with_unique_column() -> Result<(), SinkError> {
 
     let cursor = Some(new_cursor(0));
     let end_cursor = new_cursor(2);
-    let finality = DataFinality::DataStatusFinalized;
+    let finality = DataFinality::Finalized;
     let batch = json!([
         {
             "block_num": 0,
