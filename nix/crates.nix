@@ -11,6 +11,7 @@ let
     src = craneLib.path workspaceDir;
     filter = path: type:
       (builtins.match ".*proto$" path != null) # include protobufs
+      || (builtins.match ".*fbs$" path != null) # include flatbuffers
       || (builtins.match ".*js$" path != null) # include js (for deno runtime)
       || (craneLib.filterCargoSources path type); # include rust/cargo
   };

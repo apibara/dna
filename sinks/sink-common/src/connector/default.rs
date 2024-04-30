@@ -10,11 +10,12 @@ use prost::Message;
 use serde::Serialize;
 use tokio_stream::StreamExt;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 use crate::{
-    error::SinkError, filter::Filter, sink::Sink, Context, CursorAction, DisplayCursor,
-    PersistedState, SinkErrorReportExt, SinkErrorResultExt, StreamConfigurationOptions,
+    connector::system_message::log_system_message, error::SinkError, filter::Filter, sink::Sink,
+    Context, CursorAction, DisplayCursor, PersistedState, SinkErrorReportExt, SinkErrorResultExt,
+    StreamConfigurationOptions,
 };
 
 use super::{
@@ -176,17 +177,7 @@ where
                 Ok((CursorAction::Skip, StreamAction::Continue))
             }
             Message::SystemMessage(system_message) => {
-                if let Some(output) = system_message.output {
-                    use apibara_dna_protocol::dna::stream::system_message::Output;
-                    match output {
-                        Output::Stdout(message) => {
-                            info!("system message: {}", message);
-                        }
-                        Output::Stderr(message) => {
-                            warn!("system message: {}", message);
-                        }
-                    }
-                }
+                log_system_message(system_message);
                 Ok((CursorAction::Skip, StreamAction::Continue))
             }
         }

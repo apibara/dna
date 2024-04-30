@@ -1,6 +1,9 @@
 use std::marker::PhantomData;
 
-use apibara_dna_protocol::dna::common::Cursor;
+use apibara_dna_protocol::{
+    client::{DataStream, StreamMessage},
+    dna::{common::Cursor, stream::StreamDataRequest},
+};
 use apibara_script::Script;
 use error_stack::{Result, ResultExt};
 use prost::Message;
@@ -11,13 +14,15 @@ use tracing::{debug, info};
 
 use crate::{
     error::SinkError, filter::Filter, sink::Sink, Context, CursorAction, DisplayCursor,
-    PersistedState, SinkErrorReportExt, SinkErrorResultExt, StreamConfigurationOptions,
+    NetworkFilterOptions, PersistedState, SinkErrorReportExt, SinkErrorResultExt,
+    StreamConfigurationOptions,
 };
 
 use super::{
     sink::SinkWithBackoff,
     state::StateManager,
     stream::{StreamAction, StreamClientFactory},
+    system_message::log_system_message,
 };
 
 pub struct FactoryConnector<S, F, B>
@@ -67,7 +72,6 @@ where
     }
 
     pub async fn start(&mut self, ct: CancellationToken) -> Result<(), SinkError> {
-        /*
         self.state_manager.lock(ct.clone()).await?;
 
         let mut state = self.state_manager.get_state::<F>().await?;
@@ -93,7 +97,7 @@ where
                 maybe_message = data_stream.try_next() => {
                     match maybe_message {
                         Err(err) => {
-                            ret = Err(err).map_err(|err| err.temporary("data stream error"));
+                            ret = Err(err).temporary("data stream error");
                             break;
                         }
                         Ok(None) => {
@@ -126,73 +130,71 @@ where
         self.state_manager.cleanup().await?;
 
         ret
-        */
-        todo!()
     }
 
-    /*
     async fn start_stream_with_state(
         &mut self,
         state: &PersistedState<F>,
-    ) -> Result<ImmutableDataStream<B>, SinkError> {
-        let mut configuration = self.starting_configuration.clone();
-        // Force batch size to 1 for factory mode.
-        configuration.batch_size = 1;
+    ) -> Result<DataStream, SinkError> {
+        let configuration = self.starting_configuration.clone();
 
-        if let Some(cursor) = state.cursor.clone() {
-            configuration.starting_cursor = Some(cursor);
-        }
-
-        if let Some(additional_filter) = state.filter.clone() {
-            debug!("start consume factory + data stream");
-            let data_stream = self
-                .stream_client_factory
-                .new_stream_client()
-                .await?
-                .start_stream_immutable_with_additional_filters::<F, B>(
-                    configuration,
-                    vec![additional_filter],
-                )
-                .await
-                .map_err(|err| err.temporary("failed to start stream"))?;
-
-            Ok(data_stream)
+        let starting_cursor = if let Some(cursor) = state.cursor.clone() {
+            Some(Cursor {
+                order_key: cursor.order_key + 1,
+                unique_key: vec![],
+            })
         } else {
-            debug!("start consume factory stream only");
+            configuration.starting_block.map(|order_key| Cursor {
+                order_key,
+                unique_key: vec![],
+            })
+        };
 
-            let data_stream = self
-                .stream_client_factory
-                .new_stream_client()
-                .await?
-                .start_stream_immutable::<F, B>(configuration)
-                .await
-                .map_err(|err| err.temporary("failed to start stream"))?;
+        let serialized_filter = match configuration.filter {
+            NetworkFilterOptions::Evm(inner) => inner.encode_to_vec(),
+        };
 
-            Ok(data_stream)
+        let mut request = StreamDataRequest {
+            filter: vec![serialized_filter],
+            finality: configuration.finality.map(|f| f as i32),
+            starting_cursor,
+        };
+
+        if let Some(existing_filter) = state.filter.clone() {
+            request.filter.push(existing_filter.encode_to_vec());
         }
-    }
-    */
 
-    /*
+        let mut client = self.stream_client_factory.new_stream_client().await?;
+        let data_stream = client
+            .stream_data(request)
+            .await
+            .change_context(SinkError::Temporary)
+            .attach_printable("failed to start stream")?;
+
+        Ok(data_stream)
+    }
+
     async fn handle_message(
         &mut self,
-        message: DataMessage<B>,
+        message: StreamMessage,
         state: &mut PersistedState<F>,
         ct: CancellationToken,
     ) -> Result<(CursorAction, StreamAction), SinkError> {
         match message {
-            DataMessage::Data {
-                cursor,
-                end_cursor,
-                finality,
-                batch,
-            } => {
+            StreamMessage::Data(data) => {
+                let finality = data.finality();
+                let cursor = data.cursor;
+                let end_cursor = data
+                    .end_cursor
+                    .ok_or(SinkError::Fatal)
+                    .attach_printable("received data without end cursor")?;
+
                 info!(
                     block = end_cursor.order_key,
                     status = %finality,
                     "handle block batch"
                 );
-                let mut batch = batch.into_iter();
+
                 let context = Context {
                     cursor,
                     end_cursor,
@@ -211,7 +213,12 @@ where
                     }
                 }
 
+                let mut batch = data.data.into_iter();
+
                 if let Some(factory_data) = batch.next() {
+                    let factory_data = B::decode(factory_data.as_slice())
+                        .fatal("failed to decode block data (factory)")?;
+
                     if let Some(filter) = self
                         .handle_factory(&context, factory_data, ct.clone())
                         .await?
@@ -227,24 +234,30 @@ where
                         return Ok((CursorAction::Skip, StreamAction::Reconnect));
                     }
                 }
+
                 if let Some(data) = batch.next() {
+                    let data = B::decode(data.as_slice()).fatal("failed to decode block data")?;
                     self.handle_data(context, data, state, ct).await
                 } else {
                     Ok((CursorAction::Skip, StreamAction::Continue))
                 }
             }
-            DataMessage::Invalidate { cursor } => {
+            StreamMessage::Invalidate(invalidate) => {
+                let cursor = invalidate.cursor;
                 info!(block = %DisplayCursor(&cursor), "handle invalidate");
                 self.handle_invalidate(cursor, state, ct).await
             }
-            DataMessage::Heartbeat => {
+            StreamMessage::Heartbeat(_inner) => {
                 self.sink.handle_heartbeat().await?;
                 self.state_manager.heartbeat().await?;
                 Ok((CursorAction::Skip, StreamAction::Continue))
             }
+            StreamMessage::SystemMessage(system_message) => {
+                log_system_message(system_message);
+                Ok((CursorAction::Skip, StreamAction::Continue))
+            }
         }
     }
-    */
 
     async fn handle_factory(
         &mut self,
@@ -278,7 +291,6 @@ where
         Ok(result.filter)
     }
 
-    /*
     async fn handle_data(
         &mut self,
         context: Context,
@@ -294,10 +306,9 @@ where
 
         // fatal error since if the sink is restarted it will receive the same data again.
         let json_data = serde_json::to_value(data).fatal("failed to serialize batch data")?;
-        let json_batch = vec![json_data];
         let data = self
             .script
-            .transform(json_batch)
+            .transform(json_data)
             .await
             .map_err(|err| err.fatal("failed to transform batch data"))?;
 
@@ -313,7 +324,6 @@ where
 
         Ok((action, StreamAction::Continue))
     }
-    */
 
     async fn handle_invalidate(
         &mut self,
