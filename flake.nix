@@ -2,7 +2,7 @@
   description = "Apibara development environment";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-23.05";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-23.11";
     flake-utils = {
       url = "github:numtide/flake-utils";
     };
@@ -11,7 +11,7 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     crane = {
-      url = "github:fracek/crane/5be1e3c664";
+      url = "github:ipetkov/crane";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
@@ -29,11 +29,11 @@
         };
 
         crates = {
-          starknet = {
-            description = "The Starknet DNA server";
-            path = ./starknet;
+          dna-evm = {
+            description = "The EVM DNA server";
+            path = ./dna/evm;
             ports = {
-              "7171/tcp" = { };
+              "7001/tcp" = { };
             };
           };
           operator = {
