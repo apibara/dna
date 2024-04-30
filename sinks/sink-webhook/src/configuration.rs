@@ -1,6 +1,6 @@
 use apibara_sink_common::SinkOptions;
 use apibara_sink_common::{SinkError, SinkErrorResultExt};
-use clap::Args;
+use clap::{Args, ValueEnum};
 use error_stack::Result;
 use http::{HeaderMap, HeaderName, HeaderValue, Uri};
 use serde::Deserialize;
@@ -9,7 +9,7 @@ use serde::Deserialize;
 pub struct SinkWebhookConfiguration {
     pub target_url: Uri,
     pub headers: HeaderMap,
-    pub raw: bool,
+    pub mode: BodyMode,
 }
 
 #[derive(Debug, Args, Default, SinkOptions)]
@@ -23,11 +23,20 @@ pub struct SinkWebhookOptions {
     #[arg(long, short = 'H', value_delimiter = ',', env = "WEBHOOK_HEADERS")]
     header: Option<Vec<String>>,
 
-    /// Send the data received from the transform step as is.
-    ///
-    /// Use this to interact with any API like Discord or Telegram.
-    #[arg(long, action, env = "WEBHOOK_RAW")]
-    raw: Option<bool>,
+    /// How to send the body of the request.
+    #[arg(long, env = "WEBHOOK_MODE")]
+    mode: Option<BodyMode>,
+}
+
+#[derive(Debug, Clone, Deserialize, ValueEnum)]
+#[serde(rename_all = "lowercase")]
+pub enum BodyMode {
+    /// Json, one request per item returned.
+    Json,
+    /// Newline-delimited json, one request with all items returned.
+    Ndjson,
+    /// Send the body as plain text.
+    Text,
 }
 
 impl SinkOptions for SinkWebhookOptions {
@@ -35,7 +44,7 @@ impl SinkOptions for SinkWebhookOptions {
         Self {
             target_url: self.target_url.or(other.target_url),
             header: self.header.or(other.header),
-            raw: self.raw.or(other.raw),
+            mode: self.mode.or(other.mode),
         }
     }
 }
@@ -56,7 +65,7 @@ impl SinkWebhookOptions {
         Ok(SinkWebhookConfiguration {
             target_url,
             headers,
-            raw: self.raw.unwrap_or(false),
+            mode: self.mode.unwrap_or(BodyMode::Json),
         })
     }
 }
