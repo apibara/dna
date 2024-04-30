@@ -139,10 +139,7 @@ where
         let configuration = self.starting_configuration.clone();
 
         let starting_cursor = if let Some(cursor) = state.cursor.clone() {
-            Some(Cursor {
-                order_key: cursor.order_key + 1,
-                unique_key: vec![],
-            })
+            Some(cursor)
         } else {
             configuration.starting_block.map(|order_key| Cursor {
                 order_key,
