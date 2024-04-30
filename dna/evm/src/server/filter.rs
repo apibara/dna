@@ -271,11 +271,19 @@ impl<'a> WorkItem<'a> {
 
                     let should_include_by_topics =
                         {
+                            let strict = log_filter.strict.unwrap_or(false);
                             if log_filter.topics.is_empty() {
+                                // If it's empty it always matches.
                                 None
                             } else if log_filter.topics.len() > topics.len() {
+                                // Can't possibly match.
+                                Some(false)
+                            } else if strict && log_filter.topics.len() != topics.len() {
+                                // If `strict` is set, then the number of topics must match exactly.
                                 Some(false)
                             } else {
+                                // Check that all elements in topic match. If a filter's topic is null,
+                                // then it will match any event topic.
                                 Some(log_filter.topics.iter().zip(topics.iter()).all(|(f, t)| {
                                     f.value.as_ref().map(|fv| fv == t).unwrap_or(true)
                                 }))
