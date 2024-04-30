@@ -4,18 +4,18 @@ use apibara_sink_common::{SinkError, SinkErrorResultExt};
 use async_trait::async_trait;
 use error_stack::Result;
 use http::HeaderMap;
-use reqwest::Client;
+use reqwest::{Body, Client, Response};
 use serde::ser::Serialize;
-use serde_json::{json, Value};
+use serde_json::Value;
 use tracing::{debug, instrument, warn};
 
-use crate::{configuration::SinkWebhookOptions, SinkWebhookConfiguration};
+use crate::{configuration::SinkWebhookOptions, BodyMode, SinkWebhookConfiguration};
 
 pub struct WebhookSink {
     client: Client,
     target_url: String,
     headers: HeaderMap,
-    raw: bool,
+    mode: BodyMode,
 }
 
 impl WebhookSink {
@@ -24,12 +24,12 @@ impl WebhookSink {
             client: Client::new(),
             target_url: config.target_url.to_string(),
             headers: config.headers,
-            raw: config.raw,
+            mode: config.mode,
         }
     }
 
     #[instrument(skip(self, body), err(Debug))]
-    async fn send<B: Serialize + ?Sized>(&self, body: &B) -> Result<(), SinkError> {
+    async fn send_with_json<B: Serialize + ?Sized>(&self, body: &B) -> Result<(), SinkError> {
         let response = self
             .client
             .post(&self.target_url)
@@ -39,13 +39,34 @@ impl WebhookSink {
             .await
             .runtime_error("failed to POST json data")?;
 
-        match response.text().await {
-            Ok(text) => {
-                debug!(response = ?text, "call success");
-            }
-            Err(err) => {
-                warn!(err = ?err, "error reading response");
-            }
+        self.handle_response(response).await
+    }
+
+    #[instrument(skip(self, body), err(Debug))]
+    async fn send_with_body(&self, body: impl Into<Body>) -> Result<(), SinkError> {
+        let response = self
+            .client
+            .post(&self.target_url)
+            .headers(self.headers.clone())
+            .body(body)
+            .send()
+            .await
+            .runtime_error("failed to POST data")?;
+
+        self.handle_response(response).await
+    }
+
+    async fn handle_response(&self, response: Response) -> Result<(), SinkError> {
+        let status = response.status();
+        let text = response
+            .text()
+            .await
+            .runtime_error("failed to read response text")?;
+
+        if status.is_success() {
+            debug!(status = ?status, response = ?text, "success");
+        } else {
+            warn!(status = ?status, response = ?text, "error");
         }
 
         Ok(())
@@ -66,39 +87,44 @@ impl Sink for WebhookSink {
     async fn handle_data(
         &mut self,
         ctx: &Context,
-        batch: &Value,
+        data: &Value,
     ) -> Result<CursorAction, Self::Error> {
         debug!(ctx = %ctx, "calling with data");
 
-        if self.raw {
-            // Send each item returned by the transform script as a separate request
-            let Some(batch) = batch.as_array() else {
-                warn!("raw mode: batch is not an array");
-                return Ok(CursorAction::Persist);
-            };
+        match self.mode {
+            BodyMode::Json => match data {
+                Value::Array(batch) => {
+                    for item in batch {
+                        self.send_with_json(&item).await?;
+                    }
+                }
+                Value::Object(_) => {
+                    self.send_with_json(data).await?;
+                }
+                _ => {
+                    warn!("json mode: data is not an object or array");
+                    return Ok(CursorAction::Persist);
+                }
+            },
+            BodyMode::Ndjson => {
+                let Some(batch) = data.as_array() else {
+                    warn!("ndjson mode: data is not an array");
+                    return Ok(CursorAction::Persist);
+                };
 
-            for item in batch {
-                self.send(&item).await?;
+                let data = batch
+                    .iter()
+                    .map(|item| serde_json::to_string(item).fatal("failed to serialize item"))
+                    .collect::<Result<Vec<String>, _>>()?
+                    .join("\n");
+                self.send_with_body(data).await?;
             }
-        } else {
-            // Skip batches of null values.
-            let should_send = match batch {
-                Value::Array(batch) => !batch.iter().all(|v| v.is_null()),
-                Value::Null => false,
-                _ => true,
-            };
-
-            if should_send {
-                let body = &json!({
-                    "data": {
-                        "cursor": ctx.cursor,
-                        "end_cursor": ctx.end_cursor,
-                        "finality": ctx.finality,
-                        "batch": batch,
-                    },
-                });
-
-                self.send(&body).await?;
+            BodyMode::Text => {
+                let Some(body) = data.as_str() else {
+                    warn!("text mode: data is not a string");
+                    return Ok(CursorAction::Persist);
+                };
+                self.send_with_body(body.to_string()).await?;
             }
         }
 
@@ -107,22 +133,7 @@ impl Sink for WebhookSink {
 
     #[instrument(skip_all, err(Debug))]
     async fn handle_invalidate(&mut self, cursor: &Option<Cursor>) -> Result<(), Self::Error> {
-        if self.raw {
-            return Ok(());
-        }
-
-        let cursor_str = cursor
-            .clone()
-            .map(|c| c.to_string())
-            .unwrap_or("genesis".into());
-
-        debug!(cursor = %cursor_str, "calling with invalidate");
-        let body = json!({
-            "invalidate": {
-                "cursor": cursor,
-            },
-        });
-
-        self.send(&body).await
+        warn!(cursor = ?cursor, "chain reorganization detected");
+        Ok(())
     }
 }
