@@ -224,5 +224,29 @@ impl HexData {
     }
 }
 
+impl Serialize for Topic {
+    fn serialize<S>(&self, serializer: S) -> std::prelude::v1::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self.value {
+            Some(ref value) => serializer.serialize_str(&value.to_hex()),
+            None => serializer.serialize_none(),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for Topic {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        match Option::<B256>::deserialize(deserializer)? {
+            None => Ok(Topic::default()),
+            Some(value) => Ok(Topic { value: Some(value) }),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {}

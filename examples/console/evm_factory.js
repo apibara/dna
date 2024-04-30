@@ -14,9 +14,7 @@ const filter = {
   header: {},
   logs: [
     {
-      topics: encodeEventTopics({ abi, eventName: "PairCreated" }).map(
-        (topic) => ({ value: topic })
-      ),
+      topics: encodeEventTopics({ abi, eventName: "PairCreated" }),
     },
   ],
 };
@@ -44,9 +42,7 @@ export function factory({ header, logs }) {
 
   const pairsFilter = pairs.map(({ pair }) => ({
     address: pair,
-    topics: encodeEventTopics({ abi, eventName: "Transfer" }).map((topic) => ({
-      value: topic,
-    })),
+    topics: encodeEventTopics({ abi, eventName: "Transfer" }),
   }));
 
   return {
