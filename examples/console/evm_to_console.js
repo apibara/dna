@@ -1,5 +1,5 @@
 export const config = {
-  streamUrl: "http://localhost:7007",
+  streamUrl: "https://sepolia.ethereum.a5a.ch",
   startingBlock: 5_000_000,
   network: "evm",
   filter: {

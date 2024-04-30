@@ -97,7 +97,6 @@ where
 
     let connector = SinkConnector::new(script, sink, sink_connector_options);
 
-    println!("stream config {:?}", stream_configuration);
     if stream_configuration.is_evm() {
         connector
             .consume_stream::<evm::Filter, evm::Block>(stream_configuration, ct)
