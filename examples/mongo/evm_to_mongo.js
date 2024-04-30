@@ -12,6 +12,7 @@ export const config = {
     header: {},
     logs: [
       {
+        strict: true,
         topics: [
           {
             value:
@@ -39,7 +40,6 @@ export default function transform({ header, logs }) {
       transactionIndex,
       logIndex,
     }) => {
-      if (topics.length !== 3) return [];
       const decoded = decodeEventLog({ abi, topics, data });
       return [
         {

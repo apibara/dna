@@ -44,10 +44,14 @@ message LogFilter {
   Address address = 1;
   // Filter based on the log's topics.
   repeated Topic topics = 2;
+  // Only returns logs with topics of exactly the same length as the filter.
+  //
+  // Defaults to `false`.
+  optional bool strict = 3;
   // Flag to request the log's transaction. Defaults to `false`.
-  optional bool include_transaction = 3;
+  optional bool include_transaction = 4;
   // Flag to request the log's receipt. Defaults to `false`.
-  optional bool include_receipt = 4;
+  optional bool include_receipt = 5;
 }
 
 // Topic filter.

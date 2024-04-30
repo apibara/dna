@@ -1,12 +1,27 @@
+import { decodeEventLog, parseAbi } from "https://esm.sh/viem";
+
+const abi = parseAbi([
+  "event Transfer(address indexed from, address indexed to, uint256 value)",
+]);
+
 export const config = {
-  streamUrl: "https://sepolia.ethereum.a5a.ch",
+  streamUrl: "http://localhost:7007",
+  // streamUrl: "https://sepolia.ethereum.a5a.ch",
   startingBlock: 5_000_000,
   network: "evm",
   filter: {
     header: {},
     logs: [
       {
-        address: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
+        strict: false,
+        topics: [
+          {
+            value:
+              "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+          },
+          {},
+          {},
+        ],
       },
     ],
   },
@@ -18,19 +33,12 @@ export const config = {
 };
 
 // Transform each block using the function defined in starknet.js.
-export default function transform({
-  header,
-  withdrawals,
-  transactions,
-  receipts,
-  logs,
-}) {
-  return {
-    header: {
-      number: header.number,
-      hash: header.hash,
-      timestamp: header.timestamp,
-    },
-    logs,
-  };
+export default function transform({ header, logs }) {
+  const count = [0, 0, 0, 0, 0];
+  (logs ?? []).forEach(({ topics }) => {
+    count[topics.length]++;
+  });
+
+  console.log(count);
+  return {};
 }
