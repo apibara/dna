@@ -49,6 +49,7 @@ fn main() -> Result<()> {
             ".evm.v2.U256",
             ".evm.v2.B256",
             ".evm.v2.HexData",
+            ".evm.v2.Topic",
         ])
         .build(&[".evm"])?;
 
