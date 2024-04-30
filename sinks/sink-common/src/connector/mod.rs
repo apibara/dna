@@ -4,6 +4,7 @@ mod factory;
 mod sink;
 mod state;
 mod stream;
+mod system_message;
 
 use std::time::Duration;
 
