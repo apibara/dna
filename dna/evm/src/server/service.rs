@@ -479,10 +479,15 @@ where
         }
 
         if has_block {
+            let cursor = if block_number == 0 {
+                None
+            } else {
+                Some(Cursor::new_finalized(block_number - 1).into())
+            };
             let data = Data {
                 data,
                 finality: DataFinality::Finalized as i32,
-                cursor: None,
+                cursor,
                 end_cursor: Some(Cursor::new_finalized(block_number).into()),
             };
 
@@ -508,10 +513,17 @@ where
             DataFinality::Accepted
         };
 
+        // TODO: cursor should be the previous cursor
+        let data_cursor = if cursor.number == 0 {
+            None
+        } else {
+            Some(Cursor::new_finalized(cursor.number - 1).into())
+        };
+
         let data = Data {
             data,
             finality: finality as i32,
-            cursor: None,
+            cursor: data_cursor,
             end_cursor: Some(cursor.clone().into()),
         };
 
