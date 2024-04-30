@@ -1,24 +1,28 @@
-import { decodeEventLog, parseAbi } from "https://esm.sh/viem";
+import {
+  decodeEventLog,
+  encodeEventTopics,
+  parseAbi,
+} from "https://esm.sh/viem";
 
 const abi = parseAbi([
   "event Transfer(address indexed from, address indexed to, uint256 value)",
 ]);
 
 export const config = {
-  streamUrl: "http://localhost:7007",
-  // streamUrl: "https://sepolia.ethereum.a5a.ch",
+  // streamUrl: "http://localhost:7007",
+  streamUrl: "https://sepolia.ethereum.a5a.ch",
   startingBlock: 5_000_000,
   network: "evm",
   filter: {
     header: {},
     logs: [
       {
-        strict: false,
-        topics: [
-          "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
-          null,
-          null,
-        ],
+        strict: true,
+        topics: encodeEventTopics({
+          abi,
+          eventName: "Transfer",
+          args: [null, null],
+        }),
       },
     ],
   },
@@ -29,13 +33,20 @@ export const config = {
   },
 };
 
-// Transform each block using the function defined in starknet.js.
 export default function transform({ header, logs }) {
-  const count = [0, 0, 0, 0, 0];
-  (logs ?? []).forEach(({ topics }) => {
-    count[topics.length]++;
-  });
+  return (logs ?? []).flatMap(({ address, topics, data, transactionHash }) => {
+    const decoded = decodeEventLog({ abi, topics, data });
+    return {
+      tokenAddress: address,
+      eventName: decoded.eventName,
+      from: decoded.args.from,
+      to: decoded.args.to,
+      value: decoded.args.value.toString(10),
 
-  console.log(count);
-  return {};
+      transactionHash,
+      blockNumber: header.number.toString(10),
+      blockHash: header.hash,
+      blockTimestamp: header.timestamp,
+    };
+  });
 }
