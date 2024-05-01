@@ -1,10 +1,10 @@
 // See README.md for instructions.
 import { decodeTransfersInBlock, filter } from "../common/starknet.js";
 
-// Configure indexer for streaming Starknet Goerli data starting at the specified block.
+// Configure indexer for streaming Starknet Sepolia data starting at the specified block.
 export const config = {
-  streamUrl: "https://goerli.starknet.a5a.ch",
-  startingBlock: 800_000,
+  streamUrl: "https://sepolia.starknet.a5a.ch",
+  startingBlock: 1_000,
   network: "starknet",
   filter,
   sinkType: "parquet",
