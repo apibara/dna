@@ -322,6 +322,10 @@ in
       inputsFrom = [
         allCrates
       ];
+
+      buildInputs = buildArgs.buildInputs ++ [
+        pkgs.kubernetes-helm
+      ];
     });
 
     # Integration tests require an internet connection, which is
