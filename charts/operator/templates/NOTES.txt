@@ -1,0 +1,3 @@
+{{ template "operator.fullname" . }} has been installed. Check its status by running:
+
+    kubectl --namespace {{ template "operator.namespace" . }} get pods
