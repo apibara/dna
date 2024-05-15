@@ -580,6 +580,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "apibara-sink-benchmark"
+version = "0.1.0"
+dependencies = [
+ "apibara-dna-protocol",
+ "apibara-observability",
+ "apibara-sink-common",
+ "async-trait",
+ "byte-unit",
+ "clap",
+ "error-stack",
+ "jemallocator",
+ "prost 0.11.9",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-stream",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
 name = "apibara-sink-common"
 version = "0.1.0"
 dependencies = [

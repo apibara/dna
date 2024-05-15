@@ -19,7 +19,7 @@ use tonic::{metadata::MetadataMap, transport::Uri};
 use tracing::{info, warn};
 
 use crate::{
-    connector::{state::StateManager, stream::StreamClientFactory},
+    connector::state::StateManager,
     error::{SinkError, SinkErrorReportExt},
     filter::Filter,
     persistence::Persistence,
@@ -29,6 +29,8 @@ use crate::{
 };
 
 use self::{default::DefaultConnector, factory::FactoryConnector, sink::SinkWithBackoff};
+
+pub use self::{stream::StreamClientFactory, system_message::log_system_message};
 
 #[derive(Debug)]
 pub struct StreamConfiguration {
