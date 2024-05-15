@@ -91,6 +91,15 @@ pub mod common {
 
     tonic::include_proto!("dna.v2.common");
 
+    impl Cursor {
+        pub fn new_finalized(order_key: u64) -> Self {
+            Self {
+                order_key,
+                unique_key: Vec::new(),
+            }
+        }
+    }
+
     impl Serialize for Cursor {
         fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where

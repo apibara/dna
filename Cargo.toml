@@ -19,6 +19,7 @@ members = [
     "sinks/sink-common",
     "sinks/sink-options-derive",
     "sinks/sink-options-derive-tests",
+    "sinks/sink-benchmark",
     "sinks/sink-console",
     "sinks/sink-mongo",
     "sinks/sink-parquet",
