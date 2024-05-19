@@ -1,5 +1,5 @@
 [package]
-name = "apibara-script"
+name = "indexer-script"
 version = "0.1.0"
 edition.workspace = true
 authors.workspace = true
@@ -12,7 +12,11 @@ deno_ast = { version = "0.31", features = ["cjs", "transpiling"] }
 deno_core = "0.224.0"
 deno_runtime = "0.130.0"
 error-stack.workspace = true
+indexer-core = { path = "../core" }
+indexer-kv-sqlite = { path = "../kv_sqlite" }
+indexer-runtime = { path = "../runtime" }
 reqwest.workspace = true
+rusqlite.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 serde_v8 = "0.134.0"

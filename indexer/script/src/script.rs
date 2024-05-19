@@ -1,4 +1,4 @@
-use std::{fmt, path::Path, rc::Rc, time::Duration};
+use std::{fmt, path::Path, rc::Rc, sync::Arc, time::Duration};
 
 use deno_core::{FastString, ModuleSpecifier};
 use deno_runtime::{
@@ -6,9 +6,10 @@ use deno_runtime::{
     worker::{MainWorker, WorkerOptions},
 };
 use error_stack::{Result, ResultExt};
+use rusqlite::Connection;
 
 use crate::{
-    ext::{apibara_script, TransformState},
+    ext::{apibara_script, KeyValueState, TransformState},
     module_loader::WorkerModuleLoader,
 };
 
@@ -19,6 +20,7 @@ pub struct Script {
     module: ModuleSpecifier,
     transform_timeout: Duration,
     load_timeout: Duration,
+    kv: Arc<Connection>,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -108,11 +110,27 @@ impl Script {
             .load_timeout
             .unwrap_or_else(|| Duration::from_secs(60));
 
+        let kv = Connection::open_in_memory()
+            .change_context(ScriptError)
+            .attach_printable("failed to open kv")?;
+
+        kv.execute(
+            r#"
+        create table if not exists kvs(
+            key text primary key,
+            value blob
+        )
+        "#,
+            (),
+        )
+        .change_context(ScriptError)?;
+
         Ok(Script {
             worker,
             module,
             transform_timeout,
             load_timeout,
+            kv: Arc::new(kv),
         })
     }
 
@@ -307,6 +325,10 @@ impl Script {
         state.borrow_mut().put::<TransformState>(TransformState {
             input,
             output: Value::Null,
+        });
+
+        state.borrow_mut().put::<KeyValueState>(KeyValueState {
+            connection: self.kv.clone(),
         });
 
         let future = async {

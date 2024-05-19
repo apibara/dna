@@ -14,8 +14,12 @@ members = [
     "dna/common",
     "dna/evm",
     # "dna/starknet",
-    # Sink and indexers
-    "sinks/script",
+    # Indexer
+    "indexer/core",
+    "indexer/kv_sqlite",
+    "indexer/runtime",
+    "indexer/script",
+    # Sinks
     "sinks/sink-common",
     "sinks/sink-options-derive",
     "sinks/sink-options-derive-tests",
@@ -91,6 +95,7 @@ reqwest = { version = "0.11.16", default-features = false, features = [
 ] }
 regex = "1.9.1"
 roaring = "0.10.2"
+rusqlite = "0.29.0"
 serde = "1.0.155"
 serde_json = "1.0.94"
 starknet = { git = "https://github.com/xJonathanLEI/starknet-rs", rev = "7153d0e42" }
