@@ -378,7 +378,6 @@ name = "apibara-cli"
 version = "0.5.1"
 dependencies = [
  "apibara-observability",
- "apibara-script",
  "apibara-sink-common",
  "async-compression",
  "clap",
@@ -387,6 +386,7 @@ dependencies = [
  "error-stack",
  "float-cmp",
  "futures",
+ "indexer-script",
  "octocrab",
  "reqwest",
  "serde",
@@ -562,24 +562,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "apibara-script"
-version = "0.1.0"
-dependencies = [
- "assert_matches",
- "data-url 0.2.0",
- "deno_ast",
- "deno_core",
- "deno_runtime",
- "error-stack",
- "reqwest",
- "serde",
- "serde_json",
- "serde_v8 0.134.0",
- "tempfile",
- "tokio",
-]
-
-[[package]]
 name = "apibara-sink-benchmark"
 version = "0.1.0"
 dependencies = [
@@ -607,7 +589,6 @@ dependencies = [
  "anstyle",
  "apibara-dna-protocol",
  "apibara-observability",
- "apibara-script",
  "apibara-sink-options-derive",
  "assert_matches",
  "async-trait",
@@ -619,6 +600,7 @@ dependencies = [
  "etcd-client",
  "exponential-backoff",
  "futures",
+ "indexer-script",
  "lazy_static",
  "prost 0.11.9",
  "redis",
@@ -4789,6 +4771,50 @@ dependencies = [
  "proc-macro2 1.0.79",
  "quote 1.0.36",
  "syn 1.0.109",
+]
+
+[[package]]
+name = "indexer-core"
+version = "0.1.0"
+dependencies = [
+ "error-stack",
+ "serde_json",
+]
+
+[[package]]
+name = "indexer-kv-sqlite"
+version = "0.1.0"
+dependencies = [
+ "error-stack",
+ "indexer-core",
+ "rusqlite",
+ "serde_json",
+]
+
+[[package]]
+name = "indexer-runtime"
+version = "0.1.0"
+
+[[package]]
+name = "indexer-script"
+version = "0.1.0"
+dependencies = [
+ "assert_matches",
+ "data-url 0.2.0",
+ "deno_ast",
+ "deno_core",
+ "deno_runtime",
+ "error-stack",
+ "indexer-core",
+ "indexer-kv-sqlite",
+ "indexer-runtime",
+ "reqwest",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "serde_v8 0.134.0",
+ "tempfile",
+ "tokio",
 ]
 
 [[package]]

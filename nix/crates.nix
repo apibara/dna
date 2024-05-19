@@ -28,6 +28,7 @@ let
       rustToolchain
       openssl
       jq
+      sqlite
     ] ++ pkgs.lib.optional stdenv.isDarwin (with pkgs.darwin.apple_sdk.frameworks; [
       CoreFoundation
       CoreServices

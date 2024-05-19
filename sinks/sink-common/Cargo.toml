@@ -10,7 +10,6 @@ license.workspace = true
 anstyle.workspace = true
 apibara-dna-protocol = { path = "../../dna/protocol" }
 apibara-observability = { path = "../../observability" }
-apibara-script = { path = "../script" }
 apibara-sink-options-derive = { path = "../sink-options-derive" }
 async-trait.workspace = true
 bytesize = { version = "1.1.0", features = ["serde"] }
@@ -20,6 +19,7 @@ dotenvy.workspace = true
 error-stack.workspace = true
 etcd-client = { version = "0.11.1", features = ["tls"] }
 exponential-backoff = "1.2.0"
+indexer-script = { path = "../../indexer/script" }
 futures.workspace = true
 lazy_static.workspace = true
 prost.workspace = true
