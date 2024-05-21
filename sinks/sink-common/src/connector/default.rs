@@ -4,7 +4,7 @@ use apibara_dna_protocol::{
     client::StreamMessage,
     dna::{common::Cursor, stream::StreamDataRequest},
 };
-use apibara_script::Script;
+use apibara_indexer_script::Script;
 use error_stack::{Result, ResultExt};
 use prost::Message;
 use serde::Serialize;

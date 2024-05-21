@@ -8,7 +8,7 @@ mod system_message;
 
 use std::time::Duration;
 
-use apibara_script::Script;
+use apibara_indexer_script::Script;
 use bytesize::ByteSize;
 use error_stack::Result;
 use exponential_backoff::Backoff;

@@ -369,14 +369,15 @@ dependencies = [
 
 [[package]]
 name = "anyhow"
-version = "1.0.82"
+version = "1.0.86"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f538837af36e6f6a9be0faa67f9a314f8119e4e4b5867c6ab40ed60360142519"
+checksum = "b3d1d046238990b9cf5bcde22a3fb3584ee5cf65fb2765f454ed428c7a0063da"
 
 [[package]]
 name = "apibara-cli"
 version = "0.4.2"
 dependencies = [
+ "apibara-indexer-script",
  "apibara-observability",
  "apibara-sink-common",
  "async-compression",
@@ -385,7 +386,6 @@ dependencies = [
  "dirs",
  "error-stack",
  "futures",
- "indexer-script",
  "octocrab",
  "reqwest",
  "serde",
@@ -495,6 +495,44 @@ dependencies = [
 ]
 
 [[package]]
+name = "apibara-indexer-runtime"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "apibara-dna-protocol",
+ "data-url 0.2.0",
+ "deno_ast",
+ "deno_core",
+ "deno_runtime",
+ "error-stack",
+ "reqwest",
+ "rusqlite",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "apibara-indexer-script"
+version = "0.1.0"
+dependencies = [
+ "apibara-indexer-runtime",
+ "assert_matches",
+ "data-url 0.2.0",
+ "deno_ast",
+ "deno_core",
+ "deno_runtime",
+ "error-stack",
+ "reqwest",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "serde_v8 0.134.0",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
 name = "apibara-observability"
 version = "0.1.0"
 dependencies = [
@@ -587,6 +625,7 @@ version = "0.1.0"
 dependencies = [
  "anstyle",
  "apibara-dna-protocol",
+ "apibara-indexer-script",
  "apibara-observability",
  "apibara-sink-options-derive",
  "assert_matches",
@@ -599,7 +638,6 @@ dependencies = [
  "etcd-client",
  "exponential-backoff",
  "futures",
- "indexer-script",
  "lazy_static",
  "prost 0.11.9",
  "redis",
@@ -4761,50 +4799,6 @@ dependencies = [
  "proc-macro2 1.0.79",
  "quote 1.0.36",
  "syn 1.0.109",
-]
-
-[[package]]
-name = "indexer-core"
-version = "0.1.0"
-dependencies = [
- "error-stack",
- "serde_json",
-]
-
-[[package]]
-name = "indexer-kv-sqlite"
-version = "0.1.0"
-dependencies = [
- "error-stack",
- "indexer-core",
- "rusqlite",
- "serde_json",
-]
-
-[[package]]
-name = "indexer-runtime"
-version = "0.1.0"
-
-[[package]]
-name = "indexer-script"
-version = "0.1.0"
-dependencies = [
- "assert_matches",
- "data-url 0.2.0",
- "deno_ast",
- "deno_core",
- "deno_runtime",
- "error-stack",
- "indexer-core",
- "indexer-kv-sqlite",
- "indexer-runtime",
- "reqwest",
- "rusqlite",
- "serde",
- "serde_json",
- "serde_v8 0.134.0",
- "tempfile",
- "tokio",
 ]
 
 [[package]]

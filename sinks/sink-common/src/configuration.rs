@@ -4,7 +4,7 @@ use apibara_dna_protocol::{
     dna::{common::Cursor, stream::DataFinality},
     evm,
 };
-use apibara_script::ScriptOptions as IndexerOptions;
+use apibara_indexer_script::{DenoRuntimeOptions, ScriptOptions as IndexerOptions};
 // use apibara_sdk::{Configuration, MetadataKey, MetadataMap, MetadataValue, Uri};
 use bytesize::ByteSize;
 use clap::Args;
@@ -370,10 +370,12 @@ impl ScriptOptions {
 
     pub fn into_indexer_options(self) -> IndexerOptions {
         IndexerOptions {
-            allow_env: self.allow_env_from_env,
-            allow_net: self.allow_net,
-            allow_read: self.allow_read,
-            allow_write: self.allow_write,
+            runtime_options: DenoRuntimeOptions {
+                allow_env: self.allow_env_from_env,
+                allow_net: self.allow_net,
+                allow_read: self.allow_read,
+                allow_write: self.allow_write,
+            },
             transform_timeout: self
                 .script_transform_timeout_seconds
                 .map(Duration::from_secs),
