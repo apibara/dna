@@ -11,6 +11,7 @@ doc = false
 
 [dependencies]
 apibara-observability = { path = "../observability" }
+apibara-indexer-script = { path = "../indexer/script" }
 apibara-sink-common = { path = "../sinks/sink-common" }
 async-compression.workspace = true
 clap.workspace = true
@@ -18,7 +19,6 @@ colored = "2.0.4"
 dirs.workspace = true
 error-stack.workspace = true
 futures.workspace = true
-indexer-script = { path = "../indexer/script" }
 octocrab = "0.29.1"
 reqwest.workspace = true
 serde.workspace = true
