@@ -1,8 +1,8 @@
 use std::{fs, path::Path};
 
 use anstyle::{AnsiColor, Style};
+use apibara_indexer_script::{Script, ScriptOptions};
 use apibara_observability::init_opentelemetry;
-use apibara_script::{Script, ScriptOptions};
 use clap::builder::Styles;
 use error_stack::{report, Result, ResultExt};
 use tokio_util::sync::CancellationToken;

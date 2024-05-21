@@ -26,7 +26,7 @@ pub use self::sink::*;
 pub use self::status::*;
 pub use apibara_sink_options_derive::SinkOptions;
 
-pub use apibara_script::ScriptOptions as IndexerOptions;
+pub use apibara_indexer_script::ScriptOptions as IndexerOptions;
 
 #[derive(Debug, Deserialize)]
 pub struct FullOptionsFromScript<SinkOptions> {
