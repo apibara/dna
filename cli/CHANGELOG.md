@@ -6,6 +6,16 @@ The format is based on [Common Changelog](https://common-changelog.org/), and
 this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2024-05-23
+
+_Improve `apibara test` command when working with floating point numbers._
+
+### Added
+
+-   Add a `testOptions` section to `apibara test` snapshots.
+-   Add the `testOptions.floatingPointDecimals` option to control up to how many
+    decimal places to compare floating point numbers in snapshots.
+
 ## [0.4.2] - 2024-01-19
 
 _Allow network access._
