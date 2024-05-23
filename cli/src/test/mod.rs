@@ -7,6 +7,7 @@ use tracing::warn;
 
 use crate::error::CliError;
 
+mod compare;
 mod error;
 mod run;
 mod snapshot;

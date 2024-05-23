@@ -21,7 +21,7 @@ main() {
 
     local _release_tag
     _release_tag=$(
-        curl -s "https://api.github.com/repos/${APIBARA_REPO}/releases" \
+        curl -s "https://api.github.com/repos/${APIBARA_REPO}/releases?per_page=100" \
         | jq -r '.[] | select((.prerelease==false) and (.tag_name | startswith("cli"))) | .tag_name' \
         | head -n 1
     )

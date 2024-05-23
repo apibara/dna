@@ -160,7 +160,7 @@ pub struct StreamConfigurationOptions {
     pub starting_block: Option<u64>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 #[serde(tag = "network", content = "filter", rename_all = "camelCase")]
 pub enum NetworkFilterOptions {
     Starknet(v1alpha2::Filter),
