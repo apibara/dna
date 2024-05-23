@@ -212,6 +212,7 @@ dependencies = [
  "colored",
  "dirs",
  "error-stack",
+ "float-cmp",
  "futures 0.3.30",
  "octocrab",
  "reqwest",

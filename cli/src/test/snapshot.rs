@@ -13,12 +13,21 @@ use tracing::debug;
 use crate::{error::CliError, test::SNAPSHOTS_DIR};
 
 #[derive(Serialize, Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct Snapshot {
     pub script_path: PathBuf,
     pub num_batches: usize,
     pub stream_options: StreamOptions,
     pub stream_configuration_options: StreamConfigurationOptions,
+    pub test_options: TestOptions,
     pub stream: Vec<Value>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct TestOptions {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub floating_point_decimals: Option<i64>,
 }
 
 pub struct SnapshotGenerator {
@@ -167,6 +176,7 @@ impl SnapshotGenerator {
             num_batches: self.num_batches,
             stream_options,
             stream_configuration_options: self.stream_configuration_options,
+            test_options: TestOptions::default(),
             stream,
         })
     }
