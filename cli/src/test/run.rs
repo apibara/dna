@@ -7,8 +7,7 @@ use tracing::warn;
 use walkdir::{DirEntry, WalkDir};
 
 use apibara_sink_common::{
-    load_script, NetworkFilterOptions, OptionsFromScript, ScriptOptions,
-    StreamConfigurationOptions, StreamOptions,
+    load_script, OptionsFromScript, ScriptOptions, StreamConfigurationOptions, StreamOptions,
 };
 use colored::*;
 use error_stack::{Result, ResultExt};
@@ -18,6 +17,8 @@ use similar_asserts::SimpleDiff;
 use crate::error::CliError;
 use crate::test::error::get_assertion_error;
 use crate::test::snapshot::{Snapshot, SnapshotGenerator};
+
+use super::compare::outputs_are_equal;
 
 const DEFAULT_NUM_BATCHES: usize = 1;
 
@@ -106,13 +107,9 @@ async fn run_test(
         .await
         .change_context(CliError)?
         .stream_configuration
-        .as_starknet()
-        .ok_or(CliError)
-        .attach_printable("Cannot convert StreamConfigurationOptions using as_starknet")?
         .filter;
 
-    let NetworkFilterOptions::Starknet(snapshot_filter) =
-        &snapshot.stream_configuration_options.filter;
+    let snapshot_filter = &snapshot.stream_configuration_options.filter;
 
     if snapshot_filter != filter {
         let left = format!("{:#?}", SimilarAssertsDebug(&snapshot_filter));
@@ -130,6 +127,7 @@ async fn run_test(
     let mut expected_outputs = vec![];
     let mut found_outputs = vec![];
 
+    let mut has_error = false;
     for message in snapshot.stream {
         let input = message["input"]
             .as_array()
@@ -144,11 +142,15 @@ async fn run_test(
             .change_context(CliError)
             .attach_printable("failed to transform data")?;
 
-        expected_outputs.push(expected_output.clone());
-        found_outputs.push(found_output.clone());
+        if !outputs_are_equal(&expected_output, &found_output, &snapshot.test_options) {
+            has_error = true;
+        }
+
+        expected_outputs.push(expected_output);
+        found_outputs.push(found_output);
     }
 
-    if expected_outputs != found_outputs {
+    if has_error {
         let message = get_assertion_error(&expected_outputs, &found_outputs);
         Ok(TestResult::Failed { message })
     } else {
