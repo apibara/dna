@@ -12,7 +12,6 @@ path = "src/lib.rs"
 
 [dependencies]
 apibara-dna-protocol = { path = "../protocol" }
-async-channel.workspace = true
 async-compression.workspace = true
 async-trait.workspace = true
 bytes.workspace = true
@@ -36,9 +35,6 @@ tokio-util.workspace = true
 tonic.workspace = true
 tonic-reflection.workspace = true
 tracing.workspace = true
-
-[target.'cfg(not(windows))'.dependencies]
-jemallocator.workspace = true
 
 [dev-dependencies]
 azure_storage = "0.19.0"

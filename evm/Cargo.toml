@@ -26,7 +26,7 @@ alloy-providers = { git = "http://github.com/alloy-rs/alloy", rev = "347fb50e" }
 alloy-primitives = "0.6"
 alloy-rpc-types = { git = "http://github.com/alloy-rs/alloy", rev = "347fb50e" }
 alloy-transport = { git = "http://github.com/alloy-rs/alloy", rev = "347fb50e" }
-apibara-observability = { path = "../../observability" }
+apibara-observability = { path = "../observability" }
 apibara-dna-common = { path = "../common" }
 apibara-dna-protocol = { path = "../protocol" }
 async-channel.workspace = true
@@ -46,17 +46,12 @@ tonic-reflection.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
 tokio-stream.workspace = true
-starknet.workspace = true
 tracing.workspace = true
 url.workspace = true
 
 [target.'cfg(not(windows))'.dependencies]
 jemallocator.workspace = true
 
-[build-dependencies]
-tonic-build.workspace = true
-
 [dev-dependencies]
 serde.workspace = true
 serde_json.workspace = true
-wiremock.workspace = true
