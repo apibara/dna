@@ -5,6 +5,8 @@ let
     extensions = [ "rust-src" "rust-analyzer" ];
   };
 
+  nightlyRustToolchain = pkgs.rust-bin.selectLatestNightlyWith (toolchain: toolchain.default);
+
   craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
 
   src = pkgs.lib.cleanSourceWith {
@@ -36,11 +38,6 @@ let
       SystemConfiguration
     ]);
 
-    buildInputs = with pkgs; [
-      librusty_v8
-    ];
-
-    RUSTY_V8_ARCHIVE = "${pkgs.librusty_v8}/lib/librusty_v8.a";
     # used by bindgen
     LIBCLANG_PATH = pkgs.lib.makeLibraryPath [
       pkgs.llvmPackages.libclang.lib
@@ -329,6 +326,25 @@ in
         kubernetes-helm
         tokio-console
       ];
+    });
+
+    nightly = pkgs.mkShell (buildArgs // {
+      nativeBuildInputs = with pkgs; [
+        nightlyRustToolchain
+        cargo-udeps
+        clang
+        cmake
+        llvmPackages.libclang.lib
+        pkg-config
+        protobuf
+        flatbuffers
+        openssl
+      ] ++ pkgs.lib.optional stdenv.isDarwin (with pkgs.darwin.apple_sdk.frameworks; [
+        CoreFoundation
+        CoreServices
+        Security
+        SystemConfiguration
+      ]);
     });
 
     # Integration tests require an internet connection, which is

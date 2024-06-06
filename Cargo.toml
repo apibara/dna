@@ -7,32 +7,11 @@ license = "Apache-2.0"
 [workspace]
 resolver = "2"
 members = [
-    # Common
     "observability",
-    # DNA
-    "dna/protocol",
-    "dna/common",
-    "dna/evm",
-    # "dna/starknet",
-    # Indexer
-    "indexer/runtime",
-    "indexer/script",
-    # Sinks
-    "sinks/sink-common",
-    "sinks/sink-options-derive",
-    "sinks/sink-options-derive-tests",
-    "sinks/sink-benchmark",
-    "sinks/sink-console",
-    "sinks/sink-mongo",
-    "sinks/sink-parquet",
-    "sinks/sink-postgres",
-    "sinks/sink-webhook",
-    "cli",
-    # Runners
-    "runners/runner-common",
-    "runners/runner-local",
-    # Operator
-    "operator",
+    "protocol",
+    "common",
+    "evm",
+    # "starknet",
 ]
 
 [workspace.dependencies]
@@ -130,7 +109,3 @@ quickcheck_macros = "1.0.0"
 warp = "0.3.5"
 wiremock = "0.5.19"
 url = "2.3"
-
-[patch.crates-io]
-# https://github.com/tov/libffi-rs/pull/80
-libffi-sys = { git = "https://github.com/fracek/libffi-rs.git", rev = "653781aa9b7a7ac1682e7f8cb405a2e90afc341d" }
