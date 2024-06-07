@@ -10,7 +10,23 @@ pub trait GetCursor {
     fn cursor(&self) -> Option<Cursor>;
 }
 
+impl GetCursor for models::BlockWithTxs {
+    fn cursor(&self) -> Option<Cursor> {
+        let number = self.block_number;
+        let hash = self.block_hash.to_bytes_be().to_vec();
+        Some(Cursor::new(number, hash))
+    }
+}
+
 impl GetCursor for models::BlockWithTxHashes {
+    fn cursor(&self) -> Option<Cursor> {
+        let number = self.block_number;
+        let hash = self.block_hash.to_bytes_be().to_vec();
+        Some(Cursor::new(number, hash))
+    }
+}
+
+impl GetCursor for models::BlockWithReceipts {
     fn cursor(&self) -> Option<Cursor> {
         let number = self.block_number;
         let hash = self.block_hash.to_bytes_be().to_vec();

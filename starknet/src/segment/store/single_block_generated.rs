@@ -9,15 +9,15 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::cmp::Ordering;
 use core::mem;
-pub enum BlockEventsOffset {}
+pub enum SingleBlockOffset {}
 #[derive(Copy, Clone, PartialEq)]
 
-pub struct BlockEvents<'a> {
+pub struct SingleBlock<'a> {
     pub _tab: flatbuffers::Table<'a>,
 }
 
-impl<'a> flatbuffers::Follow<'a> for BlockEvents<'a> {
-    type Inner = BlockEvents<'a>;
+impl<'a> flatbuffers::Follow<'a> for SingleBlock<'a> {
+    type Inner = SingleBlock<'a>;
     #[inline]
     unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
         Self {
@@ -26,40 +26,41 @@ impl<'a> flatbuffers::Follow<'a> for BlockEvents<'a> {
     }
 }
 
-impl<'a> BlockEvents<'a> {
-    pub const VT_BLOCK_NUMBER: flatbuffers::VOffsetT = 4;
+impl<'a> SingleBlock<'a> {
+    pub const VT_HEADER: flatbuffers::VOffsetT = 4;
     pub const VT_EVENTS: flatbuffers::VOffsetT = 6;
 
     pub const fn get_fully_qualified_name() -> &'static str {
-        "BlockEvents"
+        "SingleBlock"
     }
 
     #[inline]
     pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
-        BlockEvents { _tab: table }
+        SingleBlock { _tab: table }
     }
     #[allow(unused_mut)]
     pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr>(
         _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr>,
-        args: &'args BlockEventsArgs<'args>,
-    ) -> flatbuffers::WIPOffset<BlockEvents<'bldr>> {
-        let mut builder = BlockEventsBuilder::new(_fbb);
-        builder.add_block_number(args.block_number);
+        args: &'args SingleBlockArgs<'args>,
+    ) -> flatbuffers::WIPOffset<SingleBlock<'bldr>> {
+        let mut builder = SingleBlockBuilder::new(_fbb);
         if let Some(x) = args.events {
             builder.add_events(x);
+        }
+        if let Some(x) = args.header {
+            builder.add_header(x);
         }
         builder.finish()
     }
 
     #[inline]
-    pub fn block_number(&self) -> u64 {
+    pub fn header(&self) -> Option<BlockHeader<'a>> {
         // Safety:
         // Created from valid Table for this object
         // which contains a valid value in this slot
         unsafe {
             self._tab
-                .get::<u64>(BlockEvents::VT_BLOCK_NUMBER, Some(0))
-                .unwrap()
+                .get::<flatbuffers::ForwardsUOffset<BlockHeader>>(SingleBlock::VT_HEADER, None)
         }
     }
     #[inline]
@@ -72,12 +73,12 @@ impl<'a> BlockEvents<'a> {
         unsafe {
             self._tab.get::<flatbuffers::ForwardsUOffset<
                 flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Event>>,
-            >>(BlockEvents::VT_EVENTS, None)
+            >>(SingleBlock::VT_EVENTS, None)
         }
     }
 }
 
-impl flatbuffers::Verifiable for BlockEvents<'_> {
+impl flatbuffers::Verifiable for SingleBlock<'_> {
     #[inline]
     fn run_verifier(
         v: &mut flatbuffers::Verifier,
@@ -85,7 +86,11 @@ impl flatbuffers::Verifiable for BlockEvents<'_> {
     ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
         use self::flatbuffers::Verifiable;
         v.visit_table(pos)?
-            .visit_field::<u64>("block_number", Self::VT_BLOCK_NUMBER, false)?
+            .visit_field::<flatbuffers::ForwardsUOffset<BlockHeader>>(
+                "header",
+                Self::VT_HEADER,
+                false,
+            )?
             .visit_field::<flatbuffers::ForwardsUOffset<
                 flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<Event>>,
             >>("events", Self::VT_EVENTS, false)?
@@ -93,31 +98,34 @@ impl flatbuffers::Verifiable for BlockEvents<'_> {
         Ok(())
     }
 }
-pub struct BlockEventsArgs<'a> {
-    pub block_number: u64,
+pub struct SingleBlockArgs<'a> {
+    pub header: Option<flatbuffers::WIPOffset<BlockHeader<'a>>>,
     pub events: Option<
         flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Event<'a>>>>,
     >,
 }
-impl<'a> Default for BlockEventsArgs<'a> {
+impl<'a> Default for SingleBlockArgs<'a> {
     #[inline]
     fn default() -> Self {
-        BlockEventsArgs {
-            block_number: 0,
+        SingleBlockArgs {
+            header: None,
             events: None,
         }
     }
 }
 
-pub struct BlockEventsBuilder<'a: 'b, 'b> {
+pub struct SingleBlockBuilder<'a: 'b, 'b> {
     fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a>,
     start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
 }
-impl<'a: 'b, 'b> BlockEventsBuilder<'a, 'b> {
+impl<'a: 'b, 'b> SingleBlockBuilder<'a, 'b> {
     #[inline]
-    pub fn add_block_number(&mut self, block_number: u64) {
+    pub fn add_header(&mut self, header: flatbuffers::WIPOffset<BlockHeader<'b>>) {
         self.fbb_
-            .push_slot::<u64>(BlockEvents::VT_BLOCK_NUMBER, block_number, 0);
+            .push_slot_always::<flatbuffers::WIPOffset<BlockHeader>>(
+                SingleBlock::VT_HEADER,
+                header,
+            );
     }
     #[inline]
     pub fn add_events(
@@ -127,27 +135,27 @@ impl<'a: 'b, 'b> BlockEventsBuilder<'a, 'b> {
         >,
     ) {
         self.fbb_
-            .push_slot_always::<flatbuffers::WIPOffset<_>>(BlockEvents::VT_EVENTS, events);
+            .push_slot_always::<flatbuffers::WIPOffset<_>>(SingleBlock::VT_EVENTS, events);
     }
     #[inline]
-    pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a>) -> BlockEventsBuilder<'a, 'b> {
+    pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a>) -> SingleBlockBuilder<'a, 'b> {
         let start = _fbb.start_table();
-        BlockEventsBuilder {
+        SingleBlockBuilder {
             fbb_: _fbb,
             start_: start,
         }
     }
     #[inline]
-    pub fn finish(self) -> flatbuffers::WIPOffset<BlockEvents<'a>> {
+    pub fn finish(self) -> flatbuffers::WIPOffset<SingleBlock<'a>> {
         let o = self.fbb_.end_table(self.start_);
         flatbuffers::WIPOffset::new(o.value())
     }
 }
 
-impl core::fmt::Debug for BlockEvents<'_> {
+impl core::fmt::Debug for SingleBlock<'_> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        let mut ds = f.debug_struct("BlockEvents");
-        ds.field("block_number", &self.block_number());
+        let mut ds = f.debug_struct("SingleBlock");
+        ds.field("header", &self.header());
         ds.field("events", &self.events());
         ds.finish()
     }

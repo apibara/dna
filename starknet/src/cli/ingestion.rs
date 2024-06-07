@@ -1,16 +1,17 @@
+use std::net::SocketAddr;
+
 use apibara_dna_common::{
-    error::Result,
+    error::{DnaError, Result},
     ingestion::IngestionServer,
     segment::SegmentArgs,
     storage::{CacheArgs, StorageArgs, StorageBackend},
 };
 use clap::Args;
 use error_stack::ResultExt;
-use tokio_stream::StreamExt;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
-use crate::ingestion::ChainTracker;
+use crate::ingestion::{ChainTracker, IngestionOptions, IngestionService};
 
 use super::common::RpcArgs;
 
@@ -64,11 +65,35 @@ where
     let ct = CancellationToken::new();
 
     let provider = args.rpc.to_provider_service()?.start(ct.clone());
-    let mut chain_changes = ChainTracker::new(provider.clone()).start(ct.clone());
+    let chain_changes = ChainTracker::new(provider.clone()).start(ct.clone());
 
-    while let Some(change) = chain_changes.next().await {
-        info!("Chain change: {:?}", change);
+    let local_cache_storage = args.cache.to_local_storage_backend();
+
+    let ingestion_stream = IngestionService::new(
+        provider,
+        local_cache_storage.clone(),
+        storage,
+        chain_changes,
+    )
+    .with_options(args.ingestion.to_ingestion_options())
+    .start(ct.clone())
+    .await?;
+
+    let address = args
+        .server_address
+        .parse::<SocketAddr>()
+        .change_context(DnaError::Configuration)
+        .attach_printable_lazy(|| format!("failed to parse address: {}", args.server_address))?;
+
+    IngestionServer::new(local_cache_storage, ingestion_stream)
+        .start(address, ct)
+        .await
+}
+
+impl IngestionArgs {
+    pub fn to_ingestion_options(&self) -> IngestionOptions {
+        IngestionOptions::default()
+            .with_starting_block(self.starting_block.unwrap_or(0))
+            .with_segment_options(self.segment.to_segment_options())
     }
-
-    Ok(())
 }

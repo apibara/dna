@@ -26,6 +26,11 @@ table EventSegment {
   blocks:[BlockEvents];
 }
 
+table SingleBlock {
+  header:BlockHeader;
+  events:[Event];
+}
+
 table BlockHeader {
   block_hash:FieldElement;
   parent_hash:FieldElement;
