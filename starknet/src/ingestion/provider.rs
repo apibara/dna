@@ -13,7 +13,7 @@ use starknet::{
 };
 use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, info, instrument, trace};
+use tracing::{info, instrument, trace};
 
 use crate::segment::conversion::{BlockExt, GetCursor};
 
@@ -22,7 +22,9 @@ const DEFAULT_CONCURRENCY: usize = 100;
 
 pub mod models {
     pub use starknet::core::types::{
-        BlockStatus, BlockWithTxHashes, MaybePendingBlockWithTxHashes, PendingBlockWithTxHashes,
+        BlockStatus, BlockWithReceipts, BlockWithTxHashes, BlockWithTxs, FieldElement,
+        MaybePendingBlockWithReceipts, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs,
+        PendingBlockWithTxHashes,
     };
 }
 
@@ -45,6 +47,10 @@ enum RpcServiceRequest {
     },
     LatestBlock {
         reply: oneshot::Sender<Result<Cursor>>,
+    },
+    BlockByNumberWithReceipts {
+        block_number: u64,
+        reply: oneshot::Sender<Result<models::BlockWithReceipts>>,
     },
 }
 
@@ -125,6 +131,21 @@ impl RpcProvider {
             .unwrap();
         rx.await.change_context(DnaError::Fatal)?
     }
+
+    pub async fn get_block_by_number_with_receipts(
+        &self,
+        block_number: u64,
+    ) -> Result<models::BlockWithReceipts> {
+        let (tx, rx) = oneshot::channel();
+        self.tx
+            .send(RpcServiceRequest::BlockByNumberWithReceipts {
+                block_number,
+                reply: tx,
+            })
+            .await
+            .unwrap();
+        rx.await.change_context(DnaError::Fatal)?
+    }
 }
 
 struct RpcWorker {
@@ -189,6 +210,13 @@ impl RpcWorker {
             }
             LatestBlock { reply } => {
                 let response = self.get_latest_block().await;
+                let _ = reply.send(response);
+            }
+            BlockByNumberWithReceipts {
+                block_number,
+                reply,
+            } => {
+                let response = self.get_block_by_number_with_receipts(block_number).await;
                 let _ = reply.send(response);
             }
         }
@@ -308,6 +336,28 @@ impl RpcWorker {
 
         Ok(cursor)
     }
+
+    #[instrument(skip(self), err(Debug))]
+    pub async fn get_block_by_number_with_receipts(
+        &self,
+        block_number: u64,
+    ) -> Result<models::BlockWithReceipts> {
+        self.limiter.until_ready().await;
+
+        let block = self
+            .provider
+            .get_block_with_receipts(BlockId::Number(block_number))
+            .await
+            .change_context(DnaError::Fatal)
+            .attach_printable("failed to get block by number")?;
+
+        let models::MaybePendingBlockWithReceipts::Block(block) = block else {
+            return Err(DnaError::Fatal)
+                .attach_printable("expected block with receipts, got pending block");
+        };
+
+        Ok(block)
+    }
 }
 
 fn new_limiter(rate_limit: u32) -> DefaultDirectRateLimiter {
@@ -322,6 +372,7 @@ impl RpcServiceRequest {
         match self {
             FinalizedBlock { .. } => "FinalizedBlock",
             LatestBlock { .. } => "LatestBlock",
+            BlockByNumberWithReceipts { .. } => "BlockByNumberWithReceipts",
         }
     }
 }
@@ -332,6 +383,9 @@ impl Debug for RpcServiceRequest {
         match self {
             FinalizedBlock { .. } => f.debug_struct("FinalizedBlock").finish(),
             LatestBlock { .. } => f.debug_struct("LatestBlock").finish(),
+            BlockByNumberWithReceipts { .. } => {
+                f.debug_struct("BlockByNumberWithReceipts").finish()
+            }
         }
     }
 }

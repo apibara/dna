@@ -2,128 +2,142 @@
 // @generated
 extern crate alloc;
 extern crate flatbuffers;
+use self::flatbuffers::{EndianScalar, Follow};
+use super::*;
 use alloc::boxed::Box;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
-use core::mem;
 use core::cmp::Ordering;
-use self::flatbuffers::{EndianScalar, Follow};
-use super::*;
+use core::mem;
 pub enum ResourcePriceOffset {}
 #[derive(Copy, Clone, PartialEq)]
 
 pub struct ResourcePrice<'a> {
-  pub _tab: flatbuffers::Table<'a>,
+    pub _tab: flatbuffers::Table<'a>,
 }
 
 impl<'a> flatbuffers::Follow<'a> for ResourcePrice<'a> {
-  type Inner = ResourcePrice<'a>;
-  #[inline]
-  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
-    Self { _tab: flatbuffers::Table::new(buf, loc) }
-  }
+    type Inner = ResourcePrice<'a>;
+    #[inline]
+    unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+        Self {
+            _tab: flatbuffers::Table::new(buf, loc),
+        }
+    }
 }
 
 impl<'a> ResourcePrice<'a> {
-  pub const VT_PRICE_IN_FRI: flatbuffers::VOffsetT = 4;
-  pub const VT_PRICE_IN_WEI: flatbuffers::VOffsetT = 6;
+    pub const VT_PRICE_IN_FRI: flatbuffers::VOffsetT = 4;
+    pub const VT_PRICE_IN_WEI: flatbuffers::VOffsetT = 6;
 
-  pub const fn get_fully_qualified_name() -> &'static str {
-    "ResourcePrice"
-  }
+    pub const fn get_fully_qualified_name() -> &'static str {
+        "ResourcePrice"
+    }
 
-  #[inline]
-  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
-    ResourcePrice { _tab: table }
-  }
-  #[allow(unused_mut)]
-  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr>(
-    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr>,
-    args: &'args ResourcePriceArgs<'args>
-  ) -> flatbuffers::WIPOffset<ResourcePrice<'bldr>> {
-    let mut builder = ResourcePriceBuilder::new(_fbb);
-    if let Some(x) = args.price_in_wei { builder.add_price_in_wei(x); }
-    if let Some(x) = args.price_in_fri { builder.add_price_in_fri(x); }
-    builder.finish()
-  }
+    #[inline]
+    pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+        ResourcePrice { _tab: table }
+    }
+    #[allow(unused_mut)]
+    pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr>(
+        _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr>,
+        args: &'args ResourcePriceArgs<'args>,
+    ) -> flatbuffers::WIPOffset<ResourcePrice<'bldr>> {
+        let mut builder = ResourcePriceBuilder::new(_fbb);
+        if let Some(x) = args.price_in_wei {
+            builder.add_price_in_wei(x);
+        }
+        if let Some(x) = args.price_in_fri {
+            builder.add_price_in_fri(x);
+        }
+        builder.finish()
+    }
 
-
-  #[inline]
-  pub fn price_in_fri(&self) -> Option<&'a FieldElement> {
-    // Safety:
-    // Created from valid Table for this object
-    // which contains a valid value in this slot
-    unsafe { self._tab.get::<FieldElement>(ResourcePrice::VT_PRICE_IN_FRI, None)}
-  }
-  #[inline]
-  pub fn price_in_wei(&self) -> Option<&'a FieldElement> {
-    // Safety:
-    // Created from valid Table for this object
-    // which contains a valid value in this slot
-    unsafe { self._tab.get::<FieldElement>(ResourcePrice::VT_PRICE_IN_WEI, None)}
-  }
+    #[inline]
+    pub fn price_in_fri(&self) -> Option<&'a FieldElement> {
+        // Safety:
+        // Created from valid Table for this object
+        // which contains a valid value in this slot
+        unsafe {
+            self._tab
+                .get::<FieldElement>(ResourcePrice::VT_PRICE_IN_FRI, None)
+        }
+    }
+    #[inline]
+    pub fn price_in_wei(&self) -> Option<&'a FieldElement> {
+        // Safety:
+        // Created from valid Table for this object
+        // which contains a valid value in this slot
+        unsafe {
+            self._tab
+                .get::<FieldElement>(ResourcePrice::VT_PRICE_IN_WEI, None)
+        }
+    }
 }
 
 impl flatbuffers::Verifiable for ResourcePrice<'_> {
-  #[inline]
-  fn run_verifier(
-    v: &mut flatbuffers::Verifier, pos: usize
-  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
-    use self::flatbuffers::Verifiable;
-    v.visit_table(pos)?
-     .visit_field::<FieldElement>("price_in_fri", Self::VT_PRICE_IN_FRI, false)?
-     .visit_field::<FieldElement>("price_in_wei", Self::VT_PRICE_IN_WEI, false)?
-     .finish();
-    Ok(())
-  }
+    #[inline]
+    fn run_verifier(
+        v: &mut flatbuffers::Verifier,
+        pos: usize,
+    ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+        use self::flatbuffers::Verifiable;
+        v.visit_table(pos)?
+            .visit_field::<FieldElement>("price_in_fri", Self::VT_PRICE_IN_FRI, false)?
+            .visit_field::<FieldElement>("price_in_wei", Self::VT_PRICE_IN_WEI, false)?
+            .finish();
+        Ok(())
+    }
 }
 pub struct ResourcePriceArgs<'a> {
     pub price_in_fri: Option<&'a FieldElement>,
     pub price_in_wei: Option<&'a FieldElement>,
 }
 impl<'a> Default for ResourcePriceArgs<'a> {
-  #[inline]
-  fn default() -> Self {
-    ResourcePriceArgs {
-      price_in_fri: None,
-      price_in_wei: None,
+    #[inline]
+    fn default() -> Self {
+        ResourcePriceArgs {
+            price_in_fri: None,
+            price_in_wei: None,
+        }
     }
-  }
 }
 
 pub struct ResourcePriceBuilder<'a: 'b, 'b> {
-  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a>,
-  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+    fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a>,
+    start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
 }
 impl<'a: 'b, 'b> ResourcePriceBuilder<'a, 'b> {
-  #[inline]
-  pub fn add_price_in_fri(&mut self, price_in_fri: &FieldElement) {
-    self.fbb_.push_slot_always::<&FieldElement>(ResourcePrice::VT_PRICE_IN_FRI, price_in_fri);
-  }
-  #[inline]
-  pub fn add_price_in_wei(&mut self, price_in_wei: &FieldElement) {
-    self.fbb_.push_slot_always::<&FieldElement>(ResourcePrice::VT_PRICE_IN_WEI, price_in_wei);
-  }
-  #[inline]
-  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a>) -> ResourcePriceBuilder<'a, 'b> {
-    let start = _fbb.start_table();
-    ResourcePriceBuilder {
-      fbb_: _fbb,
-      start_: start,
+    #[inline]
+    pub fn add_price_in_fri(&mut self, price_in_fri: &FieldElement) {
+        self.fbb_
+            .push_slot_always::<&FieldElement>(ResourcePrice::VT_PRICE_IN_FRI, price_in_fri);
     }
-  }
-  #[inline]
-  pub fn finish(self) -> flatbuffers::WIPOffset<ResourcePrice<'a>> {
-    let o = self.fbb_.end_table(self.start_);
-    flatbuffers::WIPOffset::new(o.value())
-  }
+    #[inline]
+    pub fn add_price_in_wei(&mut self, price_in_wei: &FieldElement) {
+        self.fbb_
+            .push_slot_always::<&FieldElement>(ResourcePrice::VT_PRICE_IN_WEI, price_in_wei);
+    }
+    #[inline]
+    pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a>) -> ResourcePriceBuilder<'a, 'b> {
+        let start = _fbb.start_table();
+        ResourcePriceBuilder {
+            fbb_: _fbb,
+            start_: start,
+        }
+    }
+    #[inline]
+    pub fn finish(self) -> flatbuffers::WIPOffset<ResourcePrice<'a>> {
+        let o = self.fbb_.end_table(self.start_);
+        flatbuffers::WIPOffset::new(o.value())
+    }
 }
 
 impl core::fmt::Debug for ResourcePrice<'_> {
-  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-    let mut ds = f.debug_struct("ResourcePrice");
-      ds.field("price_in_fri", &self.price_in_fri());
-      ds.field("price_in_wei", &self.price_in_wei());
-      ds.finish()
-  }
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let mut ds = f.debug_struct("ResourcePrice");
+        ds.field("price_in_fri", &self.price_in_fri());
+        ds.field("price_in_wei", &self.price_in_wei());
+        ds.finish()
+    }
 }
