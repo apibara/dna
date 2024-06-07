@@ -1,3 +1,3 @@
+pub mod cli;
 pub mod ingestion;
-pub mod provider;
 pub mod segment;

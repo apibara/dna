@@ -1,6 +1,6 @@
 use apibara_dna_common::{
     error::{DnaError, Result},
-    ingestion::{IngestionState, Snapshot, SnapshotChange},
+    ingestion::{ChainChange, IngestionState, Snapshot, SnapshotChange},
     segment::SegmentOptions,
     storage::{LocalStorageBackend, StorageBackend},
 };
@@ -12,7 +12,7 @@ use tracing::info;
 
 use crate::ingestion::{downloader::BlockDownloaderService, segmenter::SegmenterService};
 
-use super::{ChainChange, RpcProvider};
+use super::RpcProvider;
 
 #[derive(Debug, Clone)]
 pub struct RpcIngestionOptions {

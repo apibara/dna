@@ -4,6 +4,7 @@ use alloy_primitives::B256;
 use apibara_dna_common::{
     core::Cursor,
     error::{DnaError, Result},
+    ingestion::ChainChange,
     storage::{LocalStorageBackend, StorageBackend},
 };
 use error_stack::ResultExt;
@@ -18,7 +19,7 @@ use crate::{
     segment::{conversion::model::GetCursor, SingleBlockBuilder},
 };
 
-use super::{ChainChange, RpcIngestionOptions, RpcProvider};
+use super::{RpcIngestionOptions, RpcProvider};
 
 #[derive(Debug, Clone)]
 pub enum BlockNumberOrHash {

@@ -5,7 +5,7 @@ use crate::ingestion::RpcProviderService;
 
 #[derive(Args, Debug, Clone)]
 pub struct RpcArgs {
-    /// Ethereum RPC URL.
+    /// Starknet RPC URL.
     #[arg(long, env)]
     pub rpc_url: String,
     /// RPC rate limit, in requests per second.
