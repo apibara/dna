@@ -21,6 +21,7 @@ let
   buildArgs = ({
     nativeBuildInputs = with pkgs; [
       cargo-nextest
+      cargo-flamegraph
       clang
       cmake
       llvmPackages.libclang.lib
