@@ -1,7 +1,7 @@
 use apibara_dna_common::{
     error::{DnaError, Result},
     server::IngestionStateSyncServer,
-    storage::{CachedStorage, LocalStorageBackend, StorageBackend},
+    storage::{CacheArgs, CachedStorage, LocalStorageBackend, StorageArgs, StorageBackend},
 };
 use clap::Args;
 use error_stack::ResultExt;
@@ -9,8 +9,6 @@ use tokio_util::sync::CancellationToken;
 use tracing::info;
 
 use crate::server::DnaServer;
-
-use super::common::{CacheArgs, StorageArgs};
 
 /// Start serving ingested data to clients.
 #[derive(Args, Debug)]
