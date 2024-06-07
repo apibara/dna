@@ -2,128 +2,155 @@
 // @generated
 extern crate alloc;
 extern crate flatbuffers;
+use self::flatbuffers::{EndianScalar, Follow};
+use super::*;
 use alloc::boxed::Box;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
-use core::mem;
 use core::cmp::Ordering;
-use self::flatbuffers::{EndianScalar, Follow};
-use super::*;
+use core::mem;
 pub enum ReceiptSegmentOffset {}
 #[derive(Copy, Clone, PartialEq)]
 
 pub struct ReceiptSegment<'a> {
-  pub _tab: flatbuffers::Table<'a>,
+    pub _tab: flatbuffers::Table<'a>,
 }
 
 impl<'a> flatbuffers::Follow<'a> for ReceiptSegment<'a> {
-  type Inner = ReceiptSegment<'a>;
-  #[inline]
-  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
-    Self { _tab: flatbuffers::Table::new(buf, loc) }
-  }
+    type Inner = ReceiptSegment<'a>;
+    #[inline]
+    unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+        Self {
+            _tab: flatbuffers::Table::new(buf, loc),
+        }
+    }
 }
 
 impl<'a> ReceiptSegment<'a> {
-  pub const VT_FIRST_BLOCK_NUMBER: flatbuffers::VOffsetT = 4;
-  pub const VT_BLOCKS: flatbuffers::VOffsetT = 6;
+    pub const VT_FIRST_BLOCK_NUMBER: flatbuffers::VOffsetT = 4;
+    pub const VT_BLOCKS: flatbuffers::VOffsetT = 6;
 
-  pub const fn get_fully_qualified_name() -> &'static str {
-    "ReceiptSegment"
-  }
+    pub const fn get_fully_qualified_name() -> &'static str {
+        "ReceiptSegment"
+    }
 
-  #[inline]
-  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
-    ReceiptSegment { _tab: table }
-  }
-  #[allow(unused_mut)]
-  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr>(
-    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr>,
-    args: &'args ReceiptSegmentArgs<'args>
-  ) -> flatbuffers::WIPOffset<ReceiptSegment<'bldr>> {
-    let mut builder = ReceiptSegmentBuilder::new(_fbb);
-    builder.add_first_block_number(args.first_block_number);
-    if let Some(x) = args.blocks { builder.add_blocks(x); }
-    builder.finish()
-  }
+    #[inline]
+    pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+        ReceiptSegment { _tab: table }
+    }
+    #[allow(unused_mut)]
+    pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr>(
+        _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr>,
+        args: &'args ReceiptSegmentArgs<'args>,
+    ) -> flatbuffers::WIPOffset<ReceiptSegment<'bldr>> {
+        let mut builder = ReceiptSegmentBuilder::new(_fbb);
+        builder.add_first_block_number(args.first_block_number);
+        if let Some(x) = args.blocks {
+            builder.add_blocks(x);
+        }
+        builder.finish()
+    }
 
-
-  #[inline]
-  pub fn first_block_number(&self) -> u64 {
-    // Safety:
-    // Created from valid Table for this object
-    // which contains a valid value in this slot
-    unsafe { self._tab.get::<u64>(ReceiptSegment::VT_FIRST_BLOCK_NUMBER, Some(0)).unwrap()}
-  }
-  #[inline]
-  pub fn blocks(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<BlockReceipts<'a>>>> {
-    // Safety:
-    // Created from valid Table for this object
-    // which contains a valid value in this slot
-    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<BlockReceipts>>>>(ReceiptSegment::VT_BLOCKS, None)}
-  }
+    #[inline]
+    pub fn first_block_number(&self) -> u64 {
+        // Safety:
+        // Created from valid Table for this object
+        // which contains a valid value in this slot
+        unsafe {
+            self._tab
+                .get::<u64>(ReceiptSegment::VT_FIRST_BLOCK_NUMBER, Some(0))
+                .unwrap()
+        }
+    }
+    #[inline]
+    pub fn blocks(
+        &self,
+    ) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<BlockReceipts<'a>>>> {
+        // Safety:
+        // Created from valid Table for this object
+        // which contains a valid value in this slot
+        unsafe {
+            self._tab.get::<flatbuffers::ForwardsUOffset<
+                flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<BlockReceipts>>,
+            >>(ReceiptSegment::VT_BLOCKS, None)
+        }
+    }
 }
 
 impl flatbuffers::Verifiable for ReceiptSegment<'_> {
-  #[inline]
-  fn run_verifier(
-    v: &mut flatbuffers::Verifier, pos: usize
-  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
-    use self::flatbuffers::Verifiable;
-    v.visit_table(pos)?
-     .visit_field::<u64>("first_block_number", Self::VT_FIRST_BLOCK_NUMBER, false)?
-     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<BlockReceipts>>>>("blocks", Self::VT_BLOCKS, false)?
-     .finish();
-    Ok(())
-  }
+    #[inline]
+    fn run_verifier(
+        v: &mut flatbuffers::Verifier,
+        pos: usize,
+    ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+        use self::flatbuffers::Verifiable;
+        v.visit_table(pos)?
+            .visit_field::<u64>("first_block_number", Self::VT_FIRST_BLOCK_NUMBER, false)?
+            .visit_field::<flatbuffers::ForwardsUOffset<
+                flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<BlockReceipts>>,
+            >>("blocks", Self::VT_BLOCKS, false)?
+            .finish();
+        Ok(())
+    }
 }
 pub struct ReceiptSegmentArgs<'a> {
     pub first_block_number: u64,
-    pub blocks: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<BlockReceipts<'a>>>>>,
+    pub blocks: Option<
+        flatbuffers::WIPOffset<
+            flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<BlockReceipts<'a>>>,
+        >,
+    >,
 }
 impl<'a> Default for ReceiptSegmentArgs<'a> {
-  #[inline]
-  fn default() -> Self {
-    ReceiptSegmentArgs {
-      first_block_number: 0,
-      blocks: None,
+    #[inline]
+    fn default() -> Self {
+        ReceiptSegmentArgs {
+            first_block_number: 0,
+            blocks: None,
+        }
     }
-  }
 }
 
 pub struct ReceiptSegmentBuilder<'a: 'b, 'b> {
-  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a>,
-  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+    fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a>,
+    start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
 }
 impl<'a: 'b, 'b> ReceiptSegmentBuilder<'a, 'b> {
-  #[inline]
-  pub fn add_first_block_number(&mut self, first_block_number: u64) {
-    self.fbb_.push_slot::<u64>(ReceiptSegment::VT_FIRST_BLOCK_NUMBER, first_block_number, 0);
-  }
-  #[inline]
-  pub fn add_blocks(&mut self, blocks: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<BlockReceipts<'b >>>>) {
-    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(ReceiptSegment::VT_BLOCKS, blocks);
-  }
-  #[inline]
-  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a>) -> ReceiptSegmentBuilder<'a, 'b> {
-    let start = _fbb.start_table();
-    ReceiptSegmentBuilder {
-      fbb_: _fbb,
-      start_: start,
+    #[inline]
+    pub fn add_first_block_number(&mut self, first_block_number: u64) {
+        self.fbb_
+            .push_slot::<u64>(ReceiptSegment::VT_FIRST_BLOCK_NUMBER, first_block_number, 0);
     }
-  }
-  #[inline]
-  pub fn finish(self) -> flatbuffers::WIPOffset<ReceiptSegment<'a>> {
-    let o = self.fbb_.end_table(self.start_);
-    flatbuffers::WIPOffset::new(o.value())
-  }
+    #[inline]
+    pub fn add_blocks(
+        &mut self,
+        blocks: flatbuffers::WIPOffset<
+            flatbuffers::Vector<'b, flatbuffers::ForwardsUOffset<BlockReceipts<'b>>>,
+        >,
+    ) {
+        self.fbb_
+            .push_slot_always::<flatbuffers::WIPOffset<_>>(ReceiptSegment::VT_BLOCKS, blocks);
+    }
+    #[inline]
+    pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a>) -> ReceiptSegmentBuilder<'a, 'b> {
+        let start = _fbb.start_table();
+        ReceiptSegmentBuilder {
+            fbb_: _fbb,
+            start_: start,
+        }
+    }
+    #[inline]
+    pub fn finish(self) -> flatbuffers::WIPOffset<ReceiptSegment<'a>> {
+        let o = self.fbb_.end_table(self.start_);
+        flatbuffers::WIPOffset::new(o.value())
+    }
 }
 
 impl core::fmt::Debug for ReceiptSegment<'_> {
-  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-    let mut ds = f.debug_struct("ReceiptSegment");
-      ds.field("first_block_number", &self.first_block_number());
-      ds.field("blocks", &self.blocks());
-      ds.finish()
-  }
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let mut ds = f.debug_struct("ReceiptSegment");
+        ds.field("first_block_number", &self.first_block_number());
+        ds.field("blocks", &self.blocks());
+        ds.finish()
+    }
 }

@@ -2,100 +2,112 @@
 // @generated
 extern crate alloc;
 extern crate flatbuffers;
+use self::flatbuffers::{EndianScalar, Follow};
+use super::*;
 use alloc::boxed::Box;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
-use core::mem;
 use core::cmp::Ordering;
-use self::flatbuffers::{EndianScalar, Follow};
-use super::*;
+use core::mem;
 pub enum SignatureOffset {}
 #[derive(Copy, Clone, PartialEq)]
 
 pub struct Signature<'a> {
-  pub _tab: flatbuffers::Table<'a>,
+    pub _tab: flatbuffers::Table<'a>,
 }
 
 impl<'a> flatbuffers::Follow<'a> for Signature<'a> {
-  type Inner = Signature<'a>;
-  #[inline]
-  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
-    Self { _tab: flatbuffers::Table::new(buf, loc) }
-  }
+    type Inner = Signature<'a>;
+    #[inline]
+    unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+        Self {
+            _tab: flatbuffers::Table::new(buf, loc),
+        }
+    }
 }
 
 impl<'a> Signature<'a> {
-  pub const VT_R: flatbuffers::VOffsetT = 4;
-  pub const VT_S: flatbuffers::VOffsetT = 6;
-  pub const VT_V: flatbuffers::VOffsetT = 8;
-  pub const VT_Y_PARITY: flatbuffers::VOffsetT = 10;
+    pub const VT_R: flatbuffers::VOffsetT = 4;
+    pub const VT_S: flatbuffers::VOffsetT = 6;
+    pub const VT_V: flatbuffers::VOffsetT = 8;
+    pub const VT_Y_PARITY: flatbuffers::VOffsetT = 10;
 
-  pub const fn get_fully_qualified_name() -> &'static str {
-    "Signature"
-  }
+    pub const fn get_fully_qualified_name() -> &'static str {
+        "Signature"
+    }
 
-  #[inline]
-  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
-    Signature { _tab: table }
-  }
-  #[allow(unused_mut)]
-  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr>(
-    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr>,
-    args: &'args SignatureArgs<'args>
-  ) -> flatbuffers::WIPOffset<Signature<'bldr>> {
-    let mut builder = SignatureBuilder::new(_fbb);
-    if let Some(x) = args.v { builder.add_v(x); }
-    if let Some(x) = args.s { builder.add_s(x); }
-    if let Some(x) = args.r { builder.add_r(x); }
-    builder.add_y_parity(args.y_parity);
-    builder.finish()
-  }
+    #[inline]
+    pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+        Signature { _tab: table }
+    }
+    #[allow(unused_mut)]
+    pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr>(
+        _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr>,
+        args: &'args SignatureArgs<'args>,
+    ) -> flatbuffers::WIPOffset<Signature<'bldr>> {
+        let mut builder = SignatureBuilder::new(_fbb);
+        if let Some(x) = args.v {
+            builder.add_v(x);
+        }
+        if let Some(x) = args.s {
+            builder.add_s(x);
+        }
+        if let Some(x) = args.r {
+            builder.add_r(x);
+        }
+        builder.add_y_parity(args.y_parity);
+        builder.finish()
+    }
 
-
-  #[inline]
-  pub fn r(&self) -> Option<&'a U256> {
-    // Safety:
-    // Created from valid Table for this object
-    // which contains a valid value in this slot
-    unsafe { self._tab.get::<U256>(Signature::VT_R, None)}
-  }
-  #[inline]
-  pub fn s(&self) -> Option<&'a U256> {
-    // Safety:
-    // Created from valid Table for this object
-    // which contains a valid value in this slot
-    unsafe { self._tab.get::<U256>(Signature::VT_S, None)}
-  }
-  #[inline]
-  pub fn v(&self) -> Option<&'a U256> {
-    // Safety:
-    // Created from valid Table for this object
-    // which contains a valid value in this slot
-    unsafe { self._tab.get::<U256>(Signature::VT_V, None)}
-  }
-  #[inline]
-  pub fn y_parity(&self) -> bool {
-    // Safety:
-    // Created from valid Table for this object
-    // which contains a valid value in this slot
-    unsafe { self._tab.get::<bool>(Signature::VT_Y_PARITY, Some(false)).unwrap()}
-  }
+    #[inline]
+    pub fn r(&self) -> Option<&'a U256> {
+        // Safety:
+        // Created from valid Table for this object
+        // which contains a valid value in this slot
+        unsafe { self._tab.get::<U256>(Signature::VT_R, None) }
+    }
+    #[inline]
+    pub fn s(&self) -> Option<&'a U256> {
+        // Safety:
+        // Created from valid Table for this object
+        // which contains a valid value in this slot
+        unsafe { self._tab.get::<U256>(Signature::VT_S, None) }
+    }
+    #[inline]
+    pub fn v(&self) -> Option<&'a U256> {
+        // Safety:
+        // Created from valid Table for this object
+        // which contains a valid value in this slot
+        unsafe { self._tab.get::<U256>(Signature::VT_V, None) }
+    }
+    #[inline]
+    pub fn y_parity(&self) -> bool {
+        // Safety:
+        // Created from valid Table for this object
+        // which contains a valid value in this slot
+        unsafe {
+            self._tab
+                .get::<bool>(Signature::VT_Y_PARITY, Some(false))
+                .unwrap()
+        }
+    }
 }
 
 impl flatbuffers::Verifiable for Signature<'_> {
-  #[inline]
-  fn run_verifier(
-    v: &mut flatbuffers::Verifier, pos: usize
-  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
-    use self::flatbuffers::Verifiable;
-    v.visit_table(pos)?
-     .visit_field::<U256>("r", Self::VT_R, false)?
-     .visit_field::<U256>("s", Self::VT_S, false)?
-     .visit_field::<U256>("v", Self::VT_V, false)?
-     .visit_field::<bool>("y_parity", Self::VT_Y_PARITY, false)?
-     .finish();
-    Ok(())
-  }
+    #[inline]
+    fn run_verifier(
+        v: &mut flatbuffers::Verifier,
+        pos: usize,
+    ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+        use self::flatbuffers::Verifiable;
+        v.visit_table(pos)?
+            .visit_field::<U256>("r", Self::VT_R, false)?
+            .visit_field::<U256>("s", Self::VT_S, false)?
+            .visit_field::<U256>("v", Self::VT_V, false)?
+            .visit_field::<bool>("y_parity", Self::VT_Y_PARITY, false)?
+            .finish();
+        Ok(())
+    }
 }
 pub struct SignatureArgs<'a> {
     pub r: Option<&'a U256>,
@@ -104,60 +116,61 @@ pub struct SignatureArgs<'a> {
     pub y_parity: bool,
 }
 impl<'a> Default for SignatureArgs<'a> {
-  #[inline]
-  fn default() -> Self {
-    SignatureArgs {
-      r: None,
-      s: None,
-      v: None,
-      y_parity: false,
+    #[inline]
+    fn default() -> Self {
+        SignatureArgs {
+            r: None,
+            s: None,
+            v: None,
+            y_parity: false,
+        }
     }
-  }
 }
 
 pub struct SignatureBuilder<'a: 'b, 'b> {
-  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a>,
-  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+    fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a>,
+    start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
 }
 impl<'a: 'b, 'b> SignatureBuilder<'a, 'b> {
-  #[inline]
-  pub fn add_r(&mut self, r: &U256) {
-    self.fbb_.push_slot_always::<&U256>(Signature::VT_R, r);
-  }
-  #[inline]
-  pub fn add_s(&mut self, s: &U256) {
-    self.fbb_.push_slot_always::<&U256>(Signature::VT_S, s);
-  }
-  #[inline]
-  pub fn add_v(&mut self, v: &U256) {
-    self.fbb_.push_slot_always::<&U256>(Signature::VT_V, v);
-  }
-  #[inline]
-  pub fn add_y_parity(&mut self, y_parity: bool) {
-    self.fbb_.push_slot::<bool>(Signature::VT_Y_PARITY, y_parity, false);
-  }
-  #[inline]
-  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a>) -> SignatureBuilder<'a, 'b> {
-    let start = _fbb.start_table();
-    SignatureBuilder {
-      fbb_: _fbb,
-      start_: start,
+    #[inline]
+    pub fn add_r(&mut self, r: &U256) {
+        self.fbb_.push_slot_always::<&U256>(Signature::VT_R, r);
     }
-  }
-  #[inline]
-  pub fn finish(self) -> flatbuffers::WIPOffset<Signature<'a>> {
-    let o = self.fbb_.end_table(self.start_);
-    flatbuffers::WIPOffset::new(o.value())
-  }
+    #[inline]
+    pub fn add_s(&mut self, s: &U256) {
+        self.fbb_.push_slot_always::<&U256>(Signature::VT_S, s);
+    }
+    #[inline]
+    pub fn add_v(&mut self, v: &U256) {
+        self.fbb_.push_slot_always::<&U256>(Signature::VT_V, v);
+    }
+    #[inline]
+    pub fn add_y_parity(&mut self, y_parity: bool) {
+        self.fbb_
+            .push_slot::<bool>(Signature::VT_Y_PARITY, y_parity, false);
+    }
+    #[inline]
+    pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a>) -> SignatureBuilder<'a, 'b> {
+        let start = _fbb.start_table();
+        SignatureBuilder {
+            fbb_: _fbb,
+            start_: start,
+        }
+    }
+    #[inline]
+    pub fn finish(self) -> flatbuffers::WIPOffset<Signature<'a>> {
+        let o = self.fbb_.end_table(self.start_);
+        flatbuffers::WIPOffset::new(o.value())
+    }
 }
 
 impl core::fmt::Debug for Signature<'_> {
-  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-    let mut ds = f.debug_struct("Signature");
-      ds.field("r", &self.r());
-      ds.field("s", &self.s());
-      ds.field("v", &self.v());
-      ds.field("y_parity", &self.y_parity());
-      ds.finish()
-  }
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let mut ds = f.debug_struct("Signature");
+        ds.field("r", &self.r());
+        ds.field("s", &self.s());
+        ds.field("v", &self.v());
+        ds.field("y_parity", &self.y_parity());
+        ds.finish()
+    }
 }

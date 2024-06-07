@@ -1,5 +1,10 @@
+use std::net::SocketAddr;
+
 use apibara_dna_common::{
-    error::Result, ingestion::IngestionServer, segment::SegmentArgs, storage::StorageBackend,
+    error::{DnaError, Result},
+    ingestion::IngestionServer,
+    segment::SegmentArgs,
+    storage::{CacheArgs, StorageArgs, StorageBackend},
 };
 use clap::Args;
 use error_stack::ResultExt;
@@ -8,13 +13,18 @@ use tracing::info;
 
 use crate::ingestion::{ChainTracker, IngestionOptions, IngestionService, RpcIngestionOptions};
 
-use super::common::{CacheArgs, RpcArgs, StorageArgs};
+use super::common::RpcArgs;
 
 /// Start ingesting data from Ethereum.
 ///
 /// If a snapshot is already present, it will be used to resume ingestion.
 #[derive(Args, Debug)]
 pub struct StartIngestionArgs {
+    /// Ingestion server address.
+    ///
+    /// Defaults to `0.0.0.0:7001`.
+    #[arg(long, env, default_value = "0.0.0.0:7001")]
+    pub server_address: String,
     /// Location for ingested data.
     #[clap(flatten)]
     pub storage: StorageArgs,
@@ -89,7 +99,12 @@ where
     .start(ct.clone())
     .await?;
 
-    let address = "0.0.0.0:7001".parse().expect("parse address");
+    let address = args
+        .server_address
+        .parse::<SocketAddr>()
+        .change_context(DnaError::Configuration)
+        .attach_printable_lazy(|| format!("failed to parse address: {}", args.server_address))?;
+
     IngestionServer::new(local_cache_storage, ingestion_stream)
         .start(address, ct)
         .await

@@ -1,7 +1,7 @@
 use apibara_dna_common::{
     error::{DnaError, Result},
     ingestion::Snapshot,
-    storage::{AppStorageBackend, StorageBackend},
+    storage::{AppStorageBackend, StorageArgs, StorageBackend},
 };
 use clap::Args;
 use error_stack::ResultExt;
@@ -13,8 +13,6 @@ use crate::segment::{
     BlockHeaderSegmentReader, LogSegmentReader, ReceiptSegmentReader, SegmentGroupReader,
     TransactionSegmentReader,
 };
-
-use super::common::StorageArgs;
 
 /// Inspect ingested data.
 #[derive(Args, Debug)]

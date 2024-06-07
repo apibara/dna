@@ -8,8 +8,6 @@ use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::CancellationToken;
 
-use crate::segment::conversion::model::GetCursor;
-
 use super::RpcProvider;
 
 pub struct ChainTracker {
@@ -35,16 +33,11 @@ async fn track_chain(
     tx: mpsc::Sender<ChainChange>,
     ct: CancellationToken,
 ) -> Result<()> {
-    let mut head = provider
-        .get_latest_block()
-        .await?
-        .cursor()
-        .expect("no head block");
+    let mut head = provider.get_latest_block().await?;
+
     let mut finalized = provider
-        .get_finalized_block()
-        .await?
-        .cursor()
-        .expect("no finalized block");
+        .get_finalized_block(None, Some(head.number))
+        .await?;
 
     let change = ChainChange::Initialize {
         head: head.clone(),
@@ -62,7 +55,7 @@ async fn track_chain(
         tokio::select! {
             _ = ct.cancelled() => break,
             _ = head_timeout.tick() => {
-                let new_head = provider.get_latest_block().await?.cursor().expect("no head block");
+                let new_head = provider.get_latest_block().await?;
                 if new_head != head {
                     head = new_head;
                     let change = ChainChange::NewHead(head.clone());
@@ -70,7 +63,7 @@ async fn track_chain(
                 }
             }
             _ = finalized_timeout.tick() => {
-                let new_finalized = provider.get_finalized_block().await?.cursor().expect("no finalized block");
+                let new_finalized = provider.get_finalized_block(Some(finalized.number), Some(head.number)).await?;
                 if new_finalized != finalized {
                     finalized = new_finalized;
                     let change = ChainChange::NewFinalized(finalized.clone());
