@@ -6,6 +6,8 @@ mod block_header_segment_generated;
 pub use self::block_header_segment_generated::*;
 mod event_segment_generated;
 pub use self::event_segment_generated::*;
+mod single_block_generated;
+pub use self::single_block_generated::*;
 mod block_header_generated;
 pub use self::block_header_generated::*;
 mod field_element_bitmap_generated;
