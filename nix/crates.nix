@@ -22,6 +22,7 @@ let
     nativeBuildInputs = with pkgs; [
       cargo-nextest
       cargo-flamegraph
+      samply
       clang
       cmake
       llvmPackages.libclang.lib
