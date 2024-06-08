@@ -10,6 +10,10 @@ pub trait GetCursor {
     fn cursor(&self) -> Option<Cursor>;
 }
 
+pub trait TransactionReceiptExt {
+    fn events(&self) -> impl Iterator<Item = &models::Event>;
+}
+
 impl GetCursor for models::BlockWithTxs {
     fn cursor(&self) -> Option<Cursor> {
         let number = self.block_number;
@@ -63,5 +67,11 @@ impl BlockExt for models::MaybePendingBlockWithTxHashes {
 impl BlockExt for models::BlockWithTxHashes {
     fn is_finalized(&self) -> bool {
         self.status == models::BlockStatus::AcceptedOnL1
+    }
+}
+
+impl TransactionReceiptExt for models::TransactionReceipt {
+    fn events(&self) -> impl Iterator<Item = &models::Event> {
+        vec![].into_iter()
     }
 }
