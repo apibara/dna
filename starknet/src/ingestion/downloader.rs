@@ -1,5 +1,3 @@
-use std::mem;
-
 use apibara_dna_common::{
     core::Cursor,
     error::{DnaError, Result},
@@ -15,8 +13,7 @@ use tracing::{debug, error, info};
 
 use crate::{
     ingestion::models,
-    segment::{conversion::GetCursor, SingleBlockBuilder},
-    // segment::{conversion::model::GetCursor, SingleBlockBuilder},
+    segment::{conversion::GetCursor, store},
 };
 
 use super::RpcProvider;
@@ -200,18 +197,21 @@ impl InnerDownloader {
             .ok_or(DnaError::Fatal)
             .attach_printable("block header is missing hash")?;
 
-        let mut builder = SingleBlockBuilder::new();
+        let single_block = store::SingleBlock::from(block);
 
-        builder.add_block_with_receipts(&block);
+        let bytes = rkyv::to_bytes::<_, 0>(&single_block)
+            .change_context(DnaError::Io)
+            .attach_printable("failed to serialize block")?;
 
-        // TODO: We should not clone it every time.
         let prefix = format!("blocks/{}-{}", cursor.number, cursor.hash_as_hex());
         let mut writer = self.storage.clone().put(&prefix, "block").await?;
-        let data_size = builder.write_block(&mut writer).await?;
-        writer.shutdown().await.change_context(DnaError::Io)?;
-        debug!(prefix, data_size, "wrote single block");
 
-        builder.reset();
+        writer
+            .write_all(&bytes)
+            .await
+            .change_context(DnaError::Io)
+            .attach_printable("failed to write single block")?;
+        writer.shutdown().await.change_context(DnaError::Io)?;
 
         Ok(cursor)
     }
