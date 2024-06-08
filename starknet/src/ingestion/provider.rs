@@ -22,9 +22,15 @@ const DEFAULT_CONCURRENCY: usize = 100;
 
 pub mod models {
     pub use starknet::core::types::{
-        BlockStatus, BlockWithReceipts, BlockWithTxHashes, BlockWithTxs, FieldElement,
+        BlockStatus, BlockWithReceipts, BlockWithTxHashes, BlockWithTxs, DeclareTransaction,
+        DeclareTransactionReceipt, DeclareTransactionV0, DeclareTransactionV1,
+        DeclareTransactionV2, DeclareTransactionV3, DeployAccountTransaction,
+        DeployAccountTransactionReceipt, DeployAccountTransactionV1, DeployAccountTransactionV3,
+        DeployTransaction, DeployTransactionReceipt, Event, FieldElement, InvokeTransaction,
+        InvokeTransactionReceipt, InvokeTransactionV0, InvokeTransactionV1, InvokeTransactionV3,
+        L1DataAvailabilityMode, L1HandlerTransaction, L1HandlerTransactionReceipt,
         MaybePendingBlockWithReceipts, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs,
-        PendingBlockWithTxHashes,
+        PendingBlockWithTxHashes, ResourceBounds, ResourcePrice, Transaction, TransactionReceipt,
     };
 }
 
