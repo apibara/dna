@@ -6,6 +6,7 @@ use apibara_dna_common::{
 };
 use error_stack::ResultExt;
 use futures_util::{Stream, TryFutureExt};
+use rkyv::Deserialize;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     sync::mpsc,
@@ -13,6 +14,8 @@ use tokio::{
 use tokio_stream::{wrappers::ReceiverStream, StreamExt};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
+
+use crate::segment::{store, SegmentBuilder};
 
 use super::downloader::BlockEvent;
 
@@ -32,8 +35,6 @@ struct Worker<S: StorageBackend + Send + Sync + 'static> {
     snapshot: Snapshot,
     finalized: Cursor,
     segment: Option<SegmentData>,
-    // segment_builder: SegmentBuilder<'static>,
-    // segment_group_builder: SegmentGroupBuilder<'static>,
 }
 
 struct SegmentData {
@@ -110,8 +111,6 @@ where
             snapshot: starting_snapshot,
             finalized,
             segment: None,
-            // segment_builder: SegmentBuilder::default(),
-            // segment_group_builder: SegmentGroupBuilder::default(),
         };
 
         loop {
@@ -223,7 +222,6 @@ where
 
     /// Actually write segment if needed. Returns `true` if it wrote a segment.
     async fn do_write_segment_if_needed(&mut self) -> Result<bool> {
-        /*
         let Some(segment_data) = self.segment.as_mut() else {
             debug!("done: no segment data");
             return Ok(false);
@@ -295,31 +293,24 @@ where
                 + 1,
         );
 
-        let mut buffer = Vec::new();
+        let mut segment_builder = SegmentBuilder::default();
+
         for cursor in &cursors_to_segment {
             debug!(cursor = ?cursor, "copying block to segment");
             let prefix = format!("blocks/{}-{}", cursor.number, cursor.hash_as_hex());
-            let mut reader = self.local_storage.get(&prefix, "block").await?;
+            let contents = self.local_storage.mmap(&prefix, "block")?;
 
-            buffer.clear();
-            reader
-                .read_to_end(&mut buffer)
-                .await
-                .change_context(DnaError::Io)
-                .attach_printable("failed to read block")
-                .attach_printable_lazy(|| format!("prefix: {prefix}"))?;
+            // TODO: use custom deserialization
+            let block = rkyv::from_bytes::<store::SingleBlock>(&contents).unwrap();
 
-            let single_block = flatbuffers::root::<store::SingleBlock>(&buffer).unwrap();
-            self.segment_builder
-                .add_single_block(cursor.number, &single_block);
+            segment_builder.add_single_block(block)
         }
 
-        assert_eq!(
-            self.segment_builder.header_count(),
-            segment_options.segment_size
-        );
+        // TODO: write segment
+        assert_eq!(segment_builder.size(), segment_options.segment_size);
+
         let segment_name = segment_options.format_segment_name(current_segment_start);
-        self.segment_builder
+        segment_builder
             .write(&format!("segment/{segment_name}"), &mut self.storage)
             .await?;
 
@@ -332,6 +323,7 @@ where
             self.local_storage.remove_prefix(prefix).await?;
         }
 
+        /*
         let index = self.segment_builder.take_index();
         self.segment_group_builder
             .add_segment(current_segment_start);
@@ -340,6 +332,7 @@ where
 
         self.snapshot.revision += 1;
         self.snapshot.ingestion.extra_segment_count += 1;
+        */
 
         if current_group_start == next_group_start {
             self.write_snapshot().await?;
@@ -348,10 +341,12 @@ where
         }
 
         let group_name = segment_options.format_segment_group_name(current_group_start);
+        /*
         self.segment_group_builder
             .write(&group_name, &mut self.storage)
             .await?;
         self.segment_group_builder.reset();
+        */
         info!(group_name, "segment group written");
 
         self.snapshot.ingestion.group_count += 1;
@@ -367,8 +362,6 @@ where
         self.write_snapshot().await?;
 
         Ok(true)
-        */
-        Ok(false)
     }
 
     async fn write_snapshot(&mut self) -> Result<()> {
