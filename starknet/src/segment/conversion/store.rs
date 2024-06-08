@@ -22,6 +22,99 @@ impl From<&models::ResourcePrice> for store::ResourcePrice {
         }
     }
 }
+impl From<&models::ResourceBoundsMapping> for store::ResourceBoundsMapping {
+    fn from(value: &models::ResourceBoundsMapping) -> Self {
+        store::ResourceBoundsMapping {
+            l1_gas: (&value.l1_gas).into(),
+            l2_gas: (&value.l2_gas).into(),
+        }
+    }
+}
+
+impl From<&models::ResourceBounds> for store::ResourceBounds {
+    fn from(value: &models::ResourceBounds) -> Self {
+        store::ResourceBounds {
+            max_amount: value.max_amount,
+            max_price_per_unit: value.max_price_per_unit,
+        }
+    }
+}
+
+impl From<models::DataAvailabilityMode> for store::DataAvailabilityMode {
+    fn from(value: models::DataAvailabilityMode) -> Self {
+        use models::DataAvailabilityMode::*;
+        match value {
+            L1 => store::DataAvailabilityMode::L1,
+            L2 => store::DataAvailabilityMode::L2,
+        }
+    }
+}
+
+impl From<&models::FeePayment> for store::FeePayment {
+    fn from(value: &models::FeePayment) -> Self {
+        store::FeePayment {
+            amount: value.amount.into(),
+            unit: value.unit.into(),
+        }
+    }
+}
+
+impl From<models::PriceUnit> for store::PriceUnit {
+    fn from(value: models::PriceUnit) -> Self {
+        use models::PriceUnit::*;
+        match value {
+            Fri => store::PriceUnit::Fri,
+            Wei => store::PriceUnit::Wei,
+        }
+    }
+}
+
+impl From<&models::ExecutionResources> for store::ExecutionResources {
+    fn from(value: &models::ExecutionResources) -> Self {
+        store::ExecutionResources {
+            computation: (&value.computation_resources).into(),
+            data_availability: (&value.data_resources).into(),
+        }
+    }
+}
+
+impl From<&models::ComputationResources> for store::ComputationResources {
+    fn from(value: &models::ComputationResources) -> Self {
+        store::ComputationResources {
+            steps: value.steps,
+            memory_holes: value.memory_holes,
+            range_check_builtin_applications: value.range_check_builtin_applications,
+            pedersen_builtin_applications: value.pedersen_builtin_applications,
+            poseidon_builtin_applications: value.poseidon_builtin_applications,
+            ec_op_builtin_applications: value.ec_op_builtin_applications,
+            ecdsa_builtin_applications: value.ecdsa_builtin_applications,
+            bitwise_builtin_applications: value.bitwise_builtin_applications,
+            keccak_builtin_applications: value.keccak_builtin_applications,
+            segment_arena_builtin: value.segment_arena_builtin,
+        }
+    }
+}
+
+impl From<&models::DataResources> for store::DataResources {
+    fn from(value: &models::DataResources) -> Self {
+        store::DataResources {
+            l1_data_gas: value.data_availability.l1_data_gas,
+            l1_gas: value.data_availability.l1_gas,
+        }
+    }
+}
+
+impl From<&models::ExecutionResult> for store::ExecutionResult {
+    fn from(value: &models::ExecutionResult) -> Self {
+        use models::ExecutionResult::*;
+        match value {
+            Succeeded => store::ExecutionResult::Succeeded,
+            Reverted { reason } => store::ExecutionResult::Reverted {
+                reason: reason.clone(),
+            },
+        }
+    }
+}
 
 impl From<models::L1DataAvailabilityMode> for store::L1DataAvailabilityMode {
     fn from(value: models::L1DataAvailabilityMode) -> Self {
@@ -81,7 +174,14 @@ impl From<&models::InvokeTransactionV0> for store::Transaction {
             transaction_hash: tx.transaction_hash.into(),
         };
 
-        store::Transaction::InvokeTransactionV0(store::InvokeTransactionV0 { meta })
+        store::Transaction::InvokeTransactionV0(store::InvokeTransactionV0 {
+            meta,
+            max_fee: tx.max_fee.into(),
+            signature: tx.signature.iter().map(store::FieldElement::from).collect(),
+            contract_address: tx.contract_address.into(),
+            entry_point_selector: tx.entry_point_selector.into(),
+            calldata: tx.calldata.iter().map(store::FieldElement::from).collect(),
+        })
     }
 }
 
@@ -92,7 +192,14 @@ impl From<&models::InvokeTransactionV1> for store::Transaction {
             transaction_hash: tx.transaction_hash.into(),
         };
 
-        store::Transaction::InvokeTransactionV1(store::InvokeTransactionV1 { meta })
+        store::Transaction::InvokeTransactionV1(store::InvokeTransactionV1 {
+            meta,
+            sender_address: tx.sender_address.into(),
+            calldata: tx.calldata.iter().map(store::FieldElement::from).collect(),
+            max_fee: tx.max_fee.into(),
+            signature: tx.signature.iter().map(store::FieldElement::from).collect(),
+            nonce: tx.nonce.into(),
+        })
     }
 }
 
@@ -103,7 +210,27 @@ impl From<&models::InvokeTransactionV3> for store::Transaction {
             transaction_hash: tx.transaction_hash.into(),
         };
 
-        store::Transaction::InvokeTransactionV3(store::InvokeTransactionV3 { meta })
+        store::Transaction::InvokeTransactionV3(store::InvokeTransactionV3 {
+            meta,
+            sender_address: tx.sender_address.into(),
+            calldata: tx.calldata.iter().map(store::FieldElement::from).collect(),
+            signature: tx.signature.iter().map(store::FieldElement::from).collect(),
+            nonce: tx.nonce.into(),
+            resource_bounds: (&tx.resource_bounds).into(),
+            tip: tx.tip,
+            paymaster_data: tx
+                .paymaster_data
+                .iter()
+                .map(store::FieldElement::from)
+                .collect(),
+            account_deployment_data: tx
+                .account_deployment_data
+                .iter()
+                .map(store::FieldElement::from)
+                .collect(),
+            nonce_data_availability_mode: tx.nonce_data_availability_mode.into(),
+            fee_data_availability_mode: tx.fee_data_availability_mode.into(),
+        })
     }
 }
 
@@ -114,7 +241,13 @@ impl From<&models::L1HandlerTransaction> for store::Transaction {
             transaction_hash: tx.transaction_hash.into(),
         };
 
-        store::Transaction::L1HandlerTransaction(store::L1HandlerTransaction { meta })
+        store::Transaction::L1HandlerTransaction(store::L1HandlerTransaction {
+            meta,
+            nonce: tx.nonce,
+            contract_address: tx.contract_address.into(),
+            entry_point_selector: tx.entry_point_selector.into(),
+            calldata: tx.calldata.iter().map(store::FieldElement::from).collect(),
+        })
     }
 }
 
@@ -125,7 +258,16 @@ impl From<&models::DeployTransaction> for store::Transaction {
             transaction_hash: tx.transaction_hash.into(),
         };
 
-        store::Transaction::DeployTransaction(store::DeployTransaction { meta })
+        store::Transaction::DeployTransaction(store::DeployTransaction {
+            meta,
+            contract_address_salt: tx.contract_address_salt.into(),
+            constructor_calldata: tx
+                .constructor_calldata
+                .iter()
+                .map(store::FieldElement::from)
+                .collect(),
+            class_hash: tx.class_hash.into(),
+        })
     }
 }
 
@@ -148,7 +290,13 @@ impl From<&models::DeclareTransactionV0> for store::Transaction {
             transaction_hash: tx.transaction_hash.into(),
         };
 
-        store::Transaction::DeclareTransactionV0(store::DeclareTransactionV0 { meta })
+        store::Transaction::DeclareTransactionV0(store::DeclareTransactionV0 {
+            meta,
+            sender_address: tx.sender_address.into(),
+            max_fee: tx.max_fee.into(),
+            signature: tx.signature.iter().map(store::FieldElement::from).collect(),
+            class_hash: tx.class_hash.into(),
+        })
     }
 }
 
@@ -159,7 +307,14 @@ impl From<&models::DeclareTransactionV1> for store::Transaction {
             transaction_hash: tx.transaction_hash.into(),
         };
 
-        store::Transaction::DeclareTransactionV1(store::DeclareTransactionV1 { meta })
+        store::Transaction::DeclareTransactionV1(store::DeclareTransactionV1 {
+            meta,
+            sender_address: tx.sender_address.into(),
+            max_fee: tx.max_fee.into(),
+            signature: tx.signature.iter().map(store::FieldElement::from).collect(),
+            nonce: tx.nonce.into(),
+            class_hash: tx.class_hash.into(),
+        })
     }
 }
 
@@ -170,7 +325,15 @@ impl From<&models::DeclareTransactionV2> for store::Transaction {
             transaction_hash: tx.transaction_hash.into(),
         };
 
-        store::Transaction::DeclareTransactionV2(store::DeclareTransactionV2 { meta })
+        store::Transaction::DeclareTransactionV2(store::DeclareTransactionV2 {
+            meta,
+            sender_address: tx.sender_address.into(),
+            compiled_class_hash: tx.compiled_class_hash.into(),
+            max_fee: tx.max_fee.into(),
+            signature: tx.signature.iter().map(store::FieldElement::from).collect(),
+            nonce: tx.nonce.into(),
+            class_hash: tx.class_hash.into(),
+        })
     }
 }
 
@@ -181,7 +344,28 @@ impl From<&models::DeclareTransactionV3> for store::Transaction {
             transaction_hash: tx.transaction_hash.into(),
         };
 
-        store::Transaction::DeclareTransactionV3(store::DeclareTransactionV3 { meta })
+        store::Transaction::DeclareTransactionV3(store::DeclareTransactionV3 {
+            meta,
+            sender_address: tx.sender_address.into(),
+            compiled_class_hash: tx.compiled_class_hash.into(),
+            signature: tx.signature.iter().map(store::FieldElement::from).collect(),
+            nonce: tx.nonce.into(),
+            class_hash: tx.class_hash.into(),
+            resource_bounds: (&tx.resource_bounds).into(),
+            tip: tx.tip,
+            paymaster_data: tx
+                .paymaster_data
+                .iter()
+                .map(store::FieldElement::from)
+                .collect(),
+            account_deployment_data: tx
+                .account_deployment_data
+                .iter()
+                .map(store::FieldElement::from)
+                .collect(),
+            nonce_data_availability_mode: tx.nonce_data_availability_mode.into(),
+            fee_data_availability_mode: tx.fee_data_availability_mode.into(),
+        })
     }
 }
 
@@ -202,7 +386,19 @@ impl From<&models::DeployAccountTransactionV1> for store::Transaction {
             transaction_hash: tx.transaction_hash.into(),
         };
 
-        store::Transaction::DeployAccountV1(store::DeployAccountTransactionV1 { meta })
+        store::Transaction::DeployAccountV1(store::DeployAccountTransactionV1 {
+            meta,
+            max_fee: tx.max_fee.into(),
+            signature: tx.signature.iter().map(store::FieldElement::from).collect(),
+            nonce: tx.nonce.into(),
+            contract_address_salt: tx.contract_address_salt.into(),
+            constructor_calldata: tx
+                .constructor_calldata
+                .iter()
+                .map(store::FieldElement::from)
+                .collect(),
+            class_hash: tx.class_hash.into(),
+        })
     }
 }
 
@@ -213,7 +409,27 @@ impl From<&models::DeployAccountTransactionV3> for store::Transaction {
             transaction_hash: tx.transaction_hash.into(),
         };
 
-        store::Transaction::DeployAccountV3(store::DeployAccountTransactionV3 { meta })
+        store::Transaction::DeployAccountV3(store::DeployAccountTransactionV3 {
+            meta,
+            signature: tx.signature.iter().map(store::FieldElement::from).collect(),
+            nonce: tx.nonce.into(),
+            contract_address_salt: tx.contract_address_salt.into(),
+            constructor_calldata: tx
+                .constructor_calldata
+                .iter()
+                .map(store::FieldElement::from)
+                .collect(),
+            class_hash: tx.class_hash.into(),
+            resource_bounds: (&tx.resource_bounds).into(),
+            tip: tx.tip,
+            paymaster_data: tx
+                .paymaster_data
+                .iter()
+                .map(store::FieldElement::from)
+                .collect(),
+            nonce_data_availability_mode: tx.nonce_data_availability_mode.into(),
+            fee_data_availability_mode: tx.fee_data_availability_mode.into(),
+        })
     }
 }
 
@@ -235,6 +451,9 @@ impl From<&models::InvokeTransactionReceipt> for store::TransactionReceipt {
         let meta = store::TransactionReceiptMeta {
             transaction_index: u32::MAX,
             transaction_hash: receipt.transaction_hash.into(),
+            actual_fee: (&receipt.actual_fee).into(),
+            execution_resources: (&receipt.execution_resources).into(),
+            execution_result: (&receipt.execution_result).into(),
         };
 
         store::TransactionReceipt::Invoke(store::InvokeTransactionReceipt { meta })
@@ -246,9 +465,15 @@ impl From<&models::L1HandlerTransactionReceipt> for store::TransactionReceipt {
         let meta = store::TransactionReceiptMeta {
             transaction_index: u32::MAX,
             transaction_hash: receipt.transaction_hash.into(),
+            actual_fee: (&receipt.actual_fee).into(),
+            execution_resources: (&receipt.execution_resources).into(),
+            execution_result: (&receipt.execution_result).into(),
         };
 
-        store::TransactionReceipt::L1Handler(store::L1HandlerTransactionReceipt { meta })
+        store::TransactionReceipt::L1Handler(store::L1HandlerTransactionReceipt {
+            meta,
+            message_hash: receipt.message_hash.as_bytes().to_vec(),
+        })
     }
 }
 
@@ -257,9 +482,15 @@ impl From<&models::DeployTransactionReceipt> for store::TransactionReceipt {
         let meta = store::TransactionReceiptMeta {
             transaction_index: u32::MAX,
             transaction_hash: receipt.transaction_hash.into(),
+            actual_fee: (&receipt.actual_fee).into(),
+            execution_resources: (&receipt.execution_resources).into(),
+            execution_result: (&receipt.execution_result).into(),
         };
 
-        store::TransactionReceipt::Deploy(store::DeployTransactionReceipt { meta })
+        store::TransactionReceipt::Deploy(store::DeployTransactionReceipt {
+            meta,
+            contract_address: receipt.contract_address.into(),
+        })
     }
 }
 
@@ -268,6 +499,9 @@ impl From<&models::DeclareTransactionReceipt> for store::TransactionReceipt {
         let meta = store::TransactionReceiptMeta {
             transaction_index: u32::MAX,
             transaction_hash: receipt.transaction_hash.into(),
+            actual_fee: (&receipt.actual_fee).into(),
+            execution_resources: (&receipt.execution_resources).into(),
+            execution_result: (&receipt.execution_result).into(),
         };
 
         store::TransactionReceipt::Declare(store::DeclareTransactionReceipt { meta })
@@ -279,9 +513,15 @@ impl From<&models::DeployAccountTransactionReceipt> for store::TransactionReceip
         let meta = store::TransactionReceiptMeta {
             transaction_index: u32::MAX,
             transaction_hash: receipt.transaction_hash.into(),
+            actual_fee: (&receipt.actual_fee).into(),
+            execution_resources: (&receipt.execution_resources).into(),
+            execution_result: (&receipt.execution_result).into(),
         };
 
-        store::TransactionReceipt::DeployAccount(store::DeployAccountTransactionReceipt { meta })
+        store::TransactionReceipt::DeployAccount(store::DeployAccountTransactionReceipt {
+            meta,
+            contract_address: receipt.contract_address.into(),
+        })
     }
 }
 
@@ -289,10 +529,28 @@ impl From<&models::Event> for store::Event {
     fn from(event: &models::Event) -> Self {
         store::Event {
             from_address: event.from_address.into(),
-            keys: event.keys.iter().map(|k| k.into()).collect(),
-            data: event.data.iter().map(|d| d.into()).collect(),
+            keys: event.keys.iter().map(store::FieldElement::from).collect(),
+            data: event.data.iter().map(store::FieldElement::from).collect(),
 
             event_index: u32::MAX,
+            transaction_index: u32::MAX,
+            transaction_hash: store::FieldElement::default(),
+        }
+    }
+}
+
+impl From<&models::MsgToL1> for store::MessageToL1 {
+    fn from(message: &models::MsgToL1) -> Self {
+        store::MessageToL1 {
+            from_address: message.from_address.into(),
+            to_address: message.to_address.into(),
+            payload: message
+                .payload
+                .iter()
+                .map(store::FieldElement::from)
+                .collect(),
+
+            message_index: u32::MAX,
             transaction_index: u32::MAX,
             transaction_hash: store::FieldElement::default(),
         }
@@ -307,8 +565,10 @@ impl From<models::BlockWithReceipts> for store::SingleBlock {
         let mut transactions = Vec::with_capacity(transactions_len);
         let mut receipts = Vec::with_capacity(transactions_len);
         let mut events = Vec::with_capacity(transactions_len);
+        let mut messages = Vec::with_capacity(transactions_len);
 
         let mut event_index = 0;
+        let mut message_index = 0;
         for (tx_index, tx_with_rx) in block.transactions.iter().enumerate() {
             // Store tx hash for event.
             let tx_hash: store::FieldElement = tx_with_rx.transaction.transaction_hash().into();
@@ -318,13 +578,25 @@ impl From<models::BlockWithReceipts> for store::SingleBlock {
             transactions.push(tx);
 
             for event in tx_with_rx.receipt.events() {
-                let mut event: store::Event = event.into();
+                let mut event = store::Event::from(event);
                 event.event_index = event_index;
+                event.transaction_index = tx_index as u32;
                 event.transaction_hash = tx_hash.clone();
 
                 events.push(event);
 
                 event_index += 1;
+            }
+
+            for message in tx_with_rx.receipt.messages() {
+                let mut message = store::MessageToL1::from(message);
+                message.message_index = message_index;
+                message.transaction_index = tx_index as u32;
+                message.transaction_hash = tx_hash.clone();
+
+                messages.push(message);
+
+                message_index += 1;
             }
 
             let mut receipt = store::TransactionReceipt::from(&tx_with_rx.receipt);
@@ -337,6 +609,7 @@ impl From<models::BlockWithReceipts> for store::SingleBlock {
             transactions,
             receipts,
             events,
+            messages,
         }
     }
 }
