@@ -12,6 +12,7 @@ pub trait GetCursor {
 
 pub trait TransactionReceiptExt {
     fn events(&self) -> impl Iterator<Item = &models::Event>;
+    fn messages(&self) -> impl Iterator<Item = &models::MsgToL1>;
 }
 
 impl GetCursor for models::BlockWithTxs {
@@ -72,6 +73,24 @@ impl BlockExt for models::BlockWithTxHashes {
 
 impl TransactionReceiptExt for models::TransactionReceipt {
     fn events(&self) -> impl Iterator<Item = &models::Event> {
-        vec![].into_iter()
+        use models::TransactionReceipt::*;
+        match self {
+            Invoke(receipt) => receipt.events.iter(),
+            L1Handler(receipt) => receipt.events.iter(),
+            Declare(receipt) => receipt.events.iter(),
+            Deploy(receipt) => receipt.events.iter(),
+            DeployAccount(receipt) => receipt.events.iter(),
+        }
+    }
+
+    fn messages(&self) -> impl Iterator<Item = &models::MsgToL1> {
+        use models::TransactionReceipt::*;
+        match self {
+            Invoke(receipt) => receipt.messages_sent.iter(),
+            L1Handler(receipt) => receipt.messages_sent.iter(),
+            Declare(receipt) => receipt.messages_sent.iter(),
+            Deploy(receipt) => receipt.messages_sent.iter(),
+            DeployAccount(receipt) => receipt.messages_sent.iter(),
+        }
     }
 }
