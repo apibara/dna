@@ -22,15 +22,17 @@ let
     nativeBuildInputs = with pkgs; [
       cargo-nextest
       cargo-flamegraph
+      cargo-llvm-cov
       samply
       clang
       cmake
       llvmPackages.libclang.lib
+      libllvm
       pkg-config
       protobuf
       flatbuffers
       rustToolchain
-      openssl
+      openssl.dev
       jq
       sqlite
     ] ++ pkgs.lib.optional stdenv.isDarwin (with pkgs.darwin.apple_sdk.frameworks; [
@@ -39,6 +41,9 @@ let
       Security
       SystemConfiguration
     ]);
+
+    LLVM_COV = "${pkgs.libllvm}/bin/llvm-cov";
+    LLVM_PROFDATA = "${pkgs.libllvm}/bin/llvm-profdata";
 
     # used by bindgen
     LIBCLANG_PATH = pkgs.lib.makeLibraryPath [
