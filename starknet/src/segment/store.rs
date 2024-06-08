@@ -381,7 +381,13 @@ pub struct BlockData<T> {
 }
 
 pub type BlockHeaderSegment = Segment<BlockHeader>;
-
-pub type EventSegment = Segment<BlockData<Event>>;
 pub type TransactionSegment = Segment<BlockData<Transaction>>;
 pub type TransactionReceiptSegment = Segment<BlockData<TransactionReceipt>>;
+pub type EventSegment = Segment<BlockData<Event>>;
+pub type MessageSegment = Segment<BlockData<MessageToL1>>;
+
+impl<T> Default for Segment<T> {
+    fn default() -> Self {
+        Self { blocks: Vec::new() }
+    }
+}
