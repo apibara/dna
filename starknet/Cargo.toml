@@ -31,6 +31,7 @@ flatbuffers.workspace = true
 governor.workspace = true
 hex.workspace = true
 futures-util.workspace = true
+memmap2.workspace = true
 roaring.workspace = true
 rkyv.workspace = true
 tokio.workspace = true

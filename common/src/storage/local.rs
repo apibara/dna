@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
-use async_compression::tokio::{bufread::ZstdDecoder, write::ZstdEncoder};
 use async_trait::async_trait;
 use error_stack::ResultExt;
+use memmap2::Mmap;
 
 use crate::error::{DnaError, Result};
 
@@ -25,13 +25,33 @@ impl LocalStorageBackend {
     }
 
     fn target_file(&self, prefix: &str, filename: &str) -> PathBuf {
-        let filename = format!("{}.zst", filename);
+        let filename = format!("{}.segment", filename);
         self.target_dir(prefix).join(filename)
     }
 
     pub async fn prefix_exists(&mut self, prefix: impl AsRef<str> + Send) -> Result<bool> {
         let target_dir = self.root.join(prefix.as_ref());
         Ok(target_dir.exists())
+    }
+
+    pub fn mmap(&self, prefix: impl AsRef<str>, filename: impl AsRef<str> + Send) -> Result<Mmap> {
+        let target_file = self.target_file(prefix.as_ref(), filename.as_ref());
+        if !target_file.exists() {
+            return Err(DnaError::Fatal)
+                .attach_printable("storage file does not exist")
+                .attach_printable_lazy(|| format!("file: {:?}", target_file));
+        }
+
+        let file = std::fs::File::open(&target_file)
+            .change_context(DnaError::Io)
+            .attach_printable("failed to open storage file for mmap")
+            .attach_printable_lazy(|| format!("file: {:?}", target_file))?;
+
+        let mmap = unsafe { Mmap::map(&file) }
+            .change_context(DnaError::Io)
+            .attach_printable("failed to create file mmap")?;
+
+        Ok(mmap)
     }
 
     pub async fn remove(
@@ -66,15 +86,15 @@ impl LocalStorageBackend {
 
 #[async_trait]
 impl StorageBackend for LocalStorageBackend {
-    type Reader = ZstdDecoder<tokio::io::BufReader<tokio::fs::File>>;
-    type Writer = ZstdEncoder<tokio::fs::File>;
+    type Reader = tokio::io::BufReader<tokio::fs::File>;
+    type Writer = tokio::fs::File;
 
     async fn exists(
         &mut self,
         prefix: impl AsRef<str> + Send,
         filename: impl AsRef<str> + Send,
     ) -> Result<bool> {
-        let filename = format!("{}.zst", filename.as_ref());
+        let filename = format!("{}.segment", filename.as_ref());
 
         let target_file = self.root.join(prefix.as_ref()).join(filename);
         Ok(target_file.exists())
@@ -99,8 +119,7 @@ impl StorageBackend for LocalStorageBackend {
             .attach_printable_lazy(|| format!("file: {:?}", target_file))?;
 
         let buffered = tokio::io::BufReader::new(file);
-        let decompressed = ZstdDecoder::new(buffered);
-        Ok(decompressed)
+        Ok(buffered)
     }
 
     async fn put(
@@ -122,9 +141,7 @@ impl StorageBackend for LocalStorageBackend {
             .attach_printable("failed to create storage file")
             .attach_printable_lazy(|| format!("file: {:?}", target_file))?;
 
-        let compressed = ZstdEncoder::new(file);
-
-        Ok(compressed)
+        Ok(file)
     }
 }
 

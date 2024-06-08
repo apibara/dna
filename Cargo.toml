@@ -46,6 +46,7 @@ hyper = "0.14.20"
 lazy_static = "1.4.0"
 lru = "0.12.3"
 jemallocator = { version = "0.5.0" }
+memmap2 = "0.9.4"
 mockall = "0.11.4"
 nanoid = "0.4.0"
 opentelemetry = { version = "0.18.0", features = [

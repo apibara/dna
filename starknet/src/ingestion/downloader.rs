@@ -212,6 +212,7 @@ impl InnerDownloader {
             .change_context(DnaError::Io)
             .attach_printable("failed to write single block")?;
         writer.shutdown().await.change_context(DnaError::Io)?;
+        debug!(block = ?cursor, size = bytes.len(), "block ingested");
 
         Ok(cursor)
     }
