@@ -6,16 +6,12 @@ use apibara_dna_common::{
 };
 use error_stack::ResultExt;
 use futures_util::{Stream, TryFutureExt};
-use rkyv::Deserialize;
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
-    sync::mpsc,
-};
+use tokio::{io::AsyncWriteExt, sync::mpsc};
 use tokio_stream::{wrappers::ReceiverStream, StreamExt};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
 
-use crate::segment::{store, SegmentBuilder};
+use crate::segment::{store, SegmentBuilder, SegmentGroupBuilder};
 
 use super::downloader::BlockEvent;
 
@@ -35,6 +31,8 @@ struct Worker<S: StorageBackend + Send + Sync + 'static> {
     snapshot: Snapshot,
     finalized: Cursor,
     segment: Option<SegmentData>,
+    segment_builder: SegmentBuilder,
+    segment_group_builder: SegmentGroupBuilder,
 }
 
 struct SegmentData {
@@ -111,6 +109,8 @@ where
             snapshot: starting_snapshot,
             finalized,
             segment: None,
+            segment_builder: SegmentBuilder::default(),
+            segment_group_builder: SegmentGroupBuilder::default(),
         };
 
         loop {
@@ -293,8 +293,6 @@ where
                 + 1,
         );
 
-        let mut segment_builder = SegmentBuilder::default();
-
         for cursor in &cursors_to_segment {
             debug!(cursor = ?cursor, "copying block to segment");
             let prefix = format!("blocks/{}-{}", cursor.number, cursor.hash_as_hex());
@@ -303,14 +301,13 @@ where
             // TODO: use custom deserialization
             let block = rkyv::from_bytes::<store::SingleBlock>(&contents).unwrap();
 
-            segment_builder.add_single_block(block)
+            self.segment_builder.add_single_block(block)
         }
 
-        // TODO: write segment
-        assert_eq!(segment_builder.size(), segment_options.segment_size);
+        assert_eq!(self.segment_builder.size(), segment_options.segment_size);
 
         let segment_name = segment_options.format_segment_name(current_segment_start);
-        segment_builder
+        self.segment_builder
             .write(&format!("segment/{segment_name}"), &mut self.storage)
             .await?;
 
@@ -323,16 +320,13 @@ where
             self.local_storage.remove_prefix(prefix).await?;
         }
 
-        /*
         let index = self.segment_builder.take_index();
         self.segment_group_builder
-            .add_segment(current_segment_start);
-        self.segment_group_builder.add_index(&index);
+            .add_segment(current_segment_start, index);
         self.segment_builder.reset();
 
         self.snapshot.revision += 1;
         self.snapshot.ingestion.extra_segment_count += 1;
-        */
 
         if current_group_start == next_group_start {
             self.write_snapshot().await?;
@@ -341,12 +335,10 @@ where
         }
 
         let group_name = segment_options.format_segment_group_name(current_group_start);
-        /*
         self.segment_group_builder
             .write(&group_name, &mut self.storage)
             .await?;
         self.segment_group_builder.reset();
-        */
         info!(group_name, "segment group written");
 
         self.snapshot.ingestion.group_count += 1;

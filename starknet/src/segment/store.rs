@@ -3,7 +3,9 @@ use std::collections::BTreeMap;
 use rkyv::{with::AsVec, Archive, Deserialize, Serialize};
 
 /// A field element is encoded as a 32-byte array.
-#[derive(Archive, Serialize, Deserialize, Debug, PartialEq, Clone, Default)]
+#[derive(
+    Archive, Serialize, Deserialize, Debug, PartialEq, Clone, Copy, Default, PartialOrd, Eq, Ord,
+)]
 #[archive(compare(PartialEq), check_bytes)]
 pub struct FieldElement(pub [u8; 32]);
 
@@ -358,14 +360,22 @@ pub struct SingleBlock {
 
 #[derive(Archive, Serialize, Deserialize, Debug)]
 #[archive(check_bytes)]
-pub struct SegmentGroup {
+pub struct Index {
     #[with(AsVec)]
     pub event_by_address: BTreeMap<FieldElement, Bitmap>,
+    #[with(AsVec)]
+    pub event_by_key_0: BTreeMap<FieldElement, Bitmap>,
 }
 
 #[derive(Archive, Serialize, Deserialize, Debug)]
 #[archive(check_bytes)]
-pub struct Bitmap(Vec<u8>);
+pub struct Bitmap(pub Vec<u8>);
+
+#[derive(Archive, Serialize, Deserialize, Debug)]
+#[archive(check_bytes)]
+pub struct SegmentGroup {
+    pub index: Index,
+}
 
 #[derive(Archive, Serialize, Deserialize, Debug, PartialEq)]
 #[archive(compare(PartialEq), check_bytes)]
@@ -389,5 +399,11 @@ pub type MessageSegment = Segment<BlockData<MessageToL1>>;
 impl<T> Default for Segment<T> {
     fn default() -> Self {
         Self { blocks: Vec::new() }
+    }
+}
+
+impl<T> Segment<T> {
+    pub fn reset(&mut self) {
+        self.blocks.clear();
     }
 }
