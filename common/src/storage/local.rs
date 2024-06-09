@@ -25,7 +25,6 @@ impl LocalStorageBackend {
     }
 
     fn target_file(&self, prefix: &str, filename: &str) -> PathBuf {
-        let filename = format!("{}.segment", filename);
         self.target_dir(prefix).join(filename)
     }
 
@@ -94,9 +93,7 @@ impl StorageBackend for LocalStorageBackend {
         prefix: impl AsRef<str> + Send,
         filename: impl AsRef<str> + Send,
     ) -> Result<bool> {
-        let filename = format!("{}.segment", filename.as_ref());
-
-        let target_file = self.root.join(prefix.as_ref()).join(filename);
+        let target_file = self.root.join(prefix.as_ref()).join(filename.as_ref());
         Ok(target_file.exists())
     }
 
