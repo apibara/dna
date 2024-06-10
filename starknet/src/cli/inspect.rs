@@ -534,7 +534,64 @@ async fn inspect_transaction(
         return Ok(());
     }
 
-    todo!();
+    if segment.blocks.len() != snapshot.segment_options.segment_size {
+        warn!(
+            size = segment.blocks.len(),
+            expected_size = snapshot.segment_options.segment_size,
+            "segment size mismatch"
+        );
+    }
+
+    for (block, expected_block_number) in segment.blocks.iter().zip(segment_start..) {
+        if block.block_number != expected_block_number {
+            warn!(
+                block_number = block.block_number,
+                expected_block_number, "block number mismatch"
+            );
+        }
+
+        info!(
+            block_number = block.block_number,
+            size = block.data.len(),
+            "inspect messages"
+        );
+
+        for (expected_index, transaction) in block.data.iter().enumerate() {
+            let meta = transaction.meta();
+            let transaction_index = meta.transaction_index;
+
+            if expected_index != transaction_index as usize {
+                warn!(
+                    transaction_index = transaction_index,
+                    expected_index, "transaction index mismatch"
+                );
+            }
+
+            if verbose {
+                use store::Transaction::*;
+                let tx_hash = models::FieldElement::from(&meta.transaction_hash);
+                let tx_type = match &transaction {
+                    InvokeTransactionV0(_) => "invoke (v0)",
+                    InvokeTransactionV1(_) => "invoke (v1)",
+                    InvokeTransactionV3(_) => "invoke (v3)",
+                    L1HandlerTransaction(_) => "l1 handler",
+                    DeployTransaction(_) => "deploy",
+                    DeclareTransactionV0(_) => "declare (v0)",
+                    DeclareTransactionV1(_) => "declare (v1)",
+                    DeclareTransactionV2(_) => "declare (v2)",
+                    DeclareTransactionV3(_) => "declare (v3)",
+                    DeployAccountV1(_) => "deploy account (v1)",
+                    DeployAccountV3(_) => "deploy account (v3)",
+                };
+                info!(
+                    "transaction: tx_index={}\ttx_hash=0x{:x} type={}",
+                    transaction_index, tx_hash, tx_type
+                );
+            }
+        }
+    }
+
+    Ok(())
 }
 
 async fn load_snapshot<S>(storage: &mut S) -> Result<Snapshot>
