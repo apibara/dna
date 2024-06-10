@@ -361,10 +361,10 @@ async fn inspect_message(
     info!(start = segment_start, "deserializing message segment");
 
     let bytes = storage
-        .mmap(format!("segment/{segment_name}"), "message")
+        .mmap(format!("segment/{segment_name}"), "messages")
         .await?;
 
-    let segment = rkyv::from_bytes::<store::EventSegment>(&bytes)
+    let segment = rkyv::from_bytes::<store::MessageSegment>(&bytes)
         .map_err(|_| DnaError::Fatal)
         .attach_printable("failed to parse message segment")?;
 
@@ -372,7 +372,64 @@ async fn inspect_message(
         return Ok(());
     }
 
-    todo!();
+    if segment.blocks.len() != snapshot.segment_options.segment_size {
+        warn!(
+            size = segment.blocks.len(),
+            expected_size = snapshot.segment_options.segment_size,
+            "segment size mismatch"
+        );
+    }
+
+    for (block, expected_block_number) in segment.blocks.iter().zip(segment_start..) {
+        if block.block_number != expected_block_number {
+            warn!(
+                block_number = block.block_number,
+                expected_block_number, "block number mismatch"
+            );
+        }
+
+        info!(
+            block_number = block.block_number,
+            size = block.data.len(),
+            "inspect messages"
+        );
+
+        let mut prev_transaction_index = 0;
+        for (expected_index, message) in block.data.iter().enumerate() {
+            let transaction_index = message.transaction_index;
+
+            if transaction_index < prev_transaction_index {
+                warn!(
+                    transaction_index,
+                    prev_transaction_index, "message transaction index is out of order"
+                );
+            }
+
+            if expected_index != message.message_index as usize {
+                warn!(
+                    log_index = message.message_index,
+                    expected_index, "message index mismatch"
+                );
+            }
+
+            if verbose {
+                info!(
+                    "message: tx_index={} message_index={}",
+                    transaction_index, message.message_index,
+                );
+
+                let from_address = models::FieldElement::from(&message.from_address);
+                info!("    from_address: 0x{:x}", from_address);
+
+                let tx_hash = models::FieldElement::from(&message.transaction_hash);
+                info!("    tx_hash: 0x{:x}", tx_hash);
+            }
+
+            prev_transaction_index = transaction_index;
+        }
+    }
+
+    Ok(())
 }
 
 async fn inspect_receipt(
