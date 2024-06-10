@@ -362,6 +362,7 @@ impl Script {
     }
 
     fn default_permissions(options: &ScriptOptions) -> Result<PermissionsContainer, ScriptError> {
+        let allow_env = options.allow_env.clone().map(remove_empty_strings);
         // If users use an empty hostname, allow all hosts.
         let allow_net = options.allow_net.clone().map(remove_empty_strings);
         let allow_read = options.allow_read.clone().map(|paths| {
@@ -378,7 +379,7 @@ impl Script {
         });
 
         match Permissions::from_options(&PermissionsOptions {
-            allow_env: options.allow_env.clone(),
+            allow_env,
             allow_hrtime: true,
             allow_net,
             allow_read,
