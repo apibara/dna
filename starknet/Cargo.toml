@@ -14,6 +14,10 @@ path = "src/lib.rs"
 name = "apibara-starknet"
 path = "src/bin.rs"
 
+[features]
+default = ["jemalloc"]
+jemalloc = ["dep:jemallocator"]
+
 [dependencies]
 apibara-core = { path = "../core" }
 apibara-node = { path = "../node" }
@@ -48,9 +52,7 @@ tracing.workspace = true
 tracing-futures.workspace = true
 url = "2.2.2"
 warp.workspace = true
-
-[target.'cfg(not(windows))'.dependencies]
-jemallocator.workspace = true
+jemallocator = { workspace = true, optional = true }
 
 [dev-dependencies]
 apibara-core = { path = "../core" }
