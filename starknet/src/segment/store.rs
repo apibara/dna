@@ -407,3 +407,15 @@ impl<T> Segment<T> {
         self.blocks.clear();
     }
 }
+
+impl TransactionReceipt {
+    pub fn meta(&self) -> &TransactionReceiptMeta {
+        match self {
+            TransactionReceipt::Invoke(receipt) => &receipt.meta,
+            TransactionReceipt::L1Handler(receipt) => &receipt.meta,
+            TransactionReceipt::Declare(receipt) => &receipt.meta,
+            TransactionReceipt::Deploy(receipt) => &receipt.meta,
+            TransactionReceipt::DeployAccount(receipt) => &receipt.meta,
+        }
+    }
+}

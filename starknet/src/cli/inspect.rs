@@ -445,7 +445,7 @@ async fn inspect_receipt(
     info!(start = segment_start, "deserializing receipt segment");
 
     let bytes = storage
-        .mmap(format!("segment/{segment_name}"), "events")
+        .mmap(format!("segment/{segment_name}"), "receipt")
         .await?;
 
     let segment = rkyv::from_bytes::<store::TransactionReceiptSegment>(&bytes)
@@ -456,7 +456,58 @@ async fn inspect_receipt(
         return Ok(());
     }
 
-    todo!();
+    if segment.blocks.len() != snapshot.segment_options.segment_size {
+        warn!(
+            size = segment.blocks.len(),
+            expected_size = snapshot.segment_options.segment_size,
+            "segment size mismatch"
+        );
+    }
+
+    for (block, expected_block_number) in segment.blocks.iter().zip(segment_start..) {
+        if block.block_number != expected_block_number {
+            warn!(
+                block_number = block.block_number,
+                expected_block_number, "block number mismatch"
+            );
+        }
+
+        info!(
+            block_number = block.block_number,
+            size = block.data.len(),
+            "inspect messages"
+        );
+
+        for (expected_index, receipt) in block.data.iter().enumerate() {
+            let meta = receipt.meta();
+            let transaction_index = meta.transaction_index;
+
+            if expected_index != transaction_index as usize {
+                warn!(
+                    transaction_index = transaction_index,
+                    expected_index, "transaction index mismatch"
+                );
+            }
+
+            if verbose {
+                use store::TransactionReceipt::*;
+                let tx_hash = models::FieldElement::from(&meta.transaction_hash);
+                let tx_type = match &receipt {
+                    &Invoke(_) => "invoke",
+                    &Declare(_) => "declare",
+                    &L1Handler(_) => "l1_handler",
+                    &Deploy(_) => "deploy",
+                    &DeployAccount(_) => "deploy_account",
+                };
+                info!(
+                    "receipt: tx_index={}\ttx_hash=0x{:x} type={}",
+                    transaction_index, tx_hash, tx_type
+                );
+            }
+        }
+    }
+
+    Ok(())
 }
 
 async fn inspect_transaction(
