@@ -72,7 +72,14 @@ pub async fn run_inspect(args: InspectArgs) -> Result<()> {
         )
         .await?;
     } else if let Some(block_number) = args.entity.header {
-        // return inspect_header(storage, snapshot, block_number, args.verbose).await;
+        inspect_header(
+            storage,
+            snapshot,
+            block_number,
+            args.verbose,
+            args.parse_only,
+        )
+        .await?;
     } else if let Some(block_number) = args.entity.event {
         // return inspect_log(storage, snapshot, block_number, args.verbose).await;
     } else if let Some(block_number) = args.entity.receipt {
@@ -166,6 +173,59 @@ async fn inspect_group(
         if verbose {
             let key = models::FieldElement::from(key);
             info!("event by key: 0x{:x} {:?}", key, bitmap);
+        }
+    }
+
+    Ok(())
+}
+
+async fn inspect_header(
+    mut storage: CachedStorage<AppStorageBackend>,
+    snapshot: Snapshot,
+    block_number: u64,
+    verbose: bool,
+    parse_only: bool,
+) -> Result<()> {
+    let segment_start = snapshot.segment_options.segment_start(block_number);
+    let segment_name = snapshot.segment_options.format_segment_name(block_number);
+
+    info!(start = segment_start, "deserializing header segment");
+
+    let bytes = storage
+        .mmap(format!("segment/{segment_name}"), "header")
+        .await?;
+
+    let header_segment = rkyv::from_bytes::<store::BlockHeaderSegment>(&bytes)
+        .map_err(|_| DnaError::Fatal)
+        .attach_printable("failed to parse header segment")?;
+
+    if parse_only {
+        return Ok(());
+    }
+
+    if header_segment.blocks.len() != snapshot.segment_options.segment_size {
+        warn!(
+            size = header_segment.blocks.len(),
+            expected_size = snapshot.segment_options.segment_size,
+            "header segment size mismatch"
+        );
+    }
+
+    for (header, expected_block_number) in header_segment.blocks.iter().zip(segment_start..) {
+        if header.block_number != expected_block_number {
+            warn!(
+                header_number = header.block_number,
+                expected_block_number, "header number mismatch"
+            );
+        }
+
+        if verbose {
+            let hash = models::FieldElement::from(&header.block_hash);
+            let parent_hash = models::FieldElement::from(&header.parent_block_hash);
+            info!(
+                "header: number={}\thash=0x{:x}\tparent_hash=0x{:x}\ttimestamp={}",
+                header.block_number, hash, parent_hash, header.timestamp
+            );
         }
     }
 
