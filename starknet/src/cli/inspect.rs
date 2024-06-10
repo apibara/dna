@@ -41,6 +41,9 @@ pub struct EntityArgs {
     /// Inspect an event segment.
     #[arg(long)]
     pub event: Option<u64>,
+    /// Inspect a message segment.
+    #[arg(long)]
+    pub message: Option<u64>,
     /// Inspect a receipt segment.
     #[arg(long)]
     pub receipt: Option<u64>,
@@ -81,11 +84,41 @@ pub async fn run_inspect(args: InspectArgs) -> Result<()> {
         )
         .await?;
     } else if let Some(block_number) = args.entity.event {
-        // return inspect_log(storage, snapshot, block_number, args.verbose).await;
+        inspect_event(
+            storage,
+            snapshot,
+            block_number,
+            args.verbose,
+            args.parse_only,
+        )
+        .await?;
+    } else if let Some(block_number) = args.entity.message {
+        inspect_message(
+            storage,
+            snapshot,
+            block_number,
+            args.verbose,
+            args.parse_only,
+        )
+        .await?;
     } else if let Some(block_number) = args.entity.receipt {
-        // return inspect_receipt(storage, snapshot, block_number, args.verbose).await;
+        inspect_receipt(
+            storage,
+            snapshot,
+            block_number,
+            args.verbose,
+            args.parse_only,
+        )
+        .await?;
     } else if let Some(block_number) = args.entity.transaction {
-        // return inspect_transaction(storage, snapshot, block_number, args.verbose).await;
+        inspect_transaction(
+            storage,
+            snapshot,
+            block_number,
+            args.verbose,
+            args.parse_only,
+        )
+        .await?;
     }
 
     let elapsed = start_time.elapsed();
@@ -230,6 +263,170 @@ async fn inspect_header(
     }
 
     Ok(())
+}
+
+async fn inspect_event(
+    mut storage: CachedStorage<AppStorageBackend>,
+    snapshot: Snapshot,
+    block_number: u64,
+    verbose: bool,
+    parse_only: bool,
+) -> Result<()> {
+    let segment_start = snapshot.segment_options.segment_start(block_number);
+    let segment_name = snapshot.segment_options.format_segment_name(block_number);
+
+    info!(start = segment_start, "deserializing event segment");
+
+    let bytes = storage
+        .mmap(format!("segment/{segment_name}"), "events")
+        .await?;
+
+    let segment = rkyv::from_bytes::<store::EventSegment>(&bytes)
+        .map_err(|_| DnaError::Fatal)
+        .attach_printable("failed to parse events segment")?;
+
+    if parse_only {
+        return Ok(());
+    }
+
+    if segment.blocks.len() != snapshot.segment_options.segment_size {
+        warn!(
+            size = segment.blocks.len(),
+            expected_size = snapshot.segment_options.segment_size,
+            "segment size mismatch"
+        );
+    }
+
+    for (block, expected_block_number) in segment.blocks.iter().zip(segment_start..) {
+        if block.block_number != expected_block_number {
+            warn!(
+                block_number = block.block_number,
+                expected_block_number, "block number mismatch"
+            );
+        }
+
+        info!(
+            block_number = block.block_number,
+            size = block.data.len(),
+            "inspect events"
+        );
+
+        let mut prev_transaction_index = 0;
+        for (expected_index, event) in block.data.iter().enumerate() {
+            let transaction_index = event.transaction_index;
+
+            if transaction_index < prev_transaction_index {
+                warn!(
+                    transaction_index,
+                    prev_transaction_index, "event transaction index is out of order"
+                );
+            }
+
+            if expected_index != event.event_index as usize {
+                warn!(
+                    log_index = event.event_index,
+                    expected_index, "event index mismatch"
+                );
+            }
+
+            if verbose {
+                info!(
+                    "event: tx_index={} event_index={}",
+                    transaction_index, event.event_index,
+                );
+
+                let from_address = models::FieldElement::from(&event.from_address);
+                info!("    from_address: 0x{:x}", from_address);
+
+                let tx_hash = models::FieldElement::from(&event.transaction_hash);
+                info!("    tx_hash: 0x{:x}", tx_hash);
+            }
+
+            prev_transaction_index = transaction_index;
+        }
+    }
+
+    Ok(())
+}
+async fn inspect_message(
+    mut storage: CachedStorage<AppStorageBackend>,
+    snapshot: Snapshot,
+    block_number: u64,
+    verbose: bool,
+    parse_only: bool,
+) -> Result<()> {
+    let segment_start = snapshot.segment_options.segment_start(block_number);
+    let segment_name = snapshot.segment_options.format_segment_name(block_number);
+
+    info!(start = segment_start, "deserializing message segment");
+
+    let bytes = storage
+        .mmap(format!("segment/{segment_name}"), "message")
+        .await?;
+
+    let segment = rkyv::from_bytes::<store::EventSegment>(&bytes)
+        .map_err(|_| DnaError::Fatal)
+        .attach_printable("failed to parse message segment")?;
+
+    if parse_only {
+        return Ok(());
+    }
+
+    todo!();
+}
+
+async fn inspect_receipt(
+    mut storage: CachedStorage<AppStorageBackend>,
+    snapshot: Snapshot,
+    block_number: u64,
+    verbose: bool,
+    parse_only: bool,
+) -> Result<()> {
+    let segment_start = snapshot.segment_options.segment_start(block_number);
+    let segment_name = snapshot.segment_options.format_segment_name(block_number);
+
+    info!(start = segment_start, "deserializing receipt segment");
+
+    let bytes = storage
+        .mmap(format!("segment/{segment_name}"), "events")
+        .await?;
+
+    let segment = rkyv::from_bytes::<store::TransactionReceiptSegment>(&bytes)
+        .map_err(|_| DnaError::Fatal)
+        .attach_printable("failed to parse receipt segment")?;
+
+    if parse_only {
+        return Ok(());
+    }
+
+    todo!();
+}
+
+async fn inspect_transaction(
+    mut storage: CachedStorage<AppStorageBackend>,
+    snapshot: Snapshot,
+    block_number: u64,
+    verbose: bool,
+    parse_only: bool,
+) -> Result<()> {
+    let segment_start = snapshot.segment_options.segment_start(block_number);
+    let segment_name = snapshot.segment_options.format_segment_name(block_number);
+
+    info!(start = segment_start, "deserializing transaction segment");
+
+    let bytes = storage
+        .mmap(format!("segment/{segment_name}"), "transaction")
+        .await?;
+
+    let segment = rkyv::from_bytes::<store::TransactionSegment>(&bytes)
+        .map_err(|_| DnaError::Fatal)
+        .attach_printable("failed to parse transaction segment")?;
+
+    if parse_only {
+        return Ok(());
+    }
+
+    todo!();
 }
 
 async fn load_snapshot<S>(storage: &mut S) -> Result<Snapshot>
