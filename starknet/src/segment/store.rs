@@ -410,12 +410,32 @@ impl<T> Segment<T> {
 
 impl TransactionReceipt {
     pub fn meta(&self) -> &TransactionReceiptMeta {
+        use TransactionReceipt::*;
         match self {
-            TransactionReceipt::Invoke(receipt) => &receipt.meta,
-            TransactionReceipt::L1Handler(receipt) => &receipt.meta,
-            TransactionReceipt::Declare(receipt) => &receipt.meta,
-            TransactionReceipt::Deploy(receipt) => &receipt.meta,
-            TransactionReceipt::DeployAccount(receipt) => &receipt.meta,
+            Invoke(receipt) => &receipt.meta,
+            L1Handler(receipt) => &receipt.meta,
+            Declare(receipt) => &receipt.meta,
+            Deploy(receipt) => &receipt.meta,
+            DeployAccount(receipt) => &receipt.meta,
+        }
+    }
+}
+
+impl Transaction {
+    pub fn meta(&self) -> &TransactionMeta {
+        use Transaction::*;
+        match self {
+            InvokeTransactionV0(tx) => &tx.meta,
+            InvokeTransactionV1(tx) => &tx.meta,
+            InvokeTransactionV3(tx) => &tx.meta,
+            L1HandlerTransaction(tx) => &tx.meta,
+            DeployTransaction(tx) => &tx.meta,
+            DeclareTransactionV0(tx) => &tx.meta,
+            DeclareTransactionV1(tx) => &tx.meta,
+            DeclareTransactionV2(tx) => &tx.meta,
+            DeclareTransactionV3(tx) => &tx.meta,
+            DeployAccountV1(tx) => &tx.meta,
+            DeployAccountV3(tx) => &tx.meta,
         }
     }
 }
