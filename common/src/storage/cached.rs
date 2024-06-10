@@ -2,6 +2,7 @@ use std::{num::NonZeroUsize, sync::Arc};
 
 use error_stack::ResultExt;
 use lru::LruCache;
+use memmap2::Mmap;
 use tokio::{
     io::AsyncWriteExt,
     sync::{RwLock, RwLockReadGuard, RwLockWriteGuard},
@@ -56,6 +57,7 @@ pub type CachedAppStorageBackend = CachedStorage<AppStorageBackend>;
 impl<RS> CachedStorage<RS>
 where
     RS: StorageBackend + Send,
+    <RS as StorageBackend>::Reader: Unpin + Send,
 {
     pub fn new(
         local_storage: LocalStorageBackend,
@@ -105,32 +107,13 @@ where
         self.caches.iter().find(|c| prefix.starts_with(&c.prefix))
     }
 
-    async fn get_existing_and_promote(
-        &mut self,
-        prefix: String,
-        filename: String,
-    ) -> Result<<LocalStorageBackend as StorageBackend>::Reader> {
-        let file_id = FileID { prefix, filename };
-
+    async fn file_promote(&mut self, file_id: &FileID) {
         if let Some(cache) = self.get_cache(&file_id.prefix) {
             cache.promote(&file_id).await;
         }
-
-        self.local_storage
-            .get(file_id.prefix, file_id.filename)
-            .await
-            .change_context(DnaError::Io)
-            .attach_printable("failed to read previously cached file")
     }
 
-    async fn get_new_and_insert(
-        &mut self,
-        prefix: String,
-        filename: String,
-        size: u64,
-    ) -> Result<<LocalStorageBackend as StorageBackend>::Reader> {
-        let file_id = FileID { prefix, filename };
-
+    async fn file_insert(&mut self, file_id: &FileID, size: u64) -> Result<()> {
         if let Some(cache) = self.get_cache(&file_id.prefix) {
             let files_to_delete = cache.push(&file_id, size).await;
             for file in files_to_delete {
@@ -141,6 +124,73 @@ where
                     .attach_printable("failed to remove file from cache")?;
             }
         }
+
+        Ok(())
+    }
+
+    async fn get_existing_and_promote(
+        &mut self,
+        prefix: String,
+        filename: String,
+    ) -> Result<<LocalStorageBackend as StorageBackend>::Reader> {
+        let file_id = FileID { prefix, filename };
+        self.file_promote(&file_id).await;
+
+        self.local_storage
+            .get(file_id.prefix, file_id.filename)
+            .await
+            .change_context(DnaError::Io)
+            .attach_printable("failed to read previously cached file")
+    }
+
+    pub async fn download_file_to_cache(&mut self, prefix: &str, filename: &str) -> Result<u64> {
+        let mut reader = self.remote_storage.get(&prefix, &filename).await?;
+        let mut writer = self.local_storage.put(&prefix, &filename).await?;
+
+        let size = tokio::io::copy(&mut reader, &mut writer)
+            .await
+            .change_context(DnaError::Io)
+            .attach_printable("failed to copy remote file to local storage")?;
+        writer
+            .shutdown()
+            .await
+            .change_context(DnaError::Io)
+            .attach_printable("failed to shutdown local storage writer")?;
+
+        Ok(size)
+    }
+
+    pub async fn mmap(
+        &mut self,
+        prefix: impl AsRef<str>,
+        filename: impl AsRef<str> + Send,
+    ) -> Result<Mmap> {
+        let prefix = prefix.as_ref().to_string();
+        let filename = filename.as_ref().to_string();
+        let file_id = FileID {
+            prefix: prefix.clone(),
+            filename: prefix.clone(),
+        };
+
+        if self.local_storage.exists(&prefix, &filename).await? {
+            self.file_promote(&file_id).await;
+            return self.local_storage.mmap(prefix, filename);
+        }
+
+        let size = self.download_file_to_cache(&prefix, &filename).await?;
+        self.file_insert(&file_id, size).await?;
+
+        return self.local_storage.mmap(prefix, filename);
+    }
+
+    async fn get_new_and_insert(
+        &mut self,
+        prefix: String,
+        filename: String,
+        size: u64,
+    ) -> Result<<LocalStorageBackend as StorageBackend>::Reader> {
+        let file_id = FileID { prefix, filename };
+        self.file_insert(&file_id, size).await?;
 
         self.local_storage
             .get(file_id.prefix, file_id.filename)
@@ -225,18 +275,7 @@ where
             return self.get_existing_and_promote(prefix, filename).await;
         }
 
-        let mut reader = self.remote_storage.get(&prefix, &filename).await?;
-        let mut writer = self.local_storage.put(&prefix, &filename).await?;
-
-        let size = tokio::io::copy(&mut reader, &mut writer)
-            .await
-            .change_context(DnaError::Io)
-            .attach_printable("failed to copy remote file to local storage")?;
-        writer
-            .shutdown()
-            .await
-            .change_context(DnaError::Io)
-            .attach_printable("failed to shutdown local storage writer")?;
+        let size = self.download_file_to_cache(&prefix, &filename).await?;
 
         self.get_new_and_insert(prefix, filename, size).await
     }

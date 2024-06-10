@@ -1,9 +1,11 @@
 mod common;
 mod ingestion;
+mod inspect;
 
 use apibara_dna_common::error::Result;
 use clap::{Parser, Subcommand};
 use ingestion::{run_ingestion, StartIngestionArgs};
+use inspect::{run_inspect, InspectArgs};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -16,7 +18,7 @@ pub struct Cli {
 enum Command {
     StartIngestion(StartIngestionArgs),
     StartServer,
-    Inspect,
+    Inspect(InspectArgs),
 }
 
 impl Cli {
@@ -24,7 +26,7 @@ impl Cli {
         match self.subcommand {
             Command::StartIngestion(args) => run_ingestion(args).await,
             Command::StartServer => todo!(),
-            Command::Inspect => todo!(),
+            Command::Inspect(args) => run_inspect(args).await,
         }
     }
 }

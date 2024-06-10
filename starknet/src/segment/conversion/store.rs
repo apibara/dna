@@ -14,6 +14,12 @@ impl From<models::FieldElement> for store::FieldElement {
     }
 }
 
+impl From<&store::FieldElement> for models::FieldElement {
+    fn from(felt: &store::FieldElement) -> Self {
+        models::FieldElement::from_bytes_be(&felt.0).unwrap()
+    }
+}
+
 impl From<&models::ResourcePrice> for store::ResourcePrice {
     fn from(value: &models::ResourcePrice) -> Self {
         store::ResourcePrice {
