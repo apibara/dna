@@ -4,7 +4,7 @@ use clap::{Parser, Subcommand};
 use error_stack::{Result, ResultExt};
 use tokio_util::sync::CancellationToken;
 
-#[cfg(not(windows))]
+#[cfg(feature = "jemalloc")]
 #[global_allocator]
 static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
