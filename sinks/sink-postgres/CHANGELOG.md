@@ -6,6 +6,15 @@ The format is based on [Common Changelog](https://common-changelog.org/), and
 this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2024-06-10
+
+_Simplify access to all environment variables._
+
+### Changed
+
+-   If the argument to `--allow-env-from-env` is an empty string, grant access to
+    all environment variables.
+
 ## [0.7.0] - 2024-04-09
 
 _Support Starknet 0.13.1 and the new RPC 0.7.1 data._
