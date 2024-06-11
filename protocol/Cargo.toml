@@ -13,10 +13,9 @@ path = "src/lib.rs"
 [dependencies]
 error-stack.workspace = true
 hex.workspace = true
-pbjson.workspace = true
-pbjson-types.workspace = true
 pin-project.workspace = true
 prost.workspace = true
+prost-types.workspace = true
 serde.workspace = true
 tonic.workspace = true
 tokio-stream.workspace = true
@@ -26,4 +25,3 @@ serde_json.workspace = true
 
 [build-dependencies]
 tonic-build.workspace = true
-pbjson-build.workspace = true

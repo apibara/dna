@@ -1,0 +1,68 @@
+// Starknet DNA definitions (filter).
+syntax = "proto3";
+
+package starknet.v2;
+
+import "v2/common.proto";
+
+message Filter {
+  // Include header.
+  HeaderFilter header = 1;
+  // Filter transactions.
+  repeated TransactionFilter transactions = 2;
+  // Filter events.
+  repeated EventFilter events = 3;
+  // Filter messages to L1.
+  repeated MessageToL1Filter messages = 4;
+}
+
+message HeaderFilter {
+  // Always include header data. Defaults to `false`.
+  optional bool always = 1;
+}
+
+// Filter transactions.
+message TransactionFilter {
+  // Include reverted transactions.
+  //
+  // Defaults to false.
+  optional bool include_reverted = 1;
+  // Flag to request the transaction's receipt. Defaults to `false`.
+  optional bool include_receipt = 2;
+  // Flag to request the transaction's logs. Defaults to `false`.
+  optional bool include_events = 3;
+}
+
+// Filter events.
+message EventFilter {
+  // Filter by contract emitting the event.
+  FieldElement from_address = 1;
+  // Filter keys that prefix-match the given data.
+  repeated FieldElement keys = 2;
+  // Only returns events with keys of exactly the same length as the filter.
+  //
+  // Defaults to `false`.
+  optional bool strict = 3;
+  // Include events emitted by reverted transactions.
+  //
+  // Defaults to false.
+  optional bool include_reverted = 4;
+  // Include the transaction that emitted the event.
+  //
+  // Defaults to false.
+  optional bool include_transaction = 5;
+  // Include the receipt of the transaction that emitted the event.
+  //
+  // Defaults to false.
+  optional bool include_receipt = 6;
+}
+
+// Filter messages to L1.
+message MessageToL1Filter {
+  // Filter by destination address.
+  FieldElement to_address = 1;
+  // Include messages sent by reverted transactions.
+  //
+  // Defaults to false.
+  optional bool include_reverted = 4;
+}
