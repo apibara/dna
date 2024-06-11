@@ -35,6 +35,3 @@ message B256 {
   fixed64 hi_lo = 3;
   fixed64 hi_hi = 4;
 }
-
-/// Arbitrary data that should be hex-encoded.
-message HexData { bytes value = 1; }

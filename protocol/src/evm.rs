@@ -1,9 +1,6 @@
 use error_stack::{report, Result, ResultExt};
 
-use crate::{
-    error::DecodeError,
-    helpers::{impl_scalar_helpers, impl_scalar_traits, impl_u256_scalar},
-};
+use crate::helpers::{impl_scalar_helpers, impl_scalar_traits, impl_u256_scalar};
 
 tonic::include_proto!("evm.v2");
 
@@ -62,18 +59,3 @@ impl U128 {
 
 impl_u256_scalar!(U256);
 impl_u256_scalar!(B256);
-
-impl_scalar_traits!(HexData);
-impl_scalar_helpers!(HexData);
-
-impl HexData {
-    pub fn from_slice(bytes: &[u8]) -> Result<HexData, DecodeError> {
-        Ok(HexData {
-            value: bytes.to_vec(),
-        })
-    }
-
-    pub fn to_bytes(&self) -> Vec<u8> {
-        self.value.clone()
-    }
-}
