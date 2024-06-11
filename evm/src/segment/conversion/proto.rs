@@ -35,7 +35,7 @@ impl<'a> From<store::BlockHeader<'a>> for evm::BlockHeader {
             gas_limit: b.gas_limit().map(Into::into),
             gas_used: b.gas_used().map(Into::into),
             timestamp: timestamp.into(),
-            extra_data: b.extra_data().map(|v| v.to_hex_data()),
+            extra_data: b.extra_data().unwrap_or_default().iter().collect(),
             mix_hash: b.mix_hash().map(Into::into),
             nonce: b.nonce(),
             base_fee_per_gas: b.base_fee_per_gas().map(Into::into),
@@ -112,7 +112,7 @@ impl<'a> From<store::Transaction<'a>> for evm::Transaction {
             gas: v.gas().map(Into::into),
             max_fee_per_gas: v.max_fee_per_gas().map(Into::into),
             max_priority_fee_per_gas: v.max_priority_fee_per_gas().map(Into::into),
-            input: v.input().map(|v| v.to_hex_data()),
+            input: v.input().unwrap_or_default().iter().collect(),
             signature: v.signature().map(Into::into),
             chain_id: v.chain_id(),
             access_list: v
@@ -168,7 +168,7 @@ impl<'a> From<store::Log<'a>> for evm::Log {
                 .iter()
                 .map(Into::into)
                 .collect(),
-            data: v.data().map(|v| v.to_hex_data()),
+            data: v.data().unwrap_or_default().iter().collect(),
             log_index: v.log_index(),
             transaction_index: v.transaction_index(),
             transaction_hash: v.transaction_hash().map(Into::into),
@@ -193,16 +193,5 @@ impl<'a> From<store::TransactionReceipt<'a>> for evm::TransactionReceipt {
             blob_gas_used: value.blob_gas_used().map(Into::into),
             blob_gas_price: value.blob_gas_price().map(Into::into),
         }
-    }
-}
-
-trait BytesVectorExt {
-    fn to_hex_data(&self) -> evm::HexData;
-}
-
-impl BytesVectorExt for flatbuffers::Vector<'_, u8> {
-    fn to_hex_data(&self) -> evm::HexData {
-        let value = self.iter().collect();
-        evm::HexData { value }
     }
 }
