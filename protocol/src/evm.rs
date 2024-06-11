@@ -1,8 +1,6 @@
 use error_stack::{report, Result, ResultExt};
-use serde::{de::Deserialize, ser::Serialize};
 
 tonic::include_proto!("evm.v2");
-tonic::include_proto!("evm.v2.serde");
 
 #[derive(Debug)]
 pub struct DecodeError;
@@ -26,25 +24,6 @@ macro_rules! impl_scalar_traits {
         impl std::hash::Hash for $typ {
             fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
                 self.to_bytes().hash(state);
-            }
-        }
-
-        impl Serialize for $typ {
-            fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
-            where
-                S: serde::Serializer,
-            {
-                serializer.serialize_str(&self.to_hex())
-            }
-        }
-
-        impl<'de> Deserialize<'de> for $typ {
-            fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-            where
-                D: serde::Deserializer<'de>,
-            {
-                let s = String::deserialize(deserializer)?;
-                <$typ>::from_hex(&s).map_err(serde::de::Error::custom)
             }
         }
     };
@@ -223,30 +202,3 @@ impl HexData {
         self.value.clone()
     }
 }
-
-impl Serialize for Topic {
-    fn serialize<S>(&self, serializer: S) -> std::prelude::v1::Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        match self.value {
-            Some(ref value) => serializer.serialize_str(&value.to_hex()),
-            None => serializer.serialize_none(),
-        }
-    }
-}
-
-impl<'de> Deserialize<'de> for Topic {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        match Option::<B256>::deserialize(deserializer)? {
-            None => Ok(Topic::default()),
-            Some(value) => Ok(Topic { value: Some(value) }),
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {}
