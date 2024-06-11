@@ -1,11 +1,5 @@
 use std::sync::Arc;
 
-use apibara_dna_common::{
-    core::Cursor,
-    error::{DnaError, Result},
-    ingestion::{Snapshot, SnapshotChange},
-    segment::SegmentOptions,
-};
 use error_stack::ResultExt;
 use futures_util::{Stream, StreamExt};
 use tokio::{
@@ -13,6 +7,13 @@ use tokio::{
     sync::{RwLock, RwLockReadGuard, RwLockWriteGuard},
 };
 use tokio_util::sync::CancellationToken;
+
+use crate::{
+    core::Cursor,
+    error::{DnaError, Result},
+    ingestion::{Snapshot, SnapshotChange},
+    segment::SegmentOptions,
+};
 
 pub struct CursorProducerService<C>
 where
