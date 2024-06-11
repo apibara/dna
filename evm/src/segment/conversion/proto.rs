@@ -16,7 +16,7 @@ impl From<&evm::B256> for store::B256 {
 
 impl<'a> From<store::BlockHeader<'a>> for evm::BlockHeader {
     fn from(b: store::BlockHeader<'a>) -> Self {
-        let timestamp = pbjson_types::Timestamp {
+        let timestamp = prost_types::Timestamp {
             seconds: b.timestamp() as i64,
             nanos: 0,
         };

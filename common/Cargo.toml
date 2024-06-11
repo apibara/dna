@@ -44,7 +44,3 @@ tempdir.workspace = true
 nanoid.workspace = true
 reqwest.workspace = true
 testcontainers.workspace = true
-
-[build-dependencies]
-pbjson-build.workspace = true
-tonic-build.workspace = true
