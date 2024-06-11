@@ -17,6 +17,7 @@ path = "src/bin.rs"
 [dependencies]
 apibara-observability = { path = "../observability" }
 apibara-dna-common = { path = "../common" }
+apibara-dna-protocol = { path = "../protocol" }
 async-channel.workspace = true
 async-trait.workspace = true
 bytecheck.workspace = true
@@ -28,8 +29,11 @@ governor.workspace = true
 hex.workspace = true
 futures-util.workspace = true
 memmap2.workspace = true
+prost.workspace = true
 roaring.workspace = true
 rkyv.workspace = true
+tonic.workspace = true
+tonic-reflection.workspace = true
 tokio.workspace = true
 tokio-stream.workspace = true
 tokio-util.workspace = true

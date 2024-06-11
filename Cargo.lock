@@ -400,6 +400,7 @@ name = "apibara-dna-starknet"
 version = "0.0.0"
 dependencies = [
  "apibara-dna-common",
+ "apibara-dna-protocol",
  "apibara-observability",
  "async-channel 2.3.1",
  "async-trait",
@@ -413,6 +414,7 @@ dependencies = [
  "hex",
  "jemallocator",
  "memmap2",
+ "prost 0.11.9",
  "rkyv",
  "roaring",
  "serde",
@@ -421,6 +423,8 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tokio-util",
+ "tonic 0.9.2",
+ "tonic-reflection",
  "tracing",
 ]
 
