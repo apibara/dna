@@ -3,6 +3,7 @@ use std::{ops::RangeInclusive, time::Duration};
 use apibara_dna_common::{
     core::Cursor,
     error::{DnaError, Result},
+    segment::{self, SegmentOptions},
     server::{BlockNumberOrCursor, CursorProducer, NextBlock},
     storage::{CachedStorage, LocalStorageBackend, StorageBackend},
 };
@@ -25,7 +26,7 @@ use tokio_stream::wrappers::ReceiverStream;
 use tonic::Request;
 use tracing::{debug, error};
 
-use crate::segment::{store, SegmentReader, SegmentReaderOptions};
+use crate::segment::store;
 
 use super::filter::SegmentFilter;
 
@@ -62,6 +63,17 @@ where
 
     pub fn into_service(self) -> dna_stream_server::DnaStreamServer<DnaService<S>> {
         dna_stream_server::DnaStreamServer::new(self)
+    }
+
+    pub async fn segment_options(&self) -> Result<SegmentOptions> {
+        for _ in 0..5 {
+            if let Some(segment_options) = self.cursor_producer.segment_options().await {
+                return Ok(segment_options);
+            }
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
+
+        Err(DnaError::Fatal).attach_printable("failed to get segment options")
     }
 }
 
@@ -118,8 +130,20 @@ where
             .collect::<std::result::Result<Vec<starknet::Filter>, _>>()
             .map_err(|_| tonic::Status::invalid_argument("failed to decode filter"))?;
 
-        let producer = StreamProducer::init(
+        let segment_options = self
+            .segment_options()
+            .await
+            .map_err(|_| tonic::Status::unavailable("DNA server is not ready yet"))?;
+
+        let filter = SegmentFilter::new(
             filters,
+            self.storage.clone(),
+            self.local_storage.clone(),
+            segment_options,
+        );
+
+        let producer = StreamProducer::init(
+            filter,
             tx,
             self.storage.clone(),
             self.local_storage.clone(),
@@ -163,7 +187,7 @@ where
 {
     storage: CachedStorage<S>,
     local_storage: LocalStorageBackend,
-    filters: Vec<SegmentFilter>,
+    filter: SegmentFilter<S>,
     cursor_producer: CursorProducer,
     response_tx: mpsc::Sender<TonicResult<StreamDataResponse>>,
 }
@@ -174,16 +198,14 @@ where
     <S as StorageBackend>::Reader: Unpin + Send + 'static,
 {
     pub fn init(
-        filters: Vec<starknet::Filter>,
+        filter: SegmentFilter<S>,
         response_tx: mpsc::Sender<TonicResult<StreamDataResponse>>,
         storage: CachedStorage<S>,
         local_storage: LocalStorageBackend,
         cursor_producer: CursorProducer,
     ) -> Self {
-        let filters = filters.into_iter().map(SegmentFilter::new).collect();
-
         StreamProducer {
-            filters,
+            filter,
             storage,
             local_storage,
             cursor_producer,
@@ -219,11 +241,12 @@ where
     }
 
     #[tracing::instrument(name = "stream_data", skip_all, err(Debug))]
-    pub async fn start(self, stream_starting_block: BlockNumberOrCursor) -> Result<()> {
-        debug!(num_filters = %self.filters.len(), "starting data stream");
+    pub async fn start(mut self, stream_starting_block: BlockNumberOrCursor) -> Result<()> {
+        debug!(num_filters = %self.filter.filter_len(), "starting data stream");
 
         let mut current_block = stream_starting_block.clone();
 
+        /*
         let segment_options = 'outer: loop {
             for _ in 0..5 {
                 if let Some(segment_options) = self.cursor_producer.segment_options().await {
@@ -236,12 +259,6 @@ where
         };
 
         let mut segment_reader = {
-            let options = self
-                .filters
-                .iter()
-                .fold(SegmentReaderOptions::default(), |options, filter| {
-                    filter.segment_reader_options().merge(&options)
-                });
             debug!(?options, "create block segment reader");
             SegmentReader::new(
                 self.storage.clone(),
@@ -250,6 +267,7 @@ where
                 options,
             )
         };
+        */
 
         let mut block_bitmap = RoaringBitmap::new();
 
@@ -274,7 +292,6 @@ where
                 }
                 NextBlock::SegmentGroup(starting_block, segment_options) => {
                     let ending_block = starting_block + segment_options.segment_group_blocks() - 1;
-                    let segment_group = segment_reader.segment_group(starting_block).await?;
 
                     // Notice that if the user requested data from block X + Y, the segment
                     // group may contain blocks between X and X + Y.
@@ -282,10 +299,61 @@ where
                     let real_starting_block =
                         u64::max(stream_starting_block.number(), starting_block);
                     let block_range = real_starting_block as u32..=ending_block as u32;
-                    self.fill_segment_group_bitmap(&segment_group, &mut block_bitmap, block_range);
 
-                    let mut current_segment_start =
-                        segment_options.segment_start(real_starting_block);
+                    debug!(block_range = ?block_range, "filling block bitmap");
+
+                    self.filter
+                        .fill_block_bitmap(&mut block_bitmap, block_range)
+                        .await?;
+
+                    // let mut current_segment_start = segment_options.segment_start(starting_block);
+
+                    for block_number in block_bitmap.iter() {
+                        // debug!(
+                        //     block_number,
+                        //     current_segment_start,
+                        //     new_start = %segment_options.segment_start(block_number as u64),
+                        //     "sending group from block"
+                        // );
+
+                        // Avoid useless work.
+                        if self.response_tx.is_closed() {
+                            break;
+                        }
+
+                        let block_number = block_number as u64;
+
+                        if let Some(blocks) = self.filter.filter_segment_block(block_number).await?
+                        {
+                            let cursor = if block_number == 0 {
+                                None
+                            } else {
+                                Some(Cursor::new_finalized(block_number - 1).into())
+                            };
+
+                            let data = blocks
+                                .into_iter()
+                                .map(|block| block.encode_to_vec())
+                                .collect();
+
+                            let data = Data {
+                                data,
+                                finality: DataFinality::Finalized as i32,
+                                cursor,
+                                end_cursor: Some(Cursor::new_finalized(block_number).into()),
+                            };
+
+                            self.send_data(data).await;
+                        }
+                    }
+                    /*
+                    let segment_group = segment_reader.segment_group(starting_block).await?;
+
+                    let real_starting_block =
+                        u64::max(stream_starting_block.number(), starting_block);
+                    let block_range = real_starting_block as u32..=ending_block as u32;
+                    self.fill_segment_group_bitmap(&segment_group, &mut block_bitmap, block_range);
+                    */
 
                     /*
                     let mut block_segment = block_segment_reader
@@ -295,6 +363,7 @@ where
                         .attach_printable("failed to read block segment")?;
                     */
 
+                    /*
                     'block_iter: for block_number in block_bitmap.iter() {
                         debug!(
                             block_number,
@@ -326,6 +395,7 @@ where
                         self.filter_and_send_segment(block_number as u64, relative_index as usize)
                             .await;
                     }
+                    */
 
                     current_block = ending_block.into();
                 }
@@ -396,6 +466,7 @@ where
         Ok(())
     }
 
+    /*
     fn fill_segment_group_bitmap<'a>(
         &self,
         segment_group: &store::SegmentGroup,
@@ -475,21 +546,9 @@ where
         }
 
         if has_block {
-            let cursor = if block_number == 0 {
-                None
-            } else {
-                Some(Cursor::new_finalized(block_number - 1).into())
-            };
-            let data = Data {
-                data,
-                finality: DataFinality::Finalized as i32,
-                cursor,
-                end_cursor: Some(Cursor::new_finalized(block_number).into()),
-            };
-
-            self.send_data(data).await;
         }
     }
+    */
     /*
     async fn filter_and_send_single_block<'a>(&self, cursor: &Cursor, block: &SingleBlock<'a>) {
         let mut data = Vec::with_capacity(self.filters.len());
