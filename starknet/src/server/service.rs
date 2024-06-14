@@ -1,9 +1,9 @@
-use std::{ops::RangeInclusive, time::Duration};
+use std::time::Duration;
 
 use apibara_dna_common::{
     core::Cursor,
     error::{DnaError, Result},
-    segment::{self, SegmentOptions},
+    segment::SegmentOptions,
     server::{BlockNumberOrCursor, CursorProducer, NextBlock},
     storage::{CachedStorage, LocalStorageBackend, StorageBackend},
 };
@@ -26,13 +26,9 @@ use tokio_stream::wrappers::ReceiverStream;
 use tonic::Request;
 use tracing::{debug, error};
 
-use crate::segment::store;
-
 use super::filter::SegmentFilter;
 
 type TonicResult<T> = std::result::Result<T, tonic::Status>;
-
-const DEFAULT_BUFFER_SIZE: usize = 1024 * 1024 * 1024;
 
 pub struct DnaService<S>
 where
@@ -65,6 +61,7 @@ where
         dna_stream_server::DnaStreamServer::new(self)
     }
 
+    #[tracing::instrument(skip_all)]
     pub async fn segment_options(&self) -> Result<SegmentOptions> {
         for _ in 0..5 {
             if let Some(segment_options) = self.cursor_producer.segment_options().await {
@@ -85,6 +82,7 @@ where
 {
     type StreamDataStream = ReceiverStream<TonicResult<StreamDataResponse>>;
 
+    #[tracing::instrument(name = "stream_data_request", skip_all)]
     async fn stream_data(
         &self,
         request: Request<StreamDataRequest>,
@@ -144,13 +142,14 @@ where
 
         let producer = StreamProducer::init(
             filter,
+            starting_block,
             tx,
             self.storage.clone(),
             self.local_storage.clone(),
             cursor_producer,
         );
 
-        tokio::spawn(producer.start(starting_block).inspect_err(|err| {
+        tokio::spawn(producer.start().inspect_err(|err| {
             error!(err = ?err, "stream_data error");
         }));
 
@@ -190,6 +189,7 @@ where
     filter: SegmentFilter<S>,
     cursor_producer: CursorProducer,
     response_tx: mpsc::Sender<TonicResult<StreamDataResponse>>,
+    stream_starting_block: BlockNumberOrCursor,
 }
 
 impl<S> StreamProducer<S>
@@ -199,6 +199,7 @@ where
 {
     pub fn init(
         filter: SegmentFilter<S>,
+        stream_starting_block: BlockNumberOrCursor,
         response_tx: mpsc::Sender<TonicResult<StreamDataResponse>>,
         storage: CachedStorage<S>,
         local_storage: LocalStorageBackend,
@@ -206,6 +207,7 @@ where
     ) -> Self {
         StreamProducer {
             filter,
+            stream_starting_block,
             storage,
             local_storage,
             cursor_producer,
@@ -240,36 +242,10 @@ where
             .await;
     }
 
-    #[tracing::instrument(name = "stream_data", skip_all, err(Debug))]
-    pub async fn start(mut self, stream_starting_block: BlockNumberOrCursor) -> Result<()> {
+    pub async fn start(mut self) -> Result<()> {
         debug!(num_filters = %self.filter.filter_len(), "starting data stream");
 
-        let mut current_block = stream_starting_block.clone();
-
-        /*
-        let segment_options = 'outer: loop {
-            for _ in 0..5 {
-                if let Some(segment_options) = self.cursor_producer.segment_options().await {
-                    break 'outer segment_options;
-                }
-                tokio::time::sleep(Duration::from_secs(1)).await;
-            }
-
-            return Err(DnaError::Fatal).attach_printable("failed to get segment options");
-        };
-
-        let mut segment_reader = {
-            debug!(?options, "create block segment reader");
-            SegmentReader::new(
-                self.storage.clone(),
-                self.local_storage.clone(),
-                segment_options.clone(),
-                options,
-            )
-        };
-        */
-
-        let mut block_bitmap = RoaringBitmap::new();
+        let mut current_block = self.stream_starting_block.clone();
 
         loop {
             if self.response_tx.is_closed() {
@@ -291,151 +267,15 @@ where
                     tokio::time::sleep(Duration::from_secs(1)).await;
                 }
                 NextBlock::SegmentGroup(starting_block, segment_options) => {
-                    let ending_block = starting_block + segment_options.segment_group_blocks() - 1;
-
-                    // Notice that if the user requested data from block X + Y, the segment
-                    // group may contain blocks between X and X + Y.
-                    // Here we filter those blocks out.
-                    let real_starting_block =
-                        u64::max(stream_starting_block.number(), starting_block);
-                    let block_range = real_starting_block as u32..=ending_block as u32;
-
-                    debug!(block_range = ?block_range, "filling block bitmap");
-
-                    self.filter
-                        .fill_block_bitmap(&mut block_bitmap, block_range)
+                    let ending_block = self
+                        .send_segment_group(starting_block, segment_options)
                         .await?;
-
-                    // let mut current_segment_start = segment_options.segment_start(starting_block);
-
-                    for block_number in block_bitmap.iter() {
-                        // debug!(
-                        //     block_number,
-                        //     current_segment_start,
-                        //     new_start = %segment_options.segment_start(block_number as u64),
-                        //     "sending group from block"
-                        // );
-
-                        // Avoid useless work.
-                        if self.response_tx.is_closed() {
-                            break;
-                        }
-
-                        let block_number = block_number as u64;
-
-                        if let Some(blocks) = self.filter.filter_segment_block(block_number).await?
-                        {
-                            let cursor = if block_number == 0 {
-                                None
-                            } else {
-                                Some(Cursor::new_finalized(block_number - 1).into())
-                            };
-
-                            let data = blocks
-                                .into_iter()
-                                .map(|block| block.encode_to_vec())
-                                .collect();
-
-                            let data = Data {
-                                data,
-                                finality: DataFinality::Finalized as i32,
-                                cursor,
-                                end_cursor: Some(Cursor::new_finalized(block_number).into()),
-                            };
-
-                            self.send_data(data).await;
-                        }
-                    }
-                    /*
-                    let segment_group = segment_reader.segment_group(starting_block).await?;
-
-                    let real_starting_block =
-                        u64::max(stream_starting_block.number(), starting_block);
-                    let block_range = real_starting_block as u32..=ending_block as u32;
-                    self.fill_segment_group_bitmap(&segment_group, &mut block_bitmap, block_range);
-                    */
-
-                    /*
-                    let mut block_segment = block_segment_reader
-                        .read(current_segment_start)
-                        .await
-                        .change_context(DnaError::Fatal)
-                        .attach_printable("failed to read block segment")?;
-                    */
-
-                    /*
-                    'block_iter: for block_number in block_bitmap.iter() {
-                        debug!(
-                            block_number,
-                            current_segment_start,
-                            new_start = %segment_options.segment_start(block_number as u64),
-                            "sending group from block"
-                        );
-
-                        // Avoid useless work.
-                        if self.response_tx.is_closed() {
-                            break 'block_iter;
-                        }
-
-                        if current_segment_start
-                            < segment_options.segment_start(block_number as u64)
-                        {
-                            debug!("reading new segment");
-                            current_segment_start =
-                                segment_options.segment_start(block_number as u64);
-                            // block_segment = block_segment_reader
-                            //     .read(current_segment_start)
-                            //     .await
-                            //     .change_context(DnaError::Fatal)
-                            //     .attach_printable("failed to read block segment")?;
-                        }
-
-                        let relative_index = block_number - current_segment_start as u32;
-
-                        self.filter_and_send_segment(block_number as u64, relative_index as usize)
-                            .await;
-                    }
-                    */
-
                     current_block = ending_block.into();
                 }
                 NextBlock::Segment(starting_block, segment_options) => {
-                    let ending_block = starting_block + segment_options.segment_size as u64 - 1;
-                    self.send_system_message(
-                        format!("segment {starting_block} - {ending_block}"),
-                        false,
-                    )
-                    .await;
-                    /*
-                    let real_starting_block =
-                        u64::max(stream_starting_block.number(), starting_block);
-
-                    let current_segment_start = segment_options.segment_start(real_starting_block);
-
-                    let block_segment = block_segment_reader
-                        .read(current_segment_start)
-                        .await
-                        .change_context(DnaError::Fatal)
-                        .attach_printable("failed to read block segment")?;
-
-                    'block_iter: for block_number in real_starting_block..=ending_block {
-                        // Avoid useless work.
-                        if self.response_tx.is_closed() {
-                            break 'block_iter;
-                        }
-
-                        let relative_index =
-                            block_number - block_segment.header.first_block_number();
-
-                        self.filter_and_send_segment(
-                            block_number as u64,
-                            relative_index as usize,
-                            &block_segment,
-                        )
-                        .await;
-                    }
-                    */
-
+                    let ending_block = self
+                        .send_single_segment(starting_block, segment_options)
+                        .await?;
                     current_block = ending_block.into();
                 }
                 NextBlock::Block(cursor) => {
@@ -466,123 +306,102 @@ where
         Ok(())
     }
 
-    /*
-    fn fill_segment_group_bitmap<'a>(
-        &self,
-        segment_group: &store::SegmentGroup,
-        block_bitmap: &mut RoaringBitmap,
-        block_range: RangeInclusive<u32>,
-    ) {
-        block_bitmap.clear();
+    #[tracing::instrument(skip(self, segment_options), err(Debug))]
+    async fn send_segment_group(
+        &mut self,
+        starting_block: u64,
+        segment_options: SegmentOptions,
+    ) -> Result<u64> {
+        let ending_block = starting_block + segment_options.segment_group_blocks() - 1;
 
-        let first_block_in_range = *block_range.start();
-        // Use the indices stored in the segment group to build the block bitmap.
-        // TODO: what if an index is missing? We should fill the bitmap densely.
-        for filter in &self.filters {
-            if filter.has_required_header() || filter.has_transactions() {
-                block_bitmap.insert_range(block_range);
+        // Notice that if the user requested data from block X + Y, the segment
+        // group may contain blocks between X and X + Y.
+        // Here we filter those blocks out.
+        let real_starting_block = u64::max(self.stream_starting_block.number(), starting_block);
+        let block_range = real_starting_block as u32..=ending_block as u32;
+
+        debug!(block_range = ?block_range, "filling block bitmap");
+
+        let mut block_bitmap = RoaringBitmap::new();
+
+        self.filter
+            .fill_block_bitmap(&mut block_bitmap, block_range)
+            .await?;
+
+        for block_number in block_bitmap.iter() {
+            // Avoid useless work.
+            if self.response_tx.is_closed() {
                 break;
             }
-            todo!();
-        }
-        /*
-        'filter: for filter in &self.filters {
-            if filter.has_required_header() || filter.has_withdrawals() || filter.has_transactions()
-            {
-                block_bitmap.insert_range(block_range);
-                break 'filter;
-            }
 
-            for log in filter.logs() {
-                let any_address = log.address.is_none();
-                let any_topic =
-                    log.topics.is_empty() || log.topics.iter().any(|t| t.value.is_none());
+            let block_number = block_number as u64;
 
-                if any_address && any_topic {
-                    block_bitmap.insert_range(block_range);
-                    break 'filter;
-                }
+            if let Some(blocks) = self.filter.filter_segment_block(block_number).await? {
+                let cursor = if block_number == 0 {
+                    None
+                } else {
+                    Some(Cursor::new_finalized(block_number - 1).into())
+                };
 
-                if let Some(address) = &log.address {
-                    let address_bitmap = segment_group
-                        .get_log_by_address(&address.into())
-                        .unwrap_or_default();
-                    *block_bitmap |= address_bitmap;
-                }
+                let data = blocks
+                    .into_iter()
+                    .map(|block| block.encode_to_vec())
+                    .collect();
 
-                for topic in &log.topics {
-                    if let Some(topic) = &topic.value {
-                        let topic_bitmap = segment_group
-                            .get_log_by_topic(&topic.into())
-                            .unwrap_or_default();
-                        *block_bitmap |= topic_bitmap;
-                    }
-                }
+                let data = Data {
+                    data,
+                    finality: DataFinality::Finalized as i32,
+                    cursor,
+                    end_cursor: Some(Cursor::new_finalized(block_number).into()),
+                };
+
+                self.send_data(data).await;
             }
         }
-        */
 
-        if let Some(min_in_range) = block_bitmap.min() {
-            if min_in_range < first_block_in_range {
-                block_bitmap.remove_range(..first_block_in_range);
-            }
-        }
+        Ok(ending_block)
     }
 
-    async fn filter_and_send_segment<'a>(&self, block_number: u64, relative_index: usize) {
-        let mut data = Vec::with_capacity(self.filters.len());
-        let mut has_block = false;
+    #[tracing::instrument(skip(self, segment_options), err(Debug))]
+    async fn send_single_segment(
+        &mut self,
+        starting_block: u64,
+        segment_options: SegmentOptions,
+    ) -> Result<u64> {
+        let ending_block = starting_block + segment_options.segment_size as u64 - 1;
+        let real_starting_block = u64::max(self.stream_starting_block.number(), starting_block);
 
-        for filter in &self.filters {
-            /*
-            match filter.filter_segment_block_data(relative_index as usize, &block_segment) {
-                None => data.push(Vec::new()),
-                Some(block) => {
-                    has_block = true;
-                    data.push(block.encode_to_vec());
-                }
+        for block_number in real_starting_block..=ending_block {
+            // Avoid useless work.
+            if self.response_tx.is_closed() {
+                break;
             }
-            */
-        }
 
-        if has_block {
-        }
-    }
-    */
-    /*
-    async fn filter_and_send_single_block<'a>(&self, cursor: &Cursor, block: &SingleBlock<'a>) {
-        let mut data = Vec::with_capacity(self.filters.len());
+            let block_number = block_number as u64;
 
-        for filter in &self.filters {
-            match filter.filter_single_block_data(block) {
-                None => data.push(Vec::new()),
-                Some(block) => {
-                    data.push(block.encode_to_vec());
-                }
+            if let Some(blocks) = self.filter.filter_segment_block(block_number).await? {
+                let cursor = if block_number == 0 {
+                    None
+                } else {
+                    Some(Cursor::new_finalized(block_number - 1).into())
+                };
+
+                let data = blocks
+                    .into_iter()
+                    .map(|block| block.encode_to_vec())
+                    .collect();
+
+                let data = Data {
+                    data,
+                    finality: DataFinality::Finalized as i32,
+                    cursor,
+                    end_cursor: Some(Cursor::new_finalized(block_number).into()),
+                };
+
+                self.send_data(data).await;
             }
         }
 
-        let finality = if self.cursor_producer.is_block_finalized(cursor).await {
-            DataFinality::Finalized
-        } else {
-            DataFinality::Accepted
-        };
-
-        // TODO: cursor should be the previous cursor
-        let data_cursor = if cursor.number == 0 {
-            None
-        } else {
-            Some(Cursor::new_finalized(cursor.number - 1).into())
-        };
-
-        let data = Data {
-            data,
-            finality: finality as i32,
-            cursor: data_cursor,
-            end_cursor: Some(cursor.clone().into()),
-        };
-
-        self.send_data(data).await;
+        Ok(ending_block)
     }
-    */
 }

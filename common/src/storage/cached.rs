@@ -143,6 +143,7 @@ where
             .attach_printable("failed to read previously cached file")
     }
 
+    #[tracing::instrument(skip(self), err(Debug))]
     pub async fn download_file_to_cache(&mut self, prefix: &str, filename: &str) -> Result<u64> {
         let mut reader = self.remote_storage.get(&prefix, &filename).await?;
         let mut writer = self.local_storage.put(&prefix, &filename).await?;
