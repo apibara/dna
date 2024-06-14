@@ -416,6 +416,7 @@ dependencies = [
  "jemallocator",
  "memmap2",
  "prost 0.11.9",
+ "prost-types 0.11.9",
  "rkyv",
  "roaring",
  "serde",
