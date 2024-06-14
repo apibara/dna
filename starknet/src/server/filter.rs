@@ -41,6 +41,7 @@ where
         self.filters.len()
     }
 
+    #[tracing::instrument(skip_all, err(Debug))]
     pub async fn fill_block_bitmap(
         &mut self,
         bitmap: &mut RoaringBitmap,
@@ -60,6 +61,7 @@ where
         todo!();
     }
 
+    #[tracing::instrument(skip(self), err(Debug))]
     pub async fn filter_segment_block(
         &mut self,
         block_number: u64,
