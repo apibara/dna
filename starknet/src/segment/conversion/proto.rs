@@ -44,9 +44,21 @@ impl From<&store::Event> for starknet::Event {
     }
 }
 
+impl From<&store::MessageToL1> for starknet::MessageToL1 {
+    fn from(value: &store::MessageToL1) -> Self {
+        starknet::MessageToL1::default()
+    }
+}
+
 impl From<&store::Transaction> for starknet::Transaction {
     fn from(value: &store::Transaction) -> Self {
         starknet::Transaction::default()
+    }
+}
+
+impl From<&store::TransactionReceipt> for starknet::TransactionReceipt {
+    fn from(value: &store::TransactionReceipt) -> Self {
+        starknet::TransactionReceipt::default()
     }
 }
 
@@ -73,5 +85,11 @@ impl From<&store::FieldElement> for starknet::FieldElement {
             hi_lo,
             hi_hi,
         }
+    }
+}
+
+impl From<starknet::FieldElement> for store::FieldElement {
+    fn from(value: starknet::FieldElement) -> Self {
+        todo!()
     }
 }

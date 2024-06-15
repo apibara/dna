@@ -99,6 +99,7 @@ pub struct Event {
     pub event_index: u32,
     pub transaction_index: u32,
     pub transaction_hash: FieldElement,
+    pub transaction_reverted: bool,
 }
 
 #[derive(Archive, Serialize, Deserialize, Debug, PartialEq)]
@@ -111,6 +112,7 @@ pub struct MessageToL1 {
     pub message_index: u32,
     pub transaction_index: u32,
     pub transaction_hash: FieldElement,
+    pub transaction_reverted: bool,
 }
 
 #[derive(Archive, Serialize, Deserialize, Debug, PartialEq)]
@@ -137,6 +139,7 @@ pub enum Transaction {
 pub struct TransactionMeta {
     pub transaction_index: u32,
     pub transaction_hash: FieldElement,
+    pub transaction_reverted: bool,
 }
 
 #[derive(Archive, Serialize, Deserialize, Debug, PartialEq)]
@@ -409,6 +412,13 @@ impl<T> Segment<T> {
 }
 
 impl TransactionReceipt {
+    pub fn is_reverted(&self) -> bool {
+        matches!(
+            self.meta().execution_result,
+            ExecutionResult::Reverted { .. }
+        )
+    }
+
     pub fn meta(&self) -> &TransactionReceiptMeta {
         use TransactionReceipt::*;
         match self {

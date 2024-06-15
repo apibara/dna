@@ -178,6 +178,7 @@ impl From<&models::InvokeTransactionV0> for store::Transaction {
         let meta = store::TransactionMeta {
             transaction_index: u32::MAX,
             transaction_hash: tx.transaction_hash.into(),
+            transaction_reverted: false,
         };
 
         store::Transaction::InvokeTransactionV0(store::InvokeTransactionV0 {
@@ -196,6 +197,7 @@ impl From<&models::InvokeTransactionV1> for store::Transaction {
         let meta = store::TransactionMeta {
             transaction_index: u32::MAX,
             transaction_hash: tx.transaction_hash.into(),
+            transaction_reverted: false,
         };
 
         store::Transaction::InvokeTransactionV1(store::InvokeTransactionV1 {
@@ -214,6 +216,7 @@ impl From<&models::InvokeTransactionV3> for store::Transaction {
         let meta = store::TransactionMeta {
             transaction_index: u32::MAX,
             transaction_hash: tx.transaction_hash.into(),
+            transaction_reverted: false,
         };
 
         store::Transaction::InvokeTransactionV3(store::InvokeTransactionV3 {
@@ -245,6 +248,7 @@ impl From<&models::L1HandlerTransaction> for store::Transaction {
         let meta = store::TransactionMeta {
             transaction_index: u32::MAX,
             transaction_hash: tx.transaction_hash.into(),
+            transaction_reverted: false,
         };
 
         store::Transaction::L1HandlerTransaction(store::L1HandlerTransaction {
@@ -262,6 +266,7 @@ impl From<&models::DeployTransaction> for store::Transaction {
         let meta = store::TransactionMeta {
             transaction_index: u32::MAX,
             transaction_hash: tx.transaction_hash.into(),
+            transaction_reverted: false,
         };
 
         store::Transaction::DeployTransaction(store::DeployTransaction {
@@ -294,6 +299,7 @@ impl From<&models::DeclareTransactionV0> for store::Transaction {
         let meta = store::TransactionMeta {
             transaction_index: u32::MAX,
             transaction_hash: tx.transaction_hash.into(),
+            transaction_reverted: false,
         };
 
         store::Transaction::DeclareTransactionV0(store::DeclareTransactionV0 {
@@ -311,6 +317,7 @@ impl From<&models::DeclareTransactionV1> for store::Transaction {
         let meta = store::TransactionMeta {
             transaction_index: u32::MAX,
             transaction_hash: tx.transaction_hash.into(),
+            transaction_reverted: false,
         };
 
         store::Transaction::DeclareTransactionV1(store::DeclareTransactionV1 {
@@ -329,6 +336,7 @@ impl From<&models::DeclareTransactionV2> for store::Transaction {
         let meta = store::TransactionMeta {
             transaction_index: u32::MAX,
             transaction_hash: tx.transaction_hash.into(),
+            transaction_reverted: false,
         };
 
         store::Transaction::DeclareTransactionV2(store::DeclareTransactionV2 {
@@ -348,6 +356,7 @@ impl From<&models::DeclareTransactionV3> for store::Transaction {
         let meta = store::TransactionMeta {
             transaction_index: u32::MAX,
             transaction_hash: tx.transaction_hash.into(),
+            transaction_reverted: false,
         };
 
         store::Transaction::DeclareTransactionV3(store::DeclareTransactionV3 {
@@ -390,6 +399,7 @@ impl From<&models::DeployAccountTransactionV1> for store::Transaction {
         let meta = store::TransactionMeta {
             transaction_index: u32::MAX,
             transaction_hash: tx.transaction_hash.into(),
+            transaction_reverted: false,
         };
 
         store::Transaction::DeployAccountV1(store::DeployAccountTransactionV1 {
@@ -413,6 +423,7 @@ impl From<&models::DeployAccountTransactionV3> for store::Transaction {
         let meta = store::TransactionMeta {
             transaction_index: u32::MAX,
             transaction_hash: tx.transaction_hash.into(),
+            transaction_reverted: false,
         };
 
         store::Transaction::DeployAccountV3(store::DeployAccountTransactionV3 {
@@ -541,6 +552,7 @@ impl From<&models::Event> for store::Event {
             event_index: u32::MAX,
             transaction_index: u32::MAX,
             transaction_hash: store::FieldElement::default(),
+            transaction_reverted: false,
         }
     }
 }
@@ -559,6 +571,7 @@ impl From<&models::MsgToL1> for store::MessageToL1 {
             message_index: u32::MAX,
             transaction_index: u32::MAX,
             transaction_hash: store::FieldElement::default(),
+            transaction_reverted: false,
         }
     }
 }
@@ -579,15 +592,24 @@ impl From<models::BlockWithReceipts> for store::SingleBlock {
             // Store tx hash for event.
             let tx_hash: store::FieldElement = tx_with_rx.transaction.transaction_hash().into();
 
+            // Start by analyzing the receipt to get the execution status.
+            let mut receipt = store::TransactionReceipt::from(&tx_with_rx.receipt);
+            set_receipt_transaction_index(&mut receipt, tx_index as u32);
+            let transaction_reverted = receipt.is_reverted();
+            receipts.push(receipt);
+
+            // TODO: set reverted flag.
             let mut tx = store::Transaction::from(&tx_with_rx.transaction);
-            set_transaction_index(&mut tx, tx_index as u32);
+            set_transaction_index_and_reverted(&mut tx, tx_index as u32, transaction_reverted);
             transactions.push(tx);
 
             for event in tx_with_rx.receipt.events() {
                 let mut event = store::Event::from(event);
                 event.event_index = event_index;
+
                 event.transaction_index = tx_index as u32;
                 event.transaction_hash = tx_hash.clone();
+                event.transaction_reverted = transaction_reverted;
 
                 events.push(event);
 
@@ -597,17 +619,15 @@ impl From<models::BlockWithReceipts> for store::SingleBlock {
             for message in tx_with_rx.receipt.messages() {
                 let mut message = store::MessageToL1::from(message);
                 message.message_index = message_index;
+
                 message.transaction_index = tx_index as u32;
                 message.transaction_hash = tx_hash.clone();
+                message.transaction_reverted = transaction_reverted;
 
                 messages.push(message);
 
                 message_index += 1;
             }
-
-            let mut receipt = store::TransactionReceipt::from(&tx_with_rx.receipt);
-            set_receipt_transaction_index(&mut receipt, tx_index as u32);
-            receipts.push(receipt);
         }
 
         store::SingleBlock {
@@ -620,21 +640,27 @@ impl From<models::BlockWithReceipts> for store::SingleBlock {
     }
 }
 
-fn set_transaction_index(transaction: &mut store::Transaction, index: u32) {
+fn set_transaction_index_and_reverted(
+    transaction: &mut store::Transaction,
+    index: u32,
+    reverted: bool,
+) {
     use store::Transaction::*;
-    match transaction {
-        InvokeTransactionV0(tx) => tx.meta.transaction_index = index,
-        InvokeTransactionV1(tx) => tx.meta.transaction_index = index,
-        InvokeTransactionV3(tx) => tx.meta.transaction_index = index,
-        L1HandlerTransaction(tx) => tx.meta.transaction_index = index,
-        DeployTransaction(tx) => tx.meta.transaction_index = index,
-        DeclareTransactionV0(tx) => tx.meta.transaction_index = index,
-        DeclareTransactionV1(tx) => tx.meta.transaction_index = index,
-        DeclareTransactionV2(tx) => tx.meta.transaction_index = index,
-        DeclareTransactionV3(tx) => tx.meta.transaction_index = index,
-        DeployAccountV1(tx) => tx.meta.transaction_index = index,
-        DeployAccountV3(tx) => tx.meta.transaction_index = index,
-    }
+    let meta = match transaction {
+        InvokeTransactionV0(tx) => &mut tx.meta,
+        InvokeTransactionV1(tx) => &mut tx.meta,
+        InvokeTransactionV3(tx) => &mut tx.meta,
+        L1HandlerTransaction(tx) => &mut tx.meta,
+        DeployTransaction(tx) => &mut tx.meta,
+        DeclareTransactionV0(tx) => &mut tx.meta,
+        DeclareTransactionV1(tx) => &mut tx.meta,
+        DeclareTransactionV2(tx) => &mut tx.meta,
+        DeclareTransactionV3(tx) => &mut tx.meta,
+        DeployAccountV1(tx) => &mut tx.meta,
+        DeployAccountV3(tx) => &mut tx.meta,
+    };
+    meta.transaction_index = index;
+    meta.transaction_reverted = reverted;
 }
 
 fn set_receipt_transaction_index(receipt: &mut store::TransactionReceipt, index: u32) {
