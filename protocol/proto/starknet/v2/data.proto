@@ -187,7 +187,11 @@ message DeployAccountTransactionV3 {
 message TransactionReceipt {}
 
 // Transaction events.
-message Event {}
+message Event {
+  FieldElement from_address = 1;
+  repeated FieldElement keys = 2;
+  uint64 event_index = 3;
+}
 
 enum L1DataAvailabilityMode {
   // Unknown DA.

@@ -26,6 +26,30 @@ impl From<&store::BlockHeader> for starknet::BlockHeader {
     }
 }
 
+impl From<&store::Event> for starknet::Event {
+    fn from(value: &store::Event) -> Self {
+        let from_address = (&value.from_address).into();
+        let keys = value
+            .keys
+            .iter()
+            .map(starknet::FieldElement::from)
+            .collect();
+
+        // TODO
+        starknet::Event {
+            from_address: Some(from_address),
+            keys,
+            event_index: value.event_index as u64,
+        }
+    }
+}
+
+impl From<&store::Transaction> for starknet::Transaction {
+    fn from(value: &store::Transaction) -> Self {
+        starknet::Transaction::default()
+    }
+}
+
 impl From<&store::FieldElement> for starknet::FieldElement {
     fn from(value: &store::FieldElement) -> Self {
         let bytes = value.0;
