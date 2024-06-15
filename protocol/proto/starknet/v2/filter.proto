@@ -21,24 +21,12 @@ message HeaderFilter {
   optional bool always = 1;
 }
 
-// Filter transactions.
-message TransactionFilter {
-  // Include reverted transactions.
-  //
-  // Defaults to false.
-  optional bool include_reverted = 1;
-  // Flag to request the transaction's receipt. Defaults to `false`.
-  optional bool include_receipt = 2;
-  // Flag to request the transaction's logs. Defaults to `false`.
-  optional bool include_events = 3;
-}
-
 // Filter events.
 message EventFilter {
   // Filter by contract emitting the event.
   FieldElement from_address = 1;
   // Filter keys that prefix-match the given data.
-  repeated FieldElement keys = 2;
+  repeated Key keys = 2;
   // Only returns events with keys of exactly the same length as the filter.
   //
   // Defaults to `false`.
@@ -57,6 +45,8 @@ message EventFilter {
   optional bool include_receipt = 6;
 }
 
+message Key { FieldElement value = 1; }
+
 // Filter messages to L1.
 message MessageToL1Filter {
   // Filter by destination address.
@@ -64,5 +54,55 @@ message MessageToL1Filter {
   // Include messages sent by reverted transactions.
   //
   // Defaults to false.
-  optional bool include_reverted = 4;
+  optional bool include_reverted = 2;
+  // Include the transaction that sent the message.
+  //
+  // Defaults to false.
+  optional bool include_transaction = 3;
+  // Include the receipt of the transaction that sent the message.
+  //
+  // Defaults to false.
+  optional bool include_receipt = 4;
 }
+
+// Filter transactions.
+message TransactionFilter {
+  // Include reverted transactions.
+  //
+  // Defaults to false.
+  optional bool include_reverted = 1;
+  // Flag to request the transaction's receipt.
+  //
+  // Defaults to `false`.
+  optional bool include_receipt = 2;
+  // Flag to request the transaction's events.
+  //
+  // Defaults to `false`.
+  optional bool include_events = 3;
+  // Flag to request the transaction's messages to L1.
+  //
+  // Defaults to `false`.
+  optional bool include_messages = 4;
+
+  oneof inner {
+    InvokeTransactionV0Filter invoke_v0 = 5;
+    InvokeTransactionV1Filter invoke_v1 = 6;
+    InvokeTransactionV3Filter invoke_v3 = 7;
+    DeployTransactionFilter deploy = 8;
+    DeclareTransactionFilter declare = 9;
+    L1HandlerTransactionFilter l1_handler = 10;
+    DeployAccountV0TransactionFilter deploy_account_v0 = 11;
+    DeployAccountV3TransactionFilter deploy_account_v3 = 12;
+    DeclareTransactionV3Filter declare_v3 = 13;
+  }
+}
+
+message InvokeTransactionV0Filter {}
+message InvokeTransactionV1Filter {}
+message InvokeTransactionV3Filter {}
+message DeployTransactionFilter {}
+message DeclareTransactionFilter {}
+message L1HandlerTransactionFilter {}
+message DeployAccountV0TransactionFilter {}
+message DeployAccountV3TransactionFilter {}
+message DeclareTransactionV3Filter {}
