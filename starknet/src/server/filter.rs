@@ -12,7 +12,10 @@ use apibara_dna_protocol::starknet;
 use roaring::RoaringBitmap;
 use tracing::debug;
 
-use crate::segment::{reader, store};
+use crate::segment::{
+    reader, store, EVENT_SEGMENT_NAME, HEADER_SEGMENT_NAME, MESSAGE_SEGMENT_NAME,
+    TRANSACTION_RECEIPT_SEGMENT_NAME, TRANSACTION_SEGMENT_NAME,
+};
 
 pub struct SegmentFilter<S: StorageBackend + Send> {
     filters: Vec<Filter>,
@@ -35,20 +38,32 @@ where
         local_storage: LocalStorageBackend,
         segment_options: SegmentOptions,
     ) -> Self {
-        let header_segment_reader =
-            reader::LazySegment::new(storage.clone(), segment_options.clone(), "header");
+        let header_segment_reader = reader::LazySegment::new(
+            storage.clone(),
+            segment_options.clone(),
+            HEADER_SEGMENT_NAME,
+        );
 
         let event_segment_reader =
-            reader::LazySegment::new(storage.clone(), segment_options.clone(), "events");
+            reader::LazySegment::new(storage.clone(), segment_options.clone(), EVENT_SEGMENT_NAME);
 
-        let message_segment_reader =
-            reader::LazySegment::new(storage.clone(), segment_options.clone(), "messages");
+        let message_segment_reader = reader::LazySegment::new(
+            storage.clone(),
+            segment_options.clone(),
+            MESSAGE_SEGMENT_NAME,
+        );
 
-        let transaction_segment_reader =
-            reader::LazySegment::new(storage.clone(), segment_options.clone(), "transaction");
+        let transaction_segment_reader = reader::LazySegment::new(
+            storage.clone(),
+            segment_options.clone(),
+            TRANSACTION_SEGMENT_NAME,
+        );
 
-        let receipt_segment_reader =
-            reader::LazySegment::new(storage.clone(), segment_options.clone(), "receipt");
+        let receipt_segment_reader = reader::LazySegment::new(
+            storage.clone(),
+            segment_options.clone(),
+            TRANSACTION_RECEIPT_SEGMENT_NAME,
+        );
 
         let filters = filters.into_iter().map(Filter::from).collect::<Vec<_>>();
 

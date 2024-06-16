@@ -19,7 +19,7 @@ use tracing::{debug, error, info};
 use crate::{
     core::Cursor,
     error::{DnaError, Result},
-    storage::{LocalStorageBackend, StorageBackend},
+    storage::{block_prefix, LocalStorageBackend, StorageBackend, BLOCK_NAME},
 };
 
 use super::{Snapshot, SnapshotChange};
@@ -136,11 +136,10 @@ impl ingestion_server::Ingestion for Service {
 
         let mut blocks = Vec::new();
         for cursor in state.cursors.iter() {
-            let prefix = format!("blocks/{}-{}", cursor.number, cursor.hash_as_hex());
             let mut reader = state
                 .storage
                 .clone()
-                .get(prefix, "block")
+                .get(block_prefix(cursor), BLOCK_NAME)
                 .await
                 .map_err(|_| tonic::Status::internal("failed to read block from storage"))?;
             let mut data = Vec::new();
@@ -293,15 +292,18 @@ impl SharedIngestionServerState {
                         continue;
                     }
 
-                    let prefix = format!("blocks/{}-{}", cursor.number, cursor.hash_as_hex());
-                    let mut reader = state.storage.clone().get(&prefix, "block").await?;
+                    let mut reader = state
+                        .storage
+                        .clone()
+                        .get(block_prefix(&cursor), BLOCK_NAME)
+                        .await?;
                     let mut data = Vec::new();
                     reader
                         .read_to_end(&mut data)
                         .await
                         .change_context(DnaError::Fatal)
                         .attach_printable("failed to read block from storage")?;
-                    debug!(prefix, data = data.len(), "sending block to subscriber");
+                    debug!(cursor = ?cursor, data = data.len(), "sending block to subscriber");
                     let ingested = BlockIngested {
                         cursor: Some(cursor.clone().into()),
                         data,

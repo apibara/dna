@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use apibara_dna_common::{
     error::{DnaError, Result},
     segment::SegmentOptions,
-    storage::{CachedStorage, StorageBackend},
+    storage::{segment_prefix, CachedStorage, StorageBackend},
 };
 use error_stack::ResultExt;
 use memmap2::Mmap;
@@ -59,7 +59,7 @@ where
                 debug!(filename = self.filename, segment_name, "mmap segment");
                 let mmap = self
                     .storage
-                    .mmap(format!("segment/{segment_name}"), &self.filename)
+                    .mmap(segment_prefix(segment_name), &self.filename)
                     .await?;
                 mmap
             }
