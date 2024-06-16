@@ -14,6 +14,7 @@ use opentelemetry_otlp::WithExportConfig;
 use tracing::Subscriber;
 
 pub use opentelemetry::metrics::{ObservableCounter, ObservableGauge};
+pub use opentelemetry::trace::{SpanContext, TraceContextExt};
 pub use opentelemetry::{Context, Key, KeyValue};
 use tracing_opentelemetry::MetricsLayer;
 use tracing_subscriber::{prelude::*, registry::LookupSpan, EnvFilter, Layer};
