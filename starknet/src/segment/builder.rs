@@ -1,11 +1,14 @@
 use apibara_dna_common::{
     error::{DnaError, Result},
-    storage::StorageBackend,
+    storage::{segment_prefix, StorageBackend},
 };
 use error_stack::ResultExt;
 use tokio::io::AsyncWriteExt;
 
-use super::{index::Index, store};
+use super::{
+    index::Index, store, EVENT_SEGMENT_NAME, HEADER_SEGMENT_NAME, MESSAGE_SEGMENT_NAME,
+    TRANSACTION_RECEIPT_SEGMENT_NAME, TRANSACTION_SEGMENT_NAME,
+};
 
 #[derive(Default)]
 pub struct SegmentBuilder {
@@ -78,55 +81,39 @@ impl SegmentBuilder {
         segment_name: &str,
         storage: &mut S,
     ) -> Result<()> {
-        {
-            let mut writer = storage.put(segment_name, "header").await?;
-            let bytes = rkyv::to_bytes::<_, 0>(&self.header).change_context(DnaError::Io)?;
-            writer
-                .write_all(&bytes)
-                .await
-                .change_context(DnaError::Io)?;
-            writer.shutdown().await.change_context(DnaError::Io)?;
-        }
+        let bytes = rkyv::to_bytes::<_, 0>(&self.header).change_context(DnaError::Io)?;
+        Self::write_bytes(storage, segment_name, HEADER_SEGMENT_NAME, &bytes).await?;
 
-        {
-            let mut writer = storage.put(segment_name, "transaction").await?;
-            let bytes = rkyv::to_bytes::<_, 0>(&self.transactions).change_context(DnaError::Io)?;
-            writer
-                .write_all(&bytes)
-                .await
-                .change_context(DnaError::Io)?;
-            writer.shutdown().await.change_context(DnaError::Io)?;
-        }
+        let bytes = rkyv::to_bytes::<_, 0>(&self.transactions).change_context(DnaError::Io)?;
+        Self::write_bytes(storage, segment_name, TRANSACTION_SEGMENT_NAME, &bytes).await?;
 
-        {
-            let mut writer = storage.put(segment_name, "receipt").await?;
-            let bytes = rkyv::to_bytes::<_, 0>(&self.receipts).change_context(DnaError::Io)?;
-            writer
-                .write_all(&bytes)
-                .await
-                .change_context(DnaError::Io)?;
-            writer.shutdown().await.change_context(DnaError::Io)?;
-        }
+        let bytes = rkyv::to_bytes::<_, 0>(&self.receipts).change_context(DnaError::Io)?;
+        Self::write_bytes(
+            storage,
+            segment_name,
+            TRANSACTION_RECEIPT_SEGMENT_NAME,
+            &bytes,
+        )
+        .await?;
 
-        {
-            let mut writer = storage.put(segment_name, "events").await?;
-            let bytes = rkyv::to_bytes::<_, 0>(&self.events).change_context(DnaError::Io)?;
-            writer
-                .write_all(&bytes)
-                .await
-                .change_context(DnaError::Io)?;
-            writer.shutdown().await.change_context(DnaError::Io)?;
-        }
+        let bytes = rkyv::to_bytes::<_, 0>(&self.events).change_context(DnaError::Io)?;
+        Self::write_bytes(storage, segment_name, EVENT_SEGMENT_NAME, &bytes).await?;
 
-        {
-            let mut writer = storage.put(segment_name, "messages").await?;
-            let bytes = rkyv::to_bytes::<_, 0>(&self.messages).change_context(DnaError::Io)?;
-            writer
-                .write_all(&bytes)
-                .await
-                .change_context(DnaError::Io)?;
-            writer.shutdown().await.change_context(DnaError::Io)?;
-        }
+        let bytes = rkyv::to_bytes::<_, 0>(&self.messages).change_context(DnaError::Io)?;
+        Self::write_bytes(storage, segment_name, MESSAGE_SEGMENT_NAME, &bytes).await?;
+
+        Ok(())
+    }
+
+    async fn write_bytes<S: StorageBackend>(
+        storage: &mut S,
+        segment_name: &str,
+        filename: &str,
+        data: &[u8],
+    ) -> Result<()> {
+        let mut writer = storage.put(segment_prefix(segment_name), filename).await?;
+        writer.write_all(data).await.change_context(DnaError::Io)?;
+        writer.shutdown().await.change_context(DnaError::Io)?;
 
         Ok(())
     }

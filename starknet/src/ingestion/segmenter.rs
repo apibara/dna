@@ -2,7 +2,7 @@ use apibara_dna_common::{
     core::Cursor,
     error::{DnaError, Result},
     ingestion::{IngestedBlock, Snapshot, SnapshotChange},
-    storage::{LocalStorageBackend, StorageBackend},
+    storage::{block_prefix, LocalStorageBackend, StorageBackend, BLOCK_NAME},
 };
 use error_stack::ResultExt;
 use futures_util::{Stream, TryFutureExt};
@@ -295,8 +295,7 @@ where
 
         for cursor in &cursors_to_segment {
             debug!(cursor = ?cursor, "copying block to segment");
-            let prefix = format!("blocks/{}-{}", cursor.number, cursor.hash_as_hex());
-            let contents = self.local_storage.mmap(&prefix, "block")?;
+            let contents = self.local_storage.mmap(block_prefix(&cursor), BLOCK_NAME)?;
 
             // TODO: use custom deserialization
             let block = rkyv::from_bytes::<store::SingleBlock>(&contents).unwrap();
@@ -308,7 +307,7 @@ where
 
         let segment_name = segment_options.format_segment_name(current_segment_start);
         self.segment_builder
-            .write(&format!("segment/{segment_name}"), &mut self.storage)
+            .write(&segment_name, &mut self.storage)
             .await?;
 
         info!(segment_name, "segment written");
@@ -316,8 +315,9 @@ where
         // Delete blocks from local storage.
         for cursor in &cursors_to_segment {
             debug!(cursor = ?cursor, "delete old block data");
-            let prefix = format!("blocks/{}-{}", cursor.number, cursor.hash_as_hex());
-            self.local_storage.remove_prefix(prefix).await?;
+            self.local_storage
+                .remove_prefix(block_prefix(cursor))
+                .await?;
         }
 
         let index = self.segment_builder.take_index();

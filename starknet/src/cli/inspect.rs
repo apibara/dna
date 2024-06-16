@@ -3,7 +3,9 @@ use std::time::Instant;
 use apibara_dna_common::{
     error::{DnaError, Result},
     ingestion::Snapshot,
-    storage::{AppStorageBackend, CacheArgs, CachedStorage, StorageArgs, StorageBackend},
+    storage::{
+        segment_prefix, AppStorageBackend, CacheArgs, CachedStorage, StorageArgs, StorageBackend,
+    },
 };
 use clap::Args;
 use error_stack::ResultExt;
@@ -11,7 +13,13 @@ use roaring::RoaringBitmap;
 use tokio::io::AsyncReadExt;
 use tracing::{info, warn};
 
-use crate::{ingestion::models, segment::store};
+use crate::{
+    ingestion::models,
+    segment::{
+        store, EVENT_SEGMENT_NAME, HEADER_SEGMENT_NAME, MESSAGE_SEGMENT_NAME,
+        TRANSACTION_RECEIPT_SEGMENT_NAME, TRANSACTION_SEGMENT_NAME,
+    },
+};
 
 /// Inspect ingested data.
 #[derive(Args, Debug)]
@@ -225,7 +233,7 @@ async fn inspect_header(
     info!(start = segment_start, "deserializing header segment");
 
     let bytes = storage
-        .mmap(format!("segment/{segment_name}"), "header")
+        .mmap(segment_prefix(segment_name), HEADER_SEGMENT_NAME)
         .await?;
 
     let header_segment = rkyv::from_bytes::<store::BlockHeaderSegment>(&bytes)
@@ -278,7 +286,7 @@ async fn inspect_event(
     info!(start = segment_start, "deserializing event segment");
 
     let bytes = storage
-        .mmap(format!("segment/{segment_name}"), "events")
+        .mmap(segment_prefix(segment_name), EVENT_SEGMENT_NAME)
         .await?;
 
     let segment = rkyv::from_bytes::<store::EventSegment>(&bytes)
@@ -361,7 +369,7 @@ async fn inspect_message(
     info!(start = segment_start, "deserializing message segment");
 
     let bytes = storage
-        .mmap(format!("segment/{segment_name}"), "messages")
+        .mmap(segment_prefix(segment_name), MESSAGE_SEGMENT_NAME)
         .await?;
 
     let segment = rkyv::from_bytes::<store::MessageSegment>(&bytes)
@@ -445,7 +453,10 @@ async fn inspect_receipt(
     info!(start = segment_start, "deserializing receipt segment");
 
     let bytes = storage
-        .mmap(format!("segment/{segment_name}"), "receipt")
+        .mmap(
+            segment_prefix(segment_name),
+            TRANSACTION_RECEIPT_SEGMENT_NAME,
+        )
         .await?;
 
     let segment = rkyv::from_bytes::<store::TransactionReceiptSegment>(&bytes)
@@ -523,7 +534,7 @@ async fn inspect_transaction(
     info!(start = segment_start, "deserializing transaction segment");
 
     let bytes = storage
-        .mmap(format!("segment/{segment_name}"), "transaction")
+        .mmap(segment_prefix(segment_name), TRANSACTION_SEGMENT_NAME)
         .await?;
 
     let segment = rkyv::from_bytes::<store::TransactionSegment>(&bytes)

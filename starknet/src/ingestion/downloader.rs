@@ -2,7 +2,7 @@ use apibara_dna_common::{
     core::Cursor,
     error::{DnaError, Result},
     ingestion::ChainChange,
-    storage::{LocalStorageBackend, StorageBackend},
+    storage::{block_prefix, LocalStorageBackend, StorageBackend, BLOCK_NAME},
 };
 use error_stack::ResultExt;
 use futures_util::{future, FutureExt, Stream, TryFutureExt};
@@ -203,8 +203,11 @@ impl InnerDownloader {
             .change_context(DnaError::Io)
             .attach_printable("failed to serialize block")?;
 
-        let prefix = format!("blocks/{}-{}", cursor.number, cursor.hash_as_hex());
-        let mut writer = self.storage.clone().put(&prefix, "block").await?;
+        let mut writer = self
+            .storage
+            .clone()
+            .put(block_prefix(&cursor), BLOCK_NAME)
+            .await?;
 
         writer
             .write_all(&bytes)

@@ -12,6 +12,7 @@ mod aws;
 mod azure;
 mod cached;
 mod local;
+mod names;
 
 pub use self::app::AppStorageBackend;
 pub use self::args::{CacheArgs, StorageArgs};
@@ -19,6 +20,7 @@ pub use self::aws::{S3StorageBackend, S3StorageBackendBuilder};
 pub use self::azure::{AzureStorageBackend, AzureStorageBackendBuilder};
 pub use self::cached::{CacheOptions, CachedAppStorageBackend, CachedStorage};
 pub use self::local::LocalStorageBackend;
+pub use self::names::{block_prefix, segment_prefix, BLOCK_NAME};
 
 #[async_trait]
 pub trait StorageBackend {
