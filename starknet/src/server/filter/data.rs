@@ -1,21 +1,4 @@
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    ops::RangeInclusive,
-};
-
-use apibara_dna_common::{
-    error::Result,
-    segment::SegmentOptions,
-    storage::{CachedStorage, LocalStorageBackend, StorageBackend},
-};
-use apibara_dna_protocol::starknet;
-use roaring::RoaringBitmap;
-use tracing::debug;
-
-use crate::segment::{
-    reader, store, EVENT_SEGMENT_NAME, HEADER_SEGMENT_NAME, MESSAGE_SEGMENT_NAME,
-    TRANSACTION_RECEIPT_SEGMENT_NAME, TRANSACTION_SEGMENT_NAME,
-};
+use std::collections::BTreeSet;
 
 #[derive(Debug, Default, Clone)]
 pub struct BlockData {

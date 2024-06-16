@@ -44,6 +44,7 @@ tokio-stream.workspace = true
 tokio-util.workspace = true
 starknet = { git = "https://github.com/xJonathanLEI/starknet-rs", rev = "7153d0e42" }
 tracing.workspace = true
+tracing-opentelemetry.workspace = true
 
 [target.'cfg(not(windows))'.dependencies]
 jemallocator.workspace = true

@@ -1,7 +1,4 @@
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    ops::RangeInclusive,
-};
+use std::ops::RangeInclusive;
 
 use apibara_dna_common::{
     error::{DnaError, Result},
@@ -11,7 +8,6 @@ use apibara_dna_common::{
 use apibara_dna_protocol::starknet;
 use error_stack::ResultExt;
 use roaring::RoaringBitmap;
-use tokio::time::error::Elapsed;
 use tracing::debug;
 
 use crate::segment::{

@@ -17,6 +17,7 @@ use apibara_dna_protocol::{
     },
     starknet,
 };
+use apibara_observability::{self as o11y, TraceContextExt};
 use error_stack::ResultExt;
 use futures_util::TryFutureExt;
 use prost::Message;
@@ -25,6 +26,7 @@ use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::Request;
 use tracing::{debug, error};
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 use super::filter::SegmentFilter;
 
@@ -140,6 +142,13 @@ where
             segment_options,
         );
 
+        // Extract the request span to link together the stream spans.
+        let request_context = tracing::Span::current()
+            .context()
+            .span()
+            .span_context()
+            .clone();
+
         let producer = StreamProducer::init(
             filter,
             starting_block,
@@ -147,6 +156,7 @@ where
             self.storage.clone(),
             self.local_storage.clone(),
             cursor_producer,
+            request_context,
         );
 
         tokio::spawn(producer.start().inspect_err(|err| {
@@ -190,6 +200,7 @@ where
     cursor_producer: CursorProducer,
     response_tx: mpsc::Sender<TonicResult<StreamDataResponse>>,
     stream_starting_block: BlockNumberOrCursor,
+    request_context: o11y::SpanContext,
 }
 
 impl<S> StreamProducer<S>
@@ -204,6 +215,7 @@ where
         storage: CachedStorage<S>,
         local_storage: LocalStorageBackend,
         cursor_producer: CursorProducer,
+        request_context: o11y::SpanContext,
     ) -> Self {
         StreamProducer {
             filter,
@@ -212,6 +224,7 @@ where
             local_storage,
             cursor_producer,
             response_tx,
+            request_context,
         }
     }
 
@@ -312,6 +325,8 @@ where
         starting_block: u64,
         segment_options: SegmentOptions,
     ) -> Result<u64> {
+        tracing::Span::current().add_link(self.request_context.clone());
+
         let ending_block = starting_block + segment_options.segment_group_blocks() - 1;
 
         // Notice that if the user requested data from block X + Y, the segment
@@ -368,6 +383,8 @@ where
         starting_block: u64,
         segment_options: SegmentOptions,
     ) -> Result<u64> {
+        tracing::Span::current().add_link(self.request_context.clone());
+
         let ending_block = starting_block + segment_options.segment_size as u64 - 1;
         let real_starting_block = u64::max(self.stream_starting_block.number(), starting_block);
 
