@@ -53,151 +53,212 @@ message Transaction {
     InvokeTransactionV0 invoke_v0 = 2;
     // Transaction invoking a smart contract, V1.
     InvokeTransactionV1 invoke_v1 = 3;
-    // Transaction deploying a new smart contract, V1.
-    DeployTransaction deploy = 4;
-    // Transaction declaring a smart contract.
-    DeclareTransaction declare = 5;
-    // Transaction handling a message from L1.
-    L1HandlerTransaction l1_handler = 6;
-    // Transaction deploying a new account.
-    DeployAccountTransaction deploy_account = 7;
-    // Transaction deploying a new smart contract, V3.
-    DeployAccountTransactionV3 deploy_account_v3 = 8;
     // Transaction invoking a smart contract, V3.
-    InvokeTransactionV3 invoke_v3 = 9;
+    InvokeTransactionV3 invoke_v3 = 4;
+    // Transaction handling a message from L1.
+    L1HandlerTransaction l1_handler = 5;
+    // Transaction deploying a new smart contract, V1.
+    DeployTransaction deploy = 6;
+    // Transaction declaring a smart contract, V0.
+    DeclareTransactionV0 declare_v0 = 7;
+    // Transaction declaring a smart contract, V0.
+    DeclareTransactionV1 declare_v1 = 8;
+    // Transaction declaring a smart contract, V2.
+    DeclareTransactionV2 declare_v2 = 9;
     // Transaction declaring a smart contract, V3.
     DeclareTransactionV3 declare_v3 = 10;
+    // Deploy a new account, V1.
+    DeployAccountTransactionV1 deploy_account_v1 = 11;
+    // Deploy a new account, V3.
+    DeployAccountTransactionV3 deploy_account_v3 = 12;
   }
 }
-// Common transaction metadata.
+
 message TransactionMeta {
+  // Transaction index.
+  uint32 transaction_index = 1;
   // Transaction hash.
-  FieldElement hash = 1;
-  // Maximum fee to be paid.
-  FieldElement max_fee = 2;
-  // Signature by the user.
-  repeated FieldElement signature = 3;
-  // Nonce.
-  FieldElement nonce = 4;
-  // Version.
-  uint64 version = 5;
-  // Transaction resources.
-  ResourceBoundsMapping resource_bounds = 6;
-  // Tip to the sequencer.
-  uint64 tip = 7;
-  // Data passed to the paymaster.
-  repeated FieldElement paymaster_data = 8;
-  // The storage domain of the account's nonce.
-  DataAvailabilityMode nonce_data_availability_mode = 9;
-  // The storage domain of the account's balance from which fee will be charged.
-  DataAvailabilityMode fee_data_availability_mode = 10;
-  // Index of the transaction in the block.
-  uint64 transaction_index = 11;
+  FieldElement transaction_hash = 2;
+  // Transaction reverted flag.
+  bool transaction_reverted = 3;
 }
 
-// Transaction invoking a smart contract, V0.
 message InvokeTransactionV0 {
-  // Target contract address.
-  FieldElement contract_address = 1;
-  // Selector of the function being invoked.
-  FieldElement entry_point_selector = 2;
-  // Raw calldata.
-  repeated FieldElement calldata = 3;
+  FieldElement max_fee = 1;
+  repeated FieldElement signature = 2;
+  FieldElement contract_address = 3;
+  FieldElement entry_point_selector = 4;
+  repeated FieldElement calldata = 6;
 }
 
-// Transaction invoking a smart contract, V1.
 message InvokeTransactionV1 {
-  // Address sending the transaction.
   FieldElement sender_address = 1;
-  // Raw calldata.
   repeated FieldElement calldata = 2;
+  FieldElement max_fee = 3;
+  repeated FieldElement signature = 4;
+  FieldElement nonce = 5;
 }
 
-// Transaction invoking a smart contract, V3.
 message InvokeTransactionV3 {
-  // Address sending the transaction.
   FieldElement sender_address = 1;
-  // Raw calldata.
   repeated FieldElement calldata = 2;
-  // Data passed to the account deployment.
-  repeated FieldElement account_deployment_data = 3;
+  repeated FieldElement signature = 3;
+  FieldElement nonce = 4;
+  ResourceBoundsMapping resource_bounds = 5;
+  uint64 tip = 6;
+  repeated FieldElement paymaster_data = 7;
+  repeated FieldElement account_deployment_data = 8;
+  DataAvailabilityMode nonce_data_availability_mode = 9;
+  DataAvailabilityMode fee_data_availability_mode = 10;
 }
 
-// Transaction deploying a new smart contract, V1.
-message DeployTransaction {
-  // Raw calldata passed to the constructor.
-  repeated FieldElement constructor_calldata = 2;
-  // Salt used when computing the contract's address.
-  FieldElement contract_address_salt = 3;
-  // Hash of the class being deployed.
-  FieldElement class_hash = 4;
-}
-
-// Transaction declaring a smart contract.
-message DeclareTransaction {
-  // Class hash.
-  FieldElement class_hash = 1;
-  // Address of the account declaring the class.
-  FieldElement sender_address = 2;
-  // The hash of the cairo assembly resulting from the sierra compilation.
-  FieldElement compiled_class_hash = 3;
-}
-
-// Transaction declaring a smart contract.
-message DeclareTransactionV3 {
-  // Class hash.
-  FieldElement class_hash = 1;
-  // Address of the account declaring the class.
-  FieldElement sender_address = 2;
-  // The hash of the cairo assembly resulting from the sierra compilation.
-  FieldElement compiled_class_hash = 3;
-  // Data passed to the account deployment.
-  repeated FieldElement account_deployment_data = 4;
-}
-
-// Transaction handling a message from L1.
 message L1HandlerTransaction {
-  // Target contract address.
+  uint64 nonce = 1;
   FieldElement contract_address = 2;
-  // Selector of the function being invoked.
   FieldElement entry_point_selector = 3;
-  // Raw calldata.
   repeated FieldElement calldata = 4;
 }
 
-// Transaction deploying a new account.
-message DeployAccountTransaction {
-  // Raw calldata passed to the constructor.
+message DeployTransaction {
+  FieldElement contract_address_salt = 1;
   repeated FieldElement constructor_calldata = 2;
-  // Salt used when computing the contract's address.
-  FieldElement contract_address_salt = 3;
-  // Hash of the class being deployed.
-  FieldElement class_hash = 4;
-}
-
-// Transaction deploying a new smart contract, V3.
-message DeployAccountTransactionV3 {
-  // Raw calldata passed to the constructor.
-  repeated FieldElement constructor_calldata = 1;
-  // Salt used when computing the contract's address.
-  FieldElement contract_address_salt = 2;
-  // Hash of the class being deployed.
   FieldElement class_hash = 3;
 }
 
-// Transaction receipt.
-message TransactionReceipt {}
+message DeclareTransactionV0 {
+  FieldElement sender_address = 1;
+  FieldElement max_fee = 2;
+  repeated FieldElement signature = 3;
+  FieldElement class_hash = 4;
+}
+
+message DeclareTransactionV1 {
+  FieldElement sender_address = 1;
+  FieldElement max_fee = 2;
+  repeated FieldElement signature = 3;
+  FieldElement nonce = 4;
+  FieldElement class_hash = 5;
+}
+
+message DeclareTransactionV2 {
+  FieldElement sender_address = 1;
+  FieldElement compiled_class_hash = 2;
+  FieldElement max_fee = 3;
+  repeated FieldElement signature = 4;
+  FieldElement nonce = 5;
+  FieldElement class_hash = 6;
+}
+
+message DeclareTransactionV3 {
+  FieldElement sender_address = 1;
+  FieldElement compiled_class_hash = 2;
+  repeated FieldElement signature = 3;
+  FieldElement nonce = 4;
+  FieldElement class_hash = 5;
+  ResourceBoundsMapping resource_bounds = 6;
+  uint64 tip = 7;
+  repeated FieldElement paymaster_data = 8;
+  repeated FieldElement account_deployment_data = 9;
+  DataAvailabilityMode nonce_data_availability_mode = 10;
+  DataAvailabilityMode fee_data_availability_mode = 11;
+}
+
+message DeployAccountTransactionV1 {
+  FieldElement max_fee = 1;
+  repeated FieldElement signature = 2;
+  FieldElement nonce = 3;
+  FieldElement contract_address_salt = 4;
+  repeated FieldElement constructor_calldata = 5;
+  FieldElement class_hash = 6;
+}
+
+message DeployAccountTransactionV3 {
+  repeated FieldElement signature = 1;
+  FieldElement nonce = 2;
+  FieldElement contract_address_salt = 3;
+  repeated FieldElement constructor_calldata = 4;
+  FieldElement class_hash = 5;
+  ResourceBoundsMapping resource_bounds = 6;
+  uint64 tip = 7;
+  repeated FieldElement paymaster_data = 8;
+  DataAvailabilityMode nonce_data_availability_mode = 9;
+  DataAvailabilityMode fee_data_availability_mode = 10;
+}
+
+message TransactionReceipt {
+  // Common transaction receipt metadata.
+  TransactionReceiptMeta meta = 1;
+  oneof receipt {
+    // Transaction invoking a smart contract.
+    InvokeTransactionReceipt invoke = 2;
+    // Transaction handling a message from L1.
+    L1HandlerTransactionReceipt l1_handler = 3;
+    // Transaction declaring a smart contract.
+    DeclareTransactionReceipt declare = 4;
+    // Transaction deploying a new smart contract.
+    DeployTransactionReceipt deploy = 5;
+    // Deploy a new account.
+    DeployAccountTransactionReceipt deploy_account = 6;
+  }
+}
+
+message TransactionReceiptMeta {
+  uint32 transaction_index = 1;
+  FieldElement transaction_hash = 2;
+  FeePayment actual_fee = 3;
+  ExecutionResources execution_resources = 4;
+  oneof execution_result {
+    ExecutionSucceeded succeeded = 5;
+    ExecutionReverted reverted = 6;
+  }
+}
+
+message ExecutionSucceeded {}
+message ExecutionReverted { string reason = 1; }
+
+message InvokeTransactionReceipt {}
+
+message L1HandlerTransactionReceipt { bytes message_hash = 1; }
+
+message DeclareTransactionReceipt {}
+
+message DeployTransactionReceipt { FieldElement contract_address = 1; }
+
+message DeployAccountTransactionReceipt { FieldElement contract_address = 1; }
 
 // Transaction events.
 message Event {
+  // The contract that emitted the event.
   FieldElement from_address = 1;
+  // The event keys.
   repeated FieldElement keys = 2;
-  uint64 event_index = 3;
+  // The event data.
+  repeated FieldElement data = 3;
+  // The event index.
+  uint32 event_index = 4;
+  // Transaction index.
+  uint32 transaction_index = 5;
+  // Transaction hash.
+  FieldElement transaction_hash = 6;
+  // Transaction reverted flag.
+  bool transaction_reverted = 7;
 }
 
 message MessageToL1 {
-  FieldElement to_address = 1;
-  uint64 message_index = 3;
+  // The contract sending the message.
+  FieldElement from_address = 1;
+  // Target address.
+  FieldElement to_address = 2;
+  // Message payload.
+  repeated FieldElement payload = 3;
+  // Message index.
+  uint32 message_index = 4;
+  // Transaction index.
+  uint32 transaction_index = 5;
+  // Transaction hash.
+  FieldElement transaction_hash = 6;
+  // Transaction reverted flag.
+  bool transaction_reverted = 7;
 }
 
 enum L1DataAvailabilityMode {
@@ -258,23 +319,23 @@ message ComputationResources {
   // The number of Cairo steps used.
   uint64 steps = 1;
   // The number of unused memory cells.
-  uint64 memory_holes = 2;
+  optional uint64 memory_holes = 2;
   // The number of RANGE_CHECK builtin instances.
-  uint64 range_check_builtin_applications = 3;
+  optional uint64 range_check_builtin_applications = 3;
   // The number of Pedersen builtin instances.
-  uint64 pedersen_builtin_applications = 4;
+  optional uint64 pedersen_builtin_applications = 4;
   // The number of Poseidon builtin instances.
-  uint64 poseidon_builtin_applications = 5;
+  optional uint64 poseidon_builtin_applications = 5;
   // The number of EC_OP builtin instances.
-  uint64 ec_op_builtin_applications = 6;
+  optional uint64 ec_op_builtin_applications = 6;
   // The number of ECDSA builtin instances.
-  uint64 ecdsa_builtin_applications = 7;
+  optional uint64 ecdsa_builtin_applications = 7;
   // The number of BITWISE builtin instances.
-  uint64 bitwise_builtin_applications = 8;
+  optional uint64 bitwise_builtin_applications = 8;
   // The number of KECCAK builtin instances.
-  uint64 keccak_builtin_applications = 9;
+  optional uint64 keccak_builtin_applications = 9;
   // The number of accesses to the segment arena.
-  uint64 segment_arena_builtin = 10;
+  optional uint64 segment_arena_builtin = 10;
 }
 
 message DataAvailabilityResources {

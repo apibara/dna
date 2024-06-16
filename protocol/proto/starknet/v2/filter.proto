@@ -57,24 +57,26 @@ message Key { FieldElement value = 1; }
 
 // Filter messages to L1.
 message MessageToL1Filter {
+  // Filter by sender address.
+  FieldElement from_address = 1;
   // Filter by destination address.
-  FieldElement to_address = 1;
+  FieldElement to_address = 2;
   // Include messages sent by reverted transactions.
   //
   // Defaults to false.
-  optional bool include_reverted = 2;
+  optional bool include_reverted = 3;
   // Include the transaction that sent the message.
   //
   // Defaults to false.
-  optional bool include_transaction = 3;
+  optional bool include_transaction = 4;
   // Include the receipt of the transaction that sent the message.
   //
   // Defaults to false.
-  optional bool include_receipt = 4;
+  optional bool include_receipt = 5;
   // Include the events of the transaction that sent the message.
   //
   // Defaults to false.
-  optional bool include_events = 5;
+  optional bool include_events = 6;
 }
 
 // Filter transactions.
