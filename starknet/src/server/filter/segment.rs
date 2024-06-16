@@ -11,6 +11,7 @@ use apibara_dna_common::{
 use apibara_dna_protocol::starknet;
 use error_stack::ResultExt;
 use roaring::RoaringBitmap;
+use tokio::time::error::Elapsed;
 use tracing::debug;
 
 use crate::segment::{
@@ -18,11 +19,16 @@ use crate::segment::{
     TRANSACTION_RECEIPT_SEGMENT_NAME, TRANSACTION_SEGMENT_NAME,
 };
 
-use super::{bag::DataBag, data::BlockData, root::Filter};
+use super::{
+    bag::DataBag,
+    data::BlockData,
+    root::{Filter, Key},
+};
 
 pub struct SegmentFilter<S: StorageBackend + Send> {
     filters: Vec<Filter>,
     segment_options: SegmentOptions,
+    segment_group_reader: reader::LazySegmentGroup<S, store::SegmentGroup>,
     header_segment_reader: reader::LazySegment<S, store::BlockHeaderSegment>,
     event_segment_reader: reader::LazySegment<S, store::EventSegment>,
     message_segment_reader: reader::LazySegment<S, store::MessageSegment>,
@@ -41,6 +47,9 @@ where
         local_storage: LocalStorageBackend,
         segment_options: SegmentOptions,
     ) -> Self {
+        let segment_group_reader =
+            reader::LazySegmentGroup::new(storage.clone(), segment_options.clone());
+
         let header_segment_reader = reader::LazySegment::new(
             storage.clone(),
             segment_options.clone(),
@@ -73,6 +82,7 @@ where
         Self {
             filters,
             segment_options,
+            segment_group_reader,
             header_segment_reader,
             event_segment_reader,
             message_segment_reader,
@@ -89,20 +99,93 @@ where
     pub async fn fill_block_bitmap(
         &mut self,
         bitmap: &mut RoaringBitmap,
+        starting_block: u64,
         block_range: RangeInclusive<u32>,
     ) -> Result<()> {
         bitmap.clear();
 
+        let mut needs_linear_scan = false;
         for filter in &self.filters {
-            if filter.has_required_header() || filter.has_transactions() {
-                bitmap.insert_range(block_range);
-                return Ok(());
+            needs_linear_scan |=
+                filter.has_required_header() || filter.has_transactions() || filter.has_messages();
+        }
+
+        // If we already know it needs a linear scan, we can skip the segment group.
+        if !needs_linear_scan {
+            let segment_group = self.segment_group_reader.read(starting_block).await?;
+
+            'outer: for filter in &self.filters {
+                for event in filter.events() {
+                    // Address index:
+                    // - if no address, we must scan linearly.
+                    // - if address, but not in the map -> empty bitmap.
+                    // - if address, and in the map -> bitmap from the map.
+                    let address_bitmap = match event.from_address() {
+                        Some(address) => match segment_group.index.event_by_address.get(address) {
+                            None => Some(RoaringBitmap::new()),
+                            Some(blocks) => {
+                                let address_bitmap =
+                                    RoaringBitmap::deserialize_from(blocks.0.as_slice())
+                                        .change_context(DnaError::Fatal)
+                                        .attach_printable("failed to deserialize event bitmap")?;
+                                Some(address_bitmap)
+                            }
+                        },
+                        None => None,
+                    };
+
+                    // Key0 index:
+                    // - if no key0, must scan linearly.
+                    // - if key0, but not in the map -> empty bitmap.
+                    // - if key0, and in the map -> bitmap from the map.
+                    let key_bitmap = match event.key0() {
+                        Some(Key::Exact(key)) => {
+                            match segment_group.index.event_by_key_0.get(key) {
+                                None => Some(RoaringBitmap::new()),
+                                Some(blocks) => {
+                                    let key_bitmap =
+                                        RoaringBitmap::deserialize_from(blocks.0.as_slice())
+                                            .change_context(DnaError::Fatal)
+                                            .attach_printable(
+                                                "failed to deserialize event bitmap",
+                                            )?;
+                                    Some(key_bitmap)
+                                }
+                            }
+                        }
+                        _ => None,
+                    };
+
+                    match (address_bitmap, key_bitmap) {
+                        // Both address and key0 are present, so we intersect them.
+                        (Some(address_bitmap), Some(key_bitmap)) => {
+                            *bitmap |= address_bitmap & key_bitmap;
+                        }
+                        // Only address is present. Any key0 will do.
+                        (Some(address), None) => {
+                            *bitmap |= address;
+                        }
+                        // Only key0 is present. Any address will do.
+                        (None, Some(key)) => {
+                            *bitmap |= key;
+                        }
+                        // No address, no key0. We need to scan linearly.
+                        (None, None) => {
+                            needs_linear_scan = true;
+                            break 'outer;
+                        }
+                    }
+                }
             }
         }
 
-        // TODO: load segment group to use indices.
+        if needs_linear_scan {
+            bitmap.insert_range(block_range);
+        }
 
-        todo!();
+        debug!(bitmap = ?bitmap, "filled block bitmap");
+
+        Ok(())
     }
 
     #[tracing::instrument(skip(self), err(Debug))]

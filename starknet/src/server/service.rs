@@ -325,7 +325,7 @@ where
         let mut block_bitmap = RoaringBitmap::new();
 
         self.filter
-            .fill_block_bitmap(&mut block_bitmap, block_range)
+            .fill_block_bitmap(&mut block_bitmap, starting_block, block_range)
             .await?;
 
         for block_number in block_bitmap.iter() {
