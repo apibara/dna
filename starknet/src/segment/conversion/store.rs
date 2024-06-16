@@ -402,7 +402,7 @@ impl From<&models::DeployAccountTransactionV1> for store::Transaction {
             transaction_reverted: false,
         };
 
-        store::Transaction::DeployAccountV1(store::DeployAccountTransactionV1 {
+        store::Transaction::DeployAccountTransactionV1(store::DeployAccountTransactionV1 {
             meta,
             max_fee: tx.max_fee.into(),
             signature: tx.signature.iter().map(store::FieldElement::from).collect(),
@@ -426,7 +426,7 @@ impl From<&models::DeployAccountTransactionV3> for store::Transaction {
             transaction_reverted: false,
         };
 
-        store::Transaction::DeployAccountV3(store::DeployAccountTransactionV3 {
+        store::Transaction::DeployAccountTransactionV3(store::DeployAccountTransactionV3 {
             meta,
             signature: tx.signature.iter().map(store::FieldElement::from).collect(),
             nonce: tx.nonce.into(),
@@ -656,8 +656,8 @@ fn set_transaction_index_and_reverted(
         DeclareTransactionV1(tx) => &mut tx.meta,
         DeclareTransactionV2(tx) => &mut tx.meta,
         DeclareTransactionV3(tx) => &mut tx.meta,
-        DeployAccountV1(tx) => &mut tx.meta,
-        DeployAccountV3(tx) => &mut tx.meta,
+        DeployAccountTransactionV1(tx) => &mut tx.meta,
+        DeployAccountTransactionV3(tx) => &mut tx.meta,
     };
     meta.transaction_index = index;
     meta.transaction_reverted = reverted;
