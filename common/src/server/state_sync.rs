@@ -65,7 +65,7 @@ mod worker {
     use crate::{
         core::Cursor,
         ingestion::{IngestedBlock, IngestionState, Snapshot, SnapshotChange},
-        storage::{LocalStorageBackend, StorageBackend},
+        storage::{block_prefix, LocalStorageBackend, StorageBackend},
     };
 
     pub struct Worker {
@@ -166,8 +166,7 @@ mod worker {
 
                         // Remove old cursors from storage.
                         for cursor in prev_removed_cursors.drain(..) {
-                            let prefix =
-                                format!("blocks/{}-{}", cursor.number, cursor.hash_as_hex());
+                            let prefix = block_prefix(&cursor);
                             if self
                                 .storage
                                 .prefix_exists(&prefix)
@@ -197,7 +196,7 @@ mod worker {
                     }
                     Some(Message::BlockIngested(block_ingested)) => {
                         let cursor: Cursor = block_ingested.cursor.unwrap_or_default().into();
-                        let prefix = format!("blocks/{}-{}", cursor.number, cursor.hash_as_hex());
+                        let prefix = block_prefix(&cursor);
                         let mut writer = self
                             .storage
                             .put(&prefix, "block")
