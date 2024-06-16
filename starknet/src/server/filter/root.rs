@@ -24,11 +24,11 @@ pub struct Filter {
     transactions: Vec<TransactionFilter>,
 }
 
-struct HeaderFilter {
+pub struct HeaderFilter {
     always: bool,
 }
 
-struct EventFilter {
+pub struct EventFilter {
     from_address: Option<store::FieldElement>,
     keys: Vec<Key>,
     strict: bool,
@@ -39,7 +39,7 @@ struct EventFilter {
     include_siblings: bool,
 }
 
-enum Key {
+pub enum Key {
     Any,
     Exact(store::FieldElement),
 }
@@ -84,6 +84,10 @@ impl Filter {
 
     pub fn has_transactions(&self) -> bool {
         !self.transactions.is_empty()
+    }
+
+    pub fn events(&self) -> impl Iterator<Item = &EventFilter> {
+        self.events.iter()
     }
 
     pub fn match_event(&self, event: &store::Event) -> Option<AdditionalData> {
@@ -159,6 +163,14 @@ impl Default for AdditionalData {
 }
 
 impl EventFilter {
+    pub fn from_address(&self) -> Option<&store::FieldElement> {
+        self.from_address.as_ref()
+    }
+
+    pub fn key0(&self) -> Option<&Key> {
+        self.keys.first()
+    }
+
     pub fn matches(&self, event: &store::Event) -> bool {
         // If reverted, then we must include reverted events.
         if !self.include_reverted && event.transaction_reverted {
