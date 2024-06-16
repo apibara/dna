@@ -130,8 +130,8 @@ pub enum Transaction {
     DeclareTransactionV2(DeclareTransactionV2),
     DeclareTransactionV3(DeclareTransactionV3),
 
-    DeployAccountV1(DeployAccountTransactionV1),
-    DeployAccountV3(DeployAccountTransactionV3),
+    DeployAccountTransactionV1(DeployAccountTransactionV1),
+    DeployAccountTransactionV3(DeployAccountTransactionV3),
 }
 
 #[derive(Archive, Serialize, Deserialize, Debug, PartialEq)]
@@ -444,8 +444,8 @@ impl Transaction {
             DeclareTransactionV1(tx) => &tx.meta,
             DeclareTransactionV2(tx) => &tx.meta,
             DeclareTransactionV3(tx) => &tx.meta,
-            DeployAccountV1(tx) => &tx.meta,
-            DeployAccountV3(tx) => &tx.meta,
+            DeployAccountTransactionV1(tx) => &tx.meta,
+            DeployAccountTransactionV3(tx) => &tx.meta,
         }
     }
 }

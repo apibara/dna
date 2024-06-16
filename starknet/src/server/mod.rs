@@ -4,7 +4,7 @@ use apibara_dna_common::{
     error::{DnaError, Result},
     ingestion::SnapshotChange,
     server::CursorProducerService,
-    storage::{AppStorageBackend, CachedStorage, LocalStorageBackend, StorageBackend},
+    storage::{AppStorageBackend, CachedStorage, LocalStorageBackend},
 };
 use apibara_dna_protocol::dna::stream::dna_stream_file_descriptor_set;
 use error_stack::ResultExt;
