@@ -15,11 +15,7 @@ use crate::segment::{
     TRANSACTION_RECEIPT_SEGMENT_NAME, TRANSACTION_SEGMENT_NAME,
 };
 
-use super::{
-    bag::DataBag,
-    data::BlockData,
-    root::{Filter, Key},
-};
+use super::{bag::DataBag, data::BlockData, event::Key, root::Filter};
 
 pub struct SegmentFilter<S: StorageBackend + Send> {
     filters: Vec<Filter>,
@@ -40,7 +36,7 @@ where
     pub fn new(
         filters: Vec<starknet::Filter>,
         storage: CachedStorage<S>,
-        local_storage: LocalStorageBackend,
+        _local_storage: LocalStorageBackend,
         segment_options: SegmentOptions,
     ) -> Self {
         let segment_group_reader =

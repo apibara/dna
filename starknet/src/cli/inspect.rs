@@ -591,8 +591,8 @@ async fn inspect_transaction(
                     DeclareTransactionV1(_) => "declare (v1)",
                     DeclareTransactionV2(_) => "declare (v2)",
                     DeclareTransactionV3(_) => "declare (v3)",
-                    DeployAccountV1(_) => "deploy account (v1)",
-                    DeployAccountV3(_) => "deploy account (v3)",
+                    DeployAccountTransactionV1(_) => "deploy account (v1)",
+                    DeployAccountTransactionV3(_) => "deploy account (v3)",
                 };
                 info!(
                     "transaction: tx_index={}\ttx_hash=0x{:x} type={}",

@@ -101,11 +101,13 @@ message TransactionFilter {
     InvokeTransactionV1Filter invoke_v1 = 6;
     InvokeTransactionV3Filter invoke_v3 = 7;
     DeployTransactionFilter deploy = 8;
-    DeclareTransactionFilter declare = 9;
-    L1HandlerTransactionFilter l1_handler = 10;
-    DeployAccountV0TransactionFilter deploy_account_v0 = 11;
-    DeployAccountV3TransactionFilter deploy_account_v3 = 12;
-    DeclareTransactionV3Filter declare_v3 = 13;
+    DeclareV0TransactionFilter declare_v0 = 9;
+    DeclareV1TransactionFilter declare_v1 = 10;
+    DeclareV2TransactionFilter declare_v2 = 11;
+    DeclareV3TransactionFilter declare_v3 = 12;
+    L1HandlerTransactionFilter l1_handler = 13;
+    DeployAccountV1TransactionFilter deploy_account_v1 = 14;
+    DeployAccountV3TransactionFilter deploy_account_v3 = 15;
   }
 }
 
@@ -113,8 +115,10 @@ message InvokeTransactionV0Filter {}
 message InvokeTransactionV1Filter {}
 message InvokeTransactionV3Filter {}
 message DeployTransactionFilter {}
-message DeclareTransactionFilter {}
+message DeclareV0TransactionFilter {}
+message DeclareV1TransactionFilter {}
+message DeclareV2TransactionFilter {}
+message DeclareV3TransactionFilter {}
 message L1HandlerTransactionFilter {}
-message DeployAccountV0TransactionFilter {}
+message DeployAccountV1TransactionFilter {}
 message DeployAccountV3TransactionFilter {}
-message DeclareTransactionV3Filter {}
