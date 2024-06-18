@@ -1,0 +1,15 @@
+meta {
+  name: by_root
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/eth/v1/beacon/headers/0x79fe29bb86d4b790a5b586f3efa5f554cf936c28242eafb6dbc4709bb4b84bf3
+  body: none
+  auth: none
+}
+
+assert {
+  res.body.data.header.message.slot: eq "5210590"
+}
