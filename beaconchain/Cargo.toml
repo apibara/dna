@@ -1,22 +1,18 @@
 [package]
-name = "apibara-starknet"
-version = "1.6.2"
+name = "apibara-dna-beaconchain"
+version = "0.0.0"
 edition.workspace = true
 authors.workspace = true
 repository.workspace = true
 license.workspace = true
 
 [lib]
-name = "apibara_dna_starknet"
+name = "apibara_dna_beaconchain"
 path = "src/lib.rs"
 
 [[bin]]
-name = "apibara-dna-starknet"
+name = "apibara-dna-beaconchain"
 path = "src/bin.rs"
-
-[features]
-default = ["jemalloc"]
-jemalloc = ["dep:jemallocator"]
 
 [dependencies]
 apibara-observability = { path = "../observability" }
@@ -41,7 +37,6 @@ tonic-reflection.workspace = true
 tokio.workspace = true
 tokio-stream.workspace = true
 tokio-util.workspace = true
-starknet = { git = "https://github.com/xJonathanLEI/starknet-rs", rev = "7153d0e42" }
 tracing.workspace = true
 tracing-opentelemetry.workspace = true
 
