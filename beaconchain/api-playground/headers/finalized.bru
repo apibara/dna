@@ -1,0 +1,15 @@
+meta {
+  name: finalized
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/eth/v1/beacon/headers/finalized
+  body: none
+  auth: none
+}
+
+assert {
+  res.body.data.canonical: eq true
+}
