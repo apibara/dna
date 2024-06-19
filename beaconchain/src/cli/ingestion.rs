@@ -1,8 +1,6 @@
-use std::net::SocketAddr;
-
 use apibara_dna_common::{
     error::{DnaError, Result},
-    ingestion::IngestionServer,
+    ingestion::{Blockifier, Snapshot, SnapshotManager},
     segment::SegmentArgs,
     storage::{CacheArgs, StorageArgs, StorageBackend},
 };
@@ -12,7 +10,7 @@ use futures_util::StreamExt;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
-use crate::ingestion::{BeaconApiProvider, BlockId, ChainTracker};
+use crate::ingestion::{BeaconApiProvider, BeaconChainBlockIngestion, BlockId, ChainTracker};
 
 use super::common::RpcArgs;
 
@@ -64,13 +62,32 @@ where
     <S as StorageBackend>::Writer: Send,
 {
     let ct = CancellationToken::new();
+    let local_cache_storage = args.cache.to_local_storage_backend();
+    let segment_options = args.ingestion.segment.to_segment_options();
 
     let provider = BeaconApiProvider::new(&args.rpc.rpc_url);
 
-    let mut chain_changes = ChainTracker::new(provider.clone()).start(ct.clone());
+    let chain_changes = ChainTracker::new(provider.clone()).start(ct.clone());
 
-    while let Some(chain_change) = chain_changes.next().await {
-        println!("{:?}", chain_change);
+    let mut snapshot_manager = SnapshotManager::new(storage.clone());
+
+    let starting_snapshot = snapshot_manager
+        .read()
+        .await
+        .change_context(DnaError::Io)?
+        .unwrap_or_else(|| {
+            Snapshot::with_options(segment_options)
+                .set_starting_block(args.ingestion.starting_block.unwrap_or(0))
+        });
+
+    let block_ingestion =
+        BeaconChainBlockIngestion::new(provider.clone(), local_cache_storage.clone());
+
+    let mut block_ingestion_stream = Blockifier::new(block_ingestion, chain_changes)
+        .start(starting_snapshot.clone(), ct.clone());
+
+    while let Some(xxx) = block_ingestion_stream.next().await {
+        println!("{:?}", xxx);
     }
 
     todo!();

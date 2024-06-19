@@ -10,6 +10,7 @@ pub mod models {
 #[derive(Debug)]
 pub enum BeaconApiError {
     Request,
+    NotFound,
     DeserializeResponse,
 }
 
@@ -64,9 +65,16 @@ impl BeaconApiProvider {
             .send()
             .await
             .change_context(BeaconApiError::Request)?;
-        let response = response
-            .json::<Req::Response>()
+
+        if response.status().as_u16() == 404 {
+            return Err(BeaconApiError::NotFound.into());
+        }
+
+        let text_response = response
+            .text()
             .await
+            .change_context(BeaconApiError::Request)?;
+        let response = serde_json::from_str(&text_response)
             .change_context(BeaconApiError::DeserializeResponse)?;
 
         Ok(response)
@@ -99,6 +107,7 @@ impl std::fmt::Display for BeaconApiError {
         match self {
             BeaconApiError::Request => write!(f, "failed to send request"),
             BeaconApiError::DeserializeResponse => write!(f, "failed to deserialize response"),
+            BeaconApiError::NotFound => write!(f, "not found"),
         }
     }
 }

@@ -1,7 +1,7 @@
 use apibara_dna_common::{
     core::Cursor,
     error::{DnaError, Result},
-    ingestion::ChainChange,
+    ingestion::{BlockEvent, ChainChange},
     storage::{block_prefix, LocalStorageBackend, StorageBackend, BLOCK_NAME},
 };
 use error_stack::ResultExt;
@@ -22,14 +22,6 @@ use super::RpcProvider;
 pub enum BlockNumberOrHash {
     Number(u64),
     Hash(models::FieldElement),
-}
-
-#[derive(Debug, Clone)]
-pub enum BlockEvent {
-    Started { finalized: Cursor },
-    Finalized(Cursor),
-    Ingested(Cursor),
-    Invalidate,
 }
 
 pub struct BlockDownloaderService<C>
