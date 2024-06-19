@@ -1,7 +1,7 @@
 use apibara_dna_common::{
     core::Cursor,
     error::{DnaError, Result},
-    ingestion::{IngestedBlock, Snapshot, SnapshotChange},
+    ingestion::{BlockEvent, IngestedBlock, Snapshot, SnapshotChange},
     storage::{block_prefix, LocalStorageBackend, StorageBackend, BLOCK_NAME},
 };
 use error_stack::ResultExt;
@@ -12,8 +12,6 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
 
 use crate::segment::{store, SegmentBuilder, SegmentGroupBuilder};
-
-use super::downloader::BlockEvent;
 
 pub struct SegmenterService<
     S: StorageBackend + Send + Sync + 'static,
