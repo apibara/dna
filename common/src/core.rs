@@ -20,6 +20,9 @@ impl Cursor {
     }
 
     pub fn hash_as_hex(&self) -> String {
+        if self.hash.is_empty() {
+            return "0x0".to_string();
+        }
         format!("0x{}", hex::encode(&self.hash))
     }
 }
