@@ -1,5 +1,6 @@
 use apibara_dna_common::{
     error::{DnaError, Result},
+    segment::store::BlockData,
     storage::{segment_prefix, StorageBackend},
 };
 use error_stack::ResultExt;
@@ -47,28 +48,28 @@ impl SegmentBuilder {
         self.header.blocks.push(block.header);
 
         {
-            let data = store::BlockData {
+            let data = BlockData {
                 block_number,
                 data: block.transactions,
             };
             self.transactions.blocks.push(data);
         }
         {
-            let data = store::BlockData {
+            let data = BlockData {
                 block_number,
                 data: block.receipts,
             };
             self.receipts.blocks.push(data);
         }
         {
-            let data = store::BlockData {
+            let data = BlockData {
                 block_number,
                 data: block.events,
             };
             self.events.blocks.push(data);
         }
         {
-            let data = store::BlockData {
+            let data = BlockData {
                 block_number,
                 data: block.messages,
             };

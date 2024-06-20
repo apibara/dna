@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use apibara_dna_common::segment::store::{BlockData, Segment};
 use rkyv::{with::AsVec, Archive, Deserialize, Serialize};
 
 /// A field element is encoded as a 32-byte array.
@@ -380,36 +381,11 @@ pub struct SegmentGroup {
     pub index: Index,
 }
 
-#[derive(Archive, Serialize, Deserialize, Debug, PartialEq)]
-#[archive(compare(PartialEq), check_bytes)]
-pub struct Segment<T> {
-    pub blocks: Vec<T>,
-}
-
-#[derive(Archive, Serialize, Deserialize, Debug, PartialEq)]
-#[archive(compare(PartialEq), check_bytes)]
-pub struct BlockData<T> {
-    pub block_number: u64,
-    pub data: Vec<T>,
-}
-
 pub type BlockHeaderSegment = Segment<BlockHeader>;
 pub type TransactionSegment = Segment<BlockData<Transaction>>;
 pub type TransactionReceiptSegment = Segment<BlockData<TransactionReceipt>>;
 pub type EventSegment = Segment<BlockData<Event>>;
 pub type MessageSegment = Segment<BlockData<MessageToL1>>;
-
-impl<T> Default for Segment<T> {
-    fn default() -> Self {
-        Self { blocks: Vec::new() }
-    }
-}
-
-impl<T> Segment<T> {
-    pub fn reset(&mut self) {
-        self.blocks.clear();
-    }
-}
 
 impl TransactionReceipt {
     pub fn is_reverted(&self) -> bool {

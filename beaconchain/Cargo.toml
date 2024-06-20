@@ -37,6 +37,7 @@ roaring.workspace = true
 rkyv.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+serde_with.workspace = true
 tonic.workspace = true
 tonic-reflection.workspace = true
 tokio.workspace = true

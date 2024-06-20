@@ -2,9 +2,85 @@ use error_stack::{Result, ResultExt};
 use reqwest::Client;
 
 pub mod models {
+    use alloy_primitives::{Address, Bytes};
+    use serde::{Deserialize, Serialize};
+    use serde_with::{serde_as, DisplayFromStr};
+
     pub use alloy_primitives::B256;
 
     pub use alloy_rpc_types_beacon::header::HeaderResponse;
+
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    pub struct BeaconBlockResponse {
+        pub finalized: bool,
+        pub data: BeaconBlockData,
+    }
+
+    #[serde_as]
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    pub struct BeaconBlockData {
+        pub message: BeaconBlock,
+        pub signature: Bytes,
+    }
+
+    #[serde_as]
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    pub struct BeaconBlock {
+        #[serde_as(as = "DisplayFromStr")]
+        pub slot: u64,
+        #[serde_as(as = "DisplayFromStr")]
+        pub proposer_index: u64,
+        pub parent_root: B256,
+        pub state_root: B256,
+        pub body: BeaconBlockBody,
+    }
+
+    #[serde_as]
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    pub struct BeaconBlockBody {
+        pub randao_reveal: Bytes,
+        pub eth1_data: Eth1Data,
+        pub graffiti: B256,
+        pub execution_payload: ExecutionPayload,
+    }
+
+    #[serde_as]
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    pub struct Eth1Data {
+        #[serde_as(as = "DisplayFromStr")]
+        pub deposit_count: u64,
+        pub deposit_root: B256,
+        pub block_hash: B256,
+    }
+
+    #[serde_as]
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    pub struct ExecutionPayload {
+        pub parent_hash: B256,
+        pub fee_recipient: Address,
+        pub state_root: B256,
+        pub receipts_root: B256,
+        pub logs_bloom: Bytes,
+        pub prev_randao: B256,
+        #[serde_as(as = "DisplayFromStr")]
+        pub block_number: u64,
+        #[serde_as(as = "DisplayFromStr")]
+        pub timestamp: u64,
+        pub transactions: Vec<Bytes>,
+        pub withdrawals: Vec<Withdrawal>,
+    }
+
+    #[serde_as]
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    pub struct Withdrawal {
+        #[serde_as(as = "DisplayFromStr")]
+        pub index: u64,
+        #[serde_as(as = "DisplayFromStr")]
+        pub validator_index: u64,
+        pub address: Address,
+        #[serde_as(as = "DisplayFromStr")]
+        pub amount: u64,
+    }
 }
 
 #[derive(Debug)]
@@ -50,6 +126,14 @@ impl BeaconApiProvider {
         self.send_request(request).await
     }
 
+    pub async fn get_block(
+        &self,
+        block_id: BlockId,
+    ) -> Result<models::BeaconBlockResponse, BeaconApiError> {
+        let request = BlockRequest::new(block_id);
+        self.send_request(request).await
+    }
+
     /// Send a request to the beacon node.
     ///
     /// TODO: this function can be turned into a `Transport` trait if we ever need it.
@@ -91,6 +175,10 @@ pub struct HeaderRequest {
     block_id: BlockId,
 }
 
+pub struct BlockRequest {
+    block_id: BlockId,
+}
+
 impl std::fmt::Display for BlockId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -125,6 +213,20 @@ impl BeaconApiRequest for HeaderRequest {
 
     fn path(&self) -> String {
         format!("/eth/v1/beacon/headers/{}", self.block_id)
+    }
+}
+
+impl BlockRequest {
+    pub fn new(block_id: BlockId) -> Self {
+        Self { block_id }
+    }
+}
+
+impl BeaconApiRequest for BlockRequest {
+    type Response = models::BeaconBlockResponse;
+
+    fn path(&self) -> String {
+        format!("/eth/v2/beacon/blocks/{}", self.block_id)
     }
 }
 

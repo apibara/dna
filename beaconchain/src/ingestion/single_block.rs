@@ -1,16 +1,21 @@
 use apibara_dna_common::{
     core::Cursor,
     ingestion::{BlockifierError, SingleBlockIngestion},
-    storage::{LocalStorageBackend, StorageBackend},
+    storage::{block_prefix, LocalStorageBackend, StorageBackend, BLOCK_NAME},
 };
 use error_stack::{Result, ResultExt};
-use tokio::sync::Mutex;
+use tokio::{io::AsyncWriteExt, sync::Mutex};
+use tracing::debug;
+
+use crate::segment::store;
 
 use super::{BeaconApiError, BeaconApiProvider, BeaconResponseExt, BlockId};
 
 #[derive(Debug)]
 pub enum BeaconChainBlockIngestionError {
     Api,
+    Serialization,
+    Storage,
 }
 
 pub struct BeaconChainBlockIngestion {
@@ -28,22 +33,66 @@ impl BeaconChainBlockIngestion {
         &self,
         cursor: &Cursor,
     ) -> Result<(), BeaconChainBlockIngestionError> {
-        let mut storage = self.storage.lock().await;
-        // TODO: write rest of the function
-        let xxx = storage.put("mmm", "xxx").await.unwrap();
-        Ok(())
+        debug!(slot = ?cursor, "ingesting proposed block");
+        let block = self.download_proposed_block(cursor).await?;
+        self.write_block(cursor, store::Slot::Proposed(block)).await
     }
 
     async fn ingest_missed_block(
         &self,
         cursor: &Cursor,
     ) -> Result<(), BeaconChainBlockIngestionError> {
+        debug!(slot = cursor.number, "ingesting missed block");
+        let block = store::Slot::<store::SingleBlock>::Missed;
+        self.write_block(cursor, block).await
+    }
+
+    async fn write_block(
+        &self,
+        cursor: &Cursor,
+        block: store::Slot<store::SingleBlock>,
+    ) -> Result<(), BeaconChainBlockIngestionError> {
+        let bytes = rkyv::to_bytes::<_, 0>(&block)
+            .change_context(BeaconChainBlockIngestionError::Serialization)
+            .attach_printable("failed to serialize block")?;
+
         let mut storage = self.storage.lock().await;
-        // If the slot was missed the server returns not found.
-        // Simply return the cursor with only the slot number.
-        // TODO: should we write a "missed" block placeholder?
-        let xxx = storage.put("mmm", "xxx").await.unwrap();
+
+        let mut writer = storage
+            .put(block_prefix(cursor), BLOCK_NAME)
+            .await
+            .change_context(BeaconChainBlockIngestionError::Storage)?;
+
+        writer
+            .write_all(&bytes)
+            .await
+            .change_context(BeaconChainBlockIngestionError::Storage)
+            .attach_printable("failed to write block")
+            .attach_printable_lazy(|| format!("slot: {cursor}"))?;
+
+        writer
+            .shutdown()
+            .await
+            .change_context(BeaconChainBlockIngestionError::Storage)?;
+
         Ok(())
+    }
+
+    async fn download_proposed_block(
+        &self,
+        cursor: &Cursor,
+    ) -> Result<store::SingleBlock, BeaconChainBlockIngestionError> {
+        let block_id = BlockId::Slot(cursor.number);
+        let block = self
+            .provider
+            .get_block(block_id)
+            .await
+            .change_context(BeaconChainBlockIngestionError::Api)
+            .attach_printable("failed to get block")
+            .attach_printable_lazy(|| format!("slot: {cursor}"))?;
+
+        println!("{:?}", block);
+        todo!();
     }
 }
 
@@ -83,6 +132,8 @@ impl std::fmt::Display for BeaconChainBlockIngestionError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             BeaconChainBlockIngestionError::Api => write!(f, "Beacon Chain API error"),
+            BeaconChainBlockIngestionError::Serialization => write!(f, "Serialization error"),
+            BeaconChainBlockIngestionError::Storage => write!(f, "Storage error"),
         }
     }
 }
