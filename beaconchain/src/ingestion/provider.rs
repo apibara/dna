@@ -6,7 +6,7 @@ pub mod models {
     use serde::{Deserialize, Serialize};
     use serde_with::{serde_as, DisplayFromStr};
 
-    pub use alloy_primitives::B256;
+    pub use alloy_primitives::{ruint::aliases::B384, B256};
 
     pub use alloy_rpc_types_beacon::header::HeaderResponse;
 
@@ -42,6 +42,7 @@ pub mod models {
         pub eth1_data: Eth1Data,
         pub graffiti: B256,
         pub execution_payload: ExecutionPayload,
+        pub blob_kzg_commitments: Vec<B384>,
     }
 
     #[serde_as]
@@ -80,6 +81,70 @@ pub mod models {
         pub address: Address,
         #[serde_as(as = "DisplayFromStr")]
         pub amount: u64,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    pub struct BlobSidecarResponse {
+        pub data: Vec<BlobSidecar>,
+    }
+
+    #[serde_as]
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    pub struct BlobSidecar {
+        #[serde_as(as = "DisplayFromStr")]
+        pub index: u64,
+        pub blob: Bytes,
+        pub kzg_commitment: B384,
+        pub kzg_proof: B384,
+        pub kzg_commitment_inclusion_proof: Vec<B256>,
+    }
+
+    #[serde_as]
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    pub struct ValidatorInfo {
+        pub pubkey: B384,
+        pub withdrawal_credentials: B256,
+        #[serde_as(as = "DisplayFromStr")]
+        pub effective_balance: u64,
+        pub slashed: bool,
+        #[serde_as(as = "DisplayFromStr")]
+        pub activation_eligibility_epoch: u64,
+        #[serde_as(as = "DisplayFromStr")]
+        pub activation_epoch: u64,
+        #[serde_as(as = "DisplayFromStr")]
+        pub exit_epoch: u64,
+        #[serde_as(as = "DisplayFromStr")]
+        pub withdrawable_epoch: u64,
+    }
+
+    #[serde_as]
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    pub struct Validator {
+        #[serde_as(as = "DisplayFromStr")]
+        pub index: u64,
+        #[serde_as(as = "DisplayFromStr")]
+        pub balance: u64,
+        pub validator: ValidatorInfo,
+        pub status: ValidatorStatus,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    pub enum ValidatorStatus {
+        PendingInitialized,
+        PendingQueued,
+        ActiveOngoing,
+        ActiveExiting,
+        ActiveSlashed,
+        ExitedUnslashed,
+        ExitedSlashed,
+        WithdrawalPossible,
+        WithdrawalDone,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    pub struct ValidatorsResponse {
+        pub data: Vec<Validator>,
     }
 }
 
@@ -134,6 +199,22 @@ impl BeaconApiProvider {
         self.send_request(request).await
     }
 
+    pub async fn get_blob_sidecar(
+        &self,
+        block_id: BlockId,
+    ) -> Result<models::BlobSidecarResponse, BeaconApiError> {
+        let request = BlobSidecarRequest::new(block_id);
+        self.send_request(request).await
+    }
+
+    pub async fn get_validators(
+        &self,
+        block_id: BlockId,
+    ) -> Result<models::ValidatorsResponse, BeaconApiError> {
+        let request = ValidatorsRequest::new(block_id);
+        self.send_request(request).await
+    }
+
     /// Send a request to the beacon node.
     ///
     /// TODO: this function can be turned into a `Transport` trait if we ever need it.
@@ -176,6 +257,14 @@ pub struct HeaderRequest {
 }
 
 pub struct BlockRequest {
+    block_id: BlockId,
+}
+
+pub struct BlobSidecarRequest {
+    block_id: BlockId,
+}
+
+pub struct ValidatorsRequest {
     block_id: BlockId,
 }
 
@@ -227,6 +316,34 @@ impl BeaconApiRequest for BlockRequest {
 
     fn path(&self) -> String {
         format!("/eth/v2/beacon/blocks/{}", self.block_id)
+    }
+}
+
+impl BlobSidecarRequest {
+    pub fn new(block_id: BlockId) -> Self {
+        Self { block_id }
+    }
+}
+
+impl BeaconApiRequest for BlobSidecarRequest {
+    type Response = models::BlobSidecarResponse;
+
+    fn path(&self) -> String {
+        format!("/eth/v1/beacon/blob_sidecars/{}", self.block_id)
+    }
+}
+
+impl ValidatorsRequest {
+    pub fn new(block_id: BlockId) -> Self {
+        Self { block_id }
+    }
+}
+
+impl BeaconApiRequest for ValidatorsRequest {
+    type Response = models::ValidatorsResponse;
+
+    fn path(&self) -> String {
+        format!("/eth/v1/beacon/states/{}/validators", self.block_id)
     }
 }
 

@@ -85,13 +85,29 @@ impl BeaconChainBlockIngestion {
         let block_id = BlockId::Slot(cursor.number);
         let block = self
             .provider
-            .get_block(block_id)
+            .get_block(block_id.clone())
             .await
             .change_context(BeaconChainBlockIngestionError::Api)
             .attach_printable("failed to get block")
             .attach_printable_lazy(|| format!("slot: {cursor}"))?;
 
-        println!("{:?}", block);
+        let blob_sidecars = self
+            .provider
+            .get_blob_sidecar(block_id.clone())
+            .await
+            .change_context(BeaconChainBlockIngestionError::Api)
+            .attach_printable("failed to get blob sidecar")
+            .attach_printable_lazy(|| format!("slot: {cursor}"))?;
+
+        let validators = self
+            .provider
+            .get_validators(block_id)
+            .await
+            .change_context(BeaconChainBlockIngestionError::Api)
+            .attach_printable("failed to get validators")
+            .attach_printable_lazy(|| format!("slot: {cursor}"))?;
+
+        println!("{:?}", validators);
         todo!();
     }
 }
