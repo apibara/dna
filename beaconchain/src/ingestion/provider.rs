@@ -2,12 +2,17 @@ use error_stack::{Result, ResultExt};
 use reqwest::Client;
 
 pub mod models {
-    use alloy_primitives::{Address, Bytes};
     use serde::{Deserialize, Serialize};
     use serde_with::{serde_as, DisplayFromStr};
 
-    pub use alloy_primitives::{ruint::aliases::B384, B256};
-
+    pub use alloy_consensus::{
+        Signed, TxEip1559, TxEip2930, TxEip4844, TxEip4844Variant, TxEip4844WithSidecar,
+        TxEnvelope, TxLegacy,
+    };
+    pub use alloy_eips::eip2930::AccessListItem;
+    pub use alloy_primitives::{
+        ruint::aliases::B384, Address, Bytes, Signature, TxKind, B256, U256,
+    };
     pub use alloy_rpc_types_beacon::header::HeaderResponse;
 
     #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -29,7 +34,7 @@ pub mod models {
         #[serde_as(as = "DisplayFromStr")]
         pub slot: u64,
         #[serde_as(as = "DisplayFromStr")]
-        pub proposer_index: u64,
+        pub proposer_index: u32,
         pub parent_root: B256,
         pub state_root: B256,
         pub body: BeaconBlockBody,
@@ -77,7 +82,7 @@ pub mod models {
         #[serde_as(as = "DisplayFromStr")]
         pub index: u64,
         #[serde_as(as = "DisplayFromStr")]
-        pub validator_index: u64,
+        pub validator_index: u32,
         pub address: Address,
         #[serde_as(as = "DisplayFromStr")]
         pub amount: u64,
@@ -92,7 +97,7 @@ pub mod models {
     #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
     pub struct BlobSidecar {
         #[serde_as(as = "DisplayFromStr")]
-        pub index: u64,
+        pub index: u32,
         pub blob: Bytes,
         pub kzg_commitment: B384,
         pub kzg_proof: B384,
@@ -121,14 +126,24 @@ pub mod models {
     #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
     pub struct Validator {
         #[serde_as(as = "DisplayFromStr")]
-        pub index: u64,
+        pub index: u32,
         #[serde_as(as = "DisplayFromStr")]
         pub balance: u64,
         pub validator: ValidatorInfo,
         pub status: ValidatorStatus,
     }
 
-    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        Serialize,
+        Deserialize,
+        rkyv::Serialize,
+        rkyv::Deserialize,
+        rkyv::Archive,
+    )]
     #[serde(rename_all = "snake_case")]
     pub enum ValidatorStatus {
         PendingInitialized,

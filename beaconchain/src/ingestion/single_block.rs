@@ -1,3 +1,4 @@
+use alloy_eips::eip2718::Decodable2718;
 use apibara_dna_common::{
     core::Cursor,
     ingestion::{BlockifierError, SingleBlockIngestion},
@@ -9,7 +10,7 @@ use tracing::debug;
 
 use crate::segment::store;
 
-use super::{BeaconApiError, BeaconApiProvider, BeaconResponseExt, BlockId};
+use super::{models, BeaconApiError, BeaconApiProvider, BeaconResponseExt, BlockId};
 
 #[derive(Debug)]
 pub enum BeaconChainBlockIngestionError {
@@ -56,6 +57,7 @@ impl BeaconChainBlockIngestion {
             .change_context(BeaconChainBlockIngestionError::Serialization)
             .attach_printable("failed to serialize block")?;
 
+        debug!(slot = cursor.number, size = bytes.len(), "writing block");
         let mut storage = self.storage.lock().await;
 
         let mut writer = storage
@@ -83,13 +85,17 @@ impl BeaconChainBlockIngestion {
         cursor: &Cursor,
     ) -> Result<store::SingleBlock, BeaconChainBlockIngestionError> {
         let block_id = BlockId::Slot(cursor.number);
-        let block = self
+        let mut block = self
             .provider
             .get_block(block_id.clone())
             .await
             .change_context(BeaconChainBlockIngestionError::Api)
             .attach_printable("failed to get block")
             .attach_printable_lazy(|| format!("slot: {cursor}"))?;
+
+        // Move out transactions since they're stored separately.
+        let transactions =
+            std::mem::take(&mut block.data.message.body.execution_payload.transactions);
 
         let blob_sidecars = self
             .provider
@@ -107,8 +113,39 @@ impl BeaconChainBlockIngestion {
             .attach_printable("failed to get validators")
             .attach_printable_lazy(|| format!("slot: {cursor}"))?;
 
-        println!("{:?}", validators);
-        todo!();
+        let header = store::BlockHeader::from(block.data.message);
+
+        let transactions = transactions
+            .into_iter()
+            .map(|b| decode_transaction(&b))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let blobs = blob_sidecars
+            .data
+            .into_iter()
+            .map(store::Blob::from)
+            .collect::<Vec<_>>();
+
+        let validators = validators
+            .data
+            .into_iter()
+            .map(store::Validator::from)
+            .collect::<Vec<_>>();
+
+        debug!(
+            slot = cursor.number,
+            transactions = transactions.len(),
+            blobs = blobs.len(),
+            validators = validators.len(),
+            "ingested proposed block"
+        );
+
+        Ok(store::SingleBlock {
+            header,
+            transactions,
+            blobs,
+            validators,
+        })
     }
 }
 
@@ -119,6 +156,7 @@ impl SingleBlockIngestion for BeaconChainBlockIngestion {
 
         match response {
             Ok(response) => {
+                let cursor = response.cursor();
                 self.ingest_proposed_block(&cursor)
                     .await
                     .change_context(BlockifierError::BlockIngestion)?;
@@ -140,6 +178,16 @@ impl SingleBlockIngestion for BeaconChainBlockIngestion {
             },
         }
     }
+}
+pub fn decode_transaction(
+    bytes: &[u8],
+) -> Result<store::Transaction, BeaconChainBlockIngestionError> {
+    let tx = models::TxEnvelope::network_decode(&mut bytes.as_ref())
+        .change_context(BeaconChainBlockIngestionError::Serialization)
+        .attach_printable("failed to decode EIP 2718 transaction")?;
+    let tx = store::Transaction::try_from(tx)
+        .change_context(BeaconChainBlockIngestionError::Serialization)?;
+    Ok(tx)
 }
 
 impl error_stack::Context for BeaconChainBlockIngestionError {}

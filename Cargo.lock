@@ -74,11 +74,11 @@ checksum = "0942ffc6dcaadf03badf6e6a2d0228460359d5e34b57ccdc720b7382dfbd5ec5"
 
 [[package]]
 name = "alloy-consensus"
-version = "0.1.1"
+version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3cc7579e4fb5558af44810f542c90d1145dba8b92c08211c215196160c48d2ea"
+checksum = "a016bfa21193744d4c38b3f3ab845462284d129e5e23c7cc0fafca7e92d9db37"
 dependencies = [
- "alloy-eips 0.1.1",
+ "alloy-eips 0.1.2",
  "alloy-primitives 0.7.6",
  "alloy-rlp",
  "alloy-serde",
@@ -99,9 +99,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-eips"
-version = "0.1.1"
+version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3bdbc8d98cc36ebe17bb5b42d0873137bc76628a4ee0f7e7acad5b8fc59d3597"
+checksum = "32d6d8118b83b0489cfb7e6435106948add2b35217f4a5004ef895f613f60299"
 dependencies = [
  "alloy-primitives 0.7.6",
  "alloy-rlp",
@@ -264,11 +264,11 @@ dependencies = [
 
 [[package]]
 name = "alloy-rpc-types-beacon"
-version = "0.1.1"
+version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "36a3c7fd58772e4eadec5f08153573aa0ce8d998bd03f239ca74cd2927022d4c"
+checksum = "fb383cd3981cee0031aeacbd394c4e726e907f3a0180fe36d5fc76d37c41cd82"
 dependencies = [
- "alloy-eips 0.1.1",
+ "alloy-eips 0.1.2",
  "alloy-primitives 0.7.6",
  "alloy-rpc-types-engine",
  "serde",
@@ -283,7 +283,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "90c3de574f90d9b939e3ee666a74bea29fb1a2ae66f1569b111bb6a922b1c762"
 dependencies = [
  "alloy-consensus",
- "alloy-eips 0.1.1",
+ "alloy-eips 0.1.2",
  "alloy-primitives 0.7.6",
  "alloy-rlp",
  "alloy-rpc-types-eth",
@@ -301,7 +301,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bce0676f144be1eae71122d1d417885a3b063add0353b35e46cdf1440d6b33b1"
 dependencies = [
  "alloy-consensus",
- "alloy-eips 0.1.1",
+ "alloy-eips 0.1.2",
  "alloy-primitives 0.7.6",
  "alloy-rlp",
  "alloy-serde",
@@ -484,6 +484,8 @@ checksum = "b3d1d046238990b9cf5bcde22a3fb3584ee5cf65fb2765f454ed428c7a0063da"
 name = "apibara-dna-beaconchain"
 version = "0.0.0"
 dependencies = [
+ "alloy-consensus",
+ "alloy-eips 0.1.2",
  "alloy-primitives 0.7.6",
  "alloy-rpc-types-beacon",
  "apibara-dna-common",
