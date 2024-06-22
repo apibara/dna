@@ -1,7 +1,6 @@
-use std::any::Any;
+use error_stack::{Report, ResultExt};
 
 use crate::{ingestion::models, segment::store};
-use error_stack::{Report, ResultExt};
 
 #[derive(Debug)]
 pub struct ConversionError;

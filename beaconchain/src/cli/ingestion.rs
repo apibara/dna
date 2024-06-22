@@ -1,6 +1,6 @@
 use apibara_dna_common::{
     error::{DnaError, Result},
-    ingestion::{Blockifier, Snapshot, SnapshotManager},
+    ingestion::{Blockifier, Segmenter, Snapshot, SnapshotManager},
     segment::SegmentArgs,
     storage::{CacheArgs, StorageArgs, StorageBackend},
 };
@@ -10,7 +10,9 @@ use futures_util::StreamExt;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
-use crate::ingestion::{BeaconApiProvider, BeaconChainBlockIngestion, BlockId, ChainTracker};
+use crate::ingestion::{
+    BeaconApiProvider, BeaconChainBlockIngestion, BeaconChainSegmentBuilder, ChainTracker,
+};
 
 use super::common::RpcArgs;
 
@@ -83,11 +85,24 @@ where
     let block_ingestion =
         BeaconChainBlockIngestion::new(provider.clone(), local_cache_storage.clone());
 
-    let mut block_ingestion_stream = Blockifier::new(block_ingestion, chain_changes)
+    let block_ingestion_stream = Blockifier::new(block_ingestion, chain_changes)
         .start(starting_snapshot.clone(), ct.clone());
 
-    while let Some(xxx) = block_ingestion_stream.next().await {
-        println!("{:?}", xxx);
+    let segment_builder = BeaconChainSegmentBuilder {};
+
+    let mut snapshot_changes = Segmenter::new(
+        segment_builder,
+        storage.clone(),
+        snapshot_manager,
+        block_ingestion_stream,
+    )
+    .start(starting_snapshot, ct.clone())
+    .await
+    .change_context(DnaError::Fatal)
+    .attach_printable("failed to start segmenter")?;
+
+    while let Some(change) = snapshot_changes.next().await {
+        println!("{:?}", change);
     }
 
     todo!();
