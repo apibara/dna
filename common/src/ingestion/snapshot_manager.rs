@@ -1,7 +1,7 @@
 use error_stack::{Result, ResultExt};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-use crate::{segment::SegmentOptions, storage::StorageBackend};
+use crate::storage::StorageBackend;
 
 use super::Snapshot;
 
