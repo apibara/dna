@@ -1,11 +1,10 @@
 use apibara_dna_common::{
     core::Cursor,
     ingestion::SegmentBuilder,
-    segment::store::{BlockData, Segment},
+    segment::store::BlockData,
     storage::{block_prefix, segment_prefix, LocalStorageBackend, StorageBackend, BLOCK_NAME},
 };
-use error_stack::{Report, Result, ResultExt};
-use rkyv::{de::deserializers::SharedDeserializeMap, Deserialize};
+use error_stack::{Result, ResultExt};
 use tokio::io::AsyncWriteExt;
 
 use crate::segment::{
@@ -44,7 +43,7 @@ impl BeaconChainSegmentBuilder {
         }
     }
 
-    fn add_missed_block(&mut self, cursor: &Cursor) {
+    fn add_missed_block(&mut self, _cursor: &Cursor) {
         use store::Slot::Missed;
 
         self.headers.blocks.push(Missed);

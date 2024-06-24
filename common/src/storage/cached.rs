@@ -109,13 +109,13 @@ where
 
     async fn file_promote(&mut self, file_id: &FileID) {
         if let Some(cache) = self.get_cache(&file_id.prefix) {
-            cache.promote(&file_id).await;
+            cache.promote(file_id).await;
         }
     }
 
     async fn file_insert(&mut self, file_id: &FileID, size: u64) -> Result<()> {
         if let Some(cache) = self.get_cache(&file_id.prefix) {
-            let files_to_delete = cache.push(&file_id, size).await;
+            let files_to_delete = cache.push(file_id, size).await;
             for file in files_to_delete {
                 self.local_storage
                     .remove(file.prefix, file.filename)
@@ -145,8 +145,8 @@ where
 
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn download_file_to_cache(&mut self, prefix: &str, filename: &str) -> Result<u64> {
-        let mut reader = self.remote_storage.get(&prefix, &filename).await?;
-        let mut writer = self.local_storage.put(&prefix, &filename).await?;
+        let mut reader = self.remote_storage.get(prefix, filename).await?;
+        let mut writer = self.local_storage.put(prefix, filename).await?;
 
         let size = tokio::io::copy(&mut reader, &mut writer)
             .await
@@ -181,7 +181,7 @@ where
         let size = self.download_file_to_cache(&prefix, &filename).await?;
         self.file_insert(&file_id, size).await?;
 
-        return self.local_storage.mmap(prefix, filename);
+        self.local_storage.mmap(prefix, filename)
     }
 
     async fn get_new_and_insert(

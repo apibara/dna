@@ -49,7 +49,7 @@ impl StreamClient {
         request: impl IntoRequest<StreamDataRequest>,
     ) -> Result<DataStream, tonic::Status> {
         let response = self.inner.stream_data(request).await?;
-        let inner = response.into_inner().timeout(self.timeout.clone());
+        let inner = response.into_inner().timeout(self.timeout);
         Ok(DataStream {
             inner: Box::pin(inner),
         })
