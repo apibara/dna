@@ -29,6 +29,7 @@ object_store = { git = "https://github.com/fracek/arrow-rs", rev = "52ec42ac", f
     "azure",
 ] }
 rkyv.workspace = true
+roaring.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true

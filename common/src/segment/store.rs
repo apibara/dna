@@ -1,5 +1,10 @@
 use rkyv::{Archive, Deserialize, Serialize};
 
+/// Serialized roaring bitmap.
+#[derive(Archive, Serialize, Deserialize, Debug)]
+#[archive(check_bytes)]
+pub struct Bitmap(pub Vec<u8>);
+
 #[derive(Archive, Serialize, Deserialize, Debug, PartialEq)]
 #[archive(compare(PartialEq), check_bytes)]
 pub struct Segment<T> {

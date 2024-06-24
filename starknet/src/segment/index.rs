@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use apibara_dna_common::segment::convert_bitmap_map;
 use roaring::RoaringBitmap;
 
 use super::store;
@@ -35,26 +36,4 @@ impl TryFrom<Index> for store::Index {
             event_by_key_0,
         })
     }
-}
-
-impl TryFrom<RoaringBitmap> for store::Bitmap {
-    type Error = std::io::Error;
-
-    fn try_from(bitmap: RoaringBitmap) -> Result<store::Bitmap, std::io::Error> {
-        let mut buf = Vec::with_capacity(bitmap.serialized_size());
-        bitmap.serialize_into(&mut buf)?;
-        Ok(store::Bitmap(buf))
-    }
-}
-
-fn convert_bitmap_map(
-    map: BTreeMap<store::FieldElement, RoaringBitmap>,
-) -> Result<BTreeMap<store::FieldElement, store::Bitmap>, std::io::Error> {
-    map.into_iter()
-        .map(|(address, bitmap)| {
-            let address = store::FieldElement::from(address);
-            let bitmap = store::Bitmap::try_from(bitmap)?;
-            Ok((address, bitmap))
-        })
-        .collect()
 }
