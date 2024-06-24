@@ -144,6 +144,7 @@ pub mod models {
         rkyv::Deserialize,
         rkyv::Archive,
     )]
+    #[archive(check_bytes)]
     #[serde(rename_all = "snake_case")]
     pub enum ValidatorStatus {
         PendingInitialized,

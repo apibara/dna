@@ -542,6 +542,7 @@ dependencies = [
  "object_store",
  "reqwest",
  "rkyv",
+ "roaring",
  "serde",
  "serde_json",
  "tempdir",

@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use apibara_dna_common::segment::store::{BlockData, Segment};
+use apibara_dna_common::segment::store::{Bitmap, BlockData, Segment};
 use rkyv::{with::AsVec, Archive, Deserialize, Serialize};
 
 /// A field element is encoded as a 32-byte array.
@@ -370,10 +370,6 @@ pub struct Index {
     #[with(AsVec)]
     pub event_by_key_0: BTreeMap<FieldElement, Bitmap>,
 }
-
-#[derive(Archive, Serialize, Deserialize, Debug)]
-#[archive(check_bytes)]
-pub struct Bitmap(pub Vec<u8>);
 
 #[derive(Archive, Serialize, Deserialize, Debug)]
 #[archive(check_bytes)]

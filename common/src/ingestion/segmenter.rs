@@ -19,21 +19,27 @@ use super::{snapshot, BlockEvent, Snapshot, SnapshotChange, SnapshotManager};
 pub trait SegmentBuilder {
     type Error: error_stack::Context;
 
-    fn create_segment(&mut self, cursors: &[Cursor]);
+    fn create_segment(&mut self, cursors: &[Cursor]) -> Result<(), Self::Error>;
 
-    async fn write_segment<S: StorageBackend>(
+    async fn write_segment<S>(
         &mut self,
         segment_name: &str,
         storage: &mut S,
-    ) -> Result<(), Self::Error>;
+    ) -> Result<(), Self::Error>
+    where
+        S: StorageBackend + Send,
+        <S as StorageBackend>::Writer: Send;
 
-    async fn write_segment_group<S: StorageBackend>(
+    async fn write_segment_group<S>(
         &mut self,
         segment_group_name: &str,
         storage: &mut S,
-    ) -> Result<(), Self::Error>;
+    ) -> Result<(), Self::Error>
+    where
+        S: StorageBackend + Send,
+        <S as StorageBackend>::Writer: Send;
 
-    fn cleanup_segment_data(&mut self, cursors: &[Cursor]);
+    async fn cleanup_segment_data(&mut self, cursors: &[Cursor]) -> Result<(), Self::Error>;
 }
 
 #[derive(Debug)]
@@ -344,7 +350,10 @@ where
         );
 
         debug!("copying blocks to segment");
-        self.segment_builder.create_segment(&cursors_to_segment);
+        self.segment_builder
+            .create_segment(&cursors_to_segment)
+            .change_context(SegmenterError::Storage)
+            .attach_printable("failed to create segment")?;
 
         let segment_name = segment_options.format_segment_name(current_segment_start);
         self.segment_builder
@@ -357,7 +366,10 @@ where
 
         debug!("delete old block data");
         self.segment_builder
-            .cleanup_segment_data(&cursors_to_segment);
+            .cleanup_segment_data(&cursors_to_segment)
+            .await
+            .change_context(SegmenterError::Storage)
+            .attach_printable("failed to cleanup segment data")?;
 
         self.snapshot.revision += 1;
         self.snapshot.ingestion.extra_segment_count += 1;

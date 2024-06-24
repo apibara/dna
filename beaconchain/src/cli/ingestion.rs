@@ -88,7 +88,7 @@ where
     let block_ingestion_stream = Blockifier::new(block_ingestion, chain_changes)
         .start(starting_snapshot.clone(), ct.clone());
 
-    let segment_builder = BeaconChainSegmentBuilder {};
+    let segment_builder = BeaconChainSegmentBuilder::new(local_cache_storage.clone());
 
     let mut snapshot_changes = Segmenter::new(
         segment_builder,
