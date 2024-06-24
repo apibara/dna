@@ -124,6 +124,7 @@ pub struct Blob {
     pub kzg_commitment: B384,
     pub kzg_proof: B384,
     pub kzg_commitment_inclusion_proof: Vec<B256>,
+    pub hash: B256,
 }
 
 #[derive(Archive, Serialize, Deserialize, Debug)]
