@@ -180,9 +180,9 @@ impl SingleBlockIngestion for BeaconChainBlockIngestion {
     }
 }
 pub fn decode_transaction(
-    bytes: &[u8],
+    mut bytes: &[u8],
 ) -> Result<store::Transaction, BeaconChainBlockIngestionError> {
-    let tx = models::TxEnvelope::network_decode(&mut bytes.as_ref())
+    let tx = models::TxEnvelope::network_decode(&mut bytes)
         .change_context(BeaconChainBlockIngestionError::Serialization)
         .attach_printable("failed to decode EIP 2718 transaction")?;
     let tx = store::Transaction::try_from(tx)

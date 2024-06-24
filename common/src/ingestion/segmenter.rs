@@ -1,19 +1,14 @@
 use async_trait::async_trait;
-use error_stack::{Report, Result, ResultExt};
+use error_stack::{Result, ResultExt};
 use futures_util::{Stream, StreamExt, TryFutureExt};
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
 
-use crate::{
-    core::Cursor,
-    ingestion::IngestedBlock,
-    segment::store,
-    storage::{self, LocalStorageBackend, StorageBackend},
-};
+use crate::{core::Cursor, ingestion::IngestedBlock, storage::StorageBackend};
 
-use super::{snapshot, BlockEvent, Snapshot, SnapshotChange, SnapshotManager};
+use super::{BlockEvent, Snapshot, SnapshotChange, SnapshotManager};
 
 #[async_trait]
 pub trait SegmentBuilder {
@@ -295,11 +290,7 @@ where
             return Ok(false);
         };
 
-        let Some(last_cursor) = segment_data
-            .cursors
-            .iter()
-            .nth(segment_options.segment_size - 1)
-        else {
+        let Some(last_cursor) = segment_data.cursors.get(segment_options.segment_size - 1) else {
             debug!(
                 cursors_len = segment_data.cursors.len(),
                 "done: not enough cursors"
