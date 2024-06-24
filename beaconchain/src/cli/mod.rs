@@ -14,7 +14,7 @@ pub struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Command {
-    StartIngestion(StartIngestionArgs),
+    StartIngestion(Box<StartIngestionArgs>),
     StartServer,
     Inspect,
 }
@@ -22,7 +22,7 @@ enum Command {
 impl Cli {
     pub async fn run(self) -> Result<()> {
         match self.subcommand {
-            Command::StartIngestion(args) => run_ingestion(args).await,
+            Command::StartIngestion(args) => run_ingestion(*args).await,
             Command::StartServer => todo!(),
             Command::Inspect => todo!(),
         }

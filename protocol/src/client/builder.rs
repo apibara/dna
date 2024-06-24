@@ -8,9 +8,9 @@ use tonic::{
 
 use crate::dna::stream::dna_stream_client::DnaStreamClient;
 
-use super::{client::StreamClient, MetadataInterceptor, StreamClientError};
+use super::{stream_client::StreamClient, MetadataInterceptor, StreamClientError};
 
-///! A builder for the DNA stream client.
+/// A builder for the DNA stream client.
 pub struct StreamClientBuilder {
     token: Option<String>,
     max_message_size: Option<usize>,

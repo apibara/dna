@@ -5,11 +5,11 @@
 //! - Authentication with bearer token.
 //! - Add a timeout to the stream.
 mod builder;
-mod client;
 mod error;
 mod interceptor;
+mod stream_client;
 
 pub use self::builder::StreamClientBuilder;
-pub use self::client::{DataStream, DataStreamError, StreamClient, StreamMessage};
 pub use self::error::StreamClientError;
 pub use self::interceptor::{MetadataInterceptor, MetadataKey, MetadataValue};
+pub use self::stream_client::{DataStream, DataStreamError, StreamClient, StreamMessage};

@@ -10,7 +10,6 @@ pub mod utils {
 }
 
 pub mod models {
-    use alloy_primitives::hex::FromHex;
     use serde::{Deserialize, Serialize};
     use serde_with::{serde_as, DisplayFromStr};
 
