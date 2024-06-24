@@ -1,8 +1,13 @@
-use rkyv::{Archive, Deserialize, Serialize};
+use std::collections::BTreeMap;
+
+use apibara_dna_common::segment::store::{Bitmap, BlockData, Segment};
+use rkyv::{with::AsVec, Archive, Deserialize, Serialize};
 
 use crate::ingestion::models;
 
-#[derive(Archive, Serialize, Deserialize, Debug)]
+#[derive(
+    Archive, Serialize, Deserialize, Debug, PartialEq, Clone, Copy, Default, PartialOrd, Eq, Ord,
+)]
 #[archive(check_bytes)]
 pub struct Address(pub [u8; 20]);
 
@@ -128,4 +133,24 @@ pub struct SingleBlock {
     pub transactions: Vec<Transaction>,
     pub validators: Vec<Validator>,
     pub blobs: Vec<Blob>,
+}
+
+pub type BlockHeaderSegment = Segment<Slot<BlockHeader>>;
+pub type TransactionSegment = Segment<Slot<BlockData<Transaction>>>;
+pub type ValidatorSegment = Segment<Slot<BlockData<Validator>>>;
+pub type BlobSegment = Segment<Slot<BlockData<Blob>>>;
+
+#[derive(Archive, Serialize, Deserialize, Debug)]
+#[archive(check_bytes)]
+pub struct SegmentGroupIndex {
+    #[with(AsVec)]
+    pub transaction_by_from_address: BTreeMap<Address, Bitmap>,
+    #[with(AsVec)]
+    pub transaction_by_to_address: BTreeMap<Address, Bitmap>,
+}
+
+#[derive(Archive, Serialize, Deserialize, Debug)]
+#[archive(check_bytes)]
+pub struct SegmentGroup {
+    pub index: SegmentGroupIndex,
 }
