@@ -144,10 +144,12 @@ pub mod models {
     #[derive(
         Debug,
         Clone,
+        Copy,
         PartialEq,
         Eq,
         Serialize,
         Deserialize,
+        Hash,
         rkyv::Serialize,
         rkyv::Deserialize,
         rkyv::Archive,
