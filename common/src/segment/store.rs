@@ -18,6 +18,14 @@ pub struct BlockData<T> {
     pub data: Vec<T>,
 }
 
+#[derive(Archive, Serialize, Deserialize, Debug, PartialEq)]
+#[archive(compare(PartialEq), check_bytes)]
+pub struct IndexedBlockData<T, I> {
+    pub block_number: u64,
+    pub index: I,
+    pub data: Vec<T>,
+}
+
 impl<T> Default for Segment<T> {
     fn default() -> Self {
         Self { blocks: Vec::new() }

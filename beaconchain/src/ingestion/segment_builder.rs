@@ -1,7 +1,7 @@
 use apibara_dna_common::{
     core::Cursor,
     ingestion::SegmentBuilder,
-    segment::store::BlockData,
+    segment::store::{BlockData, IndexedBlockData},
     storage::{block_prefix, segment_prefix, LocalStorageBackend, StorageBackend, BLOCK_NAME},
 };
 use error_stack::{Result, ResultExt};
@@ -64,9 +64,10 @@ impl BeaconChainSegmentBuilder {
             block_number,
             data: block.transactions,
         }));
-        self.validators.blocks.push(Proposed(BlockData {
+        self.validators.blocks.push(Proposed(IndexedBlockData {
             block_number,
-            data: block.validators,
+            index: block.validators.index,
+            data: block.validators.validators,
         }));
         self.blobs.blocks.push(Proposed(BlockData {
             block_number,

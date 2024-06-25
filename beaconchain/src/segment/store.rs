@@ -1,6 +1,6 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
-use apibara_dna_common::segment::store::{Bitmap, BlockData, Segment};
+use apibara_dna_common::segment::store::{Bitmap, BlockData, IndexedBlockData, Segment};
 use rkyv::{with::AsVec, Archive, Deserialize, Serialize};
 
 use crate::ingestion::models;
@@ -116,6 +116,38 @@ pub struct Validator {
     pub withdrawable_epoch: u64,
 }
 
+/// Index to help finding validators by status.
+///
+/// Users will request validators based on their status, a linear
+/// search is not efficient given that there are over 1.4 million
+/// validators.
+///
+/// Looking at snapshot of the validators at block 9_000_000 on
+/// mainnet, we have:
+///
+/// ```
+/// 1005280 "active_ongoing"
+///       6 "exited_slashed"
+///     233 "exited_unslashed"
+///     808 "pending_initialized"
+///    7779 "pending_queued"
+///  368073 "withdrawal_done"
+///    2565 "withdrawal_possible"
+/// ```
+#[derive(Archive, Serialize, Deserialize, Debug)]
+#[archive(check_bytes)]
+pub struct ValidatorsIndex {
+    #[with(AsVec)]
+    pub validator_index_by_status: HashMap<models::ValidatorStatus, Bitmap>,
+}
+
+#[derive(Archive, Serialize, Deserialize, Debug)]
+#[archive(check_bytes)]
+pub struct IndexedValidators {
+    pub index: ValidatorsIndex,
+    pub validators: Vec<Validator>,
+}
+
 #[derive(Archive, Serialize, Deserialize, Debug)]
 #[archive(check_bytes)]
 pub struct Blob {
@@ -132,13 +164,13 @@ pub struct Blob {
 pub struct SingleBlock {
     pub header: BlockHeader,
     pub transactions: Vec<Transaction>,
-    pub validators: Vec<Validator>,
+    pub validators: IndexedValidators,
     pub blobs: Vec<Blob>,
 }
 
 pub type BlockHeaderSegment = Segment<Slot<BlockHeader>>;
 pub type TransactionSegment = Segment<Slot<BlockData<Transaction>>>;
-pub type ValidatorSegment = Segment<Slot<BlockData<Validator>>>;
+pub type ValidatorSegment = Segment<Slot<IndexedBlockData<Validator, ValidatorsIndex>>>;
 pub type BlobSegment = Segment<Slot<BlockData<Blob>>>;
 
 #[derive(Archive, Serialize, Deserialize, Debug)]

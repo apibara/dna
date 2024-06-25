@@ -1,10 +1,14 @@
+use std::collections::HashMap;
+
 use alloy_eips::eip2718::Decodable2718;
 use apibara_dna_common::{
     core::Cursor,
     ingestion::{BlockifierError, SingleBlockIngestion},
+    segment::store::Bitmap,
     storage::{block_prefix, LocalStorageBackend, StorageBackend, BLOCK_NAME},
 };
 use error_stack::{Result, ResultExt};
+use roaring::RoaringBitmap;
 use tokio::{io::AsyncWriteExt, sync::Mutex};
 use tracing::debug;
 
@@ -131,12 +135,16 @@ impl BeaconChainBlockIngestion {
             .into_iter()
             .map(store::Validator::from)
             .collect::<Vec<_>>();
+        let validators = index_validators(validators)
+            .change_context(BeaconChainBlockIngestionError::Storage)
+            .attach_printable("failed to index validators")
+            .attach_printable_lazy(|| format!("slot: {cursor}"))?;
 
         debug!(
             slot = cursor.number,
             transactions = transactions.len(),
             blobs = blobs.len(),
-            validators = validators.len(),
+            validators = validators.validators.len(),
             "ingested proposed block"
         );
 
@@ -188,6 +196,33 @@ pub fn decode_transaction(
     let tx = store::Transaction::try_from(tx)
         .change_context(BeaconChainBlockIngestionError::Serialization)?;
     Ok(tx)
+}
+
+fn index_validators(
+    validators: Vec<store::Validator>,
+) -> std::result::Result<store::IndexedValidators, std::io::Error> {
+    let mut validator_index_by_status = HashMap::<models::ValidatorStatus, RoaringBitmap>::new();
+    for validator in validators.iter() {
+        validator_index_by_status
+            .entry(validator.status)
+            .or_default()
+            .insert(validator.validator_index);
+    }
+
+    let mut stored_index = HashMap::<models::ValidatorStatus, Bitmap>::new();
+    for (status, index) in validator_index_by_status.into_iter() {
+        let index = Bitmap::try_from(index)?;
+        stored_index.insert(status, index);
+    }
+
+    let validators_index = store::ValidatorsIndex {
+        validator_index_by_status: stored_index,
+    };
+
+    Ok(store::IndexedValidators {
+        validators,
+        index: validators_index,
+    })
 }
 
 impl error_stack::Context for BeaconChainBlockIngestionError {}
