@@ -133,19 +133,43 @@ impl SegmentBuilder for BeaconChainSegmentBuilder {
     {
         let bytes =
             rkyv::to_bytes::<_, 0>(&self.headers).change_context(BeaconChainSegmentBuilderError)?;
-        write_bytes(storage, segment_name, HEADER_SEGMENT_NAME, &bytes).await?;
+        write_bytes(
+            storage,
+            segment_prefix(segment_name),
+            HEADER_SEGMENT_NAME,
+            &bytes,
+        )
+        .await?;
 
         let bytes = rkyv::to_bytes::<_, 0>(&self.transactions)
             .change_context(BeaconChainSegmentBuilderError)?;
-        write_bytes(storage, segment_name, TRANSACTION_SEGMENT_NAME, &bytes).await?;
+        write_bytes(
+            storage,
+            segment_prefix(segment_name),
+            TRANSACTION_SEGMENT_NAME,
+            &bytes,
+        )
+        .await?;
 
         let bytes = rkyv::to_bytes::<_, 0>(&self.validators)
             .change_context(BeaconChainSegmentBuilderError)?;
-        write_bytes(storage, segment_name, VALIDATOR_SEGMENT_NAME, &bytes).await?;
+        write_bytes(
+            storage,
+            segment_prefix(segment_name),
+            VALIDATOR_SEGMENT_NAME,
+            &bytes,
+        )
+        .await?;
 
         let bytes =
             rkyv::to_bytes::<_, 0>(&self.blobs).change_context(BeaconChainSegmentBuilderError)?;
-        write_bytes(storage, segment_name, BLOB_SEGMENT_NAME, &bytes).await?;
+        write_bytes(
+            storage,
+            segment_prefix(segment_name),
+            BLOB_SEGMENT_NAME,
+            &bytes,
+        )
+        .await?;
 
         // Reset segment data for the next segment.
         self.headers.reset();
@@ -195,7 +219,7 @@ impl SegmentBuilder for BeaconChainSegmentBuilder {
 
 async fn write_bytes<S>(
     storage: &mut S,
-    segment_name: &str,
+    prefix: impl AsRef<str>,
     filename: &str,
     data: &[u8],
 ) -> Result<(), BeaconChainSegmentBuilderError>
@@ -204,7 +228,7 @@ where
     <S as StorageBackend>::Writer: Send,
 {
     let mut writer = storage
-        .put(segment_prefix(segment_name), filename)
+        .put(prefix.as_ref(), filename)
         .await
         .change_context(BeaconChainSegmentBuilderError)?;
     writer
@@ -212,7 +236,7 @@ where
         .await
         .change_context(BeaconChainSegmentBuilderError)
         .attach_printable("failed to write segment")
-        .attach_printable_lazy(|| format!("prefix: {segment_name}, filename: {filename}"))?;
+        .attach_printable_lazy(|| format!("prefix: {}, filename: {filename}", prefix.as_ref()))?;
     writer
         .shutdown()
         .await
