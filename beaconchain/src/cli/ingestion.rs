@@ -1,12 +1,13 @@
+use std::net::SocketAddr;
+
 use apibara_dna_common::{
     error::{DnaError, Result},
-    ingestion::{Blockifier, Segmenter, Snapshot, SnapshotManager},
+    ingestion::{Blockifier, IngestionServer, Segmenter, Snapshot, SnapshotManager},
     segment::SegmentArgs,
     storage::{CacheArgs, StorageArgs, StorageBackend},
 };
 use clap::Args;
 use error_stack::ResultExt;
-use futures_util::StreamExt;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
@@ -90,7 +91,7 @@ where
 
     let segment_builder = BeaconChainSegmentBuilder::new(local_cache_storage.clone());
 
-    let mut snapshot_changes = Segmenter::new(
+    let snapshot_changes = Segmenter::new(
         segment_builder,
         storage.clone(),
         snapshot_manager,
@@ -101,9 +102,13 @@ where
     .change_context(DnaError::Fatal)
     .attach_printable("failed to start segmenter")?;
 
-    while let Some(change) = snapshot_changes.next().await {
-        println!("{:?}", change);
-    }
+    let address = args
+        .server_address
+        .parse::<SocketAddr>()
+        .change_context(DnaError::Configuration)
+        .attach_printable_lazy(|| format!("failed to parse address: {}", args.server_address))?;
 
-    todo!();
+    IngestionServer::new(local_cache_storage, snapshot_changes)
+        .start(address, ct)
+        .await
 }
