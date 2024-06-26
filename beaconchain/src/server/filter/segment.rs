@@ -10,7 +10,7 @@ use rkyv::Deserialize;
 use roaring::RoaringBitmap;
 use tracing::debug;
 
-use crate::segment::{store, HEADER_SEGMENT_NAME};
+use crate::segment::{store, HEADER_SEGMENT_NAME, VALIDATOR_SEGMENT_NAME};
 
 use super::{bag::DataBag, data::BlockData, root::Filter};
 
@@ -22,6 +22,7 @@ pub struct SegmentFilter<S: StorageBackend + Send> {
     segment_options: SegmentOptions,
     segment_group_reader: LazySegmentReader<S, SegmentGroupOptions, store::SegmentGroup>,
     header_segment_reader: LazySegmentReader<S, SegmentDataOptions, store::BlockHeaderSegment>,
+    validator_segment_reader: LazySegmentReader<S, SegmentDataOptions, store::ValidatorSegment>,
 }
 
 impl<S> SegmentFilter<S>
@@ -44,6 +45,11 @@ where
         let header_segment_reader =
             LazySegmentReader::new(storage.clone(), header_segment_data_info);
 
+        let validator_segment_data_info =
+            SegmentDataOptions(segment_options.clone(), VALIDATOR_SEGMENT_NAME.to_string());
+        let validator_segment_reader =
+            LazySegmentReader::new(storage.clone(), validator_segment_data_info);
+
         let filters = filters.into_iter().map(Filter::from).collect::<Vec<_>>();
 
         Self {
@@ -51,6 +57,7 @@ where
             segment_options,
             segment_group_reader,
             header_segment_reader,
+            validator_segment_reader,
         }
     }
 
@@ -118,8 +125,53 @@ where
             block_data.require_header(filter.has_required_header());
         }
 
+        let should_load_validators = self.filters.iter().any(Filter::has_validators);
+        if should_load_validators {
+            debug!(block_number, "loading validators");
+            let validator_segment = self
+                .validator_segment_reader
+                .read(block_number)
+                .await
+                .change_context(SegmentFilterError)?;
+            let indexed_validators = &validator_segment.blocks[relative_index]
+                .as_proposed()
+                .ok_or(SegmentFilterError)
+                .attach_printable("missing validator for proposed block")?;
+            assert!(indexed_validators.block_number == block_number);
+
+            let index: store::ValidatorsIndex = indexed_validators
+                .index
+                .deserialize(&mut rkyv::Infallible)
+                .change_context(SegmentFilterError)
+                .attach_printable("failed to deserialize validator index")?;
+            let validators_count = indexed_validators.data.len();
+
+            // We should move the validators iteration in the outer loop to avoid rescanning the large list
+            // multiple times.
+            let mut validators_to_store = RoaringBitmap::new();
+            for (filter, block_data) in self.filters.iter().zip(blocks_data.iter_mut()) {
+                validators_to_store.clear();
+
+                filter
+                    .fill_validator_bitmap(validators_count, &index, &mut validators_to_store)
+                    .change_context(SegmentFilterError)
+                    .attach_printable("failed to fill validator bitmap")?;
+
+                block_data.extend_validators(validators_to_store.iter());
+                for validator_index in validators_to_store.iter() {
+                    let validator: store::Validator = indexed_validators.data
+                        [validator_index as usize]
+                        .deserialize(&mut rkyv::Infallible)
+                        .change_context(SegmentFilterError)
+                        .attach_printable("failed to deserialize validator")?;
+                    bag.add_validator(validator_index, validator);
+                }
+            }
+        }
+
         let mut blocks = Vec::with_capacity(self.filters.len());
         let mut any_data = false;
+
         for block_data in blocks_data {
             if block_data.is_empty() {
                 blocks.push(beaconchain::Block::default());
@@ -127,11 +179,21 @@ where
 
             any_data = true;
 
+            let validators = block_data
+                .validators()
+                .map(|index| {
+                    bag.validator(index)
+                        .ok_or(SegmentFilterError)
+                        .attach_printable_lazy(|| format!("validator not found: {index}"))
+                })
+                .collect::<Result<Vec<_>, _>>()
+                .attach_printable("failed to collect validators")?;
+
             blocks.push(beaconchain::Block {
                 header: Some(header.clone()),
                 blobs: vec![],
                 transactions: vec![],
-                validators: vec![],
+                validators,
             });
         }
 

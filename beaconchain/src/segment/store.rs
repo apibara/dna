@@ -35,6 +35,15 @@ pub enum Slot<T> {
     Proposed(T),
 }
 
+impl<T: rkyv::Archive> ArchivedSlot<T> {
+    pub fn as_proposed(&self) -> Option<&<T as Archive>::Archived> {
+        match self {
+            ArchivedSlot::Missed => None,
+            ArchivedSlot::Proposed(data) => Some(data),
+        }
+    }
+}
+
 #[derive(Archive, Serialize, Deserialize, Debug)]
 #[archive(check_bytes)]
 pub struct BlockHeader {

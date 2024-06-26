@@ -1,4 +1,5 @@
 use rkyv::{Archive, Deserialize, Serialize};
+use roaring::RoaringBitmap;
 
 /// Serialized roaring bitmap.
 #[derive(Archive, Serialize, Deserialize, Debug)]
@@ -35,5 +36,13 @@ impl<T> Default for Segment<T> {
 impl<T> Segment<T> {
     pub fn reset(&mut self) {
         self.blocks.clear();
+    }
+}
+
+impl TryFrom<&Bitmap> for RoaringBitmap {
+    type Error = std::io::Error;
+
+    fn try_from(x: &Bitmap) -> std::io::Result<Self> {
+        RoaringBitmap::deserialize_from(x.0.as_slice())
     }
 }

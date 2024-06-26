@@ -34,11 +34,11 @@ message BlockHeader {
 
 message Transaction {
   // Transaction hash.
-  B256 hash = 1;
+  B256 transaction_hash = 1;
   // Nonce.
   uint64 nonce = 2;
   // Transaction index in the block.
-  uint64 transaction_index = 3;
+  uint32 transaction_index = 3;
   // Sender.
   Address from = 4;
   // Recipient.
@@ -48,7 +48,7 @@ message Transaction {
   // Gas price.
   U128 gas_price = 7;
   // Gas amount.
-  U256 gas = 8;
+  U128 gas_limit = 8;
   // Max base fee per gas the sender is willing to pay.
   U128 max_fee_per_gas = 9;
   // Miner's tip.
@@ -58,7 +58,7 @@ message Transaction {
   // The signature's r,s,v,yParity values.
   Signature signature = 12;
   // Chain ID.
-  uint64 chain_id = 13;
+  optional uint64 chain_id = 13;
   // EIP-2930 access list.
   repeated AccessListItem access_list = 14;
   // EIP-2718 transaction type.
@@ -123,9 +123,9 @@ message Signature {
   // The signature's s value.
   U256 s = 2;
   // The signature's v value.
-  U256 v = 3;
+  // U256 v = 3;
   // The signature's parity byte.
-  bool y_parity = 4;
+  // bool y_parity = 4;
 }
 
 message AccessListItem {
