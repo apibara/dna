@@ -359,7 +359,8 @@ where
                 .filter
                 .filter_segment_block(block_number)
                 .await
-                .change_context(StreamProducerError)?
+                .change_context(StreamProducerError)
+                .attach_printable_lazy(|| format!("block number: {block_number}"))?
             {
                 let cursor = if block_number == 0 {
                     None
@@ -409,7 +410,8 @@ where
                 .filter
                 .filter_segment_block(block_number)
                 .await
-                .change_context(StreamProducerError)?
+                .change_context(StreamProducerError)
+                .attach_printable_lazy(|| format!("block number: {block_number}"))?
             {
                 let cursor = if block_number == 0 {
                     None

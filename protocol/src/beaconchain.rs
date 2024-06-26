@@ -22,6 +22,12 @@ impl_scalar_traits!(U128);
 impl_from_to_bytes!(U128, 16);
 impl_scalar_helpers!(U128, 16);
 
+impl From<u128> for U128 {
+    fn from(x: u128) -> Self {
+        U128::from_bytes(&x.to_be_bytes())
+    }
+}
+
 impl_scalar_traits!(B384);
 impl_from_to_bytes!(B384, 48);
 impl_scalar_helpers!(B384, 48);
