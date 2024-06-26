@@ -4,8 +4,8 @@ package starknet.v2;
 
 // A field element.
 message FieldElement {
-  fixed64 lo_lo = 1;
-  fixed64 lo_hi = 2;
-  fixed64 hi_lo = 3;
-  fixed64 hi_hi = 4;
+  fixed64 x0 = 1;
+  fixed64 x1 = 2;
+  fixed64 x2 = 3;
+  fixed64 x3 = 4;
 }
