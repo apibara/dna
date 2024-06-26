@@ -98,11 +98,12 @@ impl From<store::Validator> for beaconchain::Validator {
     fn from(x: store::Validator) -> Self {
         let pubkey = x.pubkey.into();
         let withdrawal_credentials = x.withdrawal_credentials.into();
+        let status = beaconchain::ValidatorStatus::from(x.status);
 
         Self {
             validator_index: x.validator_index,
             balance: x.balance,
-            status: x.status as i32,
+            status: status as i32,
             pubkey: Some(pubkey),
             withdrawal_credentials: Some(withdrawal_credentials),
             effective_balance: x.effective_balance,
