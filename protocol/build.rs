@@ -54,5 +54,20 @@ fn main() -> Result<()> {
             &["proto/starknet/"],
         )?;
 
+    /*
+     * Beacon Chain
+     */
+    tonic_build::configure()
+        .build_client(true)
+        .build_server(true)
+        .file_descriptor_set_path(out_dir.join(STARKNET_DESCRIPTOR_FILE))
+        .compile(
+            &[
+                "proto/beaconchain/v2/data.proto",
+                "proto/beaconchain/v2/filter.proto",
+            ],
+            &["proto/beaconchain/"],
+        )?;
+
     Ok(())
 }
