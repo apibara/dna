@@ -194,8 +194,8 @@ where
     S: StorageBackend + Send + Sync + 'static + Clone,
     <S as StorageBackend>::Reader: Unpin + Send + 'static,
 {
-    storage: CachedStorage<S>,
-    local_storage: LocalStorageBackend,
+    _storage: CachedStorage<S>,
+    _local_storage: LocalStorageBackend,
     filter: SegmentFilter<S>,
     cursor_producer: CursorProducer,
     response_tx: mpsc::Sender<TonicResult<StreamDataResponse>>,
@@ -220,8 +220,8 @@ where
         StreamProducer {
             filter,
             stream_starting_block,
-            storage,
-            local_storage,
+            _storage: storage,
+            _local_storage: local_storage,
             cursor_producer,
             response_tx,
             request_context,

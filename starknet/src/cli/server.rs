@@ -2,7 +2,7 @@ use std::net::SocketAddr;
 
 use apibara_dna_common::{
     error::{DnaError, Result},
-    server::IngestionStateSyncServer,
+    server::{CursorProducerService, DnaServer, IngestionStateSyncServer},
     storage::{AppStorageBackend, CacheArgs, CachedStorage, LocalStorageBackend, StorageArgs},
 };
 use clap::Args;
@@ -10,7 +10,7 @@ use error_stack::ResultExt;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
-use crate::server::DnaServer;
+use crate::server::DnaService;
 
 /// Start serving ingested data to clients.
 #[derive(Args, Debug)]
@@ -66,6 +66,10 @@ pub async fn run_server_with_storage(
     )?
     .start(ct.clone());
 
+    let cursor_producer = CursorProducerService::new(ingestion_stream).start(ct.clone());
+
+    let dna_service = DnaService::new(storage, local_cache_storage, cursor_producer);
+
     let server_address = args
         .server
         .server_address
@@ -73,7 +77,7 @@ pub async fn run_server_with_storage(
         .change_context(DnaError::Configuration)
         .attach_printable("failed to parse server address")?;
 
-    DnaServer::new(storage, local_cache_storage, ingestion_stream)
+    DnaServer::new(dna_service)
         .start(server_address, ct)
         .await
         .change_context(DnaError::Fatal)
