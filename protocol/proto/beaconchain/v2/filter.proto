@@ -1,0 +1,40 @@
+// Beacon Chain DNA definitions (filter).
+syntax = "proto3";
+
+package beaconchain.v2;
+
+import "v2/common.proto";
+
+message Filter {
+  // Include header.
+  HeaderFilter header = 1;
+  // Filter transactions.
+  repeated TransactionFilter transactions = 2;
+  // Filter validators.
+  repeated ValidatorFilter validators = 3;
+  // Filter blobs.
+  repeated BlobFilter blobs = 4;
+}
+
+message HeaderFilter {
+  // Always include header data. Defaults to `false`.
+  optional bool always = 1;
+}
+
+message TransactionFilter {
+  // Filter based on the transaction's sender address.
+  Address from = 1;
+  // Filter based on the transaction's recipient address.
+  Address to = 2;
+  // Include the transaction's blob. Defaults to `false`.
+  optional bool include_blob = 3;
+}
+
+message ValidatorFilter {
+  // Filter the validator based on its index.
+  optional uint32 validator_index = 1;
+  // Filter based on the validator's status.
+  ValidatorStatus status = 2;
+}
+
+message BlobFilter {}

@@ -27,8 +27,8 @@ impl From<models::BlobSidecar> for store::Blob {
     fn from(x: models::BlobSidecar) -> Self {
         let hash = x.hash().into();
         store::Blob {
-            index: x.index,
-            hash,
+            blob_index: x.index,
+            blob_hash: hash,
             blob: x.blob.into(),
             kzg_commitment: x.kzg_commitment.into(),
             kzg_proof: x.kzg_proof.into(),

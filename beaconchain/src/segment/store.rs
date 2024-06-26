@@ -151,12 +151,12 @@ pub struct IndexedValidators {
 #[derive(Archive, Serialize, Deserialize, Debug)]
 #[archive(check_bytes)]
 pub struct Blob {
-    pub index: u32,
+    pub blob_index: u32,
     pub blob: Bytes,
     pub kzg_commitment: B384,
     pub kzg_proof: B384,
     pub kzg_commitment_inclusion_proof: Vec<B256>,
-    pub hash: B256,
+    pub blob_hash: B256,
 }
 
 #[derive(Archive, Serialize, Deserialize, Debug)]
