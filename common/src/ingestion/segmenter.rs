@@ -20,7 +20,7 @@ pub trait SegmentBuilder {
         &mut self,
         segment_name: &str,
         storage: &mut S,
-    ) -> Result<(), Self::Error>
+    ) -> Result<usize, Self::Error>
     where
         S: StorageBackend + Send,
         <S as StorageBackend>::Writer: Send;
@@ -313,10 +313,12 @@ where
         // the finalized cursor to move.
         let current_segment_start = segment_options.segment_start(first_cursor.number);
         let next_segment_start = segment_options.segment_start(last_cursor.number + 1);
+
         let cursors_to_segment = {
             let cursors = std::mem::take(&mut segment_data.cursors);
             let mut cursors_to_segment = Vec::new();
             let mut cursors_to_keep = Vec::new();
+
             for cursor in cursors {
                 if cursor.number >= next_segment_start {
                     cursors_to_keep.push(cursor);
@@ -347,13 +349,25 @@ where
             .attach_printable("failed to create segment")?;
 
         let segment_name = segment_options.format_segment_name(current_segment_start);
-        self.segment_builder
+        let block_count = self
+            .segment_builder
             .write_segment(&segment_name, &mut self.storage)
             .await
             .change_context(SegmenterError::Storage)
             .attach_printable("failed to write segment")
             .attach_printable_lazy(|| format!("segment_name: {segment_name}"))?;
-        info!(segment_name, "segment written");
+        info!(segment_name, block_count, "segment written");
+
+        if block_count != self.snapshot.segment_options.segment_size {
+            return Err(SegmenterError::Storage)
+                .attach_printable("segment size mismatch")
+                .attach_printable_lazy(|| {
+                    format!(
+                        "expected: {}, actual: {block_count}",
+                        self.snapshot.segment_options.segment_size
+                    )
+                });
+        }
 
         debug!("delete old block data");
         self.segment_builder

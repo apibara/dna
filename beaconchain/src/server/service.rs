@@ -2,12 +2,12 @@ use std::time::Duration;
 
 use apibara_dna_common::{
     core::Cursor,
-    error::{DnaError, Result},
     segment::SegmentOptions,
     server::{BlockNumberOrCursor, CursorProducer, NextBlock},
     storage::{CachedStorage, LocalStorageBackend, StorageBackend},
 };
 use apibara_dna_protocol::{
+    beaconchain,
     dna::{
         common::{StatusRequest, StatusResponse},
         stream::{
@@ -15,11 +15,10 @@ use apibara_dna_protocol::{
             StreamDataResponse,
         },
     },
-    starknet,
 };
 use apibara_observability::{self as o11y, TraceContextExt};
-use error_stack::ResultExt;
-use futures_util::TryFutureExt;
+use error_stack::{Result, ResultExt};
+use futures_util::{Stream, TryFutureExt};
 use prost::Message;
 use roaring::RoaringBitmap;
 use tokio::sync::mpsc;
@@ -64,11 +63,11 @@ where
     }
 
     #[tracing::instrument(skip_all)]
-    pub async fn segment_options(&self) -> Result<SegmentOptions> {
+    pub async fn segment_options(&self) -> Result<SegmentOptions, StreamProducerError> {
         self.cursor_producer
             .segment_options_with_retry(Duration::from_secs(1), 5)
             .await
-            .ok_or(DnaError::Fatal)
+            .ok_or(StreamProducerError)
             .attach_printable("failed to get segment options")
     }
 }
@@ -123,8 +122,8 @@ where
         let filters = request
             .filter
             .into_iter()
-            .map(|f| <starknet::Filter as prost::Message>::decode(f.as_slice()))
-            .collect::<std::result::Result<Vec<starknet::Filter>, _>>()
+            .map(|f| <beaconchain::Filter as prost::Message>::decode(f.as_slice()))
+            .collect::<std::result::Result<Vec<beaconchain::Filter>, _>>()
             .map_err(|_| tonic::Status::invalid_argument("failed to decode filter"))?;
 
         let segment_options = self
@@ -185,6 +184,9 @@ where
         }
     }
 }
+
+#[derive(Debug)]
+struct StreamProducerError;
 
 struct StreamProducer<S>
 where
@@ -252,9 +254,8 @@ where
             .await;
     }
 
-    pub async fn start(mut self) -> Result<()> {
+    pub async fn start(mut self) -> Result<(), StreamProducerError> {
         debug!(num_filters = %self.filter.filter_len(), "starting data stream");
-
         let mut current_block = self.stream_starting_block.clone();
 
         loop {
@@ -263,7 +264,12 @@ where
                 break;
             }
 
-            match self.cursor_producer.next_block(&current_block).await? {
+            match self
+                .cursor_producer
+                .next_block(&current_block)
+                .await
+                .change_context(StreamProducerError)?
+            {
                 NextBlock::NotReady => {
                     self.send_system_message(
                         "server is starting up. stream will begin shortly",
@@ -321,7 +327,7 @@ where
         &mut self,
         starting_block: u64,
         segment_options: SegmentOptions,
-    ) -> Result<u64> {
+    ) -> Result<u64, StreamProducerError> {
         tracing::Span::current().add_link(self.request_context.clone());
 
         let ending_block = starting_block + segment_options.segment_group_blocks() - 1;
@@ -338,7 +344,8 @@ where
 
         self.filter
             .fill_block_bitmap(&mut block_bitmap, starting_block, block_range)
-            .await?;
+            .await
+            .change_context(StreamProducerError)?;
 
         for block_number in block_bitmap.iter() {
             // Avoid useless work.
@@ -348,7 +355,12 @@ where
 
             let block_number = block_number as u64;
 
-            if let Some(blocks) = self.filter.filter_segment_block(block_number).await? {
+            if let Some(blocks) = self
+                .filter
+                .filter_segment_block(block_number)
+                .await
+                .change_context(StreamProducerError)?
+            {
                 let cursor = if block_number == 0 {
                     None
                 } else {
@@ -379,7 +391,7 @@ where
         &mut self,
         starting_block: u64,
         segment_options: SegmentOptions,
-    ) -> Result<u64> {
+    ) -> Result<u64, StreamProducerError> {
         tracing::Span::current().add_link(self.request_context.clone());
 
         let ending_block = starting_block + segment_options.segment_size as u64 - 1;
@@ -393,7 +405,12 @@ where
 
             let block_number = block_number as u64;
 
-            if let Some(blocks) = self.filter.filter_segment_block(block_number).await? {
+            if let Some(blocks) = self
+                .filter
+                .filter_segment_block(block_number)
+                .await
+                .change_context(StreamProducerError)?
+            {
                 let cursor = if block_number == 0 {
                     None
                 } else {
@@ -417,5 +434,13 @@ where
         }
 
         Ok(ending_block)
+    }
+}
+
+impl error_stack::Context for StreamProducerError {}
+
+impl std::fmt::Display for StreamProducerError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Stream producer error")
     }
 }
