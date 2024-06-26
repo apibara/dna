@@ -1,5 +1,4 @@
 use apibara_dna_protocol::beaconchain;
-use rkyv::with::With;
 use roaring::RoaringBitmap;
 
 use crate::{ingestion::models, segment::store};
@@ -28,12 +27,10 @@ impl ValidatorFilter {
         }
 
         if let Some(status) = self.status {
-            let status_bitmap = index
-                .validator_index_by_status
-                .get(&status)
-                .ok_or_else(|| {
-                    std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid status")
-                })?;
+            // It's possible the status is missing from the validator if no validator has that status.
+            let Some(status_bitmap) = index.validator_index_by_status.get(&status) else {
+                return Ok(());
+            };
 
             let status_bitmap = RoaringBitmap::try_from(status_bitmap)?;
             *bitmap |= status_bitmap;
