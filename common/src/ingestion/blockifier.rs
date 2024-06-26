@@ -148,11 +148,11 @@ where
                         if current_block_number > head.number {
                             break;
                         }
-                        current_block_number += 1;
                         block_ingestion.push_back(
                             self.ingestion
                                 .ingest_block(Cursor::new_finalized(current_block_number)),
                         );
+                        current_block_number += 1;
                     }
                 }
                 maybe_change = chain_changes.next() => {
