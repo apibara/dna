@@ -6,6 +6,7 @@ use apibara_dna_common::{
 };
 use error_stack::{Result, ResultExt};
 use tokio::io::AsyncWriteExt;
+use tracing::debug;
 
 use crate::segment::{
     store, SegmentGroupIndex, BLOB_SEGMENT_NAME, HEADER_SEGMENT_NAME, TRANSACTION_SEGMENT_NAME,
@@ -126,11 +127,17 @@ impl SegmentBuilder for BeaconChainSegmentBuilder {
         &mut self,
         segment_name: &str,
         storage: &mut S,
-    ) -> Result<(), Self::Error>
+    ) -> Result<usize, Self::Error>
     where
         S: StorageBackend + Send,
         <S as StorageBackend>::Writer: Send,
     {
+        let blocks_count = self.headers.blocks.len();
+
+        assert!(blocks_count == self.transactions.blocks.len());
+        assert!(blocks_count == self.validators.blocks.len());
+        assert!(blocks_count == self.blobs.blocks.len());
+
         let bytes =
             rkyv::to_bytes::<_, 0>(&self.headers).change_context(BeaconChainSegmentBuilderError)?;
         write_bytes(
@@ -177,7 +184,7 @@ impl SegmentBuilder for BeaconChainSegmentBuilder {
         self.validators.reset();
         self.blobs.reset();
 
-        Ok(())
+        Ok(blocks_count)
     }
 
     async fn write_segment_group<S>(

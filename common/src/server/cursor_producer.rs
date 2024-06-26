@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use error_stack::ResultExt;
 use futures_util::{Stream, StreamExt};
@@ -173,10 +173,28 @@ impl CursorProducer {
         }
     }
 
+    // Returns the segment options of the current snapshot.
     pub async fn segment_options(&self) -> Option<SegmentOptions> {
         let state = self.inner.read().await;
 
         state.as_ref().map(|s| s.snapshot.segment_options.clone())
+    }
+
+    /// Returns the segment options of the current snapshot, retrying until it is available.
+    pub async fn segment_options_with_retry(
+        &self,
+        duration: Duration,
+        max_retry: usize,
+    ) -> Option<SegmentOptions> {
+        for _ in 0..max_retry {
+            if let Some(segment_options) = self.segment_options().await {
+                return Some(segment_options);
+            }
+
+            tokio::time::sleep(duration).await;
+        }
+
+        None
     }
 }
 
