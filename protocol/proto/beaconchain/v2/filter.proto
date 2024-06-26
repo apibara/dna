@@ -34,7 +34,7 @@ message ValidatorFilter {
   // Filter the validator based on its index.
   optional uint32 validator_index = 1;
   // Filter based on the validator's status.
-  ValidatorStatus status = 2;
+  optional ValidatorStatus status = 2;
 }
 
 message BlobFilter {}
