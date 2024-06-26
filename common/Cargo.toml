@@ -21,6 +21,7 @@ error-stack.workspace = true
 flatbuffers.workspace = true
 futures-util.workspace = true
 hex.workspace = true
+http.workspace = true
 lru.workspace = true
 memmap2.workspace = true
 # Make clients cloneable
@@ -37,6 +38,7 @@ tokio-stream.workspace = true
 tokio-util.workspace = true
 tonic.workspace = true
 tonic-reflection.workspace = true
+tower.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
