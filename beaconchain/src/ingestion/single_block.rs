@@ -237,7 +237,7 @@ fn index_validators(
 }
 
 fn add_transaction_to_blobs(
-    blobs: &mut Vec<store::Blob>,
+    blobs: &mut [store::Blob],
     transactions: &[store::Transaction],
 ) -> Result<(), BeaconChainBlockIngestionError> {
     let mut blobs_updated = 0;

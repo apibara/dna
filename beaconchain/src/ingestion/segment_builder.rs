@@ -6,7 +6,6 @@ use apibara_dna_common::{
 };
 use error_stack::{Result, ResultExt};
 use tokio::io::AsyncWriteExt;
-use tracing::debug;
 
 use crate::segment::{
     store, SegmentGroupIndex, BLOB_SEGMENT_NAME, HEADER_SEGMENT_NAME, TRANSACTION_SEGMENT_NAME,

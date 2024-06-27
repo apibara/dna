@@ -18,7 +18,7 @@ use apibara_dna_protocol::{
 };
 use apibara_observability::{self as o11y, TraceContextExt};
 use error_stack::{Result, ResultExt};
-use futures_util::{Stream, TryFutureExt};
+use futures_util::TryFutureExt;
 use prost::Message;
 use roaring::RoaringBitmap;
 use tokio::sync::mpsc;
@@ -403,8 +403,6 @@ where
             if self.response_tx.is_closed() {
                 break;
             }
-
-            let block_number = block_number as u64;
 
             if let Some(blocks) = self
                 .filter
