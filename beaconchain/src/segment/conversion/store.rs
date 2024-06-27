@@ -37,6 +37,8 @@ impl From<models::BlobSidecar> for store::Blob {
                 .into_iter()
                 .map(Into::into)
                 .collect(),
+            transaction_hash: store::B256::default(),
+            transaction_index: u32::MAX,
         }
     }
 }
@@ -53,7 +55,7 @@ impl From<models::BeaconBlock> for store::BlockHeader {
             deposit_root: x.body.eth1_data.deposit_root.into(),
             block_hash: x.body.eth1_data.block_hash.into(),
             graffiti: x.body.graffiti.into(),
-            execution_payload: x.body.execution_payload.into(),
+            execution_payload: x.body.execution_payload.map(Into::into),
             blob_kzg_commitments: x
                 .body
                 .blob_kzg_commitments

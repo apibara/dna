@@ -99,7 +99,11 @@ impl BeaconChainBlockIngestion {
 
         // Move out transactions since they're stored separately.
         let transactions =
-            std::mem::take(&mut block.data.message.body.execution_payload.transactions);
+            if let Some(ref mut execution_payload) = block.data.message.body.execution_payload {
+                std::mem::take(&mut execution_payload.transactions)
+            } else {
+                Vec::new()
+            };
 
         let blob_sidecars = self
             .provider
@@ -121,14 +125,17 @@ impl BeaconChainBlockIngestion {
 
         let transactions = transactions
             .into_iter()
-            .map(|b| decode_transaction(&b))
+            .enumerate()
+            .map(|(tx_index, bytes)| decode_transaction(tx_index, &bytes))
             .collect::<Result<Vec<_>, _>>()?;
 
-        let blobs = blob_sidecars
+        let mut blobs = blob_sidecars
             .data
             .into_iter()
             .map(store::Blob::from)
             .collect::<Vec<_>>();
+
+        add_transaction_to_blobs(&mut blobs, &transactions)?;
 
         let validators = validators
             .data
@@ -188,13 +195,17 @@ impl SingleBlockIngestion for BeaconChainBlockIngestion {
     }
 }
 pub fn decode_transaction(
+    transaction_index: usize,
     mut bytes: &[u8],
 ) -> Result<store::Transaction, BeaconChainBlockIngestionError> {
     let tx = models::TxEnvelope::network_decode(&mut bytes)
         .change_context(BeaconChainBlockIngestionError::Serialization)
         .attach_printable("failed to decode EIP 2718 transaction")?;
-    let tx = store::Transaction::try_from(tx)
+    let mut tx = store::Transaction::try_from(tx)
         .change_context(BeaconChainBlockIngestionError::Serialization)?;
+
+    tx.transaction_index = transaction_index as u32;
+
     Ok(tx)
 }
 
@@ -223,6 +234,35 @@ fn index_validators(
         validators,
         index: validators_index,
     })
+}
+
+fn add_transaction_to_blobs(
+    blobs: &mut Vec<store::Blob>,
+    transactions: &[store::Transaction],
+) -> Result<(), BeaconChainBlockIngestionError> {
+    let mut blobs_updated = 0;
+    for transaction in transactions {
+        for blob_hash in transaction.blob_versioned_hashes.iter() {
+            let blob = blobs
+                .iter_mut()
+                .find(|blob| &blob.blob_hash == blob_hash)
+                .ok_or(BeaconChainBlockIngestionError::Storage)
+                .attach_printable("expected blob to exist")
+                .attach_printable_lazy(|| {
+                    format!(
+                        "blob_hash: {blob_hash}, transaction_hash: {}",
+                        transaction.transaction_hash
+                    )
+                })?;
+            blob.transaction_index = transaction.transaction_index;
+            blob.transaction_hash = transaction.transaction_hash;
+
+            blobs_updated += 1;
+        }
+    }
+
+    assert!(blobs_updated == blobs.len());
+    Ok(())
 }
 
 impl error_stack::Context for BeaconChainBlockIngestionError {}
