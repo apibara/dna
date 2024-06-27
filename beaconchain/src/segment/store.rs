@@ -11,7 +11,7 @@ use crate::ingestion::models;
 #[archive(check_bytes)]
 pub struct Address(pub [u8; 20]);
 
-#[derive(Archive, Serialize, Deserialize, Debug)]
+#[derive(Archive, Serialize, Deserialize, Debug, Default, PartialEq, Clone, Copy)]
 #[archive(check_bytes)]
 pub struct B256(pub [u8; 32]);
 
@@ -56,7 +56,7 @@ pub struct BlockHeader {
     pub deposit_root: B256,
     pub block_hash: B256,
     pub graffiti: B256,
-    pub execution_payload: ExecutionPayload,
+    pub execution_payload: Option<ExecutionPayload>,
     pub blob_kzg_commitments: Vec<B384>,
 }
 
@@ -166,6 +166,8 @@ pub struct Blob {
     pub kzg_proof: B384,
     pub kzg_commitment_inclusion_proof: Vec<B256>,
     pub blob_hash: B256,
+    pub transaction_index: u32,
+    pub transaction_hash: B256,
 }
 
 #[derive(Archive, Serialize, Deserialize, Debug)]
@@ -195,4 +197,10 @@ pub struct SegmentGroupIndex {
 #[archive(check_bytes)]
 pub struct SegmentGroup {
     pub index: SegmentGroupIndex,
+}
+
+impl std::fmt::Display for B256 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "0x{}", hex::encode(&self.0))
+    }
 }

@@ -37,4 +37,7 @@ message ValidatorFilter {
   optional ValidatorStatus status = 2;
 }
 
-message BlobFilter {}
+message BlobFilter {
+  // Include the transaction that posted the blob.
+  optional bool include_transaction = 1;
+}

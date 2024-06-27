@@ -54,7 +54,8 @@ pub mod models {
         pub randao_reveal: Bytes,
         pub eth1_data: Eth1Data,
         pub graffiti: B256,
-        pub execution_payload: ExecutionPayload,
+        pub execution_payload: Option<ExecutionPayload>,
+        #[serde(default)]
         pub blob_kzg_commitments: Vec<B384>,
     }
 
