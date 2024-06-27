@@ -9,7 +9,7 @@ impl From<store::BlockHeader> for beaconchain::BlockHeader {
         let deposit_root = x.deposit_root.into();
         let block_hash = x.block_hash.into();
         let graffiti = x.graffiti.into();
-        let execution_payload = x.execution_payload.into();
+        let execution_payload = x.execution_payload.map(Into::into);
         let blob_kzg_commitments = x.blob_kzg_commitments.into_iter().map(Into::into).collect();
 
         Self {
@@ -22,7 +22,7 @@ impl From<store::BlockHeader> for beaconchain::BlockHeader {
             deposit_root: Some(deposit_root),
             block_hash: Some(block_hash),
             graffiti: Some(graffiti),
-            execution_payload: Some(execution_payload),
+            execution_payload,
             blob_kzg_commitments,
         }
     }
@@ -126,6 +126,7 @@ impl From<store::Blob> for beaconchain::Blob {
             .map(Into::into)
             .collect();
         let blob_hash = x.blob_hash.into();
+        let transaction_hash = x.transaction_hash.into();
 
         Self {
             blob_index: x.blob_index,
@@ -134,6 +135,8 @@ impl From<store::Blob> for beaconchain::Blob {
             kzg_proof: Some(kzg_proof),
             kzg_commitment_inclusion_proof,
             blob_hash: Some(blob_hash),
+            transaction_index: x.transaction_index,
+            transaction_hash: Some(transaction_hash),
         }
     }
 }

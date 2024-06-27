@@ -96,6 +96,10 @@ message Blob {
   repeated B256 kzg_commitment_inclusion_proof = 5;
   // Blob hash.
   B256 blob_hash = 6;
+  // Index of the transaction that posted the blob.
+  uint32 transaction_index = 7;
+  // Hash of the transaction that posted the blob.
+  B256 transaction_hash = 8;
 }
 
 message ExecutionPayload {
