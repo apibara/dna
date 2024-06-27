@@ -201,6 +201,6 @@ pub struct SegmentGroup {
 
 impl std::fmt::Display for B256 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "0x{}", hex::encode(&self.0))
+        write!(f, "0x{}", hex::encode(self.0))
     }
 }

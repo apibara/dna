@@ -194,6 +194,12 @@ impl From<store::Address> for beaconchain::Address {
     }
 }
 
+impl From<beaconchain::Address> for store::Address {
+    fn from(x: beaconchain::Address) -> Self {
+        store::Address(x.to_bytes())
+    }
+}
+
 impl From<models::ValidatorStatus> for beaconchain::ValidatorStatus {
     fn from(x: models::ValidatorStatus) -> Self {
         use models::ValidatorStatus::*;
