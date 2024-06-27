@@ -50,6 +50,10 @@ impl LocalStorageBackend {
             .change_context(DnaError::Io)
             .attach_printable("failed to create file mmap")?;
 
+        mmap.advise(memmap2::Advice::Sequential)
+            .change_context(DnaError::Io)
+            .attach_printable("failed to madvise")?;
+
         Ok(mmap)
     }
 
