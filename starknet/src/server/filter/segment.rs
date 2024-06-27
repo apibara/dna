@@ -359,6 +359,7 @@ where
         for block_data in blocks_data {
             if block_data.is_empty() {
                 blocks.push(starknet::Block::default());
+                continue;
             }
 
             any_data = true;
