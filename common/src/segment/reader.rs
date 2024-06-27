@@ -2,7 +2,6 @@ use std::marker::PhantomData;
 
 use error_stack::{Result, ResultExt};
 use memmap2::Mmap;
-use tracing::debug;
 
 use crate::storage::{segment_prefix, CachedStorage, StorageBackend};
 
@@ -43,7 +42,7 @@ impl SegmentInfo for SegmentGroupOptions {
         self.0.segment_group_start(block_number)
     }
 
-    fn segment_prefix(&self, segment_start: u64) -> String {
+    fn segment_prefix(&self, _segment_start: u64) -> String {
         "group".to_string()
     }
 
@@ -62,7 +61,7 @@ impl SegmentInfo for SegmentDataOptions {
         segment_prefix(segment_name)
     }
 
-    fn segment_filename(&self, segment_start: u64) -> String {
+    fn segment_filename(&self, _segment_start: u64) -> String {
         self.1.clone()
     }
 }
@@ -84,10 +83,10 @@ where
         }
     }
 
-    pub async fn read<'a>(
-        &'a mut self,
+    pub async fn read(
+        &mut self,
         block_number: u64,
-    ) -> Result<&'a <T as rkyv::Archive>::Archived, SegmentReaderError> {
+    ) -> Result<&<T as rkyv::Archive>::Archived, SegmentReaderError> {
         // Read segment if any of these two conditions are met:
         // - The segment is not loaded yet.
         // - The segment is loaded but the block number is different.
@@ -101,15 +100,12 @@ where
                 let prefix = self.segment_info.segment_prefix(segment_start);
                 let filename = self.segment_info.segment_filename(segment_start);
 
-                let mmap = self
-                    .storage
+                self.storage
                     .mmap(&prefix, &filename)
                     .await
                     .change_context(SegmentReaderError)
                     .attach_printable("failed to mmap segment")
-                    .attach_printable_lazy(|| format!("prefix: {prefix}, filename: {filename}"))?;
-
-                mmap
+                    .attach_printable_lazy(|| format!("prefix: {prefix}, filename: {filename}"))?
             }
         };
 
@@ -117,7 +113,7 @@ where
         self.current_segment_start = Some(segment_start);
 
         let bytes = self.mmap.as_ref().expect("mmapped bytes");
-        let archived = unsafe { rkyv::archived_root::<T>(&bytes) };
+        let archived = unsafe { rkyv::archived_root::<T>(bytes) };
 
         Ok(archived)
     }

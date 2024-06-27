@@ -3,20 +3,29 @@ use roaring::RoaringBitmap;
 
 use crate::segment::store;
 
-use super::validator::ValidatorFilter;
+use super::{blob::BlobFilter, transaction::TransactionFilter, validator::ValidatorFilter};
 
 pub struct Filter {
     header: HeaderFilter,
     validators: Vec<ValidatorFilter>,
+    transactions: Vec<TransactionFilter>,
+    blobs: Vec<BlobFilter>,
 }
 
+#[derive(Default)]
 pub struct HeaderFilter {
     always: bool,
 }
 
+#[derive(Default)]
+pub struct AdditionalData {
+    pub include_transaction: bool,
+    pub include_blob: bool,
+}
+
 impl Filter {
     pub fn needs_linear_scan(&self) -> bool {
-        self.has_required_header() || self.has_validators()
+        self.has_required_header() || self.has_validators() || self.has_blobs()
     }
 
     pub fn has_required_header(&self) -> bool {
@@ -25,6 +34,18 @@ impl Filter {
 
     pub fn has_validators(&self) -> bool {
         !self.validators.is_empty()
+    }
+
+    pub fn has_transactions(&self) -> bool {
+        !self.transactions.is_empty()
+    }
+
+    pub fn transactions(&self) -> impl Iterator<Item = &TransactionFilter> {
+        self.transactions.iter()
+    }
+
+    pub fn has_blobs(&self) -> bool {
+        !self.blobs.is_empty()
     }
 
     pub fn fill_validator_bitmap(
@@ -39,11 +60,40 @@ impl Filter {
 
         Ok(())
     }
-}
 
-impl Default for HeaderFilter {
-    fn default() -> Self {
-        Self { always: false }
+    pub fn match_transaction(
+        &self,
+        transaction: &store::ArchivedTransaction,
+    ) -> Option<AdditionalData> {
+        let mut additional_data = AdditionalData::default();
+        let mut any_match = false;
+
+        for filter in &self.transactions {
+            if filter.matches(transaction) {
+                any_match = true;
+                additional_data.include_blob |= filter.include_blob;
+            }
+        }
+
+        if any_match {
+            Some(additional_data)
+        } else {
+            None
+        }
+    }
+
+    pub fn match_blob(&self, _blob: &store::ArchivedBlob) -> Option<AdditionalData> {
+        if self.blobs.is_empty() {
+            return None;
+        }
+
+        let mut additional_data = AdditionalData::default();
+
+        for filter in &self.blobs {
+            additional_data.include_transaction |= filter.include_transaction;
+        }
+
+        Some(additional_data)
     }
 }
 
@@ -55,7 +105,19 @@ impl From<beaconchain::Filter> for Filter {
             .into_iter()
             .map(ValidatorFilter::from)
             .collect();
-        Self { header, validators }
+        let transactions = filter
+            .transactions
+            .into_iter()
+            .map(TransactionFilter::from)
+            .collect();
+        let blobs = filter.blobs.into_iter().map(BlobFilter::from).collect();
+
+        Self {
+            header,
+            validators,
+            transactions,
+            blobs,
+        }
     }
 }
 
