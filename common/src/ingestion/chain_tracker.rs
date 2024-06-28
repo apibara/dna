@@ -367,7 +367,14 @@ impl error_stack::Context for BlockIngestionDriverError {}
 
 impl std::fmt::Display for BlockIngestionDriverError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Block ingestion driver error")
+        use BlockIngestionDriverError::*;
+
+        match self {
+            InvalidState => write!(f, "Invalid internal state. This is a bug."),
+            CursorProvider => write!(f, "Cursor provider error"),
+            Snapshot => write!(f, "Snapshot error"),
+            StreamClosed => write!(f, "Output stream closed"),
+        }
     }
 }
 

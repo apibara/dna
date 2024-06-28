@@ -1,16 +1,21 @@
 mod common;
-mod ingestion;
-mod inspect;
-mod server;
+mod debug;
+// mod ingestion;
+// mod inspect;
+// mod server;
 
-use apibara_dna_common::error::Result;
 use clap::{Parser, Subcommand};
+use error_stack::Result;
 
-use self::{
-    ingestion::{run_ingestion, StartIngestionArgs},
-    inspect::{run_inspect, InspectArgs},
-    server::{run_server, StartServerArgs},
-};
+use crate::error::DnaEvmError;
+
+use self::debug::{run_debug_chain_tracker, DebugChainTrackerArgs};
+
+// use self::{
+//     ingestion::{run_ingestion, StartIngestionArgs},
+//     inspect::{run_inspect, InspectArgs},
+//     server::{run_server, StartServerArgs},
+// };
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -21,17 +26,16 @@ pub struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Command {
-    StartIngestion(StartIngestionArgs),
-    StartServer(StartServerArgs),
-    Inspect(InspectArgs),
+    DebugChainTracker(DebugChainTrackerArgs),
+    // StartIngestion(StartIngestionArgs),
+    // StartServer(StartServerArgs),
+    // Inspect(InspectArgs),
 }
 
 impl Cli {
-    pub async fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<(), DnaEvmError> {
         match self.subcommand {
-            Command::StartIngestion(args) => run_ingestion(args).await,
-            Command::StartServer(args) => run_server(args).await,
-            Command::Inspect(args) => run_inspect(args).await,
+            Command::DebugChainTracker(args) => run_debug_chain_tracker(args).await,
         }
     }
 }
