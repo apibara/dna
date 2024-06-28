@@ -15,4 +15,4 @@ pub use self::event::{BlockEvent, IngestedBlock, SnapshotChange};
 pub use self::segmenter::{SegmentBuilder, Segmenter, SegmenterError};
 pub use self::server::IngestionServer;
 pub use self::snapshot::{IngestionState, Snapshot};
-pub use self::snapshot_manager::{SnapshotError, SnapshotManager};
+pub use self::snapshot_manager::{SnapshotError, SnapshotManager, SnapshotReader};

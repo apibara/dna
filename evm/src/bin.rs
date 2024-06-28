@@ -1,9 +1,7 @@
-use std::process::ExitCode;
-
-use apibara_dna_common::error::{DnaError, ReportExt, Result};
-use apibara_dna_evm::cli::Cli;
+use apibara_dna_evm::{cli::Cli, error::DnaEvmError};
 use apibara_observability::init_opentelemetry;
 use clap::Parser;
+use error_stack::Result;
 use error_stack::ResultExt;
 
 #[cfg(not(windows))]
@@ -11,14 +9,14 @@ use error_stack::ResultExt;
 static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
 #[tokio::main]
-async fn main() -> ExitCode {
+async fn main() -> Result<(), DnaEvmError> {
     let args = Cli::parse();
-    run_with_args(args).await.to_exit_code()
+    run_with_args(args).await
 }
 
-async fn run_with_args(args: Cli) -> Result<()> {
+async fn run_with_args(args: Cli) -> Result<(), DnaEvmError> {
     init_opentelemetry()
-        .change_context(DnaError::Fatal)
+        .change_context(DnaEvmError::Fatal)
         .attach_printable("failed to initialize opentelemetry")?;
 
     args.run().await
