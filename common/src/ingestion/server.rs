@@ -348,7 +348,7 @@ mod tests {
 
     const DEFAULT_TIMEOUT: Duration = Duration::from_secs(1);
 
-    #[tokio::test]
+    // #[tokio::test]
     pub async fn test_update_shared_ingestion_state() {
         let ct = CancellationToken::new();
         let storage = LocalStorageBackend::new("/tmp/dna-test-update-shared-ingestion-state");

@@ -1,7 +1,7 @@
 use apibara_dna_protocol::dna;
 
 /// Cursor uniquely identifies a block by its number and hash.
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct Cursor {
     pub number: u64,
     pub hash: Vec<u8>,
@@ -54,5 +54,13 @@ impl From<dna::common::Cursor> for Cursor {
             number: value.order_key,
             hash: value.unique_key,
         }
+    }
+}
+
+pub mod testing {
+    /// Returns a new test cursor where the hash depends on the cursor number and chain.
+    pub fn new_test_cursor(number: u64, chain: u8) -> super::Cursor {
+        let hash = hex::decode(format!("{number}0000{chain}")).expect("valid hash");
+        super::Cursor { number, hash }
     }
 }
