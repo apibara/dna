@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use apibara_dna_common::{
     ingestion::{BlockIngestionDriver, IngestionState, Snapshot, SnapshotError, SnapshotReader},
     segment::{store::Segment, SegmentOptions},
@@ -9,7 +11,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     error::DnaEvmError,
-    ingestion::{models, EvmCursorProvider},
+    ingestion::{models, EvmCursorProvider, EvmCursorProviderOptions},
 };
 
 use super::common::RpcArgs;
@@ -28,7 +30,11 @@ pub async fn run_debug_chain_tracker(args: DebugChainTrackerArgs) -> Result<(), 
     let provider_factory = args.rpc.to_json_rpc_provider_factory()?;
     let provider = provider_factory.new_provider();
 
-    let cursor_provider = EvmCursorProvider::new(provider);
+    let options = EvmCursorProviderOptions {
+        poll_interval: Duration::from_secs(5),
+    };
+
+    let cursor_provider = EvmCursorProvider::new(provider, options);
     let (mut cursor_stream, handle) =
         BlockIngestionDriver::new(cursor_provider, MockSnapshotReader, Default::default())
             .start(ct);

@@ -17,12 +17,27 @@ use super::{
 
 pub struct EvmCursorProvider {
     provider: Arc<JsonRpcProvider>,
+    options: EvmCursorProviderOptions,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct EvmCursorProviderOptions {
+    pub poll_interval: Duration,
 }
 
 impl EvmCursorProvider {
-    pub fn new(provider: JsonRpcProvider) -> Self {
+    pub fn new(provider: JsonRpcProvider, options: EvmCursorProviderOptions) -> Self {
         Self {
             provider: provider.into(),
+            options,
+        }
+    }
+}
+
+impl Default for EvmCursorProviderOptions {
+    fn default() -> Self {
+        Self {
+            poll_interval: Duration::from_secs(3),
         }
     }
 }
@@ -33,18 +48,13 @@ impl CursorProvider for EvmCursorProvider {
     type CursorStream = ReceiverStream<Cursor>;
 
     async fn subscribe_head(&self) -> Result<Self::CursorStream, Self::Error> {
-        let head = get_block_id(
-            &self.provider,
-            models::BlockId::Number(models::BlockNumberOrTag::Latest),
-        )
-        .await?;
-
         let (tx, rx) = mpsc::channel(1024);
 
         tokio::spawn(
             poll_block_id(
                 self.provider.clone(),
                 models::BlockId::Number(models::BlockNumberOrTag::Latest),
+                self.options,
                 tx,
             )
             .inspect_err(|err| {
@@ -57,18 +67,13 @@ impl CursorProvider for EvmCursorProvider {
 
     /// Subscribe to changes to the current finalized block.
     async fn subscribe_finalized(&self) -> Result<Self::CursorStream, Self::Error> {
-        let finalized = get_block_id(
-            &self.provider,
-            models::BlockId::Number(models::BlockNumberOrTag::Finalized),
-        )
-        .await?;
-
         let (tx, rx) = mpsc::channel(1024);
 
         tokio::spawn(
             poll_block_id(
                 self.provider.clone(),
                 models::BlockId::Number(models::BlockNumberOrTag::Finalized),
+                self.options,
                 tx,
             )
             .inspect_err(|err| {
@@ -96,6 +101,7 @@ impl CursorProvider for EvmCursorProvider {
 async fn poll_block_id(
     provider: Arc<JsonRpcProvider>,
     id: models::BlockId,
+    options: EvmCursorProviderOptions,
     tx: mpsc::Sender<Cursor>,
 ) -> Result<(), JsonRpcProviderError> {
     let mut previous = get_block_id(&provider, id).await?;
@@ -114,7 +120,7 @@ async fn poll_block_id(
             previous = cursor;
         }
 
-        tokio::time::sleep(Duration::from_secs(1)).await;
+        tokio::time::sleep(options.poll_interval).await;
     }
 }
 

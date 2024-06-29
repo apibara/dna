@@ -6,7 +6,7 @@ use futures_util::Stream;
 use tokio::{sync::mpsc, task::JoinHandle};
 use tokio_stream::{wrappers::ReceiverStream, StreamExt};
 use tokio_util::sync::CancellationToken;
-use tracing::warn;
+use tracing::{trace, warn};
 
 use crate::core::Cursor;
 
@@ -240,9 +240,180 @@ where
         !self.queued_messages.is_empty()
     }
 
-    async fn update_head(&mut self, head: Cursor) -> Result<(), BlockIngestionDriverError> {
-        self.head = head;
+    #[tracing::instrument(skip(self), err(Debug))]
+    async fn update_head(&mut self, new_head: Cursor) -> Result<(), BlockIngestionDriverError> {
+        trace!(?new_head, "updating head");
 
+        // Check if the head appends cleanly to the previous one
+        // This is the most common case and it doesn't require any special handling.
+        let new_head_parent = self
+            .cursor_provider
+            .get_parent_cursor(&new_head)
+            .await
+            .change_context(BlockIngestionDriverError::CursorProvider)
+            .attach_printable("failed to get parent cursor")?;
+
+        trace!(?new_head_parent, "new head parent");
+
+        if new_head_parent == self.head {
+            trace!("clean chain append");
+            self.canonical.insert(new_head.number, new_head.clone());
+            self.head = new_head;
+            self.queued_messages
+                .push_back(ChainChangeV2_ChangeMe_Before_Release::NewHead(
+                    self.head.clone(),
+                ));
+
+            return Ok(());
+        }
+
+        // These cursors have been invalidated.
+        let mut invalidated_cursors = Vec::new();
+
+        // Check that the new head is not behind the current head.
+        // If that happens, we need to reorganize the chain. This can happen on
+        // chains like Starknet with a centralized sequencer.
+        //
+        // We handle this case by shrinking the old chain until we reach the same
+        // height as the new chain. Then we can handle it like any other reorg.
+        //
+        // TESTING STRATEGY (with Anvil):
+        //
+        //      /--o---Z
+        // o---X---o---o---Y
+        //     ^ s(0x0)
+        //
+        // - Start anvil with fast (1s) block time.
+        //     Fast block times are needed to produce blocks in between polls.
+        // - Start a cursor provider with slow polling rate.
+        // - Wait for block X and take snapshot 0x0.
+        // - Wait for block Y > X. Wait time: 3 * poll_rate.
+        // - Restore snapshot 0x0.
+        // - Wait for block X < Z < Y. Check the reorg is detected.
+        if new_head.number <= self.head.number {
+            trace!(?new_head, ?self.head, "shrinking invalidated chain");
+            let mut number = self.head.number;
+            while number >= new_head.number {
+                let Some(cursor) = self.canonical.remove(&number) else {
+                    return Err(BlockIngestionDriverError::InvalidState)
+                        .attach_printable("missing block in canonical chain")
+                        .attach_printable_lazy(|| format!("block number: {number}"))?;
+                };
+                invalidated_cursors.push(cursor);
+                number -= 1;
+            }
+        }
+
+        // Walk backwards from the new head until we find a block that belongs to
+        // the canonical chain.
+        //
+        // - Case 1: if the block is the current head, we can just update the head.
+        // - Case 2: if the block is not the current head, we have a reorganization.
+        //
+        // CASE 1 - TESTING STRATEGY (with Anvil):
+        //
+        // - Start anvil with fast (1s) block time.
+        //     Fast block times are needed to produce blocks in between polls.
+        // - Start a cursor provider with slow polling rate.
+        // - Cursors should be produced in "bursts", but without any reorg.
+        //
+        // CASE 2 - TESTING STRATEGY (with Anvil):
+        //
+        //      /--o---o---o---o---o---Z
+        // o---X---o---o---Y
+        //     ^ s(0x0)
+        //
+        // - Start anvil with fast (1s) block time.
+        //     Fast block times are needed to produce blocks in between polls.
+        // - Start a cursor provider with slow polling rate.
+        // - Wait for block X and take snapshot 0x0.
+        // - Wait for block Y to be detected.
+        // - Quickly restore snapshot 0x0 and mine a longer chain (e.g. `anvil_mine([0x20])`).
+        // - Wait for block Z to be detected. Check the reorg is detected.
+
+        let mut current = new_head.clone();
+        // These cursors are not invalidated yet. That depends whether we had a reorg or not.
+        let mut inspected_cursors = Vec::new();
+
+        let common_ancestor = loop {
+            if current.number <= self.finalized.number {
+                return Err(BlockIngestionDriverError::InvalidState)
+                    .attach_printable("reorg is behind finalized")
+                    .attach_printable_lazy(|| format!("finalized: {}", self.finalized))
+                    .attach_printable_lazy(|| format!("new head: {}", new_head))
+                    .attach_printable_lazy(|| format!("head: {}", self.head))?;
+            }
+
+            let parent = self
+                .cursor_provider
+                .get_parent_cursor(&current)
+                .await
+                .change_context(BlockIngestionDriverError::CursorProvider)
+                .attach_printable("failed to get parent cursor")?;
+
+            trace!(?current, ?parent, "walking chain back");
+
+            inspected_cursors.push(current.clone());
+
+            if let Some(canonical_parent) = self.canonical.get(&parent.number) {
+                if canonical_parent == &parent {
+                    break parent;
+                } else {
+                    // Cursor will exist since we checked it before.
+                    let cursor = self
+                        .canonical
+                        .remove(&parent.number)
+                        .expect("canonical cursor");
+                    invalidated_cursors.push(cursor);
+                }
+            }
+
+            current = parent;
+        };
+
+        // println!("common_ancestor: {:?}", common_ancestor);
+        // println!("inspected: {:?}", inspected_cursors);
+        // println!("invalidated: {:?}", invalidated_cursors);
+
+        // No cursor has been invalidated. It means that the new head belongs to the same
+        // chain and it was just too far ahead.
+        if invalidated_cursors.is_empty() {
+            for cursor in inspected_cursors.into_iter() {
+                self.canonical.insert(cursor.number, cursor);
+            }
+            self.head = new_head;
+            return Ok(());
+        }
+
+        for cursor in inspected_cursors.into_iter() {
+            // All cursors should have been removed.
+            if self.canonical.insert(cursor.number, cursor).is_some() {
+                return Err(BlockIngestionDriverError::InvalidState)
+                    .attach_printable("cursor already in canonical chain");
+            }
+        }
+
+        // Update head.
+        self.head = new_head;
+
+        // If we pushed any cursor in the old canonical chain, we need to adjust
+        // the previous cursor to the new common ancestor so that the downstream
+        // components can continue from there.
+        if let Some(previous) = &self.previous {
+            if previous.number > common_ancestor.number {
+                self.previous = Some(common_ancestor.clone());
+            }
+        }
+
+        // Warn downstream components of the reorganization.
+        invalidated_cursors.reverse();
+        self.queued_messages
+            .push_back(ChainChangeV2_ChangeMe_Before_Release::Invalidate {
+                new_head: common_ancestor.clone(),
+                removed: invalidated_cursors,
+            });
+
+        // Send them the new chain head.
         self.queued_messages
             .push_back(ChainChangeV2_ChangeMe_Before_Release::NewHead(
                 self.head.clone(),
@@ -251,6 +422,7 @@ where
         Ok(())
     }
 
+    #[tracing::instrument(skip(self), err(Debug))]
     fn update_finalized(&mut self, finalized: Cursor) -> Result<(), BlockIngestionDriverError> {
         if finalized.number < self.finalized.number {
             return Err(BlockIngestionDriverError::InvalidState)

@@ -6,5 +6,5 @@ mod provider;
 
 // pub use self::chain_tracker::ChainTracker;
 // pub use self::ingestion_service::{IngestionOptions, IngestionService, RpcIngestionOptions};
-pub use self::chain_tracker::EvmCursorProvider;
+pub use self::chain_tracker::{EvmCursorProvider, EvmCursorProviderOptions};
 pub use self::provider::{models, JsonRpcProvider, JsonRpcProviderFactory, JsonRpcProviderOptions};
