@@ -51,7 +51,6 @@ governor = "0.6.0"
 hex = { version = "0.4.3", features = ["serde"] }
 http = "0.2.9"
 hyper = "0.14.20"
-insta = { version = "1.39.0" }
 lazy_static = "1.4.0"
 lru = "0.12.3"
 jemallocator = { version = "0.5.0" }
@@ -112,7 +111,3 @@ quickcheck_macros = "1.0.0"
 warp = "0.3.5"
 wiremock = "0.5.19"
 url = "2.3"
-
-[profile.dev.package]
-insta.opt-level = 3
-similar.opt-level = 3

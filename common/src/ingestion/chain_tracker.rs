@@ -371,17 +371,20 @@ where
             current = parent;
         };
 
-        // println!("common_ancestor: {:?}", common_ancestor);
-        // println!("inspected: {:?}", inspected_cursors);
-        // println!("invalidated: {:?}", invalidated_cursors);
-
         // No cursor has been invalidated. It means that the new head belongs to the same
         // chain and it was just too far ahead.
         if invalidated_cursors.is_empty() {
             for cursor in inspected_cursors.into_iter() {
                 self.canonical.insert(cursor.number, cursor);
             }
+
             self.head = new_head;
+
+            self.queued_messages
+                .push_back(ChainChangeV2_ChangeMe_Before_Release::NewHead(
+                    self.head.clone(),
+                ));
+
             return Ok(());
         }
 
@@ -401,17 +404,23 @@ where
         // components can continue from there.
         if let Some(previous) = &self.previous {
             if previous.number > common_ancestor.number {
+                // Warn downstream components of the reorganization.
+                // Only do this if we send any cursor that has been invalidated.
+                let removed_cursors = invalidated_cursors
+                    .into_iter()
+                    .filter(|c| c.number <= previous.number)
+                    .rev()
+                    .collect();
+
                 self.previous = Some(common_ancestor.clone());
+
+                self.queued_messages
+                    .push_back(ChainChangeV2_ChangeMe_Before_Release::Invalidate {
+                        new_head: common_ancestor.clone(),
+                        removed: removed_cursors,
+                    });
             }
         }
-
-        // Warn downstream components of the reorganization.
-        invalidated_cursors.reverse();
-        self.queued_messages
-            .push_back(ChainChangeV2_ChangeMe_Before_Release::Invalidate {
-                new_head: common_ancestor.clone(),
-                removed: invalidated_cursors,
-            });
 
         // Send them the new chain head.
         self.queued_messages
@@ -552,7 +561,7 @@ impl std::fmt::Display for BlockIngestionDriverError {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
+    use std::{collections::HashMap, sync::Arc};
 
     use tokio::sync::{mpsc, Mutex};
     use tokio_stream::wrappers::ReceiverStream;
@@ -566,12 +575,13 @@ mod tests {
     use super::*;
 
     struct CursorProviderTx {
+        pub parent: Arc<Mutex<HashMap<Cursor, Cursor>>>,
         pub head_tx: mpsc::Sender<Cursor>,
         pub finalized_tx: mpsc::Sender<Cursor>,
     }
 
     struct TestCursorProvider {
-        pub parent: HashMap<Cursor, Cursor>,
+        pub parent: Arc<Mutex<HashMap<Cursor, Cursor>>>,
         pub head_rx: Mutex<Option<mpsc::Receiver<Cursor>>>,
         pub finalized_rx: Mutex<Option<mpsc::Receiver<Cursor>>>,
     }
@@ -615,13 +625,16 @@ mod tests {
         let (head_tx, head_rx) = mpsc::channel(10);
         let (finalized_tx, finalized_rx) = mpsc::channel(10);
 
+        let parent = Arc::new(Mutex::new(HashMap::new()));
+
         let provider = TestCursorProvider {
-            parent: HashMap::new(),
+            parent: parent.clone(),
             finalized_rx: Mutex::new(finalized_rx.into()),
             head_rx: Mutex::new(head_rx.into()),
         };
 
         let tx = CursorProviderTx {
+            parent,
             head_tx,
             finalized_tx,
         };
@@ -635,11 +648,11 @@ mod tests {
     #[tokio::test]
     async fn test_starts_at_beginning_of_segment_group() {
         let snapshot_reader = new_snapshot_reader();
-        let (mut cursor_provider, cursor_provider_tx) = new_cursor_provider();
+        let (cursor_provider, cursor_provider_tx) = new_cursor_provider();
         let ct = CancellationToken::default();
 
         for i in 0..10 {
-            cursor_provider.parent.insert(
+            cursor_provider.parent.lock().await.insert(
                 new_test_cursor(1_000_000 + i + 1, 0),
                 new_test_cursor(1_000_000 + i, 0),
             );
@@ -681,11 +694,11 @@ mod tests {
     #[tokio::test]
     async fn test_cursors_include_hash_for_non_finalized_cursors() {
         let snapshot_reader = new_snapshot_reader();
-        let (mut cursor_provider, cursor_provider_tx) = new_cursor_provider();
+        let (cursor_provider, cursor_provider_tx) = new_cursor_provider();
         let ct = CancellationToken::default();
 
         for i in 0..50 {
-            cursor_provider.parent.insert(
+            cursor_provider.parent.lock().await.insert(
                 new_test_cursor(71_050 + i + 1, 0),
                 new_test_cursor(71_050 + i, 0),
             );
@@ -736,11 +749,11 @@ mod tests {
     #[tokio::test]
     async fn test_state_is_updated() {
         let snapshot_reader = new_snapshot_reader();
-        let (mut cursor_provider, cursor_provider_tx) = new_cursor_provider();
+        let (cursor_provider, cursor_provider_tx) = new_cursor_provider();
         let ct = CancellationToken::default();
 
         for i in 0..100 {
-            cursor_provider.parent.insert(
+            cursor_provider.parent.lock().await.insert(
                 new_test_cursor(71_050 + i + 1, 0),
                 new_test_cursor(71_050 + i, 0),
             );
@@ -828,6 +841,390 @@ mod tests {
         handle.await.unwrap().unwrap();
     }
 
+    /// Test a chain reorganization that doesn't involve an ingested block.
+    ///
+    /// The new chain is SHORTER.
+    ///
+    /// The stream SHOULD NOT include a reorg message.
+    #[tokio::test]
+    async fn test_shrinking_reorg_after_current_cursor() {
+        let snapshot_reader = new_snapshot_reader();
+        let (cursor_provider, cursor_provider_tx) = new_cursor_provider();
+        let ct = CancellationToken::default();
+
+        for i in 0..10 {
+            cursor_provider.parent.lock().await.insert(
+                new_test_cursor(1_000_000 + i + 1, 0),
+                new_test_cursor(1_000_000 + i, 0),
+            );
+        }
+
+        cursor_provider_tx
+            .head_tx
+            .send(new_test_cursor(1_000_010, 0))
+            .await
+            .unwrap();
+        cursor_provider_tx
+            .finalized_tx
+            .send(new_test_cursor(1_000_000, 0))
+            .await
+            .unwrap();
+
+        let driver = BlockIngestionDriver::new(
+            cursor_provider,
+            snapshot_reader,
+            BlockIngestionDriverOptions { channel_size: 1 },
+        );
+
+        let (mut cursor_stream, handle) = driver.start(ct.clone());
+
+        let initialize = cursor_stream.next().await.unwrap();
+        assert!(matches!(
+            initialize,
+            ChainChangeV2_ChangeMe_Before_Release::Initialize { .. }
+        ));
+
+        for i in 0..1000 {
+            let cursor = cursor_stream.next().await.unwrap();
+            let cursor = cursor.as_ingest().unwrap();
+            assert_eq!(*cursor, Cursor::new_finalized(71_000 + i));
+        }
+
+        cursor_provider_tx
+            .parent
+            .lock()
+            .await
+            .insert(new_test_cursor(1_000_001, 1), new_test_cursor(1_000_000, 0));
+
+        // Now the head moves back.
+        cursor_provider_tx
+            .head_tx
+            .send(new_test_cursor(1_000_001, 1))
+            .await
+            .unwrap();
+
+        let message = cursor_stream.next().await.unwrap();
+        let message = message.as_new_head().unwrap();
+        assert_eq!(*message, new_test_cursor(1_000_001, 1));
+
+        for i in 0..1000 {
+            let cursor = cursor_stream.next().await.unwrap();
+            let cursor = cursor.as_ingest().unwrap();
+            assert_eq!(*cursor, Cursor::new_finalized(72_000 + i));
+        }
+
+        ct.cancel();
+        handle.await.unwrap().unwrap();
+    }
+
+    /// Test a chain reorganization that does involve an ingested block.
+    ///
+    /// The new chain is SHORTER.
+    ///
+    /// The stream SHOULD include a reorg message.
+    #[tokio::test]
+    async fn test_shrinking_reorg_before_current_cursor() {
+        let snapshot_reader = new_snapshot_reader();
+        let (cursor_provider, cursor_provider_tx) = new_cursor_provider();
+        let ct = CancellationToken::default();
+
+        for i in 0..1000 {
+            cursor_provider.parent.lock().await.insert(
+                new_test_cursor(71_100 + i + 1, 0),
+                new_test_cursor(71_100 + i, 0),
+            );
+        }
+
+        cursor_provider_tx
+            .head_tx
+            .send(new_test_cursor(72_000, 0))
+            .await
+            .unwrap();
+        cursor_provider_tx
+            .finalized_tx
+            .send(new_test_cursor(71_100, 0))
+            .await
+            .unwrap();
+
+        let driver = BlockIngestionDriver::new(
+            cursor_provider,
+            snapshot_reader,
+            BlockIngestionDriverOptions { channel_size: 1 },
+        );
+
+        let (mut cursor_stream, handle) = driver.start(ct.clone());
+
+        let initialize = cursor_stream.next().await.unwrap();
+        assert!(matches!(
+            initialize,
+            ChainChangeV2_ChangeMe_Before_Release::Initialize { .. }
+        ));
+
+        for i in 0..=100 {
+            let cursor = cursor_stream.next().await.unwrap();
+            let cursor = cursor.as_ingest().unwrap();
+            assert_eq!(*cursor, Cursor::new_finalized(71_000 + i));
+        }
+
+        // Consume some non finalized cursors.
+        for i in 1..=35 {
+            let cursor = cursor_stream.next().await.unwrap();
+            let cursor = cursor.as_ingest().unwrap();
+            assert_eq!(*cursor, new_test_cursor(71_100 + i, 0));
+        }
+
+        // Simulate a reorg where the head moves to 71_130 then to 71_140.
+
+        // Link chains at 71_129.
+        cursor_provider_tx
+            .parent
+            .lock()
+            .await
+            .insert(new_test_cursor(71_130, 1), new_test_cursor(71_129, 0));
+
+        for i in 71_130..71_140 {
+            cursor_provider_tx
+                .parent
+                .lock()
+                .await
+                .insert(new_test_cursor(i + 1, 1), new_test_cursor(i, 1));
+        }
+
+        // Now the head moves back.
+        cursor_provider_tx
+            .head_tx
+            .send(new_test_cursor(71_140, 1))
+            .await
+            .unwrap();
+
+        let message = cursor_stream.next().await.unwrap();
+        let (new_head, removed_cursors) = message.as_invalidated().unwrap();
+
+        assert_eq!(*new_head, new_test_cursor(71_129, 0));
+        assert_eq!(
+            removed_cursors,
+            &[
+                new_test_cursor(71_130, 0),
+                new_test_cursor(71_131, 0),
+                new_test_cursor(71_132, 0),
+                new_test_cursor(71_133, 0),
+                new_test_cursor(71_134, 0),
+                new_test_cursor(71_135, 0),
+            ]
+        );
+
+        let message = cursor_stream.next().await.unwrap();
+        let new_head = message.as_new_head().unwrap();
+        assert_eq!(*new_head, new_test_cursor(71_140, 1));
+
+        // Ingest the new chain.
+        for i in 0..=10 {
+            let cursor = cursor_stream.next().await.unwrap();
+            let cursor = cursor.as_ingest().unwrap();
+            assert_eq!(*cursor, new_test_cursor(71_130 + i, 1));
+        }
+
+        ct.cancel();
+        handle.await.unwrap().unwrap();
+    }
+
+    /// Test a chain reorganization that doesn't involve an ingested block.
+    ///
+    /// The new chain is LONGER.
+    ///
+    /// The stream SHOULD NOT include a reorg message.
+    #[tokio::test]
+    async fn test_reorg_before_current_cursor() {
+        let snapshot_reader = new_snapshot_reader();
+        let (cursor_provider, cursor_provider_tx) = new_cursor_provider();
+        let ct = CancellationToken::default();
+
+        for i in 0..10 {
+            cursor_provider.parent.lock().await.insert(
+                new_test_cursor(1_000_000 + i + 1, 0),
+                new_test_cursor(1_000_000 + i, 0),
+            );
+        }
+
+        cursor_provider_tx
+            .head_tx
+            .send(new_test_cursor(1_000_010, 0))
+            .await
+            .unwrap();
+        cursor_provider_tx
+            .finalized_tx
+            .send(new_test_cursor(1_000_000, 0))
+            .await
+            .unwrap();
+
+        let driver = BlockIngestionDriver::new(
+            cursor_provider,
+            snapshot_reader,
+            BlockIngestionDriverOptions { channel_size: 1 },
+        );
+
+        let (mut cursor_stream, handle) = driver.start(ct.clone());
+
+        let initialize = cursor_stream.next().await.unwrap();
+        assert!(matches!(
+            initialize,
+            ChainChangeV2_ChangeMe_Before_Release::Initialize { .. }
+        ));
+
+        for i in 0..1000 {
+            let cursor = cursor_stream.next().await.unwrap();
+            let cursor = cursor.as_ingest().unwrap();
+            assert_eq!(*cursor, Cursor::new_finalized(71_000 + i));
+        }
+
+        // Link new chain with old chain at 1_000_001 -> 1_000_000.
+        cursor_provider_tx
+            .parent
+            .lock()
+            .await
+            .insert(new_test_cursor(1_000_001, 1), new_test_cursor(1_000_000, 0));
+
+        for i in 1_000_001..=1_000_100 {
+            cursor_provider_tx
+                .parent
+                .lock()
+                .await
+                .insert(new_test_cursor(i + 1, 1), new_test_cursor(i, 1));
+        }
+
+        // Now the head moves forward by a lot.
+        cursor_provider_tx
+            .head_tx
+            .send(new_test_cursor(1_000_100, 1))
+            .await
+            .unwrap();
+
+        let message = cursor_stream.next().await.unwrap();
+        let message = message.as_new_head().unwrap();
+        assert_eq!(*message, new_test_cursor(1_000_100, 1));
+
+        // Ingestion continues as usual.
+        for i in 0..1000 {
+            let cursor = cursor_stream.next().await.unwrap();
+            let cursor = cursor.as_ingest().unwrap();
+            assert_eq!(*cursor, Cursor::new_finalized(72_000 + i));
+        }
+
+        ct.cancel();
+        handle.await.unwrap().unwrap();
+    }
+
+    /// Test a chain reorganization that does involve an ingested block.
+    ///
+    /// The new chain is LONGER.
+    ///
+    /// The stream SHOULD include a reorg message.
+    #[tokio::test]
+    async fn test_reorg_after_current_cursor() {
+        let snapshot_reader = new_snapshot_reader();
+        let (cursor_provider, cursor_provider_tx) = new_cursor_provider();
+        let ct = CancellationToken::default();
+
+        for i in 0..1000 {
+            cursor_provider.parent.lock().await.insert(
+                new_test_cursor(71_100 + i + 1, 0),
+                new_test_cursor(71_100 + i, 0),
+            );
+        }
+
+        cursor_provider_tx
+            .head_tx
+            .send(new_test_cursor(71_140, 0))
+            .await
+            .unwrap();
+        cursor_provider_tx
+            .finalized_tx
+            .send(new_test_cursor(71_100, 0))
+            .await
+            .unwrap();
+
+        let driver = BlockIngestionDriver::new(
+            cursor_provider,
+            snapshot_reader,
+            BlockIngestionDriverOptions { channel_size: 1 },
+        );
+
+        let (mut cursor_stream, handle) = driver.start(ct.clone());
+
+        let initialize = cursor_stream.next().await.unwrap();
+        assert!(matches!(
+            initialize,
+            ChainChangeV2_ChangeMe_Before_Release::Initialize { .. }
+        ));
+
+        for i in 0..=100 {
+            let cursor = cursor_stream.next().await.unwrap();
+            let cursor = cursor.as_ingest().unwrap();
+            assert_eq!(*cursor, Cursor::new_finalized(71_000 + i));
+        }
+
+        // Consume some non finalized cursors.
+        for i in 1..=35 {
+            let cursor = cursor_stream.next().await.unwrap();
+            let cursor = cursor.as_ingest().unwrap();
+            assert_eq!(*cursor, new_test_cursor(71_100 + i, 0));
+        }
+
+        // Simulate a reorg where the head moves to 71_130 then to 71_150.
+
+        // Link chains at 71_129.
+        cursor_provider_tx
+            .parent
+            .lock()
+            .await
+            .insert(new_test_cursor(71_130, 1), new_test_cursor(71_129, 0));
+
+        for i in 71_130..71_150 {
+            cursor_provider_tx
+                .parent
+                .lock()
+                .await
+                .insert(new_test_cursor(i + 1, 1), new_test_cursor(i, 1));
+        }
+
+        // Now the head moves forward to 71_150.
+        cursor_provider_tx
+            .head_tx
+            .send(new_test_cursor(71_150, 1))
+            .await
+            .unwrap();
+
+        let message = cursor_stream.next().await.unwrap();
+        let (new_head, removed_cursors) = message.as_invalidated().unwrap();
+
+        assert_eq!(*new_head, new_test_cursor(71_129, 0));
+        assert_eq!(
+            removed_cursors,
+            &[
+                new_test_cursor(71_130, 0),
+                new_test_cursor(71_131, 0),
+                new_test_cursor(71_132, 0),
+                new_test_cursor(71_133, 0),
+                new_test_cursor(71_134, 0),
+                new_test_cursor(71_135, 0),
+            ]
+        );
+
+        let message = cursor_stream.next().await.unwrap();
+        let new_head = message.as_new_head().unwrap();
+        assert_eq!(*new_head, new_test_cursor(71_150, 1));
+
+        // Ingest the new chain.
+        for i in 0..=20 {
+            let cursor = cursor_stream.next().await.unwrap();
+            let cursor = cursor.as_ingest().unwrap();
+            assert_eq!(*cursor, new_test_cursor(71_130 + i, 1));
+        }
+
+        ct.cancel();
+        handle.await.unwrap().unwrap();
+    }
+
     impl error_stack::Context for TestError {}
 
     impl std::fmt::Display for TestError {
@@ -862,7 +1259,8 @@ mod tests {
         }
 
         async fn get_parent_cursor(&self, cursor: &Cursor) -> Result<Cursor, Self::Error> {
-            Ok(self.parent.get(cursor).cloned().expect("parent not found"))
+            let parent = self.parent.lock().await;
+            Ok(parent.get(cursor).cloned().expect("parent not found"))
         }
     }
 }
