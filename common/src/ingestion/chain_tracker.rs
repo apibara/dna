@@ -6,7 +6,7 @@ use futures_util::Stream;
 use tokio::{sync::mpsc, task::JoinHandle};
 use tokio_stream::{wrappers::ReceiverStream, StreamExt};
 use tokio_util::sync::CancellationToken;
-use tracing::{trace, warn};
+use tracing::{debug, info, trace, warn};
 
 use crate::core::Cursor;
 
@@ -125,6 +125,8 @@ where
         tx: mpsc::Sender<ChainChangeV2_ChangeMe_Before_Release>,
         ct: CancellationToken,
     ) -> Result<(), BlockIngestionDriverError> {
+        info!("starting block ingestion driver");
+
         let mut head_stream = self
             .cursor_provider
             .subscribe_head()
@@ -153,6 +155,8 @@ where
         .ok_or(BlockIngestionDriverError::CursorProvider)
         .attach_printable("finalized stream closed")?;
 
+        info!(head = %self.head, finalized = %self.finalized, "received initial head and finalized blocks");
+
         let starting_snapshot = self
             .snapshot_reader
             .read()
@@ -160,16 +164,17 @@ where
             .change_context(BlockIngestionDriverError::Snapshot)
             .attach_printable("failed to read snapshot")?;
 
-        self.previous = if starting_snapshot.ingestion.group_count == 0 {
-            None
-        } else {
-            let ingestion = &starting_snapshot.ingestion;
+        debug!(?starting_snapshot, "read starting snapshot");
+
+        self.previous = if let Some(snapshot) = starting_snapshot {
+            let ingestion = &snapshot.ingestion;
             let first_block_to_ingest = ingestion.first_block_number
-                + (ingestion.group_count as u64
-                    * starting_snapshot.segment_options.segment_group_blocks());
+                + (ingestion.group_count as u64 * snapshot.segment_options.segment_group_blocks());
             // Notice that we track the last ingested block.
             // Also notice that we check that group_count > 0 above.
             Some(Cursor::new_finalized(first_block_to_ingest - 1))
+        } else {
+            None
         };
 
         self.initialize_canonical_chain().await?;
@@ -485,6 +490,7 @@ where
         Ok(())
     }
 
+    #[tracing::instrument(skip_all, err(Debug))]
     async fn initialize_canonical_chain(&mut self) -> Result<(), BlockIngestionDriverError> {
         let mut current = self.head.clone();
 
@@ -1235,8 +1241,8 @@ mod tests {
 
     #[async_trait::async_trait]
     impl SnapshotReader for TestSnapshotReader {
-        async fn read(&self) -> Result<Snapshot, SnapshotError> {
-            Ok(self.snapshot.clone())
+        async fn read(&self) -> Result<Option<Snapshot>, SnapshotError> {
+            Ok(self.snapshot.clone().into())
         }
     }
 

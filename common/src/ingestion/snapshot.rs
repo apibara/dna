@@ -14,7 +14,7 @@ pub struct Snapshot {
     pub ingestion: IngestionState,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct IngestionState {
     /// First block number ingested, inclusive.
     pub first_block_number: u64,

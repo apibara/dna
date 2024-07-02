@@ -1,6 +1,11 @@
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use error_stack::{Result, ResultExt};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    sync::Mutex,
+};
 
 use crate::storage::StorageBackend;
 
@@ -11,14 +16,15 @@ static SNAPSHOT_FILENAME: &str = "snapshot";
 #[async_trait]
 pub trait SnapshotReader {
     /// Read the current snapshot, or the default snapshot if no snapshot exists.
-    async fn read(&self) -> Result<Snapshot, SnapshotError>;
+    async fn read(&self) -> Result<Option<Snapshot>, SnapshotError>;
 }
 
+#[derive(Debug, Clone)]
 pub struct SnapshotManager<S>
 where
     S: StorageBackend + Send + Sync + 'static,
 {
-    storage: S,
+    storage: Arc<Mutex<S>>,
 }
 
 #[derive(Debug)]
@@ -33,12 +39,15 @@ where
     <S as StorageBackend>::Reader: Unpin,
 {
     pub fn new(storage: S) -> Self {
-        Self { storage }
+        Self {
+            storage: Arc::new(storage.into()),
+        }
     }
 
-    pub async fn read(&mut self) -> Result<Option<Snapshot>, SnapshotError> {
-        if !self
-            .storage
+    pub async fn read(&self) -> Result<Option<Snapshot>, SnapshotError> {
+        let mut storage = self.storage.lock().await;
+
+        if !storage
             .exists("", SNAPSHOT_FILENAME)
             .await
             .change_context(SnapshotError::Io)
@@ -47,8 +56,7 @@ where
             return Ok(None);
         }
 
-        let mut reader = self
-            .storage
+        let mut reader = storage
             .get("", SNAPSHOT_FILENAME)
             .await
             .change_context(SnapshotError::Io)
@@ -68,14 +76,15 @@ where
         Ok(Some(snapshot))
     }
 
-    pub async fn write(&mut self, snapshot: &Snapshot) -> Result<(), SnapshotError> {
+    pub async fn write(&self, snapshot: &Snapshot) -> Result<(), SnapshotError> {
         let snapshot = snapshot
             .to_vec()
             .change_context(SnapshotError::Serialization)
             .attach_printable("failed to serialize snapshot")?;
 
-        let mut writer = self
-            .storage
+        let mut storage = self.storage.lock().await;
+
+        let mut writer = storage
             .put("", SNAPSHOT_FILENAME)
             .await
             .change_context(SnapshotError::Io)
@@ -92,6 +101,18 @@ where
         Ok(())
     }
 }
+
+#[async_trait]
+impl<S> SnapshotReader for SnapshotManager<S>
+where
+    S: StorageBackend + Send + Sync + 'static,
+    <S as StorageBackend>::Reader: Unpin + Send,
+{
+    async fn read(&self) -> Result<Option<Snapshot>, SnapshotError> {
+        self.read().await
+    }
+}
+
 impl error_stack::Context for SnapshotError {}
 
 impl std::fmt::Display for SnapshotError {

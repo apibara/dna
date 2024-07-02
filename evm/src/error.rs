@@ -1,5 +1,3 @@
-use std::process::ExitCode;
-
 #[derive(Debug)]
 pub enum DnaEvmError {
     Configuration,

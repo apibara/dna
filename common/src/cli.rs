@@ -1,6 +1,15 @@
 use clap::Args;
 
-use super::SegmentOptions;
+use crate::segment::SegmentOptions;
+
+#[derive(Args, Debug, Clone)]
+pub struct IngestionArgs {
+    /// Start ingesting data from this block, replacing any existing snapshot.
+    #[arg(long, env)]
+    pub starting_block: Option<u64>,
+    #[clap(flatten)]
+    pub segment: SegmentArgs,
+}
 
 #[derive(Debug, Args, Clone)]
 pub struct SegmentArgs {

@@ -54,8 +54,8 @@ pub async fn run_debug_chain_tracker(args: DebugChainTrackerArgs) -> Result<(), 
 
 #[async_trait::async_trait]
 impl SnapshotReader for MockSnapshotReader {
-    async fn read(&self) -> Result<Snapshot, SnapshotError> {
-        Ok(Snapshot {
+    async fn read(&self) -> Result<Option<Snapshot>, SnapshotError> {
+        Ok(Some(Snapshot {
             revision: 0,
             segment_options: SegmentOptions {
                 segment_size: 100,
@@ -66,6 +66,6 @@ impl SnapshotReader for MockSnapshotReader {
                 extra_segment_count: 0,
                 first_block_number: 0,
             },
-        })
+        }))
     }
 }
