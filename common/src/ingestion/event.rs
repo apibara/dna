@@ -6,26 +6,17 @@ use crate::{
 };
 
 #[derive(Debug, Clone)]
-pub struct IngestedBlock {
-    pub cursor: Cursor,
-}
-
-#[derive(Debug, Clone)]
 pub enum SnapshotChange {
-    Started(Snapshot),
+    Started {
+        snapshot: Snapshot,
+    },
     StateChanged {
         new_state: IngestionState,
         finalized: Cursor,
     },
-    BlockIngested(IngestedBlock),
-}
-
-#[derive(Debug, Clone)]
-pub enum BlockEvent {
-    Started { finalized: Cursor },
-    Finalized(Cursor),
-    Ingested(Cursor),
-    Invalidate,
+    BlockIngested {
+        cursor: Cursor,
+    },
 }
 
 impl IngestionState {

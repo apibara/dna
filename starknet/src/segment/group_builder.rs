@@ -1,54 +1,38 @@
-use apibara_dna_common::{
-    error::{DnaError, Result},
-    storage::StorageBackend,
-};
-use error_stack::ResultExt;
-use tokio::io::AsyncWriteExt;
+use apibara_dna_common::ingestion::SegmentGroupData;
+use error_stack::{Result, ResultExt};
 
-use crate::segment::store;
+use crate::{ingestion::StarknetSegmentBuilderError, segment::store};
 
 use super::index::Index;
 
 #[derive(Default)]
 pub struct SegmentGroupBuilder {
-    first_block_number: Option<u64>,
-    segment_count: usize,
     index: Index,
 }
 
 impl SegmentGroupBuilder {
     pub fn reset(&mut self) {
-        self.first_block_number = None;
-        self.segment_count = 0;
         self.index = Index::default();
     }
 
-    pub fn add_segment(&mut self, first_block_number: u64, index: Index) {
-        if self.first_block_number.is_none() {
-            self.first_block_number = Some(first_block_number);
-        }
-        self.segment_count += 1;
+    pub fn add_segment_index(&mut self, index: Index) {
         self.index.merge(index);
     }
 
-    pub async fn write<S: StorageBackend>(
+    pub fn take_segment_group_data(
         &mut self,
-        group_name: &str,
-        storage: &mut S,
-    ) -> Result<()> {
+    ) -> Result<SegmentGroupData, StarknetSegmentBuilderError> {
         let index = store::Index::try_from(std::mem::take(&mut self.index))
-            .change_context(DnaError::Fatal)
+            .change_context(StarknetSegmentBuilderError)
             .attach_printable("failed to convert segment group index")?;
         let segment_group = store::SegmentGroup { index };
+        let bytes =
+            rkyv::to_bytes::<_, 0>(&segment_group).change_context(StarknetSegmentBuilderError)?;
 
-        let mut writer = storage.put("group", group_name).await?;
-        let bytes = rkyv::to_bytes::<_, 0>(&segment_group).change_context(DnaError::Io)?;
-        writer
-            .write_all(&bytes)
-            .await
-            .change_context(DnaError::Io)?;
-        writer.shutdown().await.change_context(DnaError::Io)?;
+        self.reset();
 
-        Ok(())
+        Ok(SegmentGroupData {
+            data: bytes.to_vec(),
+        })
     }
 }

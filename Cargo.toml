@@ -10,9 +10,9 @@ members = [
     "observability",
     "protocol",
     "common",
-    "evm",
+    # "evm",
     "starknet",
-    "beaconchain",
+    # "beaconchain",
 ]
 
 [workspace.dependencies]

@@ -1,40 +1,40 @@
+use std::{collections::VecDeque, marker::PhantomData};
+
 use async_trait::async_trait;
 use error_stack::{Result, ResultExt};
-use futures_util::{Stream, StreamExt, TryFutureExt};
-use tokio::sync::mpsc;
+use futures_util::{Stream, StreamExt};
+use tokio::{io::AsyncWriteExt, sync::mpsc, task::JoinHandle};
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info};
+use tracing::{debug, info};
 
-use crate::{core::Cursor, ingestion::IngestedBlock, storage::StorageBackend};
+use crate::{
+    core::Cursor,
+    ingestion::Snapshot,
+    segment::SegmentOptions,
+    storage::{segment_prefix, LocalStorageBackend, StorageBackend},
+};
 
-use super::{BlockEvent, Snapshot, SnapshotChange, SnapshotManager};
+use super::{BlockIngestionEvent, SnapshotChange, SnapshotManager};
+
+pub struct SegmentData {
+    pub filename: String,
+    pub data: Vec<u8>,
+}
+
+pub struct SegmentGroupData {
+    pub data: Vec<u8>,
+}
 
 #[async_trait]
-pub trait SegmentBuilder {
+pub trait SegmentBuilder<T: rkyv::Archive> {
     type Error: error_stack::Context;
 
-    fn create_segment(&mut self, cursors: &[Cursor]) -> Result<(), Self::Error>;
+    async fn add_block(&mut self, block: T) -> Result<(), Self::Error>;
 
-    async fn write_segment<S>(
-        &mut self,
-        segment_name: &str,
-        storage: &mut S,
-    ) -> Result<usize, Self::Error>
-    where
-        S: StorageBackend + Send,
-        <S as StorageBackend>::Writer: Send;
+    async fn take_segment(&mut self) -> Result<Vec<SegmentData>, Self::Error>;
 
-    async fn write_segment_group<S>(
-        &mut self,
-        segment_group_name: &str,
-        storage: &mut S,
-    ) -> Result<(), Self::Error>
-    where
-        S: StorageBackend + Send,
-        <S as StorageBackend>::Writer: Send;
-
-    async fn cleanup_segment_data(&mut self, cursors: &[Cursor]) -> Result<(), Self::Error>;
+    async fn take_segment_group(&mut self) -> Result<SegmentGroupData, Self::Error>;
 }
 
 #[derive(Debug)]
@@ -43,144 +43,181 @@ pub enum SegmenterError {
     UnexpectedEvent,
     Storage,
     Snapshot,
+    StreamClosed,
+    InvalidState,
 }
 
-pub struct Segmenter<B, S, I>
+#[derive(Debug, Clone)]
+pub struct SegmenterOptions {
+    pub channel_size: usize,
+}
+
+pub struct Segmenter<T, B, S, I>
 where
-    B: SegmentBuilder + Send + Sync + 'static,
+    T: rkyv::Archive,
+    B: SegmentBuilder<T> + Send + Sync + 'static,
     S: StorageBackend + Send + Sync + 'static,
-    I: Stream<Item = BlockEvent> + Unpin + Send + Sync + 'static,
+    I: Stream<Item = BlockIngestionEvent> + Unpin + Send + Sync + 'static,
 {
     segment_builder: B,
+    local_storage: LocalStorageBackend,
     storage: S,
+    segment_options: SegmentOptions,
     snapshot_manager: SnapshotManager<S>,
-    ingestion_stream: I,
+    ingestion_stream: Option<I>,
+    options: SegmenterOptions,
+    snapshot: Snapshot,
+    head: Cursor,
+    finalized: Cursor,
+    current: Cursor,
+    block_count: usize,
+    segment_count: usize,
+    message_queue: VecDeque<SnapshotChange>,
+    _block_phantom: std::marker::PhantomData<T>,
 }
 
-impl<B, S, I> Segmenter<B, S, I>
+impl<T, B, S, I> Segmenter<T, B, S, I>
 where
-    B: SegmentBuilder + Send + Sync + 'static,
+    T: rkyv::Archive + Send + Sync + 'static,
+    <T as rkyv::Archive>::Archived:
+        rkyv::Deserialize<T, rkyv::de::deserializers::SharedDeserializeMap>,
+    B: SegmentBuilder<T> + Send + Sync + 'static,
     S: StorageBackend + Send + Sync + 'static,
-    <S as StorageBackend>::Reader: Unpin,
+    <S as StorageBackend>::Reader: Unpin + Send,
     <S as StorageBackend>::Writer: Send,
-    I: Stream<Item = BlockEvent> + Unpin + Send + Sync + 'static,
+    I: Stream<Item = BlockIngestionEvent> + Unpin + Send + Sync + 'static,
 {
     pub fn new(
         segment_builder: B,
+        segment_options: SegmentOptions,
+        local_storage: LocalStorageBackend,
         storage: S,
         snapshot_manager: SnapshotManager<S>,
         ingestion_stream: I,
+        options: SegmenterOptions,
     ) -> Self {
         Self {
             segment_builder,
+            segment_options: segment_options.clone(),
+            local_storage,
             storage,
             snapshot_manager,
-            ingestion_stream,
+            ingestion_stream: ingestion_stream.into(),
+            options,
+            snapshot: Snapshot::with_options(segment_options),
+            head: Cursor::new_finalized(0),
+            finalized: Cursor::new_finalized(0),
+            current: Cursor::new_finalized(0),
+            block_count: 0,
+            segment_count: 0,
+            message_queue: VecDeque::new(),
+            _block_phantom: PhantomData,
         }
     }
 
-    pub async fn start(
+    pub fn start(
         self,
-        starting_snapshot: Snapshot,
         ct: CancellationToken,
-    ) -> Result<impl Stream<Item = SnapshotChange>, SegmenterError> {
-        let (tx, rx) = mpsc::channel(1024);
-        let segmenter_loop = SegmenterLoop::initialize(
-            self.segment_builder,
-            self.storage,
-            self.snapshot_manager,
-            self.ingestion_stream,
-            tx,
-            starting_snapshot,
-        )
-        .await?;
-
-        tokio::spawn(segmenter_loop.do_loop(ct).inspect_err(|err| {
-            error!(error = ?err, "segmenter loop error");
-        }));
-
-        Ok(ReceiverStream::new(rx))
+    ) -> (
+        impl Stream<Item = SnapshotChange>,
+        JoinHandle<Result<(), SegmenterError>>,
+    ) {
+        let (tx, rx) = mpsc::channel(self.options.channel_size);
+        let handle = tokio::spawn(self.do_loop(tx, ct));
+        (ReceiverStream::new(rx), handle)
     }
-}
 
-pub struct SegmenterLoop<B, S, I>
-where
-    B: SegmentBuilder + Send + Sync + 'static,
-    S: StorageBackend + Send + Sync + 'static,
-    I: Stream<Item = BlockEvent> + Unpin + Send + Sync + 'static,
-{
-    segment_builder: B,
-    storage: S,
-    snapshot_manager: SnapshotManager<S>,
-    ingestion_stream: I,
-    tx: mpsc::Sender<SnapshotChange>,
-    snapshot: Snapshot,
-    finalized: Cursor,
-    segment: Option<SegmentData>,
-}
-
-struct SegmentData {
-    group_start: Cursor,
-    cursors: Vec<Cursor>,
-}
-
-impl<B, S, I> SegmenterLoop<B, S, I>
-where
-    B: SegmentBuilder + Send + Sync + 'static,
-    S: StorageBackend + Send + Sync + 'static,
-    <S as StorageBackend>::Reader: Unpin,
-    <S as StorageBackend>::Writer: Send,
-    I: Stream<Item = BlockEvent> + Unpin + Send + Sync + 'static,
-{
-    pub async fn initialize(
-        segment_builder: B,
-        storage: S,
-        snapshot_manager: SnapshotManager<S>,
-        mut ingestion_stream: I,
+    async fn do_loop(
+        mut self,
         tx: mpsc::Sender<SnapshotChange>,
-        snapshot: Snapshot,
-    ) -> Result<Self, SegmenterError> {
-        let finalized = {
-            let Some(event) = ingestion_stream.next().await else {
-                return Err(SegmenterError::Initialization)
-                    .attach_printable("ingestion events stream ended unexpectedly");
-            };
+        ct: CancellationToken,
+    ) -> Result<(), SegmenterError> {
+        info!("starting segmenter");
 
-            let BlockEvent::Started { finalized } = event else {
-                return Err(SegmenterError::Initialization)
-                    .attach_printable("expected first event to be BlockEvent::Started");
-            };
+        let mut ingestion_stream = self
+            .ingestion_stream
+            .take()
+            .ok_or(SegmenterError::Initialization)?;
 
-            finalized
+        let initialize = ingestion_stream
+            .next()
+            .await
+            .ok_or(SegmenterError::Initialization)
+            .attach_printable("ingestion stream ended unexpectedly")?;
+
+        let (head, finalized) = match initialize {
+            BlockIngestionEvent::Initialize { head, finalized } => (head, finalized),
+            _ => {
+                return Err(SegmenterError::Initialization)
+                    .attach_printable("expected initialize message")
+            }
         };
 
-        let Ok(_) = tx.send(SnapshotChange::Started(snapshot.clone())).await else {
-            todo!();
-        };
+        debug!(%finalized, %head, "segmenter initialized");
 
-        Ok(SegmenterLoop {
-            segment_builder,
-            storage,
-            snapshot_manager,
-            ingestion_stream,
-            tx,
-            snapshot,
-            finalized,
-            segment: None,
-        })
-    }
+        self.head = head;
+        self.finalized = finalized;
 
-    pub async fn do_loop(mut self, ct: CancellationToken) -> Result<(), SegmenterError> {
+        let starting_snapshot = self
+            .snapshot_manager
+            .read()
+            .await
+            .change_context(SegmenterError::Storage)?;
+
+        if let Some(snapshot) = &starting_snapshot {
+            self.snapshot = snapshot.clone();
+        } else {
+            self.snapshot = Snapshot::with_options(self.segment_options.clone());
+        }
+
+        let permit = tx
+            .reserve()
+            .await
+            .change_context(SegmenterError::StreamClosed)?;
+        permit.send(SnapshotChange::Started {
+            snapshot: self.snapshot.clone(),
+        });
+
         loop {
             tokio::select! {
+                biased;
                 _ = ct.cancelled() => break,
-                event = self.ingestion_stream.next() => {
-                    let Some(event) = event else {
-                        return Err(SegmenterError::Initialization)
-                            .attach_printable("ingestion events stream ended unexpectedly");
-                    };
 
-                    self.handle_event(event).await?;
+                // Only continue if we have capacity to send.
+                Some(event) = ingestion_stream.next(), if tx.capacity() > 0 => {
+                    match event {
+                        BlockIngestionEvent::NewHead(head) => {
+                            self.head = head;
+                            self.write_segment_if_needed().await?;
+                        },
+                        BlockIngestionEvent::NewFinalized(finalized) => {
+                            self.finalized = finalized;
+                            self.write_segment_if_needed().await?;
+                        },
+                        BlockIngestionEvent::Ingested { cursor, prefix, filename } => {
+                            self.forward_block_to_segment_builder(cursor, &prefix, &filename).await?;
+                            self.write_segment_if_needed().await?;
+                        },
+                        BlockIngestionEvent::Invalidate { .. } => {
+                            todo!();
+                        },
+                        BlockIngestionEvent::Initialize { .. } => {
+                            return Err(SegmenterError::UnexpectedEvent)
+                                .attach_printable("unexpected initialize message");
+                        },
+                    }
+                }
+
+                permit = tx.reserve(), if !self.message_queue.is_empty() => {
+                    let permit = permit.change_context(SegmenterError::StreamClosed)?;
+                    if let Some(message) = self.message_queue.pop_front() {
+                        permit.send(message);
+                    }
+                }
+
+                else => {
+                    return Err(SegmenterError::UnexpectedEvent)
+                        .attach_printable("ingestion stream ended unexpectedly");
                 }
             }
         }
@@ -188,235 +225,174 @@ where
         Ok(())
     }
 
-    async fn handle_event(&mut self, event: BlockEvent) -> Result<(), SegmenterError> {
-        match event {
-            BlockEvent::Ingested(cursor) => {
-                debug!(cursor = %cursor, "new block ingested");
+    async fn forward_block_to_segment_builder(
+        &mut self,
+        cursor: Cursor,
+        prefix: &str,
+        filename: &str,
+    ) -> Result<(), SegmenterError> {
+        {
+            let bytes = self
+                .local_storage
+                .mmap(prefix, filename)
+                .change_context(SegmenterError::Storage)?;
 
-                // Check if we need to start a new segment group.
-                let Some(segment_data) = self.segment.as_mut() else {
-                    self.segment = Some(SegmentData {
-                        group_start: cursor.clone(),
-                        cursors: vec![cursor.clone()],
-                    });
+            let block = unsafe { rkyv::from_bytes_unchecked::<T>(&bytes) }
+                .change_context(SegmenterError::Storage)?;
 
-                    let Ok(_) = self
-                        .tx
-                        .send(SnapshotChange::BlockIngested(IngestedBlock { cursor }))
-                        .await
-                    else {
-                        todo!();
-                    };
-
-                    return Ok(());
-                };
-
-                // Add to existing segment.
-                segment_data.cursors.push(cursor.clone());
-
-                let finalized_segment_start = self
-                    .snapshot
-                    .segment_options
-                    .segment_start(self.finalized.number);
-
-                // Since the segment can only contains finalized data, if the current cursor is in
-                // the same segment as the finalized cursor, we can emit an event and return early.
-                if cursor.number >= finalized_segment_start {
-                    let Ok(_) = self
-                        .tx
-                        .send(SnapshotChange::BlockIngested(IngestedBlock { cursor }))
-                        .await
-                    else {
-                        todo!();
-                    };
-
-                    return Ok(());
-                }
-
-                self.write_segment_if_needed().await
-            }
-            BlockEvent::Finalized(cursor) => {
-                info!(cursor = %cursor, "finalized cursor updated");
-                self.finalized = cursor;
-                self.write_segment_if_needed().await
-            }
-            BlockEvent::Invalidate => {
-                todo!();
-            }
-            _ => Err(SegmenterError::UnexpectedEvent)
-                .attach_printable("unexpected event in segmenter loop")
-                .attach_printable_lazy(|| format!("event: {:?}", event)),
+            self.segment_builder
+                .add_block(block)
+                .await
+                .change_context(SegmenterError::Storage)
+                .attach_printable("failed to add block to segment builder")
+                .attach_printable_lazy(|| format!("cursor: {cursor}"))?;
         }
+
+        self.current = cursor;
+        self.block_count += 1;
+
+        // Only notify if the block won't become part of a new segment any time soon.
+        let finalized_segment_start = self.segment_options.segment_start(self.finalized.number);
+        if finalized_segment_start <= self.current.number {
+            self.message_queue.push_back(SnapshotChange::BlockIngested {
+                cursor: self.current.clone(),
+            })
+        }
+
+        self.local_storage
+            .remove_prefix(prefix)
+            .await
+            .change_context(SegmenterError::Storage)?;
+
+        Ok(())
     }
 
-    /// Write segment and segment groups if needed.
     async fn write_segment_if_needed(&mut self) -> Result<(), SegmenterError> {
         while self.do_write_segment_if_needed().await? {
             let new_state = self.snapshot.ingestion.clone();
-            let Ok(_) = self
-                .tx
-                .send(SnapshotChange::StateChanged {
-                    new_state,
-                    finalized: self.finalized.clone(),
-                })
-                .await
-            else {
-                todo!();
-            };
+
+            self.message_queue.push_back(SnapshotChange::StateChanged {
+                new_state,
+                finalized: self.finalized.clone(),
+            });
         }
 
         Ok(())
     }
 
-    /// Actually write segment if needed. Returns `true` if it wrote a segment.
     async fn do_write_segment_if_needed(&mut self) -> Result<bool, SegmenterError> {
-        let Some(segment_data) = self.segment.as_mut() else {
-            debug!("done: no segment data");
-            return Ok(false);
-        };
-
-        if segment_data.cursors.is_empty() {
-            debug!("done: no cursors");
+        if self.block_count < self.segment_options.segment_size {
+            debug!(block_count = self.block_count, "done: not enough blocks");
             return Ok(false);
         }
 
-        let segment_options = &self.snapshot.segment_options;
-
-        let Some(first_cursor) = segment_data.cursors.first() else {
+        if self.current.number > self.finalized.number {
             debug!(
-                cursors_len = segment_data.cursors.len(),
-                "done: no first cursor"
-            );
-            return Ok(false);
-        };
-
-        let Some(last_cursor) = segment_data.cursors.get(segment_options.segment_size - 1) else {
-            debug!(
-                cursors_len = segment_data.cursors.len(),
-                "done: not enough cursors"
-            );
-            return Ok(false);
-        };
-
-        // Data is not finalized yet.
-        if last_cursor.number > self.finalized.number {
-            debug!(
-                last = last_cursor.number,
+                current = self.current.number,
                 finalized = self.finalized.number,
                 "done: data is not finalized yet"
             );
             return Ok(false);
         }
 
-        // We may have more cursors than needed, so we just take as many as we need.
-        // This happens when we reach the tip of the chain and we're just waiting for
-        // the finalized cursor to move.
-        let current_segment_start = segment_options.segment_start(first_cursor.number);
-        let next_segment_start = segment_options.segment_start(last_cursor.number + 1);
+        // TODO: handle segments that were ingested when not finalized.
+        assert!(self.block_count == self.segment_options.segment_size);
 
-        let cursors_to_segment = {
-            let cursors = std::mem::take(&mut segment_data.cursors);
-            let mut cursors_to_segment = Vec::new();
-            let mut cursors_to_keep = Vec::new();
-
-            for cursor in cursors {
-                if cursor.number >= next_segment_start {
-                    cursors_to_keep.push(cursor);
-                } else {
-                    cursors_to_segment.push(cursor);
-                }
-            }
-
-            segment_data.cursors = cursors_to_keep;
-            cursors_to_segment
-        };
-
-        let current_group_start =
-            segment_options.segment_group_start(segment_data.group_start.number);
-
-        let next_group_start = segment_options.segment_group_start(
-            cursors_to_segment
-                .last()
-                .expect("at least one cursor")
-                .number
-                + 1,
-        );
-
-        debug!("copying blocks to segment");
-        self.segment_builder
-            .create_segment(&cursors_to_segment)
-            .change_context(SegmenterError::Storage)
-            .attach_printable("failed to create segment")?;
-
-        let segment_name = segment_options.format_segment_name(current_segment_start);
-        let block_count = self
+        let segment_data = self
             .segment_builder
-            .write_segment(&segment_name, &mut self.storage)
+            .take_segment()
             .await
-            .change_context(SegmenterError::Storage)
-            .attach_printable("failed to write segment")
-            .attach_printable_lazy(|| format!("segment_name: {segment_name}"))?;
-        info!(segment_name, block_count, "segment written");
+            .change_context(SegmenterError::Storage)?;
 
-        if block_count != self.snapshot.segment_options.segment_size {
-            return Err(SegmenterError::Storage)
-                .attach_printable("segment size mismatch")
+        let segment_name = self
+            .segment_options
+            .format_segment_name(self.current.number);
+
+        for segment in segment_data {
+            debug!(segment_name = %segment_name, filename = %segment.filename, "writing segment data");
+            let mut writer = self
+                .storage
+                .put(segment_prefix(&segment_name), &segment.filename)
+                .await
+                .change_context(SegmenterError::Storage)?;
+            writer
+                .write_all(&segment.data)
+                .await
+                .change_context(SegmenterError::Storage)
+                .attach_printable("failed to write segment data")
                 .attach_printable_lazy(|| {
                     format!(
-                        "expected: {}, actual: {block_count}",
-                        self.snapshot.segment_options.segment_size
+                        "segment name: {} filename: {}",
+                        segment_name, segment.filename
                     )
-                });
+                })?;
+            writer
+                .shutdown()
+                .await
+                .change_context(SegmenterError::Storage)?;
         }
 
-        debug!("delete old block data");
-        self.segment_builder
-            .cleanup_segment_data(&cursors_to_segment)
-            .await
-            .change_context(SegmenterError::Storage)
-            .attach_printable("failed to cleanup segment data")?;
+        self.block_count = 0;
+        self.segment_count += 1;
 
-        self.snapshot.revision += 1;
         self.snapshot.ingestion.extra_segment_count += 1;
 
-        // No need to also update segment group.
-        // Just update snapshot.
-        if current_group_start == next_group_start {
-            self.write_snapshot().await?;
+        if self.segment_count < self.segment_options.group_size {
+            debug!(
+                segment_count = self.segment_count,
+                "done: not enough segments"
+            );
+
+            self.snapshot.revision += 1;
+            self.snapshot_manager
+                .write(&self.snapshot)
+                .await
+                .change_context(SegmenterError::Storage)?;
 
             return Ok(true);
         }
 
-        let group_name = segment_options.format_segment_group_name(current_group_start);
-        self.segment_builder
-            .write_segment_group(&group_name, &mut self.storage)
-            .await
-            .change_context(SegmenterError::Storage)
-            .attach_printable("failed to write segment group")
-            .attach_printable_lazy(|| format!("group_name: {group_name}"))?;
-        info!(group_name, "segment group written");
+        assert!(self.segment_count == self.segment_options.group_size);
 
+        let segment_group_name = self
+            .segment_options
+            .format_segment_group_name(self.current.number);
+        let segment_group_data = self
+            .segment_builder
+            .take_segment_group()
+            .await
+            .change_context(SegmenterError::Storage)?;
+
+        debug!(segment_group_name = %segment_group_name, "writing segment group data");
+
+        let mut writer = self
+            .storage
+            .put("group", segment_group_name)
+            .await
+            .change_context(SegmenterError::Storage)?;
+
+        writer
+            .write_all(&segment_group_data.data)
+            .await
+            .change_context(SegmenterError::Storage)?;
+
+        writer
+            .shutdown()
+            .await
+            .change_context(SegmenterError::Storage)?;
+
+        self.segment_count = 0;
+
+        self.snapshot.revision += 1;
         self.snapshot.ingestion.group_count += 1;
         self.snapshot.ingestion.extra_segment_count = 0;
 
-        // If there are still cursors to process, start a new segment group.
-        if let Some(first_cursor) = segment_data.cursors.first() {
-            segment_data.group_start = first_cursor.clone();
-        } else {
-            self.segment = None;
-        }
-
-        self.write_snapshot().await?;
-
-        Ok(true)
-    }
-
-    async fn write_snapshot(&mut self) -> Result<(), SegmenterError> {
         self.snapshot_manager
             .write(&self.snapshot)
             .await
-            .change_context(SegmenterError::Snapshot)
-            .attach_printable("failed to write snapshot")
+            .change_context(SegmenterError::Storage)?;
+
+        Ok(true)
     }
 }
 
@@ -425,10 +401,18 @@ impl error_stack::Context for SegmenterError {}
 impl std::fmt::Display for SegmenterError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            SegmenterError::Initialization => write!(f, "segmenter initialization error"),
-            SegmenterError::UnexpectedEvent => write!(f, "unexpected block event"),
-            SegmenterError::Storage => write!(f, "error writing segment to storage"),
-            SegmenterError::Snapshot => write!(f, "snapshot error"),
+            SegmenterError::Initialization => write!(f, "Segmenter initialization error"),
+            SegmenterError::UnexpectedEvent => write!(f, "Unexpected block event"),
+            SegmenterError::Storage => write!(f, "Error writing segment to storage"),
+            SegmenterError::Snapshot => write!(f, "Snapshot error"),
+            SegmenterError::StreamClosed => write!(f, "Output stream closed"),
+            SegmenterError::InvalidState => write!(f, "Segmenter is in an invalid state"),
         }
+    }
+}
+
+impl Default for SegmenterOptions {
+    fn default() -> Self {
+        Self { channel_size: 1024 }
     }
 }
