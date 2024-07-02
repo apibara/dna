@@ -4,27 +4,30 @@ use apibara_dna_protocol::dna::ingestion::{
     ingestion_file_descriptor_set, ingestion_server, subscribe_response, BlockIngested,
     StateChanged, SubscribeRequest, SubscribeResponse,
 };
-use error_stack::ResultExt;
-use futures_util::{Stream, StreamExt, TryFutureExt};
+use error_stack::{FutureExt, Result, ResultExt};
+use futures_util::{Stream, StreamExt};
 use tokio::{
     io::AsyncReadExt,
     pin,
     sync::{broadcast, mpsc, Mutex, MutexGuard},
+    task::JoinHandle,
 };
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::CancellationToken;
 use tonic::{transport::Server as TonicServer, Request};
-use tracing::{debug, error, info};
+use tracing::{debug, info};
 
 use crate::{
     core::Cursor,
-    error::{DnaError, Result},
     storage::{block_prefix, LocalStorageBackend, StorageBackend, BLOCK_NAME},
 };
 
 use super::{Snapshot, SnapshotChange};
 
 type TonicResult<T> = std::result::Result<T, tonic::Status>;
+
+#[derive(Debug)]
+pub struct IngestionServerError;
 
 pub struct IngestionServer<S>
 where
@@ -45,11 +48,21 @@ where
         }
     }
 
-    pub async fn start(self, addr: SocketAddr, ct: CancellationToken) -> Result<()> {
+    pub fn start(
+        self,
+        addr: SocketAddr,
+        ct: CancellationToken,
+    ) -> Result<
+        (
+            JoinHandle<Result<(), IngestionServerError>>,
+            JoinHandle<Result<(), IngestionServerError>>,
+        ),
+        IngestionServerError,
+    > {
         let reflection_service = tonic_reflection::server::Builder::configure()
             .register_encoded_file_descriptor_set(ingestion_file_descriptor_set())
             .build()
-            .change_context(DnaError::Fatal)
+            .change_context(IngestionServerError)
             .attach_printable("failed to create gRPC reflection service")?;
 
         let shared_state = SharedIngestionServerState::new(self.storage);
@@ -57,38 +70,27 @@ where
         let update_task = tokio::spawn(
             shared_state
                 .clone()
-                .update_from_stream(self.ingestion_stream, ct.clone())
-                .inspect_err(|err| {
-                    error!(%err, "ingestion stream error");
-                }),
+                .update_from_stream(self.ingestion_stream, ct.clone()),
         );
 
         let ingestion_service = Service::new(shared_state).into_service();
 
         info!(addr = %addr, "starting ingestion server");
 
-        let server_task = TonicServer::builder()
-            .add_service(reflection_service)
-            .add_service(ingestion_service)
-            .serve_with_shutdown(addr, {
-                let ct = ct.clone();
-                async move {
-                    ct.cancelled().await;
-                }
-            });
+        let server_task = tokio::spawn(
+            TonicServer::builder()
+                .add_service(reflection_service)
+                .add_service(ingestion_service)
+                .serve_with_shutdown(addr, {
+                    let ct = ct.clone();
+                    async move {
+                        ct.cancelled().await;
+                    }
+                })
+                .change_context(IngestionServerError),
+        );
 
-        tokio::select! {
-            Err(err) = update_task => {
-                error!("ingestion stream error");
-                Err(err).change_context(DnaError::Fatal).attach_printable("ingestion stream error")
-            }
-            Err(err) = server_task => {
-                Err(err).change_context(DnaError::Fatal).attach_printable("ingestion gRPC server error")
-            }
-            else => {
-                Ok(())
-            }
-        }
+        Ok((server_task, update_task))
     }
 }
 
@@ -225,7 +227,11 @@ impl SharedIngestionServerState {
         self.0.lock().await
     }
 
-    async fn update_from_stream<S>(self, ingestion_stream: S, ct: CancellationToken) -> Result<()>
+    async fn update_from_stream<S>(
+        self,
+        ingestion_stream: S,
+        ct: CancellationToken,
+    ) -> Result<(), IngestionServerError>
     where
         S: Stream<Item = SnapshotChange> + Send + Sync + 'static,
     {
@@ -237,12 +243,12 @@ impl SharedIngestionServerState {
         };
 
         match event {
-            SnapshotChange::Started(snapshot) => {
+            SnapshotChange::Started { snapshot } => {
                 let mut state = self.lock().await;
-                state.snapshot = Some(snapshot);
+                state.snapshot = snapshot.into();
             }
             _ => {
-                return Err(DnaError::Fatal)
+                return Err(IngestionServerError)
                     .attach_printable("expected first event to be SnapshotChange::Started");
             }
         }
@@ -259,7 +265,7 @@ impl SharedIngestionServerState {
                         let snapshot = state
                             .snapshot
                             .as_mut()
-                            .ok_or(DnaError::Fatal)
+                            .ok_or(IngestionServerError)
                             .attach_printable("received state update message with no snapshot")?;
 
                         let new_state_proto = new_state.to_proto();
@@ -283,8 +289,7 @@ impl SharedIngestionServerState {
                     };
                     state.send(subscribe_response::Message::StateChanged(state_changed));
                 }
-                SnapshotChange::BlockIngested(block) => {
-                    let cursor = block.cursor;
+                SnapshotChange::BlockIngested { cursor } => {
                     let mut state = self.lock().await;
                     state.cursors.push(cursor.clone());
 
@@ -296,12 +301,13 @@ impl SharedIngestionServerState {
                         .storage
                         .clone()
                         .get(block_prefix(&cursor), BLOCK_NAME)
-                        .await?;
+                        .await
+                        .change_context(IngestionServerError)?;
                     let mut data = Vec::new();
                     reader
                         .read_to_end(&mut data)
                         .await
-                        .change_context(DnaError::Fatal)
+                        .change_context(IngestionServerError)
                         .attach_printable("failed to read block from storage")?;
                     debug!(cursor = ?cursor, data = data.len(), "sending block to subscriber");
                     let ingested = BlockIngested {
@@ -312,7 +318,7 @@ impl SharedIngestionServerState {
                     state.send(subscribe_response::Message::BlockIngested(ingested));
                 }
                 _ => {
-                    return Err(DnaError::Fatal)
+                    return Err(IngestionServerError)
                         .attach_printable("unexpected event in ingestion stream")
                         .attach_printable_lazy(|| format!("event: {:?}", event));
                 }
@@ -329,6 +335,14 @@ impl IngestionServerState {
     }
 }
 
+impl error_stack::Context for IngestionServerError {}
+
+impl std::fmt::Display for IngestionServerError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "ingestion server error")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
@@ -339,7 +353,7 @@ mod tests {
 
     use crate::{
         core::Cursor,
-        ingestion::{IngestedBlock, IngestionState, Snapshot, SnapshotChange},
+        ingestion::{IngestionState, Snapshot, SnapshotChange},
         segment::SegmentOptions,
         storage::LocalStorageBackend,
     };
@@ -369,18 +383,20 @@ mod tests {
         }
 
         ingestion_tx
-            .send(SnapshotChange::Started(Snapshot {
-                revision: 10,
-                segment_options: SegmentOptions {
-                    group_size: 10,
-                    segment_size: 100,
+            .send(SnapshotChange::Started {
+                snapshot: Snapshot {
+                    revision: 10,
+                    segment_options: SegmentOptions {
+                        group_size: 10,
+                        segment_size: 100,
+                    },
+                    ingestion: IngestionState {
+                        first_block_number: 1_000_000,
+                        group_count: 10,
+                        extra_segment_count: 4,
+                    },
                 },
-                ingestion: IngestionState {
-                    first_block_number: 1_000_000,
-                    group_count: 10,
-                    extra_segment_count: 4,
-                },
-            }))
+            })
             .await
             .unwrap();
 
@@ -441,7 +457,7 @@ mod tests {
             for i in 1_010_800..1_010_950 {
                 let cursor = Cursor::new(i, i.to_be_bytes().to_vec());
                 ingestion_tx
-                    .send(SnapshotChange::BlockIngested(IngestedBlock { cursor }))
+                    .send(SnapshotChange::BlockIngested { cursor })
                     .await
                     .unwrap();
             }

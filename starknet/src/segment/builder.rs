@@ -1,10 +1,7 @@
-use apibara_dna_common::{
-    error::{DnaError, Result},
-    segment::store::BlockData,
-    storage::{segment_prefix, StorageBackend},
-};
-use error_stack::ResultExt;
-use tokio::io::AsyncWriteExt;
+use apibara_dna_common::{ingestion::SegmentData, segment::store::BlockData};
+use error_stack::{Result, ResultExt};
+
+use crate::ingestion::StarknetSegmentBuilderError;
 
 use super::{
     index::Index, store, EVENT_SEGMENT_NAME, HEADER_SEGMENT_NAME, MESSAGE_SEGMENT_NAME,
@@ -34,10 +31,6 @@ impl SegmentBuilder {
 
     pub fn size(&self) -> usize {
         self.header.blocks.len()
-    }
-
-    pub fn take_index(&mut self) -> Index {
-        std::mem::take(&mut self.index)
     }
 
     pub fn add_single_block(&mut self, block: store::SingleBlock) {
@@ -77,46 +70,58 @@ impl SegmentBuilder {
         }
     }
 
-    pub async fn write<S: StorageBackend>(
+    pub fn take_segment_data(
         &mut self,
-        segment_name: &str,
-        storage: &mut S,
-    ) -> Result<()> {
-        let bytes = rkyv::to_bytes::<_, 0>(&self.header).change_context(DnaError::Io)?;
-        Self::write_bytes(storage, segment_name, HEADER_SEGMENT_NAME, &bytes).await?;
+    ) -> Result<(Index, Vec<SegmentData>), StarknetSegmentBuilderError> {
+        let index = std::mem::take(&mut self.index);
+        let header = {
+            let bytes =
+                rkyv::to_bytes::<_, 0>(&self.header).change_context(StarknetSegmentBuilderError)?;
+            SegmentData {
+                filename: HEADER_SEGMENT_NAME.to_string(),
+                data: bytes.to_vec(),
+            }
+        };
 
-        let bytes = rkyv::to_bytes::<_, 0>(&self.transactions).change_context(DnaError::Io)?;
-        Self::write_bytes(storage, segment_name, TRANSACTION_SEGMENT_NAME, &bytes).await?;
+        let transaction = {
+            let bytes = rkyv::to_bytes::<_, 0>(&self.transactions)
+                .change_context(StarknetSegmentBuilderError)?;
+            SegmentData {
+                filename: TRANSACTION_SEGMENT_NAME.to_string(),
+                data: bytes.to_vec(),
+            }
+        };
 
-        let bytes = rkyv::to_bytes::<_, 0>(&self.receipts).change_context(DnaError::Io)?;
-        Self::write_bytes(
-            storage,
-            segment_name,
-            TRANSACTION_RECEIPT_SEGMENT_NAME,
-            &bytes,
-        )
-        .await?;
+        let receipt = {
+            let bytes = rkyv::to_bytes::<_, 0>(&self.receipts)
+                .change_context(StarknetSegmentBuilderError)?;
+            SegmentData {
+                filename: TRANSACTION_RECEIPT_SEGMENT_NAME.to_string(),
+                data: bytes.to_vec(),
+            }
+        };
 
-        let bytes = rkyv::to_bytes::<_, 0>(&self.events).change_context(DnaError::Io)?;
-        Self::write_bytes(storage, segment_name, EVENT_SEGMENT_NAME, &bytes).await?;
+        let event = {
+            let bytes =
+                rkyv::to_bytes::<_, 0>(&self.events).change_context(StarknetSegmentBuilderError)?;
+            SegmentData {
+                filename: EVENT_SEGMENT_NAME.to_string(),
+                data: bytes.to_vec(),
+            }
+        };
 
-        let bytes = rkyv::to_bytes::<_, 0>(&self.messages).change_context(DnaError::Io)?;
-        Self::write_bytes(storage, segment_name, MESSAGE_SEGMENT_NAME, &bytes).await?;
+        let message = {
+            let bytes = rkyv::to_bytes::<_, 0>(&self.messages)
+                .change_context(StarknetSegmentBuilderError)?;
+            SegmentData {
+                filename: MESSAGE_SEGMENT_NAME.to_string(),
+                data: bytes.to_vec(),
+            }
+        };
 
-        Ok(())
-    }
+        self.reset();
 
-    async fn write_bytes<S: StorageBackend>(
-        storage: &mut S,
-        segment_name: &str,
-        filename: &str,
-        data: &[u8],
-    ) -> Result<()> {
-        let mut writer = storage.put(segment_prefix(segment_name), filename).await?;
-        writer.write_all(data).await.change_context(DnaError::Io)?;
-        writer.shutdown().await.change_context(DnaError::Io)?;
-
-        Ok(())
+        Ok((index, vec![header, transaction, receipt, event, message]))
     }
 
     fn update_index(&mut self, block: &store::SingleBlock) {

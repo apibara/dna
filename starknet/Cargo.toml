@@ -23,6 +23,7 @@ apibara-observability = { path = "../observability" }
 apibara-dna-common = { path = "../common" }
 apibara-dna-protocol = { path = "../protocol" }
 async-channel.workspace = true
+async-stream.workspace = true
 async-trait.workspace = true
 bytecheck.workspace = true
 bytes.workspace = true

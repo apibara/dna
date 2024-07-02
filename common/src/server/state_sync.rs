@@ -64,7 +64,7 @@ mod worker {
 
     use crate::{
         core::Cursor,
-        ingestion::{IngestedBlock, IngestionState, Snapshot, SnapshotChange},
+        ingestion::{IngestionState, Snapshot, SnapshotChange},
         storage::{block_prefix, LocalStorageBackend, StorageBackend},
     };
 
@@ -132,7 +132,7 @@ mod worker {
 
             info!(?snapshot, "snapshot sync worker received snapshot");
 
-            let Ok(_) = self.tx.send(SnapshotChange::Started(snapshot)).await else {
+            let Ok(_) = self.tx.send(SnapshotChange::Started { snapshot }).await else {
                 todo!();
             };
 
@@ -218,8 +218,7 @@ mod worker {
                             prefix, "block ingested and written to local storage"
                         );
 
-                        let ingested = IngestedBlock { cursor };
-                        let Ok(_) = self.tx.send(SnapshotChange::BlockIngested(ingested)).await
+                        let Ok(_) = self.tx.send(SnapshotChange::BlockIngested { cursor }).await
                         else {
                             todo!();
                         };

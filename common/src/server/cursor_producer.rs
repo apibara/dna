@@ -208,11 +208,11 @@ async fn update_shared_state_from_stream(
 
     while let Some(change) = snapshot_changes.next().await {
         match change {
-            SnapshotChange::Started(mut snapshot) => {
+            SnapshotChange::Started { mut snapshot } => {
                 let mut state = shared_state.write().await;
+                snapshot.revision = 0;
                 // Reset state to the initial state.
                 // This should almost never happen.
-                snapshot.revision = 0;
                 let new_state = CursorState {
                     snapshot,
                     finalized: None,
@@ -235,7 +235,7 @@ async fn update_shared_state_from_stream(
                 latest_state.snapshot.ingestion = new_state;
                 latest_state.finalized = Some(finalized);
             }
-            SnapshotChange::BlockIngested(ingested) => {
+            SnapshotChange::BlockIngested { cursor } => {
                 let mut state = shared_state.write().await;
 
                 let latest_state = state
@@ -243,7 +243,7 @@ async fn update_shared_state_from_stream(
                     .ok_or(DnaError::Fatal)
                     .attach_printable("received state changed but no snapshot started")?;
 
-                latest_state.extra_cursors.push(ingested.cursor);
+                latest_state.extra_cursors.push(cursor);
             }
         }
     }
