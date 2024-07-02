@@ -31,7 +31,8 @@ pub async fn run_debug_chain_tracker(args: DebugChainTrackerArgs) -> Result<(), 
     let provider = provider_factory.new_provider();
 
     let options = EvmCursorProviderOptions {
-        poll_interval: Duration::from_secs(5),
+        poll_interval: Duration::from_secs(1),
+        ..Default::default()
     };
 
     let cursor_provider = EvmCursorProvider::new(provider, options);
