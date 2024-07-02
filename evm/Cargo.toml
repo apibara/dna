@@ -32,6 +32,7 @@ apibara-dna-common = { path = "../common" }
 apibara-dna-protocol = { path = "../protocol" }
 async-channel.workspace = true
 async-trait.workspace = true
+async-stream.workspace = true
 bytes.workspace = true
 clap.workspace = true
 error-stack.workspace = true
