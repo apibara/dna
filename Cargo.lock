@@ -579,6 +579,7 @@ dependencies = [
  "apibara-dna-protocol",
  "apibara-observability",
  "async-channel 2.3.1",
+ "async-stream",
  "async-trait",
  "bytes",
  "clap",
