@@ -1,7 +1,7 @@
 mod common;
 mod ingestion;
 // mod inspect;
-// mod server;
+mod server;
 
 use clap::{Parser, Subcommand};
 use error_stack::Result;
@@ -9,7 +9,7 @@ use ingestion::{run_ingestion, StartIngestionArgs};
 
 use crate::error::DnaStarknetError;
 // use inspect::{run_inspect, InspectArgs};
-// use server::{run_server, StartServerArgs};
+use server::{run_server, StartServerArgs};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -21,7 +21,7 @@ pub struct Cli {
 #[derive(Subcommand, Debug)]
 enum Command {
     StartIngestion(StartIngestionArgs),
-    // StartServer(StartServerArgs),
+    StartServer(StartServerArgs),
     // Inspect(InspectArgs),
 }
 
@@ -29,7 +29,7 @@ impl Cli {
     pub async fn run(self) -> Result<(), DnaStarknetError> {
         match self.subcommand {
             Command::StartIngestion(args) => run_ingestion(args).await,
-            // Command::StartServer(args) => run_server(args).await,
+            Command::StartServer(args) => run_server(args).await,
             // Command::Inspect(args) => run_inspect(args).await,
         }
     }

@@ -35,7 +35,7 @@ impl Default for StarknetCursorProviderOptions {
         Self {
             poll_interval: Duration::from_secs(3),
             finalized_poll_interval: Duration::from_secs(30),
-            request_timeout: Duration::from_secs(5),
+            request_timeout: Duration::from_secs(30),
         }
     }
 }

@@ -421,3 +421,22 @@ impl Transaction {
         }
     }
 }
+
+impl ArchivedTransaction {
+    pub fn meta(&self) -> &ArchivedTransactionMeta {
+        use ArchivedTransaction::*;
+        match self {
+            InvokeTransactionV0(tx) => &tx.meta,
+            InvokeTransactionV1(tx) => &tx.meta,
+            InvokeTransactionV3(tx) => &tx.meta,
+            L1HandlerTransaction(tx) => &tx.meta,
+            DeployTransaction(tx) => &tx.meta,
+            DeclareTransactionV0(tx) => &tx.meta,
+            DeclareTransactionV1(tx) => &tx.meta,
+            DeclareTransactionV2(tx) => &tx.meta,
+            DeclareTransactionV3(tx) => &tx.meta,
+            DeployAccountTransactionV1(tx) => &tx.meta,
+            DeployAccountTransactionV3(tx) => &tx.meta,
+        }
+    }
+}

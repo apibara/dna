@@ -2,8 +2,8 @@ use apibara_dna_protocol::starknet;
 
 use crate::segment::store;
 
-impl From<&store::BlockHeader> for starknet::BlockHeader {
-    fn from(value: &store::BlockHeader) -> Self {
+impl From<store::BlockHeader> for starknet::BlockHeader {
+    fn from(value: store::BlockHeader) -> Self {
         let block_hash = (&value.block_hash).into();
         let parent_block_hash = (&value.parent_block_hash).into();
         let sequencer_address = (&value.sequencer_address).into();
@@ -12,8 +12,8 @@ impl From<&store::BlockHeader> for starknet::BlockHeader {
             seconds: value.timestamp as i64,
             nanos: 0,
         };
-        let l1_gas_price = (&value.l1_gas_price).into();
-        let l1_data_gas_price = (&value.l1_data_gas_price).into();
+        let l1_gas_price = value.l1_gas_price.into();
+        let l1_data_gas_price = value.l1_data_gas_price.into();
         let l1_data_availability_mode: starknet::L1DataAvailabilityMode =
             (&value.l1_data_availability_mode).into();
 
@@ -32,8 +32,8 @@ impl From<&store::BlockHeader> for starknet::BlockHeader {
     }
 }
 
-impl From<&store::Event> for starknet::Event {
-    fn from(value: &store::Event) -> Self {
+impl From<store::Event> for starknet::Event {
+    fn from(value: store::Event) -> Self {
         let from_address = (&value.from_address).into();
         let keys = value
             .keys
@@ -59,8 +59,8 @@ impl From<&store::Event> for starknet::Event {
     }
 }
 
-impl From<&store::MessageToL1> for starknet::MessageToL1 {
-    fn from(value: &store::MessageToL1) -> Self {
+impl From<store::MessageToL1> for starknet::MessageToL1 {
+    fn from(value: store::MessageToL1) -> Self {
         let from_address = (&value.from_address).into();
         let to_address = (&value.to_address).into();
         let payload = value
@@ -82,8 +82,8 @@ impl From<&store::MessageToL1> for starknet::MessageToL1 {
     }
 }
 
-impl From<&store::Transaction> for starknet::Transaction {
-    fn from(value: &store::Transaction) -> Self {
+impl From<store::Transaction> for starknet::Transaction {
+    fn from(value: store::Transaction) -> Self {
         use starknet::transaction::Transaction::*;
         use store::Transaction::*;
 
@@ -120,8 +120,8 @@ impl From<&store::TransactionMeta> for starknet::TransactionMeta {
     }
 }
 
-impl From<&store::InvokeTransactionV0> for starknet::InvokeTransactionV0 {
-    fn from(value: &store::InvokeTransactionV0) -> Self {
+impl From<store::InvokeTransactionV0> for starknet::InvokeTransactionV0 {
+    fn from(value: store::InvokeTransactionV0) -> Self {
         let max_fee = (&value.max_fee).into();
         let signature = value
             .signature
@@ -146,8 +146,8 @@ impl From<&store::InvokeTransactionV0> for starknet::InvokeTransactionV0 {
     }
 }
 
-impl From<&store::InvokeTransactionV1> for starknet::InvokeTransactionV1 {
-    fn from(value: &store::InvokeTransactionV1) -> Self {
+impl From<store::InvokeTransactionV1> for starknet::InvokeTransactionV1 {
+    fn from(value: store::InvokeTransactionV1) -> Self {
         let sender_address = (&value.sender_address).into();
         let calldata = value
             .calldata
@@ -172,8 +172,8 @@ impl From<&store::InvokeTransactionV1> for starknet::InvokeTransactionV1 {
     }
 }
 
-impl From<&store::InvokeTransactionV3> for starknet::InvokeTransactionV3 {
-    fn from(value: &store::InvokeTransactionV3) -> Self {
+impl From<store::InvokeTransactionV3> for starknet::InvokeTransactionV3 {
+    fn from(value: store::InvokeTransactionV3) -> Self {
         let sender_address = (&value.sender_address).into();
         let calldata = value
             .calldata
@@ -217,8 +217,8 @@ impl From<&store::InvokeTransactionV3> for starknet::InvokeTransactionV3 {
     }
 }
 
-impl From<&store::L1HandlerTransaction> for starknet::L1HandlerTransaction {
-    fn from(value: &store::L1HandlerTransaction) -> Self {
+impl From<store::L1HandlerTransaction> for starknet::L1HandlerTransaction {
+    fn from(value: store::L1HandlerTransaction) -> Self {
         let contract_address = (&value.contract_address).into();
         let entry_point_selector = (&value.entry_point_selector).into();
         let calldata = value
@@ -236,8 +236,8 @@ impl From<&store::L1HandlerTransaction> for starknet::L1HandlerTransaction {
     }
 }
 
-impl From<&store::DeployTransaction> for starknet::DeployTransaction {
-    fn from(value: &store::DeployTransaction) -> Self {
+impl From<store::DeployTransaction> for starknet::DeployTransaction {
+    fn from(value: store::DeployTransaction) -> Self {
         let contract_address_salt = (&value.contract_address_salt).into();
         let constructor_calldata = value
             .constructor_calldata
@@ -254,8 +254,8 @@ impl From<&store::DeployTransaction> for starknet::DeployTransaction {
     }
 }
 
-impl From<&store::DeclareTransactionV0> for starknet::DeclareTransactionV0 {
-    fn from(value: &store::DeclareTransactionV0) -> Self {
+impl From<store::DeclareTransactionV0> for starknet::DeclareTransactionV0 {
+    fn from(value: store::DeclareTransactionV0) -> Self {
         let sender_address = (&value.sender_address).into();
         let max_fee = (&value.max_fee).into();
         let signature = value
@@ -274,8 +274,8 @@ impl From<&store::DeclareTransactionV0> for starknet::DeclareTransactionV0 {
     }
 }
 
-impl From<&store::DeclareTransactionV1> for starknet::DeclareTransactionV1 {
-    fn from(value: &store::DeclareTransactionV1) -> Self {
+impl From<store::DeclareTransactionV1> for starknet::DeclareTransactionV1 {
+    fn from(value: store::DeclareTransactionV1) -> Self {
         let sender_address = (&value.sender_address).into();
         let max_fee = (&value.max_fee).into();
         let signature = value
@@ -296,8 +296,8 @@ impl From<&store::DeclareTransactionV1> for starknet::DeclareTransactionV1 {
     }
 }
 
-impl From<&store::DeclareTransactionV2> for starknet::DeclareTransactionV2 {
-    fn from(value: &store::DeclareTransactionV2) -> Self {
+impl From<store::DeclareTransactionV2> for starknet::DeclareTransactionV2 {
+    fn from(value: store::DeclareTransactionV2) -> Self {
         let sender_address = (&value.sender_address).into();
         let compiled_class_hash = (&value.compiled_class_hash).into();
         let max_fee = (&value.max_fee).into();
@@ -320,8 +320,8 @@ impl From<&store::DeclareTransactionV2> for starknet::DeclareTransactionV2 {
     }
 }
 
-impl From<&store::DeclareTransactionV3> for starknet::DeclareTransactionV3 {
-    fn from(value: &store::DeclareTransactionV3) -> Self {
+impl From<store::DeclareTransactionV3> for starknet::DeclareTransactionV3 {
+    fn from(value: store::DeclareTransactionV3) -> Self {
         let sender_address = (&value.sender_address).into();
         let compiled_class_hash = (&value.compiled_class_hash).into();
         let signature = value
@@ -363,8 +363,8 @@ impl From<&store::DeclareTransactionV3> for starknet::DeclareTransactionV3 {
     }
 }
 
-impl From<&store::DeployAccountTransactionV1> for starknet::DeployAccountTransactionV1 {
-    fn from(value: &store::DeployAccountTransactionV1) -> Self {
+impl From<store::DeployAccountTransactionV1> for starknet::DeployAccountTransactionV1 {
+    fn from(value: store::DeployAccountTransactionV1) -> Self {
         let max_fee = (&value.max_fee).into();
         let signature = value
             .signature
@@ -391,8 +391,8 @@ impl From<&store::DeployAccountTransactionV1> for starknet::DeployAccountTransac
     }
 }
 
-impl From<&store::DeployAccountTransactionV3> for starknet::DeployAccountTransactionV3 {
-    fn from(value: &store::DeployAccountTransactionV3) -> Self {
+impl From<store::DeployAccountTransactionV3> for starknet::DeployAccountTransactionV3 {
+    fn from(value: store::DeployAccountTransactionV3) -> Self {
         let signature = value
             .signature
             .iter()
@@ -432,8 +432,8 @@ impl From<&store::DeployAccountTransactionV3> for starknet::DeployAccountTransac
     }
 }
 
-impl From<&store::TransactionReceipt> for starknet::TransactionReceipt {
-    fn from(value: &store::TransactionReceipt) -> Self {
+impl From<store::TransactionReceipt> for starknet::TransactionReceipt {
+    fn from(value: store::TransactionReceipt) -> Self {
         use starknet::transaction_receipt::Receipt;
         use store::TransactionReceipt::*;
 
@@ -470,28 +470,28 @@ impl From<&store::TransactionReceiptMeta> for starknet::TransactionReceiptMeta {
     }
 }
 
-impl From<&store::InvokeTransactionReceipt> for starknet::InvokeTransactionReceipt {
-    fn from(_value: &store::InvokeTransactionReceipt) -> Self {
+impl From<store::InvokeTransactionReceipt> for starknet::InvokeTransactionReceipt {
+    fn from(_value: store::InvokeTransactionReceipt) -> Self {
         starknet::InvokeTransactionReceipt {}
     }
 }
 
-impl From<&store::L1HandlerTransactionReceipt> for starknet::L1HandlerTransactionReceipt {
-    fn from(value: &store::L1HandlerTransactionReceipt) -> Self {
+impl From<store::L1HandlerTransactionReceipt> for starknet::L1HandlerTransactionReceipt {
+    fn from(value: store::L1HandlerTransactionReceipt) -> Self {
         starknet::L1HandlerTransactionReceipt {
             message_hash: value.message_hash.clone(),
         }
     }
 }
 
-impl From<&store::DeclareTransactionReceipt> for starknet::DeclareTransactionReceipt {
-    fn from(_value: &store::DeclareTransactionReceipt) -> Self {
+impl From<store::DeclareTransactionReceipt> for starknet::DeclareTransactionReceipt {
+    fn from(_value: store::DeclareTransactionReceipt) -> Self {
         starknet::DeclareTransactionReceipt {}
     }
 }
 
-impl From<&store::DeployTransactionReceipt> for starknet::DeployTransactionReceipt {
-    fn from(value: &store::DeployTransactionReceipt) -> Self {
+impl From<store::DeployTransactionReceipt> for starknet::DeployTransactionReceipt {
+    fn from(value: store::DeployTransactionReceipt) -> Self {
         let contract_address = (&value.contract_address).into();
 
         starknet::DeployTransactionReceipt {
@@ -500,8 +500,8 @@ impl From<&store::DeployTransactionReceipt> for starknet::DeployTransactionRecei
     }
 }
 
-impl From<&store::DeployAccountTransactionReceipt> for starknet::DeployAccountTransactionReceipt {
-    fn from(value: &store::DeployAccountTransactionReceipt) -> Self {
+impl From<store::DeployAccountTransactionReceipt> for starknet::DeployAccountTransactionReceipt {
+    fn from(value: store::DeployAccountTransactionReceipt) -> Self {
         let contract_address = (&value.contract_address).into();
 
         starknet::DeployAccountTransactionReceipt {
@@ -510,8 +510,8 @@ impl From<&store::DeployAccountTransactionReceipt> for starknet::DeployAccountTr
     }
 }
 
-impl From<&store::ResourcePrice> for starknet::ResourcePrice {
-    fn from(value: &store::ResourcePrice) -> Self {
+impl From<store::ResourcePrice> for starknet::ResourcePrice {
+    fn from(value: store::ResourcePrice) -> Self {
         let price_in_fri = (&value.price_in_fri).into();
         let price_in_wei = (&value.price_in_wei).into();
 

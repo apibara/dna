@@ -11,11 +11,13 @@ pub struct Filter {
     transactions: Vec<TransactionFilter>,
 }
 
+#[derive(Default)]
 pub struct HeaderFilter {
     always: bool,
 }
 
 /// Additional data to include in the response.
+#[derive(Default)]
 pub struct AdditionalData {
     pub include_transaction: bool,
     pub include_receipt: bool,
@@ -24,6 +26,10 @@ pub struct AdditionalData {
 }
 
 impl Filter {
+    pub fn needs_linear_scan(&self) -> bool {
+        self.has_required_header() || self.has_transactions() || self.has_messages()
+    }
+
     pub fn has_required_header(&self) -> bool {
         self.header.always
     }
@@ -44,7 +50,7 @@ impl Filter {
         self.events.iter()
     }
 
-    pub fn match_event(&self, event: &store::Event) -> Option<AdditionalData> {
+    pub fn match_event(&self, event: &store::ArchivedEvent) -> Option<AdditionalData> {
         let mut additional_data = AdditionalData::default();
         let mut any_match = false;
 
@@ -65,7 +71,7 @@ impl Filter {
         }
     }
 
-    pub fn match_message(&self, message: &store::MessageToL1) -> Option<AdditionalData> {
+    pub fn match_message(&self, message: &store::ArchivedMessageToL1) -> Option<AdditionalData> {
         let mut additional_data = AdditionalData::default();
         let mut any_match = false;
 
@@ -84,7 +90,10 @@ impl Filter {
         }
     }
 
-    pub fn match_transaction(&self, transaction: &store::Transaction) -> Option<AdditionalData> {
+    pub fn match_transaction(
+        &self,
+        transaction: &store::ArchivedTransaction,
+    ) -> Option<AdditionalData> {
         let mut additional_data = AdditionalData::default();
         let mut any_match = false;
 
@@ -101,17 +110,6 @@ impl Filter {
             Some(additional_data)
         } else {
             None
-        }
-    }
-}
-
-impl Default for AdditionalData {
-    fn default() -> Self {
-        Self {
-            include_transaction: false,
-            include_receipt: false,
-            include_events: false,
-            include_messages: false,
         }
     }
 }
@@ -145,11 +143,5 @@ impl From<starknet::HeaderFilter> for HeaderFilter {
         Self {
             always: filter.always.unwrap_or(false),
         }
-    }
-}
-
-impl Default for HeaderFilter {
-    fn default() -> Self {
-        Self { always: false }
     }
 }

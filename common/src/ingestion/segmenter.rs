@@ -254,15 +254,18 @@ where
         // Only notify if the block won't become part of a new segment any time soon.
         let finalized_segment_start = self.segment_options.segment_start(self.finalized.number);
         if finalized_segment_start <= self.current.number {
+            info!(block = %self.current, "block ingested");
             self.message_queue.push_back(SnapshotChange::BlockIngested {
                 cursor: self.current.clone(),
             })
         }
 
+        /* TODO: figure out when it's safe to delete old blocks.
         self.local_storage
             .remove_prefix(prefix)
             .await
             .change_context(SegmenterError::Storage)?;
+        */
 
         Ok(())
     }
@@ -308,6 +311,7 @@ where
             .segment_options
             .format_segment_name(self.current.number);
 
+        info!(segment_name = %segment_name, "writing segment data");
         for segment in segment_data {
             debug!(segment_name = %segment_name, filename = %segment.filename, "writing segment data");
             let mut writer = self
@@ -363,7 +367,7 @@ where
             .await
             .change_context(SegmenterError::Storage)?;
 
-        debug!(segment_group_name = %segment_group_name, "writing segment group data");
+        info!(segment_group_name = %segment_group_name, "writing segment group data");
 
         let mut writer = self
             .storage
