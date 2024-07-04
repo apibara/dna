@@ -1,8 +1,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use apibara_dna_protocol::starknet;
+use error_stack::{Result, ResultExt};
+use rkyv::Deserialize;
 
-use crate::segment::store;
+use crate::{segment::store, server::StreamServerError};
 
 /// Holds the data shared by one or more blocks.
 #[derive(Default, Debug)]
@@ -19,36 +21,68 @@ pub struct DataBag {
 }
 
 impl DataBag {
-    pub fn add_event(&mut self, index: u32, event: &store::Event) {
+    pub fn add_event(
+        &mut self,
+        index: u32,
+        event: &store::ArchivedEvent,
+    ) -> Result<(), StreamServerError> {
         if self.events.contains_key(&index) {
-            return;
+            return Ok(());
         }
+        let event: store::Event = event
+            .deserialize(&mut rkyv::Infallible)
+            .change_context(StreamServerError)?;
         let event = starknet::Event::from(event);
         self.events.insert(index, event);
+        Ok(())
     }
 
-    pub fn add_message(&mut self, index: u32, message: &store::MessageToL1) {
+    pub fn add_message(
+        &mut self,
+        index: u32,
+        message: &store::ArchivedMessageToL1,
+    ) -> Result<(), StreamServerError> {
         if self.messages.contains_key(&index) {
-            return;
+            return Ok(());
         }
+        let message: store::MessageToL1 = message
+            .deserialize(&mut rkyv::Infallible)
+            .change_context(StreamServerError)?;
         let message = starknet::MessageToL1::from(message);
         self.messages.insert(index, message);
+        Ok(())
     }
 
-    pub fn add_transaction(&mut self, index: u32, transaction: &store::Transaction) {
+    pub fn add_transaction(
+        &mut self,
+        index: u32,
+        transaction: &store::ArchivedTransaction,
+    ) -> Result<(), StreamServerError> {
         if self.transactions.contains_key(&index) {
-            return;
+            return Ok(());
         }
+        let transaction: store::Transaction = transaction
+            .deserialize(&mut rkyv::Infallible)
+            .change_context(StreamServerError)?;
         let transaction = starknet::Transaction::from(transaction);
         self.transactions.insert(index, transaction);
+        Ok(())
     }
 
-    pub fn add_receipt(&mut self, index: u32, receipt: &store::TransactionReceipt) {
+    pub fn add_receipt(
+        &mut self,
+        index: u32,
+        receipt: &store::ArchivedTransactionReceipt,
+    ) -> Result<(), StreamServerError> {
         if self.receipts.contains_key(&index) {
-            return;
+            return Ok(());
         }
+        let receipt: store::TransactionReceipt = receipt
+            .deserialize(&mut rkyv::Infallible)
+            .change_context(StreamServerError)?;
         let receipt = starknet::TransactionReceipt::from(receipt);
         self.receipts.insert(index, receipt);
+        Ok(())
     }
 
     pub fn defer_transaction_events(&mut self, transaction_index: u32) {

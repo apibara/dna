@@ -598,7 +598,6 @@ impl From<models::BlockWithReceipts> for store::SingleBlock {
             let transaction_reverted = receipt.is_reverted();
             receipts.push(receipt);
 
-            // TODO: set reverted flag.
             let mut tx = store::Transaction::from(&tx_with_rx.transaction);
             set_transaction_index_and_reverted(&mut tx, tx_index as u32, transaction_reverted);
             transactions.push(tx);
@@ -608,7 +607,7 @@ impl From<models::BlockWithReceipts> for store::SingleBlock {
                 event.event_index = event_index;
 
                 event.transaction_index = tx_index as u32;
-                event.transaction_hash = tx_hash.clone();
+                event.transaction_hash = tx_hash;
                 event.transaction_reverted = transaction_reverted;
 
                 events.push(event);
@@ -621,7 +620,7 @@ impl From<models::BlockWithReceipts> for store::SingleBlock {
                 message.message_index = message_index;
 
                 message.transaction_index = tx_index as u32;
-                message.transaction_hash = tx_hash.clone();
+                message.transaction_hash = tx_hash;
                 message.transaction_reverted = transaction_reverted;
 
                 messages.push(message);

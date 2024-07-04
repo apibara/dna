@@ -19,6 +19,7 @@ pub enum Key {
 }
 
 impl EventFilter {
+    #[allow(clippy::wrong_self_convention)]
     pub fn from_address(&self) -> Option<&store::FieldElement> {
         self.from_address.as_ref()
     }
@@ -27,7 +28,7 @@ impl EventFilter {
         self.keys.first()
     }
 
-    pub fn matches(&self, event: &store::Event) -> bool {
+    pub fn matches(&self, event: &store::ArchivedEvent) -> bool {
         // If reverted, then we must include reverted events.
         if !self.include_reverted && event.transaction_reverted {
             return false;
@@ -51,7 +52,7 @@ impl EventFilter {
         }
 
         // Compare event keys.
-        for (key, event_key) in self.keys.iter().zip(&event.keys) {
+        for (key, event_key) in self.keys.iter().zip(event.keys.iter()) {
             match key {
                 Key::Any => continue,
                 Key::Exact(expected) => {

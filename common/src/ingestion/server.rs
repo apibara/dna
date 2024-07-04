@@ -253,6 +253,8 @@ impl SharedIngestionServerState {
             }
         }
 
+        info!("ingestion server ready. data servers can now connect to it.");
+
         while let Some(event) = ingestion_stream.next().await {
             match event {
                 SnapshotChange::StateChanged {

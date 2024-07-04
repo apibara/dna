@@ -96,7 +96,7 @@ where
             (Some(mmap), Some(current_segment_start)) if current_segment_start == segment_start => {
                 mmap
             }
-            (Some(_), _) | (None, _) => {
+            _ => {
                 let prefix = self.segment_info.segment_prefix(segment_start);
                 let filename = self.segment_info.segment_filename(segment_start);
 
@@ -116,6 +116,18 @@ where
         let archived = unsafe { rkyv::archived_root::<T>(bytes) };
 
         Ok(archived)
+    }
+}
+
+impl From<SegmentOptions> for SegmentGroupOptions {
+    fn from(segment_options: SegmentOptions) -> Self {
+        Self(segment_options)
+    }
+}
+
+impl From<(SegmentOptions, String)> for SegmentDataOptions {
+    fn from((segment_options, segment_name): (SegmentOptions, String)) -> Self {
+        Self(segment_options, segment_name)
     }
 }
 

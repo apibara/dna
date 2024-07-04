@@ -1,16 +1,16 @@
 use std::{sync::Arc, time::Duration};
 
-use error_stack::ResultExt;
+use error_stack::{Result, ResultExt};
 use futures_util::{Stream, StreamExt};
 use tokio::{
     pin,
     sync::{RwLock, RwLockReadGuard, RwLockWriteGuard},
+    task::JoinHandle,
 };
 use tokio_util::sync::CancellationToken;
 
 use crate::{
     core::Cursor,
-    error::{DnaError, Result},
     ingestion::{Snapshot, SnapshotChange},
     segment::SegmentOptions,
 };
@@ -21,6 +21,9 @@ where
 {
     snapshot_changes: C,
 }
+
+#[derive(Debug)]
+pub struct CursorProducerError;
 
 #[derive(Debug, Clone)]
 pub enum BlockNumberOrCursor {
@@ -67,16 +70,19 @@ where
         Self { snapshot_changes }
     }
 
-    pub fn start(self, ct: CancellationToken) -> CursorProducer {
+    pub fn start(
+        self,
+        ct: CancellationToken,
+    ) -> (CursorProducer, JoinHandle<Result<(), CursorProducerError>>) {
         let state = SharedState::default();
 
-        tokio::spawn(update_shared_state_from_stream(
+        let handle = tokio::spawn(update_shared_state_from_stream(
             state.clone(),
             self.snapshot_changes,
             ct,
         ));
 
-        CursorProducer { inner: state }
+        (CursorProducer { inner: state }, handle)
     }
 }
 
@@ -130,7 +136,10 @@ impl CursorProducer {
             .unwrap_or(false)
     }
 
-    pub async fn next_block(&self, current: &BlockNumberOrCursor) -> Result<NextBlock> {
+    pub async fn next_block(
+        &self,
+        current: &BlockNumberOrCursor,
+    ) -> Result<NextBlock, CursorProducerError> {
         let state_guard = self.inner.read().await;
 
         let Some(state) = state_guard.as_ref() else {
@@ -142,7 +151,7 @@ impl CursorProducer {
         let segment_options = &state.snapshot.segment_options;
 
         if next_block_number < state.snapshot.ingestion.first_block_number {
-            return Err(DnaError::Fatal)
+            return Err(CursorProducerError)
                 .attach_printable("requested block is before the first block");
         }
 
@@ -202,7 +211,7 @@ async fn update_shared_state_from_stream(
     shared_state: SharedState,
     snapshot_changes: impl Stream<Item = SnapshotChange> + Unpin + Send + Sync + 'static,
     ct: CancellationToken,
-) -> Result<()> {
+) -> Result<(), CursorProducerError> {
     let snapshot_changes = snapshot_changes.fuse().take_until(ct.cancelled());
     pin!(snapshot_changes);
 
@@ -229,7 +238,7 @@ async fn update_shared_state_from_stream(
 
                 let latest_state = state
                     .as_mut()
-                    .ok_or(DnaError::Fatal)
+                    .ok_or(CursorProducerError)
                     .attach_printable("received state changed but no snapshot started")?;
 
                 latest_state.snapshot.ingestion = new_state;
@@ -240,7 +249,7 @@ async fn update_shared_state_from_stream(
 
                 let latest_state = state
                     .as_mut()
-                    .ok_or(DnaError::Fatal)
+                    .ok_or(CursorProducerError)
                     .attach_printable("received state changed but no snapshot started")?;
 
                 latest_state.extra_cursors.push(cursor);
@@ -291,5 +300,13 @@ impl BlockNumberOrCursor {
             BlockNumberOrCursor::Number(number) => *number,
             BlockNumberOrCursor::Cursor(cursor) => cursor.number,
         }
+    }
+}
+
+impl error_stack::Context for CursorProducerError {}
+
+impl std::fmt::Display for CursorProducerError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Cursor producer error")
     }
 }

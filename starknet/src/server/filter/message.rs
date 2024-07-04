@@ -11,7 +11,7 @@ pub struct MessageToL1Filter {
 }
 
 impl MessageToL1Filter {
-    pub fn matches(&self, message: &store::MessageToL1) -> bool {
+    pub fn matches(&self, message: &store::ArchivedMessageToL1) -> bool {
         // If reverted, then we must include reverted messages.
         if !self.include_reverted && message.transaction_reverted {
             return false;
