@@ -2,6 +2,7 @@ use std::net::SocketAddr;
 
 use apibara_dna_protocol::dna::stream::{dna_stream_file_descriptor_set, dna_stream_server};
 use error_stack::{Result, ResultExt};
+use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tonic::transport::Server as TonicServer;
 use tracing::info;
@@ -16,6 +17,8 @@ where
     service: S,
 }
 
+pub type TonicServerResult = ::std::result::Result<(), tonic::transport::Error>;
+
 impl<S> DnaServer<S>
 where
     S: dna_stream_server::DnaStream,
@@ -28,7 +31,7 @@ where
         self,
         addr: SocketAddr,
         ct: CancellationToken,
-    ) -> Result<(), DnaServerError> {
+    ) -> Result<JoinHandle<TonicServerResult>, DnaServerError> {
         let reflection_service = tonic_reflection::server::Builder::configure()
             .register_encoded_file_descriptor_set(dna_stream_file_descriptor_set())
             .build()
@@ -48,10 +51,7 @@ where
                 }
             });
 
-        server_task
-            .await
-            .change_context(DnaServerError)
-            .attach_printable("ingestion gRPC server error")
+        Ok(tokio::spawn(server_task))
     }
 }
 

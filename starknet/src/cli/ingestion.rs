@@ -78,9 +78,16 @@ where
     let provider_factory = args.rpc.to_json_rpc_provider_factory()?;
     let snapshot_manager = SnapshotManager::new(storage.clone());
 
+    let has_existing_snapshot = snapshot_manager
+        .read()
+        .await
+        .change_context(DnaStarknetError::Fatal)?
+        .is_some();
+
     // If a starting block is provided, create an initial snapshot.
     if let Some(starting_block) = args.ingestion.starting_block {
-        if starting_block > 0 {
+        if starting_block > 0 && !has_existing_snapshot {
+            let starting_block = segment_options.segment_group_start(starting_block);
             let initial_snapshot = Snapshot {
                 revision: 0,
                 segment_options: segment_options.clone(),

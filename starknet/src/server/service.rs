@@ -2,7 +2,6 @@ use std::time::Duration;
 
 use apibara_dna_common::{
     core::Cursor,
-    error::{DnaError, Result},
     segment::SegmentOptions,
     server::{BlockNumberOrCursor, CursorProducer, NextBlock},
     storage::{CachedStorage, LocalStorageBackend, StorageBackend},
@@ -18,7 +17,7 @@ use apibara_dna_protocol::{
     starknet,
 };
 use apibara_observability::{self as o11y, TraceContextExt};
-use error_stack::ResultExt;
+use error_stack::{Result, ResultExt};
 use futures_util::TryFutureExt;
 use prost::Message;
 use roaring::RoaringBitmap;
@@ -28,7 +27,9 @@ use tonic::Request;
 use tracing::{debug, error};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
-use super::filter::SegmentFilter;
+use crate::error::DnaStarknetError;
+
+use super::{filter::SegmentFilter, StreamServerError};
 
 type TonicResult<T> = std::result::Result<T, tonic::Status>;
 
@@ -64,11 +65,11 @@ where
     }
 
     #[tracing::instrument(skip_all)]
-    pub async fn segment_options(&self) -> Result<SegmentOptions> {
+    pub async fn segment_options(&self) -> Result<SegmentOptions, DnaStarknetError> {
         self.cursor_producer
             .segment_options_with_retry(Duration::from_secs(1), 5)
             .await
-            .ok_or(DnaError::Fatal)
+            .ok_or(DnaStarknetError::Fatal)
             .attach_printable("failed to get segment options")
     }
 }
@@ -252,7 +253,7 @@ where
             .await;
     }
 
-    pub async fn start(mut self) -> Result<()> {
+    pub async fn start(mut self) -> Result<(), StreamServerError> {
         debug!(num_filters = %self.filter.filter_len(), "starting data stream");
 
         let mut current_block = self.stream_starting_block.clone();
@@ -263,7 +264,12 @@ where
                 break;
             }
 
-            match self.cursor_producer.next_block(&current_block).await? {
+            match self
+                .cursor_producer
+                .next_block(&current_block)
+                .await
+                .change_context(StreamServerError)?
+            {
                 NextBlock::NotReady => {
                     self.send_system_message(
                         "server is starting up. stream will begin shortly",
@@ -321,7 +327,7 @@ where
         &mut self,
         starting_block: u64,
         segment_options: SegmentOptions,
-    ) -> Result<u64> {
+    ) -> Result<u64, StreamServerError> {
         tracing::Span::current().add_link(self.request_context.clone());
 
         let ending_block = starting_block + segment_options.segment_group_blocks() - 1;
@@ -379,7 +385,7 @@ where
         &mut self,
         starting_block: u64,
         segment_options: SegmentOptions,
-    ) -> Result<u64> {
+    ) -> Result<u64, StreamServerError> {
         tracing::Span::current().add_link(self.request_context.clone());
 
         let ending_block = starting_block + segment_options.segment_size as u64 - 1;
@@ -390,8 +396,6 @@ where
             if self.response_tx.is_closed() {
                 break;
             }
-
-            let block_number = block_number as u64;
 
             if let Some(blocks) = self.filter.filter_segment_block(block_number).await? {
                 let cursor = if block_number == 0 {

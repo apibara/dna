@@ -25,7 +25,7 @@ pub enum InnerTransactionFilter {
 }
 
 impl TransactionFilter {
-    pub fn matches(&self, transaction: &store::Transaction) -> bool {
+    pub fn matches(&self, transaction: &store::ArchivedTransaction) -> bool {
         let meta = transaction.meta();
         // If reverted, then we must include reverted transactions.
         if !self.include_reverted && meta.transaction_reverted {
@@ -42,9 +42,10 @@ impl TransactionFilter {
 }
 
 impl InnerTransactionFilter {
-    pub fn matches(&self, transaction: &store::Transaction) -> bool {
-        use store::Transaction::*;
+    pub fn matches(&self, transaction: &store::ArchivedTransaction) -> bool {
+        use store::ArchivedTransaction::*;
         use InnerTransactionFilter::*;
+        #[allow(clippy::match_like_matches_macro)]
         match (self, transaction) {
             (InvokeV0, InvokeTransactionV0(_)) => true,
             (InvokeV1, InvokeTransactionV1(_)) => true,

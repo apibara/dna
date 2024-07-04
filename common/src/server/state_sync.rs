@@ -1,17 +1,12 @@
 use bytes::Bytes;
-use error_stack::ResultExt;
-use futures_util::{Stream, TryFutureExt};
-use tokio::sync::mpsc;
+use error_stack::{Result, ResultExt};
+use futures_util::Stream;
+use tokio::{sync::mpsc, task::JoinHandle};
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::CancellationToken;
 use tonic::transport::Endpoint;
-use tracing::error;
 
-use crate::{
-    error::{DnaError, Result},
-    ingestion::SnapshotChange,
-    storage::LocalStorageBackend,
-};
+use crate::{ingestion::SnapshotChange, storage::LocalStorageBackend};
 
 /// A service that keeps the ingestion state in sync with the ingestion server.
 pub struct IngestionStateSyncServer {
@@ -19,10 +14,16 @@ pub struct IngestionStateSyncServer {
     storage: LocalStorageBackend,
 }
 
+#[derive(Debug)]
+pub struct IngestionStateSyncError;
+
 impl IngestionStateSyncServer {
-    pub fn new(ingestion_server: impl Into<Bytes>, storage: LocalStorageBackend) -> Result<Self> {
+    pub fn new(
+        ingestion_server: impl Into<Bytes>,
+        storage: LocalStorageBackend,
+    ) -> Result<Self, IngestionStateSyncError> {
         let ingestion_endpoint = Endpoint::from_shared(ingestion_server)
-            .change_context(DnaError::Configuration)
+            .change_context(IngestionStateSyncError)
             .attach_printable("failed to create ingestion server endpoint")
             .attach_printable("hint: is the ingestion server address correct?")?;
 
@@ -32,7 +33,13 @@ impl IngestionStateSyncServer {
         })
     }
 
-    pub fn start(self, ct: CancellationToken) -> impl Stream<Item = SnapshotChange> {
+    pub fn start(
+        self,
+        ct: CancellationToken,
+    ) -> (
+        impl Stream<Item = SnapshotChange>,
+        JoinHandle<Result<(), IngestionStateSyncError>>,
+    ) {
         let (tx, rx) = mpsc::channel(1024);
 
         let worker = worker::Worker {
@@ -41,11 +48,17 @@ impl IngestionStateSyncServer {
             storage: self.storage,
         };
 
-        tokio::spawn(worker.sync_loop(ct).inspect_err(|err| {
-            error!(err = ?err, "sync loop returned with error");
-        }));
+        let handle = tokio::spawn(worker.sync_loop(ct));
 
-        ReceiverStream::new(rx)
+        (ReceiverStream::new(rx), handle)
+    }
+}
+
+impl error_stack::Context for IngestionStateSyncError {}
+
+impl std::fmt::Display for IngestionStateSyncError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "ingestion state sync error")
     }
 }
 
@@ -60,13 +73,15 @@ mod worker {
     use tokio::{io::AsyncWriteExt, sync::mpsc};
     use tokio_util::sync::CancellationToken;
     use tonic::transport::{Channel, Endpoint};
-    use tracing::{debug, error, info, warn};
+    use tracing::{debug, info, warn};
 
     use crate::{
         core::Cursor,
         ingestion::{IngestionState, Snapshot, SnapshotChange},
         storage::{block_prefix, LocalStorageBackend, StorageBackend},
     };
+
+    use super::IngestionStateSyncError;
 
     pub struct Worker {
         pub tx: mpsc::Sender<SnapshotChange>,
@@ -85,7 +100,10 @@ mod worker {
     }
 
     impl Worker {
-        pub async fn sync_loop(mut self, ct: CancellationToken) -> Result<(), WorkerError> {
+        pub async fn sync_loop(
+            mut self,
+            ct: CancellationToken,
+        ) -> Result<(), IngestionStateSyncError> {
             loop {
                 match self.do_sync_loop(ct.clone()).await {
                     Ok(()) => break,
@@ -95,8 +113,7 @@ mod worker {
                             tokio::time::sleep(Duration::from_secs(5)).await;
                         }
                         WorkerError::Fatal => {
-                            error!(error = ?err, "snapshot sync worker error");
-                            break;
+                            return Err(err).change_context(IngestionStateSyncError);
                         }
                     },
                 }
