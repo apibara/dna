@@ -33,6 +33,15 @@
             path = ./evm;
             ports = {
               "7001/tcp" = { };
+              "7007/tcp" = { };
+            };
+          };
+          dna-starknet = {
+            description = "The Starknet DNA server";
+            path = ./starknet;
+            ports = {
+              "7001/tcp" = { };
+              "7007/tcp" = { };
             };
           };
         };
