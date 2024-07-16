@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use apibara_dna_common::{
     core::Cursor,
-    segment::SegmentOptions,
+    segment::{self, LazySegmentReaderOptions, SegmentOptions},
     server::{BlockNumberOrCursor, CursorProducer, NextBlock},
     storage::{CachedStorage, LocalStorageBackend, StorageBackend},
 };
@@ -41,6 +41,7 @@ where
     storage: CachedStorage<S>,
     local_storage: LocalStorageBackend,
     cursor_producer: CursorProducer,
+    segment_reader_options: LazySegmentReaderOptions,
 }
 
 impl<S> DnaService<S>
@@ -52,11 +53,13 @@ where
         storage: CachedStorage<S>,
         local_storage: LocalStorageBackend,
         cursor_producer: CursorProducer,
+        segment_reader_options: LazySegmentReaderOptions,
     ) -> Self {
         Self {
             storage,
             local_storage,
             cursor_producer,
+            segment_reader_options,
         }
     }
 
@@ -138,6 +141,7 @@ where
             self.storage.clone(),
             self.local_storage.clone(),
             segment_options,
+            self.segment_reader_options.clone(),
         );
 
         // Extract the request span to link together the stream spans.

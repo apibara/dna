@@ -1,10 +1,11 @@
 use std::net::SocketAddr;
 
 use apibara_dna_common::{
+    segment::LazySegmentReaderOptions,
     server::{CursorProducerService, DnaServer, IngestionStateSyncServer},
     storage::{AppStorageBackend, CacheArgs, CachedStorage, LocalStorageBackend, StorageArgs},
 };
-use clap::Args;
+use clap::{ArgAction, Args};
 use error_stack::{Result, ResultExt};
 use tokio_util::sync::CancellationToken;
 use tracing::info;
@@ -22,6 +23,8 @@ pub struct StartServerArgs {
     pub cache: CacheArgs,
     #[clap(flatten)]
     pub server: ServerArgs,
+    #[clap(flatten)]
+    pub segment: SegmentReaderArgs,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -36,6 +39,14 @@ pub struct ServerArgs {
     /// Defaults to `0.0.0.0:7007`.
     #[arg(long, env, default_value = "0.0.0.0:7007")]
     pub server_address: String,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct SegmentReaderArgs {
+    /// Check bytes before deserializing. This is ~10x slower but won't result
+    /// in the server crashing.
+    #[arg(long, env, action = ArgAction::SetTrue)]
+    pub no_check_segment_bytes: bool,
 }
 
 pub async fn run_server(args: StartServerArgs) -> Result<(), DnaStarknetError> {
@@ -70,7 +81,12 @@ pub async fn run_server_with_storage(
     let (cursor_producer, cursor_producer_handle) =
         CursorProducerService::new(ingestion_stream).start(ct.clone());
 
-    let dna_service = DnaService::new(storage, local_cache_storage, cursor_producer);
+    let dna_service = DnaService::new(
+        storage,
+        local_cache_storage,
+        cursor_producer,
+        args.segment.to_lazy_segment_reader_options(),
+    );
 
     let server_address = args
         .server
@@ -101,4 +117,12 @@ pub async fn run_server_with_storage(
     }
 
     Ok(())
+}
+
+impl SegmentReaderArgs {
+    pub fn to_lazy_segment_reader_options(&self) -> LazySegmentReaderOptions {
+        LazySegmentReaderOptions {
+            check_bytes: !self.no_check_segment_bytes,
+        }
+    }
 }
