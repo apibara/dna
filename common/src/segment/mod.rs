@@ -6,5 +6,6 @@ pub mod store;
 pub use self::conversion::convert_bitmap_map;
 pub use self::options::SegmentOptions;
 pub use self::reader::{
-    LazySegmentReader, SegmentDataOptions, SegmentGroupOptions, SegmentInfo, SegmentReaderError,
+    LazySegmentReader, LazySegmentReaderOptions, SegmentDataOptions, SegmentGroupOptions,
+    SegmentInfo, SegmentReaderError,
 };
