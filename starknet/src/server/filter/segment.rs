@@ -1,7 +1,10 @@
 use std::ops::RangeInclusive;
 
 use apibara_dna_common::{
-    segment::{LazySegmentReader, SegmentDataOptions, SegmentGroupOptions, SegmentOptions},
+    segment::{
+        LazySegmentReader, LazySegmentReaderOptions, SegmentDataOptions, SegmentGroupOptions,
+        SegmentOptions,
+    },
     storage::{CachedStorage, LocalStorageBackend, StorageBackend},
 };
 use apibara_dna_protocol::starknet;
@@ -42,23 +45,30 @@ where
         storage: CachedStorage<S>,
         _local_storage: LocalStorageBackend,
         segment_options: SegmentOptions,
+        segment_reader_options: LazySegmentReaderOptions,
     ) -> Self {
-        let segment_group_reader =
-            LazySegmentReader::new(storage.clone(), segment_options.clone().into());
+        let segment_group_reader = LazySegmentReader::new(
+            storage.clone(),
+            segment_options.clone().into(),
+            segment_reader_options.clone(),
+        );
 
         let header_segment_reader = LazySegmentReader::new(
             storage.clone(),
             (segment_options.clone(), HEADER_SEGMENT_NAME.to_string()).into(),
+            segment_reader_options.clone(),
         );
 
         let event_segment_reader = LazySegmentReader::new(
             storage.clone(),
             (segment_options.clone(), EVENT_SEGMENT_NAME.to_string()).into(),
+            segment_reader_options.clone(),
         );
 
         let message_segment_reader = LazySegmentReader::new(
             storage.clone(),
             (segment_options.clone(), MESSAGE_SEGMENT_NAME.to_string()).into(),
+            segment_reader_options.clone(),
         );
 
         let transaction_segment_reader = LazySegmentReader::new(
@@ -68,6 +78,7 @@ where
                 TRANSACTION_SEGMENT_NAME.to_string(),
             )
                 .into(),
+            segment_reader_options.clone(),
         );
 
         let receipt_segment_reader = LazySegmentReader::new(
@@ -77,6 +88,7 @@ where
                 TRANSACTION_RECEIPT_SEGMENT_NAME.to_string(),
             )
                 .into(),
+            segment_reader_options.clone(),
         );
 
         let filters = filters.into_iter().map(Filter::from).collect::<Vec<_>>();

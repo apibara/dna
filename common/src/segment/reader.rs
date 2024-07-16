@@ -2,10 +2,11 @@ use std::marker::PhantomData;
 
 use error_stack::{Result, ResultExt};
 use memmap2::Mmap;
+use rkyv::validation::validators::DefaultValidator;
 
 use crate::storage::{segment_prefix, CachedStorage, StorageBackend};
 
-use super::SegmentOptions;
+use super::{options, SegmentOptions};
 
 #[derive(Debug)]
 pub struct SegmentReaderError;
@@ -24,6 +25,12 @@ pub struct SegmentGroupOptions(pub SegmentOptions);
 #[derive(Debug, Clone)]
 pub struct SegmentDataOptions(pub SegmentOptions, pub String);
 
+#[derive(Debug, Clone)]
+pub struct LazySegmentReaderOptions {
+    /// Check bytes before deserializing. This is ~10x slower.
+    pub check_bytes: bool,
+}
+
 /// Lazily read a segment from storage.
 pub struct LazySegmentReader<S, I, T>
 where
@@ -34,6 +41,7 @@ where
     segment_info: I,
     current_segment_start: Option<u64>,
     mmap: Option<Mmap>,
+    options: LazySegmentReaderOptions,
     data: PhantomData<T>,
 }
 
@@ -72,21 +80,30 @@ where
     S::Reader: Unpin + Send,
     I: SegmentInfo,
     T: rkyv::Archive,
+    // <T as rkyv::Archive>::Archived: rkyv::CheckBytes<DefaultValidator<'static>>,
 {
-    pub fn new(storage: CachedStorage<S>, segment_info: I) -> Self {
+    pub fn new(
+        storage: CachedStorage<S>,
+        segment_info: I,
+        options: LazySegmentReaderOptions,
+    ) -> Self {
         Self {
             storage,
             segment_info,
             current_segment_start: None,
             mmap: None,
+            options,
             data: Default::default(),
         }
     }
 
-    pub async fn read(
-        &mut self,
+    pub async fn read<'a>(
+        &'a mut self,
         block_number: u64,
-    ) -> Result<&<T as rkyv::Archive>::Archived, SegmentReaderError> {
+    ) -> Result<&<T as rkyv::Archive>::Archived, SegmentReaderError>
+    where
+        <T as rkyv::Archive>::Archived: rkyv::CheckBytes<DefaultValidator<'a>>,
+    {
         // Read segment if any of these two conditions are met:
         // - The segment is not loaded yet.
         // - The segment is loaded but the block number is different.
@@ -113,7 +130,17 @@ where
         self.current_segment_start = Some(segment_start);
 
         let bytes = self.mmap.as_ref().expect("mmapped bytes");
-        let archived = unsafe { rkyv::archived_root::<T>(bytes) };
+        let archived = if self.options.check_bytes {
+            rkyv::check_archived_root::<T>(bytes).or_else(|err| {
+                Err(SegmentReaderError)
+                    .attach_printable("failed to validate and deserialize segment")
+                    .attach_printable(format!("message: {err}"))
+                    .attach_printable(format!("block_number: {block_number}"))
+                    .attach_printable(format!("segment_start: {segment_start}"))
+            })?
+        } else {
+            unsafe { rkyv::archived_root::<T>(bytes) }
+        };
 
         Ok(archived)
     }
@@ -136,5 +163,11 @@ impl error_stack::Context for SegmentReaderError {}
 impl std::fmt::Display for SegmentReaderError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Segment reader error")
+    }
+}
+
+impl Default for LazySegmentReaderOptions {
+    fn default() -> Self {
+        Self { check_bytes: true }
     }
 }
