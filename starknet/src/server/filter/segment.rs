@@ -1,6 +1,7 @@
 use std::ops::RangeInclusive;
 
 use apibara_dna_common::{
+    core::Cursor,
     segment::{
         LazySegmentReader, LazySegmentReaderOptions, SegmentDataOptions, SegmentGroupOptions,
         SegmentOptions,
@@ -487,5 +488,18 @@ where
         } else {
             Ok(None)
         }
+    }
+
+    #[tracing::instrument(skip(self), err(Debug))]
+    pub async fn filter_single_block(
+        &mut self,
+        cursor: &Cursor,
+    ) -> Result<Option<Vec<starknet::Block>>, StreamServerError> {
+        let mut blocks = Vec::new();
+        for _filter in &self.filters {
+            blocks.push(starknet::Block::default());
+        }
+
+        Ok(Some(blocks))
     }
 }
