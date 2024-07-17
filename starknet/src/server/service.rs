@@ -299,18 +299,7 @@ where
                     current_block = ending_block.into();
                 }
                 NextBlock::Block(cursor) => {
-                    /*
-                    let block = single_block_reader
-                        .read(&cursor)
-                        .await
-                        .change_context(DnaError::Fatal)
-                        .attach_printable("failed to read single block")?;
-
-                    self.filter_and_send_single_block(&cursor, &block).await;
-                    */
-                    self.send_system_message(format!("block {cursor}"), false)
-                        .await;
-
+                    self.send_single_block(&current_block, &cursor).await?;
                     current_block = cursor.clone().into();
                 }
                 NextBlock::Invalidate => {
@@ -425,5 +414,47 @@ where
         }
 
         Ok(ending_block)
+    }
+
+    #[tracing::instrument(skip(self), err(Debug))]
+    async fn send_single_block(
+        &mut self,
+        previous_block: &BlockNumberOrCursor,
+        cursor: &Cursor,
+    ) -> Result<(), StreamServerError> {
+        tracing::Span::current().add_link(self.request_context.clone());
+
+        if self.response_tx.is_closed() {
+            return Ok(());
+        }
+
+        if let Some(blocks) = self.filter.filter_single_block(cursor).await? {
+            let prev_cursor = match previous_block {
+                BlockNumberOrCursor::Number(number) => Cursor::new_finalized(*number).into(),
+                BlockNumberOrCursor::Cursor(cursor) => cursor.clone().into(),
+            };
+
+            let finality = if self.cursor_producer.is_block_finalized(&cursor).await {
+                DataFinality::Finalized
+            } else {
+                DataFinality::Accepted
+            };
+
+            let data = blocks
+                .into_iter()
+                .map(|block| block.encode_to_vec())
+                .collect();
+
+            let data = Data {
+                data,
+                finality: finality as i32,
+                cursor: Some(prev_cursor),
+                end_cursor: Some(cursor.clone().into()),
+            };
+
+            self.send_data(data).await;
+        }
+
+        Ok(())
     }
 }
