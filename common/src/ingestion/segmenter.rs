@@ -170,6 +170,9 @@ where
             self.snapshot = Snapshot::with_options(self.segment_options.clone());
         }
 
+        // Reset the extra segment count since it's always starting from the start of the group.
+        self.snapshot.ingestion.extra_segment_count = 0;
+
         let permit = tx
             .reserve()
             .await
