@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use apibara_dna_common::{
     core::Cursor,
-    segment::{self, LazySegmentReaderOptions, SegmentOptions},
+    segment::{LazySegmentReaderOptions, SegmentOptions},
     server::{BlockNumberOrCursor, CursorProducer, NextBlock},
     storage::{CachedStorage, LocalStorageBackend, StorageBackend},
 };
