@@ -1,16 +1,9 @@
 //! # OpenTelemetry helpers
 
-use std::{env, fmt};
+use std::fmt;
 
 use error_stack::{Result, ResultExt};
-use opentelemetry::{
-    global,
-    sdk::{
-        self, export::metrics::aggregation::cumulative_temporality_selector, metrics::selectors,
-        Resource,
-    },
-};
-use opentelemetry_otlp::WithExportConfig;
+use opentelemetry::global;
 use tracing::Subscriber;
 
 pub use opentelemetry::metrics::{ObservableCounter, ObservableGauge};
@@ -47,7 +40,7 @@ pub fn init_opentelemetry() -> Result<(), OpenTelemetryInitError> {
         // The otel sdk doesn't follow the disabled env variable flag.
         // so we manually implement it to disable otel exports.
         // we diverge from the spec by defaulting to disabled.
-        let sdk_disabled = env::var(OTEL_SDK_DISABLED)
+        let sdk_disabled = std::env::var(OTEL_SDK_DISABLED)
             .map(|v| v == "true")
             .unwrap_or(true);
 
@@ -79,22 +72,16 @@ where
 
     // Both tracer and meter are configured with environment variables.
     let meter = opentelemetry_otlp::new_pipeline()
-        .metrics(
-            selectors::simple::inexpensive(),
-            cumulative_temporality_selector(),
-            opentelemetry::runtime::Tokio,
-        )
-        .with_exporter(opentelemetry_otlp::new_exporter().tonic().with_env())
-        .with_resource(Resource::default())
+        .metrics(opentelemetry_sdk::runtime::Tokio)
+        .with_exporter(opentelemetry_otlp::new_exporter().tonic())
         .build()
         .change_context(OpenTelemetryInitError)
         .attach_printable("failed to create metrics pipeline")?;
 
     let tracer = opentelemetry_otlp::new_pipeline()
         .tracing()
-        .with_exporter(opentelemetry_otlp::new_exporter().tonic().with_env())
-        .with_trace_config(sdk::trace::config().with_resource(Resource::default()))
-        .install_batch(opentelemetry::runtime::Tokio)
+        .with_exporter(opentelemetry_otlp::new_exporter().tonic())
+        .install_batch(opentelemetry_sdk::runtime::Tokio)
         .change_context(OpenTelemetryInitError)
         .attach_printable("failed to create tracing pipeline")?;
 
