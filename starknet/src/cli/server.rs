@@ -57,9 +57,12 @@ pub async fn run_server(args: StartServerArgs) -> Result<(), DnaStarknetError> {
         .change_context(DnaStarknetError::Configuration)
         .attach_printable("failed to initialize storage backend")?;
 
-    // TODO: check why local cache is not working.
     let local_cache_storage = args.cache.to_local_storage_backend();
-    let storage = CachedStorage::new(local_cache_storage.clone(), storage, &[]);
+    let cache_options = args
+        .cache
+        .to_cache_options()
+        .change_context(DnaStarknetError::Configuration)?;
+    let storage = CachedStorage::new(local_cache_storage.clone(), storage, &cache_options);
 
     run_server_with_storage(args, storage, local_cache_storage).await
 }
