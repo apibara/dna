@@ -6,8 +6,11 @@ use crate::{
         AppStorageBackend, AzureStorageBackendBuilder, LocalStorageBackend, S3StorageBackendBuilder,
     },
 };
+use byte_unit::Byte;
 use clap::Args;
 use error_stack::ResultExt;
+
+use super::CacheOptions;
 
 #[derive(Args, Debug, Clone)]
 #[group(required = true, multiple = false)]
@@ -51,12 +54,60 @@ impl StorageArgs {
 
 #[derive(Args, Debug, Clone)]
 pub struct CacheArgs {
+    /// Location for cached/temporary data.
     #[arg(long, env)]
     cache_dir: PathBuf,
+    /// Maximum number of group files in the cache.
+    #[arg(long, env)]
+    cache_max_group_files: Option<usize>,
+    /// Maximum storage size of group files in the cache.
+    #[arg(long, env)]
+    cache_max_group_size: Option<String>,
+    /// Maximum number of segment files in the cache.
+    #[arg(long, env)]
+    cache_max_segment_files: Option<usize>,
+    /// Maximum storage size of segment files in the cache.
+    #[arg(long, env)]
+    cache_max_segment_size: Option<String>,
 }
 
 impl CacheArgs {
     pub fn to_local_storage_backend(&self) -> LocalStorageBackend {
         LocalStorageBackend::new(&self.cache_dir)
+    }
+
+    pub fn to_cache_options(&self) -> Result<Vec<CacheOptions>> {
+        let max_group_files = self.cache_max_group_files.unwrap_or(1_000);
+        let max_group_size = if let Some(max_group_size) = self.cache_max_group_size.as_ref() {
+            Byte::from_str(max_group_size)
+                .change_context(DnaError::Configuration)
+                .attach_printable("failed to parse cache max group size")?
+        } else {
+            Byte::from_bytes(1_000_000_000)
+        };
+
+        let group_options = CacheOptions {
+            prefix: "group".to_string(),
+            max_file_count: max_group_files,
+            max_size_bytes: max_group_size.get_bytes() as u64,
+        };
+
+        let max_segment_files = self.cache_max_segment_files.unwrap_or(1_000);
+        let max_segment_size = if let Some(max_segment_size) = self.cache_max_segment_size.as_ref()
+        {
+            Byte::from_str(max_segment_size)
+                .change_context(DnaError::Configuration)
+                .attach_printable("failed to parse cache max segment size")?
+        } else {
+            Byte::from_bytes(1_000_000_000)
+        };
+
+        let segment_options = CacheOptions {
+            prefix: "segment".to_string(),
+            max_file_count: max_segment_files,
+            max_size_bytes: max_segment_size.get_bytes() as u64,
+        };
+
+        Ok(vec![group_options, segment_options])
     }
 }
