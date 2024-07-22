@@ -6,7 +6,7 @@ use apibara_dna_common::{
         LazySegmentReader, LazySegmentReaderOptions, SegmentDataOptions, SegmentGroupOptions,
         SegmentOptions,
     },
-    storage::{CachedStorage, LocalStorageBackend, StorageBackend},
+    storage::{block_prefix, CachedStorage, LocalStorageBackend, StorageBackend, BLOCK_NAME},
 };
 use apibara_dna_protocol::starknet;
 use error_stack::{Result, ResultExt};
@@ -26,6 +26,7 @@ use super::{bag::DataBag, data::BlockData, event::Key, root::Filter};
 
 pub struct SegmentFilter<S: StorageBackend + Send> {
     filters: Vec<Filter>,
+    storage: CachedStorage<S>,
     segment_options: SegmentOptions,
     segment_group_reader: LazySegmentReader<S, SegmentGroupOptions, store::SegmentGroup>,
     header_segment_reader: LazySegmentReader<S, SegmentDataOptions, store::BlockHeaderSegment>,
@@ -96,6 +97,7 @@ where
 
         Self {
             filters,
+            storage,
             segment_options,
             segment_group_reader,
             header_segment_reader,
@@ -416,78 +418,7 @@ where
             }
         }
 
-        let mut blocks = Vec::with_capacity(self.filters.len());
-        let mut any_data = false;
-
-        for block_data in blocks_data {
-            if block_data.is_empty() {
-                blocks.push(starknet::Block::default());
-                continue;
-            }
-
-            any_data = true;
-            let events = block_data
-                .events()
-                .map(|index| {
-                    bag.event(index)
-                        .ok_or(StreamServerError)
-                        .attach_printable_lazy(|| format!("event not found: {index}"))
-                })
-                .collect::<Result<Vec<_>, _>>()
-                .attach_printable_lazy(|| {
-                    format!("failed to collect events at block {block_number}")
-                })?;
-
-            let messages = block_data
-                .messages()
-                .map(|index| {
-                    bag.message(index)
-                        .ok_or(StreamServerError)
-                        .attach_printable_lazy(|| format!("message to L1 not found: {index}"))
-                })
-                .collect::<Result<Vec<_>, _>>()
-                .attach_printable_lazy(|| {
-                    format!("failed to collect messages at block {block_number}")
-                })?;
-
-            let transactions = block_data
-                .transactions()
-                .map(|index| {
-                    bag.transaction(index)
-                        .ok_or(StreamServerError)
-                        .attach_printable_lazy(|| format!("transaction not found: {index}"))
-                })
-                .collect::<Result<Vec<_>, _>>()
-                .attach_printable_lazy(|| {
-                    format!("failed to collect transactions at block {block_number}")
-                })?;
-
-            let receipts = block_data
-                .receipts()
-                .map(|index| {
-                    bag.receipt(index)
-                        .ok_or(StreamServerError)
-                        .attach_printable_lazy(|| format!("receipt not found: {index}"))
-                })
-                .collect::<Result<Vec<_>, _>>()
-                .attach_printable_lazy(|| {
-                    format!("failed to collect receipts at block {block_number}")
-                })?;
-
-            blocks.push(starknet::Block {
-                header: Some(header.clone()),
-                events,
-                messages,
-                transactions,
-                receipts,
-            });
-        }
-
-        if any_data {
-            Ok(Some(blocks))
-        } else {
-            Ok(None)
-        }
+        collect_blocks(header, &blocks_data, &bag)
     }
 
     #[tracing::instrument(skip(self), err(Debug))]
@@ -495,11 +426,227 @@ where
         &mut self,
         cursor: &Cursor,
     ) -> Result<Option<Vec<starknet::Block>>, StreamServerError> {
-        let mut blocks = Vec::new();
-        for _filter in &self.filters {
-            blocks.push(starknet::Block::default());
+        let mut blocks_data = vec![BlockData::default(); self.filters.len()];
+        let mut bag = DataBag::default();
+
+        debug!(cursor = %cursor, "loading single block");
+
+        let block_bytes = self
+            .storage
+            .mmap(block_prefix(cursor), BLOCK_NAME)
+            .await
+            .change_context(StreamServerError)
+            .attach_printable("failed to mmap single block")
+            .attach_printable_lazy(|| format!("cursor: {cursor}"))?;
+        let block = unsafe { rkyv::archived_root::<store::SingleBlock>(&block_bytes) };
+
+        let header: store::BlockHeader = block
+            .header
+            .deserialize(&mut rkyv::Infallible)
+            .change_context(StreamServerError)
+            .attach_printable("failed to deserialize block header")?;
+        let header = starknet::BlockHeader::from(header);
+
+        for (filter, block_data) in self.filters.iter().zip(blocks_data.iter_mut()) {
+            block_data.require_header(filter.has_required_header());
         }
 
+        for (filter, block_data) in self.filters.iter().zip(blocks_data.iter_mut()) {
+            for event in block.events.iter() {
+                if let Some(extra_data) = filter.match_event(event) {
+                    block_data.add_event(event.event_index);
+                    bag.add_event(event.event_index, event)?;
+
+                    if extra_data.include_transaction {
+                        block_data.add_transaction(event.transaction_index);
+                        bag.defer_transaction(event.transaction_index);
+                    }
+                    if extra_data.include_receipt {
+                        block_data.add_receipt(event.transaction_index);
+                        bag.defer_receipt(event.transaction_index);
+                    }
+                    if extra_data.include_messages {
+                        block_data.add_transaction_messages(event.transaction_index);
+                        bag.defer_transaction_messages(event.transaction_index);
+                    }
+                    if extra_data.include_events {
+                        block_data.add_transaction_events(event.transaction_index);
+                        bag.defer_transaction_events(event.transaction_index);
+                    }
+                }
+            }
+        }
+
+        for (filter, block_data) in self.filters.iter().zip(blocks_data.iter_mut()) {
+            for message in block.messages.iter() {
+                if let Some(extra_data) = filter.match_message(message) {
+                    block_data.add_message(message.message_index);
+                    bag.add_message(message.message_index, message)?;
+
+                    if extra_data.include_transaction {
+                        block_data.add_transaction(message.transaction_index);
+                        bag.defer_transaction(message.transaction_index);
+                    }
+                    if extra_data.include_receipt {
+                        block_data.add_receipt(message.transaction_index);
+                        bag.defer_receipt(message.transaction_index);
+                    }
+                    if extra_data.include_events {
+                        block_data.add_transaction_events(message.transaction_index);
+                        bag.defer_transaction_events(message.transaction_index)
+                    }
+                }
+            }
+        }
+
+        for (filter, block_data) in self.filters.iter().zip(blocks_data.iter_mut()) {
+            for transaction in block.transactions.iter() {
+                let transaction_index = transaction.meta().transaction_index;
+                if let Some(extra_data) = filter.match_transaction(transaction) {
+                    block_data.add_transaction(transaction_index);
+                    bag.add_transaction(transaction_index, transaction)?;
+
+                    if extra_data.include_receipt {
+                        block_data.add_receipt(transaction_index);
+                        bag.defer_receipt(transaction_index);
+                    }
+                    if extra_data.include_events {
+                        block_data.add_transaction_events(transaction_index);
+                        bag.defer_transaction_events(transaction_index);
+                    }
+                    if extra_data.include_messages {
+                        block_data.add_transaction_messages(transaction_index);
+                        bag.defer_transaction_messages(transaction_index);
+                    }
+                } else if bag.has_deferred_transaction(transaction_index) {
+                    bag.add_transaction(transaction_index, transaction)?;
+                }
+            }
+        }
+
+        if bag.has_deferred_receipts() {
+            debug!(cursor = %cursor, "loading deferred receipts");
+
+            for transaction_index in bag.deferred_receipts() {
+                let receipt = &block.receipts[transaction_index as usize];
+                bag.add_receipt(transaction_index, receipt)?;
+            }
+        }
+
+        if bag.has_deferred_transaction_events() {
+            debug!(cursor = %cursor, "loading deferred events");
+
+            for event in block.events.iter() {
+                let transaction_index = event.transaction_index;
+                if bag.has_deferred_transaction_event(transaction_index) {
+                    bag.add_event(event.event_index, event)?;
+
+                    for block_data in blocks_data.iter_mut() {
+                        if block_data.has_transaction_events(transaction_index) {
+                            block_data.add_event(event.event_index);
+                        }
+                    }
+                }
+            }
+        }
+
+        if bag.has_deferred_transaction_messages() {
+            debug!(cursor = %cursor, "loading deferred messages");
+
+            for message in block.messages.iter() {
+                let transaction_index = message.transaction_index;
+                if bag.has_deferred_transaction_message(transaction_index) {
+                    bag.add_message(message.message_index, message)?;
+
+                    for block_data in blocks_data.iter_mut() {
+                        if block_data.has_transaction_messages(transaction_index) {
+                            block_data.add_message(message.message_index);
+                        }
+                    }
+                }
+            }
+        }
+
+        collect_blocks(header, &blocks_data, &bag)
+    }
+}
+
+fn collect_blocks(
+    header: starknet::BlockHeader,
+    blocks_data: &[BlockData],
+    bag: &DataBag,
+) -> Result<Option<Vec<starknet::Block>>, StreamServerError> {
+    let block_number = header.block_number;
+    let mut blocks = Vec::with_capacity(blocks_data.len());
+    let mut any_data = false;
+
+    for block_data in blocks_data {
+        if block_data.is_empty() {
+            blocks.push(starknet::Block::default());
+            continue;
+        }
+
+        any_data = true;
+        let events = block_data
+            .events()
+            .map(|index| {
+                bag.event(index)
+                    .ok_or(StreamServerError)
+                    .attach_printable_lazy(|| format!("event not found: {index}"))
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .attach_printable_lazy(|| {
+                format!("failed to collect events at block {block_number}")
+            })?;
+
+        let messages = block_data
+            .messages()
+            .map(|index| {
+                bag.message(index)
+                    .ok_or(StreamServerError)
+                    .attach_printable_lazy(|| format!("message to L1 not found: {index}"))
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .attach_printable_lazy(|| {
+                format!("failed to collect messages at block {block_number}")
+            })?;
+
+        let transactions = block_data
+            .transactions()
+            .map(|index| {
+                bag.transaction(index)
+                    .ok_or(StreamServerError)
+                    .attach_printable_lazy(|| format!("transaction not found: {index}"))
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .attach_printable_lazy(|| {
+                format!("failed to collect transactions at block {block_number}")
+            })?;
+
+        let receipts = block_data
+            .receipts()
+            .map(|index| {
+                bag.receipt(index)
+                    .ok_or(StreamServerError)
+                    .attach_printable_lazy(|| format!("receipt not found: {index}"))
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .attach_printable_lazy(|| {
+                format!("failed to collect receipts at block {block_number}")
+            })?;
+
+        blocks.push(starknet::Block {
+            header: Some(header.clone()),
+            events,
+            messages,
+            transactions,
+            receipts,
+        });
+    }
+
+    if any_data {
         Ok(Some(blocks))
+    } else {
+        Ok(None)
     }
 }
