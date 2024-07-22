@@ -186,7 +186,7 @@ where
         Ok(())
     }
 
-    #[tracing::instrument(skip(self), err(Debug))]
+    #[tracing::instrument(skip_all, fields(prefix = %file_id.prefix, filename = %file_id.filename), err(Debug))]
     pub async fn download_file_to_cache(&mut self, file_id: &FileID) -> Result<u64> {
         let mut reader = self
             .remote_storage
