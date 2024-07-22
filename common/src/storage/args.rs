@@ -58,17 +58,17 @@ pub struct CacheArgs {
     #[arg(long, env)]
     cache_dir: PathBuf,
     /// Maximum number of group files in the cache.
-    #[arg(long, env)]
-    cache_max_group_files: Option<usize>,
+    #[arg(long, env, default_value = "1000")]
+    cache_max_group_files: usize,
     /// Maximum storage size of group files in the cache.
-    #[arg(long, env)]
-    cache_max_group_size: Option<String>,
+    #[arg(long, env, default_value = "1GiB")]
+    cache_max_group_size: String,
     /// Maximum number of segment files in the cache.
-    #[arg(long, env)]
-    cache_max_segment_files: Option<usize>,
+    #[arg(long, env, default_value = "1000")]
+    cache_max_segment_files: usize,
     /// Maximum storage size of segment files in the cache.
-    #[arg(long, env)]
-    cache_max_segment_size: Option<String>,
+    #[arg(long, env, default_value = "10GiB")]
+    cache_max_segment_size: String,
 }
 
 impl CacheArgs {
@@ -77,34 +77,23 @@ impl CacheArgs {
     }
 
     pub fn to_cache_options(&self) -> Result<Vec<CacheOptions>> {
-        let max_group_files = self.cache_max_group_files.unwrap_or(1_000);
-        let max_group_size = if let Some(max_group_size) = self.cache_max_group_size.as_ref() {
-            Byte::from_str(max_group_size)
-                .change_context(DnaError::Configuration)
-                .attach_printable("failed to parse cache max group size")?
-        } else {
-            Byte::from_bytes(1_000_000_000)
-        };
+        let max_group_size = Byte::from_str(&self.cache_max_group_size)
+            .change_context(DnaError::Configuration)
+            .attach_printable("failed to parse cache max group size")?;
 
         let group_options = CacheOptions {
             prefix: "group".to_string(),
-            max_file_count: max_group_files,
+            max_file_count: self.cache_max_group_files,
             max_size_bytes: max_group_size.get_bytes() as u64,
         };
 
-        let max_segment_files = self.cache_max_segment_files.unwrap_or(1_000);
-        let max_segment_size = if let Some(max_segment_size) = self.cache_max_segment_size.as_ref()
-        {
-            Byte::from_str(max_segment_size)
-                .change_context(DnaError::Configuration)
-                .attach_printable("failed to parse cache max segment size")?
-        } else {
-            Byte::from_bytes(1_000_000_000)
-        };
+        let max_segment_size = Byte::from_str(&self.cache_max_segment_size)
+            .change_context(DnaError::Configuration)
+            .attach_printable("failed to parse cache max segment size")?;
 
         let segment_options = CacheOptions {
             prefix: "segment".to_string(),
-            max_file_count: max_segment_files,
+            max_file_count: self.cache_max_segment_files,
             max_size_bytes: max_segment_size.get_bytes() as u64,
         };
 
