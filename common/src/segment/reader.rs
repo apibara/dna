@@ -6,7 +6,7 @@ use rkyv::validation::validators::DefaultValidator;
 
 use crate::storage::{segment_prefix, CachedStorage, StorageBackend};
 
-use super::{options, SegmentOptions};
+use super::SegmentOptions;
 
 #[derive(Debug)]
 pub struct SegmentReaderError;
