@@ -6,6 +6,22 @@ The format is based on [Common Changelog](https://common-changelog.org/), and
 this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.1] - 2024-07-31
+
+_Add support for filtering invoke transactions v3._
+
+### Added
+
+-   Add support for filtering invoke transactions v3. For example:
+
+```ts
+export const config = {
+    filter: {
+        transactions: [{ invokeV3: { senderAddress: "0x123...F" } }],
+    }
+}
+```
+
 ## [0.9.0] - 2024-06-10
 
 _Simplify access to all environment variables._

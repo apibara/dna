@@ -6,6 +6,14 @@ The format is based on [Common Changelog](https://common-changelog.org/), and
 this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.1] - 2024-07-31
+
+_Support filtering invoke transactions v3._
+
+### Added
+
+-   Add support for filtering invoke transactions v3.
+
 ## [1.6.0] - 2024-04-09
 
 _Add support for RPC v0.7.1._
