@@ -412,6 +412,7 @@ impl TransactionFilter {
             None => true,
             Some(transaction_filter::Filter::InvokeV0(filter)) => filter.matches(tx),
             Some(transaction_filter::Filter::InvokeV1(filter)) => filter.matches(tx),
+            Some(transaction_filter::Filter::InvokeV3(filter)) => filter.matches(tx),
             Some(transaction_filter::Filter::Deploy(filter)) => filter.matches(tx),
             Some(transaction_filter::Filter::Declare(filter)) => filter.matches(tx),
             Some(transaction_filter::Filter::L1Handler(filter)) => filter.matches(tx),
@@ -437,6 +438,18 @@ impl InvokeTransactionV1Filter {
     pub fn matches(&self, tx: &Transaction) -> bool {
         match tx.transaction.as_ref() {
             Some(transaction::Transaction::InvokeV1(tx)) => {
+                self.sender_address.matches(&tx.sender_address)
+                    && self.calldata.prefix_matches(&tx.calldata)
+            }
+            _ => false,
+        }
+    }
+}
+
+impl InvokeTransactionV3Filter {
+    pub fn matches(&self, tx: &Transaction) -> bool {
+        match tx.transaction.as_ref() {
+            Some(transaction::Transaction::InvokeV3(tx)) => {
                 self.sender_address.matches(&tx.sender_address)
                     && self.calldata.prefix_matches(&tx.calldata)
             }

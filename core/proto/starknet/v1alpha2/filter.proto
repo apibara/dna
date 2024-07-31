@@ -35,6 +35,7 @@ message TransactionFilter {
     DeclareTransactionFilter declare = 4;
     L1HandlerTransactionFilter l1_handler = 5;
     DeployAccountTransactionFilter deploy_account = 6;
+    InvokeTransactionV3Filter invoke_v3 = 8;
   }
 
   // Include reverted transactions.
@@ -57,6 +58,14 @@ message InvokeTransactionV1Filter {
   FieldElement sender_address = 1;
   // Filter by calldata prefix.
   repeated FieldElement calldata = 3;
+}
+
+// Receive invoke transactions, v3
+message InvokeTransactionV3Filter {
+  // Filter by sender address.
+  FieldElement sender_address = 1;
+  // Filter by calldata prefix.
+  repeated FieldElement calldata = 2;
 }
 
 // Receive deploy transactions.
@@ -119,7 +128,8 @@ message EventFilter {
   optional bool include_reverted = 4;
   // Include the transaction that emitted the event. Defaults to true.
   optional bool include_transaction = 5;
-  // Include the receipt of the transaction that emitted the event. Defaults to true.
+  // Include the receipt of the transaction that emitted the event. Defaults to
+  // true.
   optional bool include_receipt = 6;
 }
 
