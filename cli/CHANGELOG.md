@@ -6,6 +6,14 @@ The format is based on [Common Changelog](https://common-changelog.org/), and
 this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2024-08-02
+
+_Add support for filtering invoke transactions v3._
+
+### Added
+
+-   Add support for filtering invoke transactions v3.
+
 ## [0.5.0] - 2024-05-23
 
 _Improve `apibara test` command when working with floating point numbers._
