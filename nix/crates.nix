@@ -23,6 +23,7 @@ let
       cargo-nextest
       cargo-flamegraph
       cargo-llvm-cov
+      cargo-edit
       samply
       clang
       cmake
