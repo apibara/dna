@@ -40,7 +40,7 @@ version = "0.7.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "891477e0c6a8957309ee5c45a6368af3ae14bb510732d2684ffa19af310920f9"
 dependencies = [
- "getrandom 0.2.14",
+ "getrandom 0.2.15",
  "once_cell",
  "version_check",
 ]
@@ -484,7 +484,7 @@ dependencies = [
  "sha2",
  "time",
  "url",
- "uuid 1.8.0",
+ "uuid 1.10.0",
 ]
 
 [[package]]
@@ -503,7 +503,7 @@ dependencies = [
  "serde_derive",
  "time",
  "url",
- "uuid 1.8.0",
+ "uuid 1.10.0",
 ]
 
 [[package]]
@@ -524,7 +524,7 @@ dependencies = [
  "serde_json",
  "time",
  "url",
- "uuid 1.8.0",
+ "uuid 1.10.0",
 ]
 
 [[package]]
@@ -683,9 +683,9 @@ checksum = "1fd0f2584146f6f2ef48085050886acf353beff7305ebd1ae69500e27c67f64b"
 
 [[package]]
 name = "bytes"
-version = "1.6.0"
+version = "1.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "514de17de45fdb8dc022b1a7975556c53c86f9f0aa5f534b98977b171857c2c9"
+checksum = "8318a53db07bb3f8dca91a600466bdb3f2eaadeedfdbcf02e1accbad9271ba50"
 
 [[package]]
 name = "cc"
@@ -917,12 +917,12 @@ dependencies = [
 
 [[package]]
 name = "darling"
-version = "0.20.9"
+version = "0.20.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "83b2eb4d90d12bdda5ed17de686c2acb4c57914f8f921b8da7e112b5a36f3fe1"
+checksum = "6f63b86c8a8826a49b8c21f08a2d07338eec8d900540f8630dc76284be802989"
 dependencies = [
- "darling_core 0.20.9",
- "darling_macro 0.20.9",
+ "darling_core 0.20.10",
+ "darling_macro 0.20.10",
 ]
 
 [[package]]
@@ -941,16 +941,16 @@ dependencies = [
 
 [[package]]
 name = "darling_core"
-version = "0.20.9"
+version = "0.20.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "622687fe0bac72a04e5599029151f5796111b90f1baaa9b544d807a5e31cd120"
+checksum = "95133861a8032aaea082871032f5815eb9e98cef03fa916ab4500513994df9e5"
 dependencies = [
  "fnv",
  "ident_case",
  "proc-macro2",
  "quote",
  "strsim 0.11.1",
- "syn 2.0.58",
+ "syn 2.0.72",
 ]
 
 [[package]]
@@ -966,13 +966,13 @@ dependencies = [
 
 [[package]]
 name = "darling_macro"
-version = "0.20.9"
+version = "0.20.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "733cabb43482b1a1b53eee8583c2b9e8684d592215ea83efd305dd31bc2f0178"
+checksum = "d336a2a514f6ccccaa3e09b02d41d35330c07ddf03a62165fcec10bb561c7806"
 dependencies = [
- "darling_core 0.20.9",
+ "darling_core 0.20.10",
  "quote",
- "syn 2.0.58",
+ "syn 2.0.72",
 ]
 
 [[package]]
@@ -1433,7 +1433,7 @@ dependencies = [
  "futures-sink",
  "futures-util",
  "http",
- "indexmap 2.2.6",
+ "indexmap 2.3.0",
  "slab",
  "tokio",
  "tokio-util",
@@ -1735,7 +1735,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "de3fc2e30ba82dd1b3911c8de1ffc143c74a914a14e99514d7637e3099df5ea0"
 dependencies = [
  "equivalent",
- "hashbrown 0.14.3",
+ "hashbrown 0.14.5",
 ]
 
 [[package]]
@@ -2050,16 +2050,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "num_cpus"
-version = "1.16.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4161fcb6d602d4d2081af7c3a45852d875a03dd337a6bfdd6e06407b61342a43"
-dependencies = [
- "hermit-abi",
- "libc",
-]
-
-[[package]]
 name = "object"
 version = "0.36.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2172,7 +2162,7 @@ dependencies = [
  "opentelemetry",
  "opentelemetry-proto",
  "opentelemetry_sdk",
- "prost 0.12.4",
+ "prost 0.12.6",
  "thiserror",
  "tokio",
  "tonic 0.11.0",
@@ -2186,7 +2176,7 @@ checksum = "984806e6cf27f2b49282e2a05e288f30594f3dbc74eb7a6e99422bc48ed78162"
 dependencies = [
  "opentelemetry",
  "opentelemetry_sdk",
- "prost 0.12.4",
+ "prost 0.12.6",
  "tonic 0.11.0",
 ]
 
@@ -2214,9 +2204,9 @@ dependencies = [
 
 [[package]]
 name = "ordered-float"
-version = "4.2.1"
+version = "4.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "19ff2cf528c6c03d9ed653d6c4ce1dc0582dc4af309790ad92f07c1cd551b0be"
+checksum = "4a91171844676f8c7990ce64959210cd2eaef32c2612c50f9fae9f8aaa6065a6"
 dependencies = [
  "num-traits",
 ]
@@ -2834,7 +2824,7 @@ dependencies = [
  "rkyv_derive",
  "seahash",
  "tinyvec",
- "uuid 1.8.0",
+ "uuid 1.10.0",
 ]
 
 [[package]]
@@ -3043,7 +3033,7 @@ dependencies = [
 
 [[package]]
 name = "semver"
-version = "1.0.22"
+version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "61697e0a1c7e512e84a621326239844a24d8207b4669b41bc18b32ea5cbf988b"
 
@@ -3157,10 +3147,10 @@ version = "2.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "881b6f881b17d13214e5d494c939ebab463d01264ce1811e9d4ac3a882e7695f"
 dependencies = [
- "darling 0.20.9",
+ "darling 0.20.10",
  "proc-macro2",
  "quote",
- "syn 2.0.58",
+ "syn 2.0.72",
 ]
 
 [[package]]
@@ -3355,7 +3345,7 @@ source = "git+https://github.com/xJonathanLEI/starknet-rs?rev=7153d0e42#7153d0e4
 dependencies = [
  "starknet-curve",
  "starknet-ff",
- "syn 2.0.58",
+ "syn 2.0.72",
 ]
 
 [[package]]
@@ -3374,7 +3364,7 @@ dependencies = [
  "ark-ff",
  "bigdecimal",
  "crypto-bigint",
- "getrandom 0.2.14",
+ "getrandom 0.2.15",
  "hex",
  "num-bigint",
  "serde",
@@ -3386,7 +3376,7 @@ version = "0.1.7"
 source = "git+https://github.com/xJonathanLEI/starknet-rs?rev=7153d0e42#7153d0e42112f8c1348029557aa6cf2b881a5c84"
 dependencies = [
  "starknet-core",
- "syn 2.0.58",
+ "syn 2.0.72",
 ]
 
 [[package]]
@@ -3779,7 +3769,7 @@ dependencies = [
  "hyper-timeout",
  "percent-encoding",
  "pin-project",
- "prost 0.12.4",
+ "prost 0.12.6",
  "tokio",
  "tokio-stream",
  "tower",
@@ -4062,13 +4052,13 @@ version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bc5cf98d8186244414c848017f0e2676b3fcb46807f6668a97dfe67359a3c4b7"
 dependencies = [
- "getrandom 0.2.14",
+ "getrandom 0.2.15",
  "serde",
 ]
 
 [[package]]
 name = "uuid"
-version = "1.8.0"
+version = "1.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "81dfa00651efa65069b0b6b651f4aaa31ba9e3c3ce0137aaad053604ee7e0314"
 dependencies = [

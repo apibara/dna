@@ -47,7 +47,7 @@ tracing.workspace = true
 tracing-opentelemetry.workspace = true
 
 [target.'cfg(not(windows))'.dependencies]
-jemallocator.workspace = true
+jemallocator = { workspace = true, optional = true }
 
 [dev-dependencies]
 serde.workspace = true
