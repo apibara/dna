@@ -1,10 +1,16 @@
 use apibara_dna_protocol::dna;
+use rkyv::{Archive, Deserialize, Serialize};
 
 /// Cursor uniquely identifies a block by its number and hash.
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash, Archive, Serialize, Deserialize)]
 pub struct Cursor {
     pub number: u64,
     pub hash: Vec<u8>,
+}
+
+pub trait GetCursor {
+    /// Returns the current cursor.
+    fn cursor(&self) -> Option<Cursor>;
 }
 
 impl Cursor {

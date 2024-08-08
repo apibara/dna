@@ -1,11 +1,5 @@
-mod chain_tracker;
-mod ext;
-mod provider;
-mod segment_builder;
-mod single_block;
+mod block;
+mod error;
 
-pub use self::chain_tracker::ChainTracker;
-pub use self::ext::*;
-pub use self::provider::{models, BeaconApiError, BeaconApiProvider, BlockId};
-pub use self::segment_builder::{BeaconChainSegmentBuilder, BeaconChainSegmentBuilderError};
-pub use self::single_block::BeaconChainBlockIngestion;
+pub use self::block::{add_transaction_to_blobs, decode_transaction};
+pub use self::error::IngestionError;
