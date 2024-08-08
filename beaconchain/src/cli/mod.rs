@@ -1,31 +1,41 @@
-mod common;
-mod ingestion;
-mod server;
+mod dbg;
+mod rpc;
 
-use apibara_dna_common::error::Result;
 use clap::{Parser, Subcommand};
-use ingestion::{run_ingestion, StartIngestionArgs};
+use error_stack::Result;
 
-use self::server::{run_server, StartServerArgs};
+use crate::error::BeaconChainError;
+
+use self::dbg::{DebugRpcCommand, DebugStoreCommand};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 pub struct Cli {
     #[command(subcommand)]
-    subcommand: Command,
+    command: Command,
 }
 
 #[derive(Subcommand, Debug)]
-enum Command {
-    StartIngestion(Box<StartIngestionArgs>),
-    StartServer(StartServerArgs),
+pub enum Command {
+    /// Debug command for the Beacon RPC.
+    #[command(name = "dbg-rpc")]
+    DebugRpc {
+        #[clap(subcommand)]
+        command: DebugRpcCommand,
+    },
+    /// Debug command for the store.
+    #[command(name = "dbg-store")]
+    DebugStore {
+        #[clap(subcommand)]
+        command: DebugStoreCommand,
+    },
 }
 
 impl Cli {
-    pub async fn run(self) -> Result<()> {
-        match self.subcommand {
-            Command::StartIngestion(args) => run_ingestion(*args).await,
-            Command::StartServer(args) => run_server(args).await,
+    pub async fn run(self) -> Result<(), BeaconChainError> {
+        match self.command {
+            Command::DebugRpc { command } => command.run().await,
+            Command::DebugStore { command } => command.run().await,
         }
     }
 }

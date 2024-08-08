@@ -16,37 +16,22 @@ path = "src/bin.rs"
 
 [dependencies]
 alloy-primitives.workspace = true
-alloy-eips = "0.1.2"
-alloy-consensus = { version = "0.1.2", features = ["k256"] }
-alloy-rpc-types-beacon = "0.1.2"
+alloy-eips.workspace = true
+alloy-consensus = { version = "0.2.1", features = ["k256"] }
+alloy-rpc-types-beacon = "0.2.1"
 apibara-observability = { path = "../observability" }
 apibara-dna-common = { path = "../common" }
 apibara-dna-protocol = { path = "../protocol" }
-async-channel.workspace = true
-async-trait.workspace = true
-bytecheck.workspace = true
-bytes.workspace = true
+byte-unit.workspace = true
 clap.workspace = true
 error-stack.workspace = true
-governor.workspace = true
 hex.workspace = true
-futures-util.workspace = true
-memmap2.workspace = true
-prost.workspace = true
-prost-types.workspace = true
 reqwest.workspace = true
 roaring.workspace = true
 rkyv.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 serde_with.workspace = true
-tonic.workspace = true
-tonic-reflection.workspace = true
 tokio.workspace = true
-tokio-stream.workspace = true
-tokio-util.workspace = true
 tracing.workspace = true
-tracing-opentelemetry.workspace = true
-
-[target.'cfg(not(windows))'.dependencies]
-jemallocator.workspace = true
+url.workspace = true
