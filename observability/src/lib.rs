@@ -1,9 +1,11 @@
 //! # OpenTelemetry helpers
 
+use std::borrow::Cow;
 use std::fmt;
 
 use error_stack::{Result, ResultExt};
 use opentelemetry::global;
+use opentelemetry::trace::TracerProvider;
 use tracing::Subscriber;
 
 pub use opentelemetry::metrics::{ObservableCounter, ObservableGauge};
@@ -32,7 +34,20 @@ pub fn meter(name: &'static str) -> Meter {
     global::meter(name)
 }
 
-pub fn init_opentelemetry() -> Result<(), OpenTelemetryInitError> {
+/// Initialize OpenTelemetry.
+///
+/// This function initializes the OpenTelemetry SDK and sets up the tracing and metrics layers.
+/// It should be called once during the application startup.
+///
+/// ```rs
+/// use apibara_observability::init_opentelemetry;
+///
+/// init_opentelemetry(env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION")).unwrap();
+/// ```
+pub fn init_opentelemetry(
+    package_name: impl Into<Cow<'static, str>>,
+    package_version: impl Into<Cow<'static, str>>,
+) -> Result<(), OpenTelemetryInitError> {
     #[cfg(feature = "tokio_console")]
     console_subscriber::init();
     #[cfg(not(feature = "tokio_console"))]
@@ -51,7 +66,7 @@ pub fn init_opentelemetry() -> Result<(), OpenTelemetryInitError> {
         let mut layers = vec![stdout()];
 
         if !sdk_disabled {
-            let otel_layer = otel()?;
+            let otel_layer = otel(package_name, package_version)?;
             layers.push(otel_layer);
         }
 
@@ -61,7 +76,10 @@ pub fn init_opentelemetry() -> Result<(), OpenTelemetryInitError> {
     Ok(())
 }
 
-fn otel<S>() -> Result<BoxedLayer<S>, OpenTelemetryInitError>
+fn otel<S>(
+    package_name: impl Into<Cow<'static, str>>,
+    version: impl Into<Cow<'static, str>>,
+) -> Result<BoxedLayer<S>, OpenTelemetryInitError>
 where
     S: Subscriber + Send + Sync,
     for<'a> S: LookupSpan<'a>,
@@ -78,12 +96,17 @@ where
         .change_context(OpenTelemetryInitError)
         .attach_printable("failed to create metrics pipeline")?;
 
-    let tracer = opentelemetry_otlp::new_pipeline()
+    let trace_provider = opentelemetry_otlp::new_pipeline()
         .tracing()
         .with_exporter(opentelemetry_otlp::new_exporter().tonic())
         .install_batch(opentelemetry_sdk::runtime::Tokio)
         .change_context(OpenTelemetryInitError)
         .attach_printable("failed to create tracing pipeline")?;
+
+    let tracer = trace_provider
+        .tracer_builder(package_name)
+        .with_version(version)
+        .build();
 
     // export traces and metrics to otel
     let otel_trace_layer = tracing_opentelemetry::layer().with_tracer(tracer);
