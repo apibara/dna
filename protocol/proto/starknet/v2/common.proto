@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+package starknet.v2;
+
+// A field element.
+message FieldElement {
+  fixed64 x0 = 1;
+  fixed64 x1 = 2;
+  fixed64 x2 = 3;
+  fixed64 x3 = 4;
+}

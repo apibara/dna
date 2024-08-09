@@ -1,0 +1,126 @@
+// Starknet DNA definitions (filter).
+syntax = "proto3";
+
+package starknet.v2;
+
+import "v2/common.proto";
+
+message Filter {
+  // Include header.
+  HeaderFilter header = 1;
+  // Filter transactions.
+  repeated TransactionFilter transactions = 2;
+  // Filter events.
+  repeated EventFilter events = 3;
+  // Filter messages to L1.
+  repeated MessageToL1Filter messages = 4;
+}
+
+message HeaderFilter {
+  // Always include header data. Defaults to `false`.
+  optional bool always = 1;
+}
+
+// Filter events.
+message EventFilter {
+  // Filter by contract emitting the event.
+  FieldElement from_address = 1;
+  // Filter keys that prefix-match the given data.
+  repeated Key keys = 2;
+  // Only returns events with keys of exactly the same length as the filter.
+  //
+  // Defaults to `false`.
+  optional bool strict = 3;
+  // Include events emitted by reverted transactions.
+  //
+  // Defaults to false.
+  optional bool include_reverted = 4;
+  // Include the transaction that emitted the event.
+  //
+  // Defaults to false.
+  optional bool include_transaction = 5;
+  // Include the receipt of the transaction that emitted the event.
+  //
+  // Defaults to false.
+  optional bool include_receipt = 6;
+  // Include the messages to L1 sent by the transaction that emitted the event.
+  //
+  // Defaults to false.
+  optional bool include_messages = 7;
+  // Include sibling events, that is events emitted by the same transaction.
+  //
+  // Defaults to false.
+  optional bool include_siblings = 8;
+}
+
+message Key { FieldElement value = 1; }
+
+// Filter messages to L1.
+message MessageToL1Filter {
+  // Filter by sender address.
+  FieldElement from_address = 1;
+  // Filter by destination address.
+  FieldElement to_address = 2;
+  // Include messages sent by reverted transactions.
+  //
+  // Defaults to false.
+  optional bool include_reverted = 3;
+  // Include the transaction that sent the message.
+  //
+  // Defaults to false.
+  optional bool include_transaction = 4;
+  // Include the receipt of the transaction that sent the message.
+  //
+  // Defaults to false.
+  optional bool include_receipt = 5;
+  // Include the events of the transaction that sent the message.
+  //
+  // Defaults to false.
+  optional bool include_events = 6;
+}
+
+// Filter transactions.
+message TransactionFilter {
+  // Include reverted transactions.
+  //
+  // Defaults to false.
+  optional bool include_reverted = 1;
+  // Flag to request the transaction's receipt.
+  //
+  // Defaults to `false`.
+  optional bool include_receipt = 2;
+  // Flag to request the transaction's events.
+  //
+  // Defaults to `false`.
+  optional bool include_events = 3;
+  // Flag to request the transaction's messages to L1.
+  //
+  // Defaults to `false`.
+  optional bool include_messages = 4;
+
+  oneof inner {
+    InvokeTransactionV0Filter invoke_v0 = 5;
+    InvokeTransactionV1Filter invoke_v1 = 6;
+    InvokeTransactionV3Filter invoke_v3 = 7;
+    DeployTransactionFilter deploy = 8;
+    DeclareV0TransactionFilter declare_v0 = 9;
+    DeclareV1TransactionFilter declare_v1 = 10;
+    DeclareV2TransactionFilter declare_v2 = 11;
+    DeclareV3TransactionFilter declare_v3 = 12;
+    L1HandlerTransactionFilter l1_handler = 13;
+    DeployAccountV1TransactionFilter deploy_account_v1 = 14;
+    DeployAccountV3TransactionFilter deploy_account_v3 = 15;
+  }
+}
+
+message InvokeTransactionV0Filter {}
+message InvokeTransactionV1Filter {}
+message InvokeTransactionV3Filter {}
+message DeployTransactionFilter {}
+message DeclareV0TransactionFilter {}
+message DeclareV1TransactionFilter {}
+message DeclareV2TransactionFilter {}
+message DeclareV3TransactionFilter {}
+message L1HandlerTransactionFilter {}
+message DeployAccountV1TransactionFilter {}
+message DeployAccountV3TransactionFilter {}

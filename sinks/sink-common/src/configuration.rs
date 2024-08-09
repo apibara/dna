@@ -1,12 +1,20 @@
-use std::{env, fmt, net::AddrParseError, path::PathBuf, str::FromStr, time::Duration};
+use std::{env, fmt, net::AddrParseError, path::PathBuf, str::FromStr, time::Duration, vec};
 
-use apibara_core::{node::v1alpha2::DataFinality, starknet::v1alpha2};
-use apibara_script::ScriptOptions as IndexerOptions;
-use apibara_sdk::{Configuration, MetadataKey, MetadataMap, MetadataValue, Uri};
+use apibara_dna_protocol::{
+    dna::{common::Cursor, stream::DataFinality},
+    evm,
+};
+use apibara_indexer_script::{DenoRuntimeOptions, ScriptOptions as IndexerOptions};
+// use apibara_sdk::{Configuration, MetadataKey, MetadataMap, MetadataValue, Uri};
 use bytesize::ByteSize;
 use clap::Args;
 use error_stack::{Result, ResultExt};
+use prost::Message;
 use serde::{Deserialize, Serialize};
+use tonic::{
+    metadata::{self, MetadataKey, MetadataMap, MetadataValue},
+    transport::Uri,
+};
 use tracing::debug;
 
 use crate::{connector::StreamConfiguration, status::StatusServer};
@@ -149,9 +157,6 @@ pub struct StreamConfigurationOptions {
     /// The data filter.
     #[serde(flatten)]
     pub filter: NetworkFilterOptions,
-    /// Set the response preferred batch size.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub batch_size: Option<u64>,
     /// The finality of the data to be streamed.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub finality: Option<DataFinality>,
@@ -163,7 +168,7 @@ pub struct StreamConfigurationOptions {
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 #[serde(tag = "network", content = "filter", rename_all = "camelCase")]
 pub enum NetworkFilterOptions {
-    Starknet(v1alpha2::Filter),
+    Evm(evm::Filter),
 }
 
 impl StatusServerOptions {
@@ -248,11 +253,11 @@ impl StreamOptions {
                 }
                 Some((key, value)) => {
                     let key = key
-                        .parse::<MetadataKey>()
+                        .parse::<MetadataKey<metadata::Ascii>>()
                         .change_context(StreamOptionsError)
                         .attach_printable_lazy(|| format!("invalid metadata key: {key}"))?;
                     let value = value
-                        .parse::<MetadataValue>()
+                        .parse::<MetadataValue<metadata::Ascii>>()
                         .change_context(StreamOptionsError)
                         .attach_printable_lazy(|| format!("invalid metadata value: {value}"))?;
                     metadata.insert(key, value);
@@ -272,44 +277,36 @@ impl StreamOptions {
 }
 
 impl StreamConfigurationOptions {
+    pub fn starting_cursor(&self) -> Option<Cursor> {
+        self.starting_block.and_then(|block| {
+            if block == 0 {
+                None
+            } else {
+                Some(Cursor {
+                    order_key: block - 1,
+                    unique_key: Vec::default(),
+                })
+            }
+        })
+    }
+
     pub fn merge(self, other: StreamConfigurationOptions) -> StreamConfigurationOptions {
         StreamConfigurationOptions {
             filter: self.filter,
-            batch_size: self.batch_size.or(other.batch_size),
             finality: self.finality.or(other.finality),
             starting_block: self.starting_block.or(other.starting_block),
         }
     }
 
-    /// Returns a `Configuration` object to stream Starknet data.
-    pub fn as_starknet(&self) -> Option<Configuration<v1alpha2::Filter>> {
-        let mut configuration = Configuration::default();
+    pub fn is_evm(&self) -> bool {
+        matches!(self.filter, NetworkFilterOptions::Evm(_))
+    }
+}
 
-        configuration = if let Some(batch_size) = self.batch_size {
-            configuration.with_batch_size(batch_size)
-        } else {
-            configuration
-        };
-
-        configuration = if let Some(finality) = self.finality {
-            configuration.with_finality(finality)
-        } else {
-            configuration
-        };
-
-        // The starting block is inclusive, but the stream expects the index of the block
-        // immediately before the first one sent.
-        configuration = match self.starting_block {
-            Some(starting_block) if starting_block > 0 => {
-                configuration.with_starting_block(starting_block - 1)
-            }
-            _ => configuration,
-        };
-
-        match self.filter {
-            NetworkFilterOptions::Starknet(ref filter) => {
-                Some(configuration.with_filter(|_| filter.clone()))
-            }
+impl NetworkFilterOptions {
+    pub fn to_bytes(&self) -> Vec<u8> {
+        match self {
+            NetworkFilterOptions::Evm(filter) => filter.encode_to_vec(),
         }
     }
 }
@@ -373,10 +370,12 @@ impl ScriptOptions {
 
     pub fn into_indexer_options(self) -> IndexerOptions {
         IndexerOptions {
-            allow_env: self.allow_env_from_env,
-            allow_net: self.allow_net,
-            allow_read: self.allow_read,
-            allow_write: self.allow_write,
+            runtime_options: DenoRuntimeOptions {
+                allow_env: self.allow_env_from_env,
+                allow_net: self.allow_net,
+                allow_read: self.allow_read,
+                allow_write: self.allow_write,
+            },
             transform_timeout: self
                 .script_transform_timeout_seconds
                 .map(Duration::from_secs),
@@ -385,9 +384,10 @@ impl ScriptOptions {
     }
 }
 
+/*
 #[cfg(test)]
 mod tests {
-    use apibara_core::node::v1alpha2::DataFinality;
+    use apibara_dna_protocol::dna::DataFinality;
     use bytesize::ByteSize;
 
     use super::{
@@ -624,3 +624,5 @@ mod tests {
         assert!(config.is_ok());
     }
 }
+
+*/

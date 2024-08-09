@@ -5,3 +5,5 @@
 /.devcontainer/.profile
 .pre-commit-config.yaml
 .envrc
+perf.data
+perf.data.old

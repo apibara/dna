@@ -1,6 +1,0 @@
-version: "3.6"
-services:
-  echo:
-    image: mendhak/http-https-echo
-    ports:
-    - 8080:8080

@@ -7,36 +7,29 @@ license = "Apache-2.0"
 [workspace]
 resolver = "2"
 members = [
-    "core",
     "observability",
-    "node",
-    "sdk",
-    "starknet",
-    "script",
-    "sinks/sink-common",
-    "sinks/sink-options-derive",
-    "sinks/sink-options-derive-tests",
-    "sinks/sink-console",
-    "sinks/sink-webhook",
-    "sinks/sink-mongo",
-    "sinks/sink-parquet",
-    "sinks/sink-postgres",
-    "runners/runner-common",
-    "runners/runner-local",
-    "operator",
-    "cli",
+    "protocol",
+    "common",
+    # "evm",
+    # "starknet",
+    "beaconchain",
 ]
 
 [workspace.dependencies]
-assert_matches = "1.5.0"
-anstyle = "1.0.1"
-arrayvec = "0.7.2"
-async-compression = "0.4"
-async-stream = "0.3.5"
-async-trait = "0.1.57"
-byteorder = "1.4.3"
-byte-unit = "4.0.14"
-clap = { version = "4.3.3", features = [
+alloy-primitives = "0.7"
+alloy-eips = "0.2.1"
+# assert_matches = "1.5.0"
+# anstyle = "1.0.1"
+# arrayvec = "0.7.2"
+# async-channel = "2.1.1"
+# async-compression = { version = "0.4.6", features = ["tokio", "zstd"] }
+# async-stream = "0.3.5"
+# async-trait = "0.1.57"
+# bytecheck = "0.6.12"
+# bytes = "1.5.0"
+# byteorder = "1.4.3"
+byte-unit = "5.1.4"
+clap = { version = "4.5.13", features = [
     "derive",
     "env",
     "cargo",
@@ -44,72 +37,78 @@ clap = { version = "4.3.3", features = [
     "color",
     "unstable-styles",
 ] }
-ctrlc = { version = "3.2.3", features = ["termination"] }
-dirs = "4.0.0"
-dotenvy = "0.15.7"
-error-stack = "0.4.1"
-futures = "0.3.23"
-futures-util = "0.3.26"
-governor = "0.6.0"
+# ctrlc = { version = "3.2.3", features = ["termination"] }
+# deno_ast = { version = "0.31", features = ["cjs", "transpiling"] }
+# deno_core = "0.224.0"
+# deno_runtime = "0.130.0"
+# dirs = "4.0.0"
+# dotenvy = "0.15.7"
+error-stack = "0.5.0"
+# flate2 = "1.0"
+# flatbuffers = { version = "23.5.26", features = ["serialize"] }
+# futures = "0.3.23"
+# futures-util = "0.3.26"
+# governor = "0.6.0"
 hex = { version = "0.4.3", features = ["serde"] }
-http = "0.2.9"
-hyper = "0.14.20"
-lazy_static = "1.4.0"
-jemallocator = { version = "0.5.0" }
-mockall = "0.11.4"
-opentelemetry = { version = "0.18.0", features = [
+# http = "0.2.9"
+# hyper = "0.14.20"
+# lazy_static = "1.4.0"
+# lru = "0.12.3"
+# jemallocator = { version = "0.5.0" }
+# memmap2 = "0.9.4"
+# mockall = "0.11.4"
+# nanoid = "0.4.0"
+opentelemetry = { version = "0.24.0", features = ["trace", "metrics"] }
+opentelemetry_sdk = { version = "0.24.1", features = [
     "trace",
     "metrics",
     "rt-tokio",
 ] }
-opentelemetry-otlp = { version = "0.11.0", features = [
+opentelemetry-otlp = { version = "0.17.0", features = [
     "trace",
     "metrics",
     "grpc-tonic",
 ] }
-pbjson = "0.5.1"
-pbjson-build = "0.5.1"
-pbjson-types = "0.5.1"
-pin-project = "1.0.12"
-prost = "0.11.0"
-reqwest = { version = "0.11.16", default-features = false, features = [
+pin-project = "1.1.5"
+prost = "0.13.1"
+prost-types = "0.13.1"
+reqwest = { version = "0.12.5", default-features = false, features = [
     "json",
-    "serde_json",
     "rustls-tls",
 ] }
-regex = "1.9.1"
-serde = "1.0.155"
-serde_json = "1.0.94"
-starknet = { git = "https://github.com/xJonathanLEI/starknet-rs", rev = "7153d0e42" }
-# starknet = { git = "https://github.com/fracek/starknet-rs", rev = "e6c4a21a7ce5" }
-thiserror = "1.0.32"
-tempfile = "3.3.0"
-tempdir = "0.3.7"
-testcontainers = { git = "https://github.com/fracek/testcontainers-rs.git", rev = "98a5557e" }
-tokio = { version = "1.20.1", features = ["full"] }
-tokio-stream = { version = "0.1.10", features = ["sync", "net"] }
-tokio-util = "0.7.4"
-tonic = { version = "0.9.0", features = ["tls", "tls-roots", "prost"] }
-tonic-build = "0.9.0"
-tonic-health = "0.9.0"
-tonic-reflection = "0.9.0"
-tower = "0.4.13"
-tracing = { version = "0.1.36", features = [
+# regex = "1.9.1"
+rkyv = { version = "0.7.44", features = ["validation"] }
+roaring = "0.10.6"
+# rusqlite = "0.29.0"
+serde = { version = "1.0.205", features = ["derive"] }
+serde_json = "1.0.122"
+serde_with = "3.9.0"
+# thiserror = "1.0.32"
+# tempfile = "3.3.0"
+# tempdir = "0.3.7"
+# testcontainers = { git = "https://github.com/fracek/testcontainers-rs.git", rev = "98a5557e" }
+tokio = { version = "1.39.2", features = ["full"] }
+tokio-stream = { version = "0.1.15", features = ["sync", "net"] }
+# tokio-util = "0.7.4"
+tonic = { version = "0.12.1", features = ["tls", "tls-roots", "prost"] }
+tonic-build = "0.12.1"
+# tonic-health = "0.9.0"
+# tonic-reflection = "0.9.0"
+# tower = "0.4.13"
+tracing = { version = "0.1.40", features = [
     "max_level_trace",
     "release_max_level_debug",
 ] }
-tracing-futures = { version = "0.2.5", features = ["tokio", "futures-03"] }
-tracing-opentelemetry = "0.18.0"
-tracing-subscriber = { version = "0.3.15", features = [
+# tracing-futures = { version = "0.2.5", features = ["tokio", "futures-03"] }
+tracing-opentelemetry = "0.25.0"
+tracing-subscriber = { version = "0.3.18", features = [
     "std",
     "env-filter",
     "json",
 ] }
-tracing-tree = "0.2.2"
-quickcheck = "1.0.3"
-quickcheck_macros = "1.0.0"
-warp = "0.3.5"
-
-[patch.crates-io]
-# https://github.com/tov/libffi-rs/pull/80
-libffi-sys = { git = "https://github.com/fracek/libffi-rs.git", rev = "653781aa9b7a7ac1682e7f8cb405a2e90afc341d" }
+# tracing-tree = "0.2.2"
+# quickcheck = "1.0.3"
+# quickcheck_macros = "1.0.0"
+# warp = "0.3.5"
+# wiremock = "0.5.19"
+url = "2.5"

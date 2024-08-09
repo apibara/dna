@@ -1,17 +1,17 @@
 [package]
-name = "apibara-starknet"
-version = "1.6.1"
+name = "apibara-dna-starknet"
+version = "0.0.0"
 edition.workspace = true
 authors.workspace = true
 repository.workspace = true
 license.workspace = true
 
 [lib]
-name = "apibara_starknet"
+name = "apibara_dna_starknet"
 path = "src/lib.rs"
 
 [[bin]]
-name = "apibara-starknet"
+name = "apibara-dna-starknet"
 path = "src/bin.rs"
 
 [features]
@@ -19,54 +19,36 @@ default = ["jemalloc"]
 jemalloc = ["dep:jemallocator"]
 
 [dependencies]
-apibara-core = { path = "../core" }
-apibara-node = { path = "../node" }
-apibara-sdk = { path = "../sdk" }
-bloomfilter = "1.0.9"
-byte-unit.workspace = true
-byteorder.workspace = true
+apibara-observability = { path = "../observability" }
+apibara-dna-common = { path = "../common" }
+apibara-dna-protocol = { path = "../protocol" }
+async-channel.workspace = true
+async-stream.workspace = true
+async-trait.workspace = true
+bytecheck.workspace = true
+bytes.workspace = true
 clap.workspace = true
-ctrlc.workspace = true
 error-stack.workspace = true
-futures.workspace = true
+governor.workspace = true
 hex.workspace = true
-hyper.workspace = true
-lazy_static.workspace = true
-mockall.workspace = true
-pbjson-types.workspace = true
-pin-project.workspace = true
+futures-util.workspace = true
+memmap2.workspace = true
 prost.workspace = true
-serde.workspace = true
-serde_json.workspace = true
-starknet.workspace = true
-tempdir.workspace = true
-thiserror.workspace = true
+prost-types.workspace = true
+roaring.workspace = true
+rkyv.workspace = true
+tonic.workspace = true
+tonic-reflection.workspace = true
 tokio.workspace = true
 tokio-stream.workspace = true
 tokio-util.workspace = true
-tonic.workspace = true
-tonic-health.workspace = true
-tonic-reflection.workspace = true
-tower.workspace = true
+starknet = { git = "https://github.com/xJonathanLEI/starknet-rs", rev = "7153d0e42" }
 tracing.workspace = true
-tracing-futures.workspace = true
-url = "2.2.2"
-warp.workspace = true
+tracing-opentelemetry.workspace = true
+
+[target.'cfg(not(windows))'.dependencies]
 jemallocator = { workspace = true, optional = true }
 
 [dev-dependencies]
-apibara-core = { path = "../core" }
-apibara-sdk = { path = "../sdk" }
-assert_matches.workspace = true
-futures-channel = "0.3.28"
-futures-util.workspace = true
-quickcheck.workspace = true
-quickcheck_macros.workspace = true
-reqwest.workspace = true
+serde.workspace = true
 serde_json.workspace = true
-tempfile.workspace = true
-testcontainers.workspace = true
-tokio-tungstenite = "0.19.0"
-
-[build-dependencies]
-tonic-build.workspace = true

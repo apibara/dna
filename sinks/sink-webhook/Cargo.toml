@@ -15,8 +15,8 @@ name = "apibara-sink-webhook"
 path = "src/bin.rs"
 
 [dependencies]
-apibara-core = { path = "../../core" }
 apibara-observability = { path = "../../observability" }
+apibara-dna-protocol = { path = "../../dna/protocol" }
 apibara-sink-common = { path = "../sink-common" }
 async-trait.workspace = true
 clap.workspace = true
@@ -34,4 +34,4 @@ tracing.workspace = true
 jemallocator.workspace = true
 
 [dev-dependencies]
-wiremock = "0.5.19"
+wiremock.workspace = true
