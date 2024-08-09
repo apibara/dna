@@ -35,6 +35,9 @@ impl SegmentBuilder {
         match block {
             store::fragment::Slot::Missed => {
                 self.header.push(store::fragment::Slot::Missed);
+                self.transaction.push(store::fragment::Slot::Missed);
+                self.validator.push(store::fragment::Slot::Missed);
+                self.blob.push(store::fragment::Slot::Missed);
             }
             store::fragment::Slot::Proposed(block) => {
                 let cursor = block.block.cursor();
