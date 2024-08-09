@@ -19,9 +19,9 @@ pub struct SegmentBlock<TD, TI> {
 #[archive(check_bytes)]
 pub struct Segment<TD, TI> {
     /// The first block number in the segment.
-    first_block_number: u64,
+    pub first_block_number: u64,
     /// The segment body.
-    body: Vec<fragment::Slot<SegmentBlock<TD, TI>>>,
+    pub body: Vec<fragment::Slot<SegmentBlock<TD, TI>>>,
 }
 
 pub trait SegmentName {
