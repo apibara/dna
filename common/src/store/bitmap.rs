@@ -45,6 +45,21 @@ impl<K> ArchivedBitmapMap<K>
 where
     K: Ord + rkyv::Archive,
 {
+    pub fn deserialize<D>(&self, deserializer: &mut D) -> Result<BitmapMap<K>, BitmapError>
+    where
+        D: rkyv::Fallible + ?Sized,
+        D::Error: std::fmt::Display,
+        K::Archived: rkyv::Deserialize<K, D>,
+    {
+        <Self as rkyv::Deserialize<BitmapMap<K>, D>>::deserialize(self, deserializer).or_else(
+            |err| {
+                Err(BitmapError)
+                    .attach_printable("failed to deserialize bitmap")
+                    .attach_printable_lazy(|| format!("error: {}", err))
+            },
+        )
+    }
+
     pub fn iter(&self) -> impl Iterator<Item = &Entry<K::Archived, ArchivedBitmap>> {
         self.0.iter()
     }
