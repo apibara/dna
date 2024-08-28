@@ -8,43 +8,41 @@ use crate::provider::models;
 #[derive(Archive, Serialize, Deserialize, Debug)]
 #[archive(check_bytes)]
 pub enum Slot<T> {
-    Missed,
+    Missed { slot: u64 },
     Proposed(T),
 }
 
 impl<T: rkyv::Archive> ArchivedSlot<T> {
     pub fn as_proposed(&self) -> Option<&<T as Archive>::Archived> {
         match self {
-            ArchivedSlot::Missed => None,
+            ArchivedSlot::Missed { .. } => None,
             ArchivedSlot::Proposed(data) => Some(data),
         }
     }
 }
 
 /// An address of 160 bits.
-#[derive(
-    Archive, Serialize, Deserialize, Debug, PartialEq, Clone, Copy, Default, PartialOrd, Eq, Ord,
-)]
+#[derive(Archive, Serialize, Deserialize, PartialEq, Clone, Copy, Default, PartialOrd, Eq, Ord)]
 #[archive(check_bytes)]
 pub struct Address(pub [u8; 20]);
 
 /// A fixed-size byte array of 32 bytes.
-#[derive(Archive, Serialize, Deserialize, Debug, Default, PartialEq, Clone, Copy)]
+#[derive(Archive, Serialize, Deserialize, Default, PartialEq, Clone, Copy)]
 #[archive(check_bytes)]
 pub struct B256(pub [u8; 32]);
 
 /// An unsigned integer of 256 bits.
-#[derive(Archive, Serialize, Deserialize, Debug)]
+#[derive(Archive, Serialize, Deserialize)]
 #[archive(check_bytes)]
 pub struct U256(pub [u8; 32]);
 
 /// A fixed-size byte array of 48 bytes.
-#[derive(Archive, Serialize, Deserialize, Debug)]
+#[derive(Archive, Serialize, Deserialize)]
 #[archive(check_bytes)]
 pub struct B384(pub [u8; 48]);
 
 /// A variable-size byte array.
-#[derive(Archive, Serialize, Deserialize, Debug)]
+#[derive(Archive, Serialize, Deserialize)]
 #[archive(check_bytes)]
 pub struct Bytes(pub Vec<u8>);
 
@@ -147,4 +145,34 @@ pub struct Blob {
     pub blob_hash: B256,
     pub transaction_index: u32,
     pub transaction_hash: B256,
+}
+
+impl std::fmt::Debug for Address {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Address(0x{})", hex::encode(self.0))
+    }
+}
+
+impl std::fmt::Debug for B256 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "B256(0x{})", hex::encode(self.0))
+    }
+}
+
+impl std::fmt::Debug for U256 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "U256(0x{})", hex::encode(self.0))
+    }
+}
+
+impl std::fmt::Debug for B384 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "B384(0x{})", hex::encode(self.0))
+    }
+}
+
+impl std::fmt::Debug for Bytes {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Bytes(0x{})", hex::encode(&self.0))
+    }
 }
