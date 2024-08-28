@@ -83,7 +83,12 @@ impl TextDumpCommand {
 
                 for (block_index, block) in segment.blocks.iter().enumerate() {
                     info!("* offset: {}", block_index);
-                    info!("  index count: {}", block.tags.len());
+                    info!(
+                        "  cursor: number={} hash=0x{}",
+                        block.cursor.number,
+                        hex::encode(&block.cursor.hash)
+                    );
+                    info!("  index count: {}", block.data.tags.len());
                 }
 
                 Ok(())
@@ -104,12 +109,20 @@ impl TextDumpCommand {
 
                 for (block_index, block) in segment.blocks.iter().enumerate() {
                     info!("* offset: {}", block_index);
-                    match block {
-                        fragment::ArchivedSlot::Missed { slot } => {
-                            info!("  missed slot {}", slot);
+                    info!(
+                        "  cursor: number={} hash=0x{}",
+                        block.cursor.number,
+                        hex::encode(&block.cursor.hash)
+                    );
+                    match &block.data {
+                        fragment::ArchivedSlot::Missed { .. } => {
+                            info!("  missed slot");
                         }
                         fragment::ArchivedSlot::Proposed(block) => {
-                            info!("  proposed slot {}", block.slot);
+                            info!(
+                                "  proposed slot: hash=0x{}",
+                                hex::encode(block.state_root.0)
+                            );
                         }
                     }
                 }
@@ -132,12 +145,17 @@ impl TextDumpCommand {
 
                 for (block_index, block) in segment.blocks.iter().enumerate() {
                     info!("* offset: {}", block_index);
-                    match block {
-                        fragment::ArchivedSlot::Missed { slot } => {
-                            info!("  missed slot {}", slot);
+                    info!(
+                        "  cursor: number={} hash=0x{}",
+                        block.cursor.number,
+                        hex::encode(&block.cursor.hash)
+                    );
+                    match &block.data {
+                        fragment::ArchivedSlot::Missed { .. } => {
+                            info!("  missed slot");
                         }
-                        fragment::ArchivedSlot::Proposed(_block) => {
-                            info!("  proposed slot");
+                        fragment::ArchivedSlot::Proposed(block) => {
+                            info!("  proposed slot: transactions={}", block.len());
                         }
                     }
                 }
@@ -160,12 +178,17 @@ impl TextDumpCommand {
 
                 for (block_index, block) in segment.blocks.iter().enumerate() {
                     info!("* offset: {}", block_index);
-                    match block {
-                        fragment::ArchivedSlot::Missed { slot } => {
-                            info!("  missed slot {}", slot);
+                    info!(
+                        "  cursor: number={} hash=0x{}",
+                        block.cursor.number,
+                        hex::encode(&block.cursor.hash)
+                    );
+                    match &block.data {
+                        fragment::ArchivedSlot::Missed { .. } => {
+                            info!("  missed slot");
                         }
-                        fragment::ArchivedSlot::Proposed(_block) => {
-                            info!("  proposed slot");
+                        fragment::ArchivedSlot::Proposed(block) => {
+                            info!("  proposed slot: validators={}", block.len());
                         }
                     }
                 }
@@ -188,12 +211,17 @@ impl TextDumpCommand {
 
                 for (block_index, block) in segment.blocks.iter().enumerate() {
                     info!("* offset: {}", block_index);
-                    match block {
-                        fragment::ArchivedSlot::Missed { slot } => {
-                            info!("  missed slot {}", slot);
+                    info!(
+                        "  cursor: number={} hash=0x{}",
+                        block.cursor.number,
+                        hex::encode(&block.cursor.hash)
+                    );
+                    match &block.data {
+                        fragment::ArchivedSlot::Missed { .. } => {
+                            info!("  missed slot");
                         }
-                        fragment::ArchivedSlot::Proposed(_block) => {
-                            info!("  proposed slot");
+                        fragment::ArchivedSlot::Proposed(block) => {
+                            info!("  proposed slot: blobs={}", block.len());
                         }
                     }
                 }

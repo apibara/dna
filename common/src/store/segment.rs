@@ -11,11 +11,18 @@ pub struct SegmentError;
 
 #[derive(Archive, Serialize, Deserialize, Debug)]
 #[archive(check_bytes)]
+pub struct SegmentBlock<TD> {
+    pub cursor: Cursor,
+    pub data: TD,
+}
+
+#[derive(Archive, Serialize, Deserialize, Debug)]
+#[archive(check_bytes)]
 pub struct Segment<TD> {
     /// The first block in the segment.
     pub first_block: Cursor,
     /// The segment body.
-    pub blocks: Vec<TD>,
+    pub blocks: Vec<SegmentBlock<TD>>,
 }
 
 /// A fragment of data.
@@ -40,8 +47,11 @@ impl<TD> Segment<TD> {
         }
     }
 
-    pub fn push(&mut self, block: TD) {
-        self.blocks.push(block);
+    pub fn push(&mut self, cursor: Cursor, block: TD) {
+        self.blocks.push(SegmentBlock {
+            cursor,
+            data: block,
+        });
     }
 }
 
