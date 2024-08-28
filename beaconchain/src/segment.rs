@@ -43,20 +43,24 @@ impl SegmentBuilder {
     pub fn add_block(&mut self, block: fragment::Slot<Block>) {
         use fragment::Slot::*;
 
+        let cursor = block.cursor();
+
         match block {
             Missed { slot } => {
-                self.index.push(IndexGroup::default());
-                self.header.push(Missed { slot });
-                self.transaction.push(Missed { slot });
-                self.validator.push(Missed { slot });
-                self.blob.push(Missed { slot });
+                self.index.push(cursor.clone(), IndexGroup::default());
+                self.header.push(cursor.clone(), Missed { slot });
+                self.transaction.push(cursor.clone(), Missed { slot });
+                self.validator.push(cursor.clone(), Missed { slot });
+                self.blob.push(cursor.clone(), Missed { slot });
             }
             Proposed(block) => {
-                self.index.push(block.index);
-                self.header.push(Proposed(block.header));
-                self.transaction.push(Proposed(block.transactions));
-                self.validator.push(Proposed(block.validators));
-                self.blob.push(Proposed(block.blobs));
+                self.index.push(cursor.clone(), block.index);
+                self.header.push(cursor.clone(), Proposed(block.header));
+                self.transaction
+                    .push(cursor.clone(), Proposed(block.transactions));
+                self.validator
+                    .push(cursor.clone(), Proposed(block.validators));
+                self.blob.push(cursor.clone(), Proposed(block.blobs));
             }
         }
     }
