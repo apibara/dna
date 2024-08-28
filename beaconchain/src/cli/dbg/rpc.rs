@@ -8,7 +8,6 @@ use clap::Subcommand;
 use error_stack::{Result, ResultExt};
 use serde::{Deserialize, Serialize};
 use tracing::info;
-use url::ParseError;
 
 use crate::{
     cli::rpc::RpcArgs,
@@ -85,7 +84,7 @@ pub enum DebugRpcCommand {
 /// Data needed to assemble a block.
 #[derive(Serialize, Deserialize)]
 pub(crate) enum JsonBlock {
-    Missed,
+    Missed { slot: u64 },
     Proposed(ProposedBlock),
 }
 
@@ -109,6 +108,12 @@ impl DebugRpcCommand {
         let elapsed = match self {
             DebugRpcCommand::Download { json, .. } => {
                 info!(block_id = %block_id, "downloading block");
+                let BlockId::Slot(slot) = block_id else {
+                    return Err(BeaconChainError)
+                        .attach_printable_lazy(|| format!("invalid block id: {block_id:?}"))
+                        .attach_printable("must be a slot");
+                };
+
                 let is_missed = match rpc_provider.get_header(block_id.clone()).await {
                     Ok(_) => false,
                     Err(err) => {
@@ -125,7 +130,7 @@ impl DebugRpcCommand {
 
                 if is_missed {
                     let elapsed = start.elapsed();
-                    write_json(json, &JsonBlock::Missed)?;
+                    write_json(json, &JsonBlock::Missed { slot })?;
                     elapsed
                 } else {
                     let block = rpc_provider
@@ -216,7 +221,7 @@ impl DebugRpcCommand {
         Ok(())
     }
 
-    fn rpc_provider(&self) -> Result<crate::provider::http::BeaconApiProvider, ParseError> {
+    fn rpc_provider(&self) -> Result<crate::provider::http::BeaconApiProvider, BeaconChainError> {
         match self {
             DebugRpcCommand::Download { rpc, .. } => rpc.to_beacon_api_provider(),
             DebugRpcCommand::GetHeader { rpc, .. } => rpc.to_beacon_api_provider(),

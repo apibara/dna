@@ -7,14 +7,14 @@ use super::bitmap::{ArchivedBitmapMap, BitmapMap};
 pub struct IndexError;
 
 /// A collection of tagged indices.
-#[derive(Archive, Serialize, Deserialize, Debug, Default)]
+#[derive(Archive, Serialize, Deserialize, Default)]
 #[archive(check_bytes)]
 pub struct IndexGroup {
-    tags: Vec<u8>,
-    data: Vec<Vec<u8>>,
+    pub tags: Vec<u8>,
+    pub data: Vec<Vec<u8>>,
 }
 
-pub trait TaggedIndex: Sized + rkyv::Archive {
+pub trait TaggedIndex {
     type Key: rkyv::Archive + Ord;
 
     fn tag() -> u8;
@@ -80,6 +80,20 @@ impl error_stack::Context for IndexError {}
 impl std::fmt::Display for IndexError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "index error")
+    }
+}
+
+impl std::fmt::Debug for IndexGroup {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let data = self
+            .data
+            .iter()
+            .map(|d| format!("<{} bytes>", d.len()))
+            .collect::<Vec<_>>();
+        f.debug_struct("IndexGroup")
+            .field("tags", &self.tags)
+            .field("data", &data)
+            .finish()
     }
 }
 

@@ -1,3 +1,4 @@
+use apibara_dna_common::{Cursor, GetCursor};
 use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, DisplayFromStr};
 
@@ -165,5 +166,11 @@ pub struct ValidatorsResponse {
 impl BlobSidecar {
     pub fn hash(&self) -> B256 {
         super::utils::kzg_commitment_to_versioned_hash(&self.kzg_commitment)
+    }
+}
+
+impl GetCursor for BeaconBlock {
+    fn cursor(&self) -> Option<Cursor> {
+        Some(Cursor::new(self.slot, self.state_root.0.to_vec()))
     }
 }

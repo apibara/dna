@@ -1,7 +1,10 @@
-use std::time::Duration;
+use std::{fmt::Debug, time::Duration};
 
 use error_stack::{Result, ResultExt};
-use reqwest::Client;
+use reqwest::{
+    header::{HeaderMap, HeaderValue},
+    Client,
+};
 
 use crate::provider::models;
 
@@ -11,6 +14,8 @@ pub enum BeaconApiError {
     NotFound,
     DeserializeResponse,
     Timeout,
+    Unauthorized,
+    ServerError,
 }
 
 /// Block identifier.
@@ -39,6 +44,8 @@ pub struct BeaconApiProviderOptions {
     pub timeout: Duration,
     /// Timeout for validators requests.
     pub validators_timeout: Duration,
+    /// Headers to send with the requests.
+    pub headers: HeaderMap<HeaderValue>,
 }
 
 impl BeaconApiProvider {
@@ -87,19 +94,21 @@ impl BeaconApiProvider {
     /// Send a request to the beacon node.
     ///
     /// TODO: this function can be turned into a `Transport` trait if we ever need it.
+    #[tracing::instrument(skip(self))]
     async fn send_request<Req>(
         &self,
         request: Req,
         timeout: Duration,
     ) -> Result<Req::Response, BeaconApiError>
     where
-        Req: BeaconApiRequest,
+        Req: BeaconApiRequest + Debug,
     {
         let url = format!("{}{}", self.url, request.path());
         let response = match self
             .client
             .get(&url)
             .header("Content-Type", "application/json")
+            .headers(self.options.headers.clone())
             .timeout(timeout)
             .send()
             .await
@@ -117,10 +126,19 @@ impl BeaconApiProvider {
             return Err(BeaconApiError::NotFound.into());
         }
 
+        if response.status().as_u16() == 401 {
+            return Err(BeaconApiError::Unauthorized.into());
+        }
+
+        if response.status().as_u16() != 200 {
+            return Err(BeaconApiError::ServerError.into());
+        }
+
         let text_response = response
             .text()
             .await
             .change_context(BeaconApiError::Request)?;
+
         let response = serde_json::from_str(&text_response)
             .change_context(BeaconApiError::DeserializeResponse)?;
 
@@ -134,18 +152,22 @@ pub trait BeaconApiRequest {
     fn path(&self) -> String;
 }
 
+#[derive(Debug)]
 pub struct HeaderRequest {
     block_id: BlockId,
 }
 
+#[derive(Debug)]
 pub struct BlockRequest {
     block_id: BlockId,
 }
 
+#[derive(Debug)]
 pub struct BlobSidecarRequest {
     block_id: BlockId,
 }
 
+#[derive(Debug)]
 pub struct ValidatorsRequest {
     block_id: BlockId,
 }
@@ -174,6 +196,8 @@ impl std::fmt::Display for BeaconApiError {
             BeaconApiError::DeserializeResponse => write!(f, "failed to deserialize response"),
             BeaconApiError::NotFound => write!(f, "not found"),
             BeaconApiError::Timeout => write!(f, "the request timed out"),
+            BeaconApiError::Unauthorized => write!(f, "unauthorized"),
+            BeaconApiError::ServerError => write!(f, "server error"),
         }
     }
 }
@@ -241,6 +265,7 @@ impl Default for BeaconApiProviderOptions {
         Self {
             timeout: Duration::from_secs(5),
             validators_timeout: Duration::from_secs(60),
+            headers: HeaderMap::default(),
         }
     }
 }

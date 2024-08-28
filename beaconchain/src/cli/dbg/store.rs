@@ -32,25 +32,11 @@ pub enum DebugStoreCommand {
         #[arg(long, default_value = "false")]
         stats: bool,
     },
-    /// Read a block and add indices.
-    Index {
-        /// Path to the input (non-indexed) block.
-        #[arg(long)]
-        in_: PathBuf,
-        /// Path to the output file.
-        #[arg(long)]
-        out: PathBuf,
-        /// Print index stats.
-        #[arg(long, default_value = "false")]
-        stats: bool,
-    },
     /// Create a segment from indexed blocks.
     CreateSegment {
         /// Files with the indexed blocks.
         files: Vec<PathBuf>,
         #[arg(long)]
-        /// The first block number in the segment.
-        first_block_number: u64,
         /// Path to the output directory.
         #[arg(long)]
         out_dir: PathBuf,
@@ -64,7 +50,7 @@ impl DebugStoreCommand {
                 let json_block = read_json(json).change_context(BeaconChainError)?;
 
                 let block = match json_block {
-                    JsonBlock::Missed => store::fragment::Slot::Missed,
+                    JsonBlock::Missed { slot } => store::fragment::Slot::Missed { slot },
                     JsonBlock::Proposed(mut json_block) => {
                         let transactions = if let Some(ref mut execution_payload) =
                             json_block.block.body.execution_payload
@@ -100,12 +86,11 @@ impl DebugStoreCommand {
                             .map(fragment::Validator::from)
                             .collect::<Vec<_>>();
 
-                        let block = store::block::Block {
-                            header,
-                            transactions,
-                            validators,
-                            blobs,
-                        };
+                        let mut block_builder = store::block::BlockBuilder::new(header);
+                        block_builder.add_transactions(transactions);
+                        block_builder.add_validators(validators);
+                        block_builder.add_blobs(blobs);
+                        let block = block_builder.build().change_context(BeaconChainError)?;
 
                         store::fragment::Slot::Proposed(block)
                     }
@@ -117,8 +102,8 @@ impl DebugStoreCommand {
 
                 if stats {
                     match block {
-                        store::fragment::Slot::Missed => {
-                            info!("block missed");
+                        store::fragment::Slot::Missed { slot } => {
+                            info!("block {} missed", slot);
                         }
                         store::fragment::Slot::Proposed(block) => {
                             info!("block {} stats", block.header.slot);
@@ -143,85 +128,32 @@ impl DebugStoreCommand {
 
                 Ok(())
             }
-            DebugStoreCommand::Index { in_, out, stats } => {
-                let bytes_in = fs::read(in_)
-                    .change_context(BeaconChainError)
-                    .attach_printable("failed to read block")?;
-                let block =
-                    rkyv::from_bytes::<'_, store::fragment::Slot<store::block::Block>>(&bytes_in)
-                        .map_err(|_| BeaconChainError)
-                        .attach_printable("failed to deserialize block")?;
-                let indexed = match block {
-                    store::fragment::Slot::Missed => store::fragment::Slot::Missed,
-                    store::fragment::Slot::Proposed(block) => {
-                        let indexed = block
-                            .into_indexed_block()
-                            .change_context(BeaconChainError)
-                            .attach_printable("failed to index block")?;
-                        store::fragment::Slot::Proposed(indexed)
-                    }
+            DebugStoreCommand::CreateSegment { files, out_dir } => {
+                let mut files = files.into_iter();
+
+                let Some(file) = files.next() else {
+                    info!("no files specified");
+                    return Ok(());
                 };
 
-                let bytes = rkyv::to_bytes::<_, 0>(&indexed)
-                    .change_context(BeaconChainError)
-                    .attach_printable("failed to serialize block")?;
+                info!("reading first block from {}", file.display());
+                let bytes = fs::read(&file).change_context(BeaconChainError)?;
+                let block =
+                    rkyv::from_bytes::<'_, store::fragment::Slot<store::block::Block>>(&bytes)
+                        .map_err(|_| BeaconChainError)
+                        .attach_printable("failed to deserialize block")?;
 
-                if stats {
-                    match indexed {
-                        store::fragment::Slot::Missed => {
-                            info!("block missed");
-                        }
-                        store::fragment::Slot::Proposed(indexed) => {
-                            info!("block {} stats", indexed.block.header.slot);
-                            info!(
-                                "state root: 0x{}",
-                                hex::encode(indexed.block.header.state_root.0)
-                            );
-
-                            info!("transaction index stats");
-                            info!(
-                                "  by_from_address: {}",
-                                indexed.transaction.by_from_address.len()
-                            );
-                            info!(
-                                "  by_to_address: {}",
-                                indexed.transaction.by_to_address.len()
-                            );
-
-                            info!("validator index stats");
-                            info!("  by_status: {}", indexed.validator.by_status.len());
-                        }
-                    }
-                }
-
-                fs::write(&out, &bytes)
-                    .change_context(BeaconChainError)
-                    .attach_printable("failed to write block")?;
-
-                info!(
-                    "wrote {:#} to {}",
-                    Byte::from_u64(bytes.len() as u64),
-                    out.display()
-                );
-
-                Ok(())
-            }
-            DebugStoreCommand::CreateSegment {
-                files,
-                out_dir,
-                first_block_number,
-            } => {
-                let mut segment_builder = SegmentBuilder::new(first_block_number);
+                let first_block = block.cursor();
+                let mut segment_builder = SegmentBuilder::new(&first_block);
+                segment_builder.add_block(block);
 
                 for file in files {
                     info!("reading block from {}", file.display());
                     let bytes = fs::read(&file).change_context(BeaconChainError)?;
-                    let block = rkyv::from_bytes::<
-                        '_,
-                        store::fragment::Slot<store::block::IndexedBlock>,
-                    >(&bytes)
-                    .map_err(|_| BeaconChainError)
-                    .attach_printable("failed to deserialize block")?;
+                    let block =
+                        rkyv::from_bytes::<'_, store::fragment::Slot<store::block::Block>>(&bytes)
+                            .map_err(|_| BeaconChainError)
+                            .attach_printable("failed to deserialize block")?;
 
                     segment_builder.add_block(block);
                 }
