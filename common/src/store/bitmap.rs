@@ -12,7 +12,7 @@ pub struct BitmapError;
 #[archive(check_bytes)]
 pub struct Bitmap(pub Vec<u8>);
 
-#[derive(Archive, Serialize, Deserialize, Debug)]
+#[derive(Archive, Serialize, Deserialize, Default, Debug)]
 #[archive(check_bytes)]
 pub struct BitmapMap<K>(#[with(AsVec)] BTreeMap<K, Bitmap>);
 

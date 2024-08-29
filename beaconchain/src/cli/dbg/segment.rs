@@ -1,6 +1,6 @@
-use std::fs;
+use std::{fs, path::PathBuf};
 
-use apibara_dna_common::store::segment::IndexSegment;
+use apibara_dna_common::store::{group::SegmentGroupBuilder, segment::IndexSegment};
 use clap::Subcommand;
 use error_stack::{Result, ResultExt};
 use tracing::info;
@@ -13,6 +13,13 @@ use crate::{
 
 #[derive(Subcommand, Debug)]
 pub enum DebugSegmentCommand {
+    CreateGroup {
+        /// Segments to create a group from.
+        segments: Vec<PathBuf>,
+        /// Path to the output file.
+        #[arg(long)]
+        out: PathBuf,
+    },
     /// Dump the content of a segment.
     TextDump {
         #[clap(subcommand)]
@@ -60,6 +67,31 @@ impl DebugSegmentCommand {
     pub async fn run(self) -> Result<(), BeaconChainError> {
         match self {
             DebugSegmentCommand::TextDump { command } => command.run().await,
+            DebugSegmentCommand::CreateGroup { segments, out } => {
+                let mut builder = SegmentGroupBuilder::default();
+
+                for segment in segments {
+                    let bytes = fs::read(&segment).change_context(BeaconChainError)?;
+                    let segment = rkyv::check_archived_root::<IndexSegment>(&bytes)
+                        .map_err(|_| BeaconChainError)
+                        .attach_printable("failed to deserialize segment")?;
+
+                    builder
+                        .add_archived_segment(segment)
+                        .change_context(BeaconChainError)
+                        .attach_printable("failed to add segment to group")?;
+                }
+
+                let segment_group = builder.build().change_context(BeaconChainError)?;
+                let data =
+                    rkyv::to_bytes::<_, 0>(&segment_group).change_context(BeaconChainError)?;
+
+                fs::write(out, &data)
+                    .change_context(BeaconChainError)
+                    .attach_printable("failed to write segment group")?;
+
+                Ok(())
+            }
         }
     }
 }
