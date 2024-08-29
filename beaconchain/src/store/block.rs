@@ -169,6 +169,10 @@ impl TaggedIndex for IndexTransactionByFromAddress {
         1
     }
 
+    fn key_size() -> usize {
+        20
+    }
+
     fn name() -> &'static str {
         "transaction_by_from_address"
     }
@@ -179,6 +183,10 @@ impl TaggedIndex for IndexTransactionByToAddress {
 
     fn tag() -> u8 {
         2
+    }
+
+    fn key_size() -> usize {
+        20
     }
 
     fn name() -> &'static str {
@@ -193,6 +201,10 @@ impl TaggedIndex for IndexTransactionByCreate {
         3
     }
 
+    fn key_size() -> usize {
+        0
+    }
+
     fn name() -> &'static str {
         "transaction_by_create"
     }
@@ -203,6 +215,10 @@ impl TaggedIndex for IndexValidatorByStatus {
 
     fn tag() -> u8 {
         4
+    }
+
+    fn key_size() -> usize {
+        1
     }
 
     fn name() -> &'static str {

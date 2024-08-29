@@ -11,6 +11,7 @@ pub struct IndexError;
 #[archive(check_bytes)]
 pub struct IndexGroup {
     pub tags: Vec<u8>,
+    pub key_sizes: Vec<usize>,
     pub data: Vec<Vec<u8>>,
 }
 
@@ -18,6 +19,7 @@ pub trait TaggedIndex {
     type Key: rkyv::Archive + Ord;
 
     fn tag() -> u8;
+    fn key_size() -> usize;
     fn name() -> &'static str;
 }
 
@@ -29,15 +31,28 @@ impl IndexGroup {
     where
         TI::Key: rkyv::Serialize<rkyv::ser::serializers::AllocSerializer<0>>,
     {
+        self.add_index_raw(TI::tag(), TI::key_size(), index, TI::name())
+    }
+
+    pub fn add_index_raw<K>(
+        &mut self,
+        tag: u8,
+        key_size: usize,
+        index: &BitmapMap<K>,
+        name: &'static str,
+    ) -> Result<usize, IndexError>
+    where
+        K: rkyv::Serialize<rkyv::ser::serializers::AllocSerializer<0>>,
+    {
         let id = self.tags.len();
-        let tag = TI::tag();
         let data = rkyv::to_bytes(index)
             .change_context(IndexError)
             .attach_printable("failed to serialize index")
-            .attach_printable_lazy(|| format!("tag: {}({})", TI::name(), TI::tag()))?
+            .attach_printable_lazy(|| format!("tag: {}({})", name, tag))?
             .to_vec();
 
         self.tags.push(tag);
+        self.key_sizes.push(key_size);
         self.data.push(data);
 
         Ok(id)
@@ -72,6 +87,20 @@ impl IndexGroup {
         })?;
 
         Ok(archived)
+    }
+
+    pub fn get_index<'a, TI: TaggedIndex>(&'a self) -> Result<BitmapMap<TI::Key>, IndexError>
+    where
+        <TI::Key as rkyv::Archive>::Archived:
+            rkyv::CheckBytes<DefaultValidator<'a>> + rkyv::Deserialize<TI::Key, rkyv::Infallible>,
+        TI::Key: 'a,
+    {
+        let bitmap_map = self.get_archived_index::<TI>()?;
+        bitmap_map
+            .deserialize(&mut rkyv::Infallible)
+            .change_context(IndexError)
+            .attach_printable("failed to deserialize index")
+            .attach_printable_lazy(|| format!("tag: {}({})", TI::name(), TI::tag()))
     }
 }
 
@@ -118,16 +147,24 @@ mod tests {
             1
         }
 
+        fn key_size() -> usize {
+            4
+        }
+
         fn name() -> &'static str {
             "IndexA"
         }
     }
 
     impl TaggedIndex for IndexB {
-        type Key = u32;
+        type Key = u64;
 
         fn tag() -> u8 {
             2
+        }
+
+        fn key_size() -> usize {
+            8
         }
 
         fn name() -> &'static str {

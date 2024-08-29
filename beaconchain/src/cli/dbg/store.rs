@@ -36,7 +36,6 @@ pub enum DebugStoreCommand {
     CreateSegment {
         /// Files with the indexed blocks.
         files: Vec<PathBuf>,
-        #[arg(long)]
         /// Path to the output directory.
         #[arg(long)]
         out_dir: PathBuf,
@@ -140,8 +139,11 @@ impl DebugStoreCommand {
                 let bytes = fs::read(&file).change_context(BeaconChainError)?;
                 let block =
                     rkyv::from_bytes::<'_, store::fragment::Slot<store::block::Block>>(&bytes)
-                        .map_err(|_| BeaconChainError)
-                        .attach_printable("failed to deserialize block")?;
+                        .or_else(|err| {
+                            Err(BeaconChainError)
+                                .attach_printable("failed to deserialize block")
+                                .attach_printable_lazy(|| format!("error: {}", err))
+                        })?;
 
                 let first_block = block.cursor();
                 let mut segment_builder = SegmentBuilder::new(&first_block);
@@ -152,8 +154,11 @@ impl DebugStoreCommand {
                     let bytes = fs::read(&file).change_context(BeaconChainError)?;
                     let block =
                         rkyv::from_bytes::<'_, store::fragment::Slot<store::block::Block>>(&bytes)
-                            .map_err(|_| BeaconChainError)
-                            .attach_printable("failed to deserialize block")?;
+                            .or_else(|err| {
+                                Err(BeaconChainError)
+                                    .attach_printable("failed to deserialize block")
+                                    .attach_printable_lazy(|| format!("error: {}", err))
+                            })?;
 
                     segment_builder.add_block(block);
                 }
