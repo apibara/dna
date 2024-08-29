@@ -8,8 +8,16 @@ use tracing::info;
 use crate::{
     error::BeaconChainError,
     segment::{BlobSegment, HeaderSegment, TransactionSegment, ValidatorSegment},
-    store::fragment,
+    store::{
+        block::{
+            IndexTransactionByCreate, IndexTransactionByFromAddress, IndexTransactionByToAddress,
+            IndexValidatorByStatus,
+        },
+        fragment,
+    },
 };
+
+use super::helpers::print_index;
 
 #[derive(Subcommand, Debug)]
 pub enum DebugSegmentCommand {
@@ -33,6 +41,9 @@ pub enum TextDumpCommand {
     Index {
         #[clap(flatten)]
         segment: SegmentArgs,
+        /// Print the index in a human-readable format.
+        #[arg(long, default_value = "false")]
+        display: bool,
     },
     /// Dump the content of the header segment.
     Header {
@@ -99,7 +110,10 @@ impl DebugSegmentCommand {
 impl TextDumpCommand {
     async fn run(self) -> Result<(), BeaconChainError> {
         match self {
-            TextDumpCommand::Index { segment: args } => {
+            TextDumpCommand::Index {
+                segment: args,
+                display,
+            } => {
                 let bytes = fs::read(&args.file).change_context(BeaconChainError)?;
                 let segment = rkyv::check_archived_root::<IndexSegment>(&bytes)
                     .map_err(|_| BeaconChainError)
@@ -121,6 +135,15 @@ impl TextDumpCommand {
                         hex::encode(&block.cursor.hash)
                     );
                     info!("  index count: {}", block.data.tags.len());
+
+                    if !display {
+                        continue;
+                    }
+
+                    print_index::<IndexTransactionByFromAddress>(&block.data)?;
+                    print_index::<IndexTransactionByToAddress>(&block.data)?;
+                    print_index::<IndexTransactionByCreate>(&block.data)?;
+                    print_index::<IndexValidatorByStatus>(&block.data)?;
                 }
 
                 Ok(())

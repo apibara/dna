@@ -27,6 +27,10 @@ impl<K: Ord> BitmapMap<K> {
         self.0.len()
     }
 
+    pub fn iter(&self) -> impl Iterator<Item = (&K, &Bitmap)> {
+        self.0.iter()
+    }
+
     /// Get the bitmap for the given key.
     pub fn get_bitmap(&self, key: &K) -> Result<Option<RoaringBitmap>, BitmapError> {
         let Some(bytes) = self.0.get(key) else {
@@ -62,6 +66,15 @@ where
 
     pub fn iter(&self) -> impl Iterator<Item = &Entry<K::Archived, ArchivedBitmap>> {
         self.0.iter()
+    }
+}
+
+impl Bitmap {
+    pub fn deserialize(&self) -> Result<RoaringBitmap, BitmapError> {
+        let bitmap = RoaringBitmap::deserialize_from(self.0.as_slice())
+            .change_context(BitmapError)
+            .attach_printable("failed to deserialize bitmap")?;
+        Ok(bitmap)
     }
 }
 

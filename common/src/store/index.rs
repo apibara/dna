@@ -104,6 +104,55 @@ impl IndexGroup {
     }
 }
 
+impl ArchivedIndexGroup {
+    pub fn get_archived_index<'a, TI: TaggedIndex>(
+        &'a self,
+    ) -> Result<Option<&'a ArchivedBitmapMap<TI::Key>>, IndexError>
+    where
+        <TI::Key as rkyv::Archive>::Archived: rkyv::CheckBytes<DefaultValidator<'a>>,
+    {
+        let Some(pos) = self.tags.iter().position(|t| *t == TI::tag()) else {
+            return Ok(None);
+        };
+
+        if pos >= self.tags.len() {
+            return Err(IndexError)
+                .attach_printable("invalid index (out of bounds)")
+                .attach_printable_lazy(|| format!("tag: {}({})", TI::name(), TI::tag()));
+        }
+
+        let data = &self.data[pos];
+        let archived = rkyv::check_archived_root::<BitmapMap<TI::Key>>(data).or_else(|err| {
+            Err(IndexError)
+                .attach_printable("failed to deserialize index")
+                .attach_printable_lazy(|| format!("error: {}", err))
+                .attach_printable_lazy(|| format!("tag: {}({})", TI::name(), TI::tag()))
+        })?;
+
+        Ok(Some(archived))
+    }
+
+    pub fn get_index<'a, TI: TaggedIndex>(
+        &'a self,
+    ) -> Result<Option<BitmapMap<TI::Key>>, IndexError>
+    where
+        <TI::Key as rkyv::Archive>::Archived:
+            rkyv::CheckBytes<DefaultValidator<'a>> + rkyv::Deserialize<TI::Key, rkyv::Infallible>,
+        TI::Key: 'a,
+    {
+        let Some(bitmap_map) = self.get_archived_index::<TI>()? else {
+            return Ok(None);
+        };
+
+        bitmap_map
+            .deserialize(&mut rkyv::Infallible)
+            .change_context(IndexError)
+            .attach_printable("failed to deserialize index")
+            .attach_printable_lazy(|| format!("tag: {}({})", TI::name(), TI::tag()))
+            .map(Some)
+    }
+}
+
 impl error_stack::Context for IndexError {}
 
 impl std::fmt::Display for IndexError {
