@@ -6,7 +6,7 @@ use error_stack::Result;
 
 use crate::error::BeaconChainError;
 
-use self::dbg::{DebugRpcCommand, DebugSegmentCommand, DebugStoreCommand};
+use self::dbg::{DebugGroupCommand, DebugRpcCommand, DebugSegmentCommand, DebugStoreCommand};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -29,11 +29,17 @@ pub enum Command {
         #[clap(subcommand)]
         command: DebugStoreCommand,
     },
-    /// Debug a segment content.
+    /// Debug the content of a segment.
     #[command(name = "dbg-segment")]
     DebugSegment {
         #[clap(subcommand)]
         command: DebugSegmentCommand,
+    },
+    /// Debug the content of a segment group.
+    #[command(name = "dbg-group")]
+    DebugGroup {
+        #[clap(subcommand)]
+        command: DebugGroupCommand,
     },
 }
 
@@ -43,6 +49,7 @@ impl Cli {
             Command::DebugRpc { command } => command.run().await,
             Command::DebugStore { command } => command.run().await,
             Command::DebugSegment { command } => command.run().await,
+            Command::DebugGroup { command } => command.run().await,
         }
     }
 }
