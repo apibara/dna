@@ -17,6 +17,7 @@ serde.workspace = true
 serde_json.workspace = true
 serde_v8 = "0.134.0"
 tokio.workspace = true
+tracing.workspace = true
 
 [dev-dependencies]
 assert_matches.workspace = true

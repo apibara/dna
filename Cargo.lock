@@ -366,6 +366,7 @@ dependencies = [
  "serde_v8 0.134.0",
  "tempfile",
  "tokio 1.36.0",
+ "tracing",
 ]
 
 [[package]]
