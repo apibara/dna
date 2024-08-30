@@ -183,6 +183,7 @@ impl Script {
         Ok(configuration)
     }
 
+    #[tracing::instrument(skip_all, err(Debug))]
     pub async fn transform(&mut self, data: Vec<Value>) -> Result<Value, ScriptError> {
         let code: FastString = format!(
             r#"(async (globalThis) => {{

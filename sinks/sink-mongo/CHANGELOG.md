@@ -6,6 +6,16 @@ The format is based on [Common Changelog](https://common-changelog.org/), and
 this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.2] - 2024-08-30
+
+_Improve observability on MongoDB operations._
+
+### Added
+
+-   Emit OpenTelemetry traces for MongoDB operations. You can enable tracing
+    by setting the `OTEL_SDK_DISABLED` env variable to `false` and configuring
+    the SDK with the [standard opentelemetry environment variables](https://opentelemetry.io/docs/specs/otel/configuration/sdk-environment-variables/).
+
 ## [0.9.1] - 2024-07-31
 
 _Add support for filtering invoke transactions v3._
