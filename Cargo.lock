@@ -451,7 +451,7 @@ dependencies = [
 
 [[package]]
 name = "apibara-sink-mongo"
-version = "0.9.1"
+version = "0.9.2"
 dependencies = [
  "apibara-core",
  "apibara-observability",
