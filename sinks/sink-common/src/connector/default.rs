@@ -132,6 +132,7 @@ where
         ret
     }
 
+    #[tracing::instrument(skip_all, err(Debug))]
     async fn handle_message(
         &mut self,
         message: DataMessage<B>,
@@ -169,6 +170,7 @@ where
         }
     }
 
+    #[tracing::instrument(skip_all, err(Debug))]
     async fn handle_data(
         &mut self,
         context: Context,
@@ -218,6 +220,7 @@ where
         Ok((action, StreamAction::Continue))
     }
 
+    #[tracing::instrument(skip_all, err(Debug))]
     async fn handle_invalidate(
         &mut self,
         cursor: Option<Cursor>,

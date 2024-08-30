@@ -15,7 +15,7 @@ use mongodb::options::{UpdateModifications, UpdateOptions};
 use mongodb::{options::ClientOptions, Client, Collection};
 
 use serde_json::Value;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, warn, Instrument};
 
 use crate::configuration::SinkMongoOptions;
 
@@ -114,6 +114,7 @@ impl Sink for MongoSink {
         })
     }
 
+    #[tracing::instrument(skip_all, err(Debug))]
     async fn handle_data(
         &mut self,
         ctx: &Context,
@@ -129,6 +130,7 @@ impl Sink for MongoSink {
             .await
     }
 
+    #[tracing::instrument(skip_all, err(Debug))]
     async fn handle_replace(
         &mut self,
         ctx: &Context,
@@ -179,6 +181,7 @@ impl Sink for MongoSink {
         }
     }
 
+    #[tracing::instrument(skip_all, err(Debug))]
     async fn handle_invalidate(&mut self, cursor: &Option<Cursor>) -> Result<(), Self::Error> {
         let mut session = self
             .client
@@ -192,12 +195,14 @@ impl Sink for MongoSink {
 }
 
 impl MongoSink {
+    #[tracing::instrument(skip_all, err(Debug))]
     pub fn collection(&self, collection_name: &str) -> Result<&Collection<Document>, SinkError> {
         self.collections
             .get(collection_name)
             .runtime_error(&format!("collection '{collection_name}' not found"))
     }
 
+    #[tracing::instrument(skip_all, err(Debug))]
     async fn handle_data_with_session(
         &mut self,
         session: &mut ClientSession,
@@ -227,6 +232,7 @@ impl MongoSink {
         }
     }
 
+    #[tracing::instrument(skip_all, err(Debug))]
     async fn handle_invalidate_with_session(
         &mut self,
         session: &mut ClientSession,
@@ -264,10 +270,17 @@ impl MongoSink {
         }
 
         for collection in self.collections.values() {
+            let collection_name = collection.name();
+
             collection
                 .delete_many_with_session(delete_query.clone(), None, session)
+                .instrument(tracing::info_span!(
+                    "invalidate data (delete)",
+                    collection = collection_name
+                ))
                 .await
                 .runtime_error("failed to invalidate data (delete)")?;
+
             collection
                 .update_many_with_session(
                     unclamp_query.clone(),
@@ -275,6 +288,10 @@ impl MongoSink {
                     None,
                     session,
                 )
+                .instrument(tracing::info_span!(
+                    "invalidate data (update_many)",
+                    collection = collection_name
+                ))
                 .await
                 .runtime_error("failed to invalidate data (update)")?;
         }
@@ -282,6 +299,7 @@ impl MongoSink {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all, err(Debug))]
     pub async fn insert_data(
         &self,
         session: &mut ClientSession,
@@ -355,6 +373,7 @@ impl MongoSink {
         }
     }
 
+    #[tracing::instrument(skip_all, err(Debug))]
     pub async fn insert_logs_data(
         &self,
         end_cursor: &Cursor,
@@ -376,6 +395,7 @@ impl MongoSink {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all, err(Debug))]
     pub async fn insert_entities_data(
         &self,
         end_cursor: &Cursor,
