@@ -365,6 +365,7 @@ dependencies = [
  "serde_v8 0.134.0",
  "tempfile",
  "tokio 1.36.0",
+ "tracing",
 ]
 
 [[package]]
@@ -449,7 +450,7 @@ dependencies = [
 
 [[package]]
 name = "apibara-sink-mongo"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "apibara-core",
  "apibara-observability",
