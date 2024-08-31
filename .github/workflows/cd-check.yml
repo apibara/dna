@@ -10,10 +10,13 @@ on:
   pull_request:
     branches:
       - "release"
-      - "release/*"
     types:
       - opened
       - synchronize
+
+  push:
+    branches:
+      - "backport/**/*"
 
 jobs:
   build-linux-x86_64:
