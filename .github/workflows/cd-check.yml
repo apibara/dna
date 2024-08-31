@@ -10,7 +10,7 @@ on:
   pull_request:
     branches:
       - "release"
-      - "release/*"
+      - "backport-release/*"
     types:
       - opened
       - synchronize
