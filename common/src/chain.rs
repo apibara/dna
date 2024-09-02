@@ -22,12 +22,31 @@ impl BlockInfo {
     }
 }
 
+/// What action to take on reconnection.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ReconnectAction {
+    /// Continue from the provided cursor.
+    Continue,
+    /// There was a reorg while offline. The new head is provided.
+    OfflineReorg(Cursor),
+    /// The provided cursor is not part of the canonical chain or any reorg.
+    Unknown,
+}
+
 pub type ReorgMap = BTreeMap<Hash, Cursor>;
 
 #[derive(Clone, PartialEq, Eq, Hash, Archive, Serialize, Deserialize)]
 #[archive(check_bytes)]
 pub struct CanonicalBlock {
     pub hash: Hash,
+    #[with(AsVec)]
+    pub reorgs: ReorgMap,
+}
+
+#[derive(Clone, PartialEq, Eq, Hash, Archive, Serialize, Deserialize)]
+#[archive(check_bytes)]
+pub struct ExtraReorg {
+    pub block_number: u64,
     #[with(AsVec)]
     pub reorgs: ReorgMap,
 }
@@ -45,6 +64,7 @@ pub struct CanonicalChainSegment {
     pub previous_segment: Option<CanonicalChainSegmentInfo>,
     pub info: CanonicalChainSegmentInfo,
     pub canonical: Vec<CanonicalBlock>,
+    pub extra_reorgs: Vec<ExtraReorg>,
 }
 
 #[derive(Debug)]
@@ -54,7 +74,7 @@ pub enum CanonicalChainError {
 }
 
 #[derive(Clone)]
-pub enum CanonicalChainManager {
+pub enum CanonicalChainBuilder {
     Empty,
     Building {
         previous_segment: Option<CanonicalChainSegmentInfo>,
@@ -64,27 +84,27 @@ pub enum CanonicalChainManager {
     },
 }
 
-impl CanonicalChainManager {
+impl CanonicalChainBuilder {
     pub fn new() -> Self {
-        CanonicalChainManager::Empty
+        CanonicalChainBuilder::Empty
     }
 
     /// Returns the number of blocks in the segment.
     pub fn segment_size(&self) -> usize {
         match self {
-            CanonicalChainManager::Empty => 0,
-            CanonicalChainManager::Building { canonical, .. } => canonical.len(),
+            CanonicalChainBuilder::Empty => 0,
+            CanonicalChainBuilder::Building { canonical, .. } => canonical.len(),
         }
     }
 
     /// Add the given block to the segment.
     pub fn grow(&mut self, block: BlockInfo) -> Result<(), CanonicalChainError> {
         match self {
-            CanonicalChainManager::Empty => {
+            CanonicalChainBuilder::Empty => {
                 // Initialize the segment builder.
                 let cursor = block.cursor();
 
-                *self = CanonicalChainManager::Building {
+                *self = CanonicalChainBuilder::Building {
                     previous_segment: None,
                     info: CanonicalChainSegmentInfo {
                         first_block: cursor.clone(),
@@ -96,7 +116,7 @@ impl CanonicalChainManager {
 
                 Ok(())
             }
-            CanonicalChainManager::Building {
+            CanonicalChainBuilder::Building {
                 canonical, info, ..
             } => {
                 let current_last_block = &info.last_block;
@@ -121,7 +141,7 @@ impl CanonicalChainManager {
     // Returns the removed blocks.
     // Notice that by design the genesis block cannot be removed.
     pub fn shrink(&mut self, new_head: Cursor) -> Result<Vec<Cursor>, CanonicalChainError> {
-        let CanonicalChainManager::Building {
+        let CanonicalChainBuilder::Building {
             canonical,
             info,
             reorgs,
@@ -187,9 +207,9 @@ impl CanonicalChainManager {
         Ok(removed)
     }
 
-    // Returns the current manager's state ready for serialization.
+    // Returns the current builder's state ready for serialization.
     pub fn current_segment(&self) -> Result<CanonicalChainSegment, CanonicalChainError> {
-        let CanonicalChainManager::Building {
+        let CanonicalChainBuilder::Building {
             canonical,
             info,
             reorgs,
@@ -218,10 +238,25 @@ impl CanonicalChainManager {
             });
         }
 
+        let extra_reorgs = reorgs
+            .iter()
+            .flat_map(|(block_number, reorg)| {
+                if *block_number > info.last_block.number {
+                    Some(ExtraReorg {
+                        block_number: *block_number,
+                        reorgs: reorg.clone(),
+                    })
+                } else {
+                    None
+                }
+            })
+            .collect();
+
         Ok(CanonicalChainSegment {
             previous_segment: previous_segment.clone(),
             info: info.clone(),
             canonical: segment_canonical,
+            extra_reorgs,
         })
     }
 
@@ -230,7 +265,7 @@ impl CanonicalChainManager {
         &mut self,
         size: usize,
     ) -> Result<CanonicalChainSegment, CanonicalChainError> {
-        let CanonicalChainManager::Building {
+        let CanonicalChainBuilder::Building {
             canonical,
             info,
             reorgs,
@@ -286,11 +321,57 @@ impl CanonicalChainManager {
             previous_segment: segment_previous_segment,
             info: segment_info,
             canonical: segment_canonical,
+            extra_reorgs: Vec::new(),
         })
     }
 }
 
-impl Default for CanonicalChainManager {
+impl CanonicalChainSegment {
+    pub fn reconnect(&self, cursor: Cursor) -> Result<ReconnectAction, CanonicalChainError> {
+        if cursor.number < self.info.first_block.number {
+            return Err(CanonicalChainError::View)
+                .attach_printable("cursor is before the first block")
+                .attach_printable_lazy(|| format!("cursor: {cursor:?}"))
+                .attach_printable_lazy(|| format!("first block: {:?}", self.info.first_block));
+        }
+
+        if cursor.number > self.info.last_block.number {
+            // The block could have been reorged while the chain shrunk.
+            let Some(reorgs) = self
+                .extra_reorgs
+                .iter()
+                .find(|r| r.block_number == cursor.number)
+            else {
+                return Err(CanonicalChainError::View)
+                    .attach_printable("cursor is after the last block")
+                    .attach_printable_lazy(|| format!("cursor: {cursor:?}"))
+                    .attach_printable_lazy(|| format!("last block: {:?}", self.info.last_block));
+            };
+
+            let Some(reorg_target) = reorgs.reorgs.get(&cursor.hash).cloned() else {
+                return Ok(ReconnectAction::Unknown);
+            };
+
+            return Ok(ReconnectAction::OfflineReorg(reorg_target));
+        }
+
+        let offset = cursor.number - self.info.first_block.number;
+
+        let canonical = &self.canonical[offset as usize];
+
+        if canonical.hash == cursor.hash {
+            return Ok(ReconnectAction::Continue);
+        }
+
+        let Some(reorg_target) = canonical.reorgs.get(&cursor.hash).cloned() else {
+            return Ok(ReconnectAction::Unknown);
+        };
+
+        Ok(ReconnectAction::OfflineReorg(reorg_target))
+    }
+}
+
+impl Default for CanonicalChainBuilder {
     fn default() -> Self {
         Self::new()
     }
@@ -311,7 +392,7 @@ impl std::fmt::Display for CanonicalChainError {
 mod tests {
     use crate::{new_test_cursor, Hash};
 
-    use super::{BlockInfo, CanonicalChainManager};
+    use super::{BlockInfo, CanonicalChainBuilder, ReconnectAction};
 
     fn genesis_block(chain: u8) -> BlockInfo {
         let c = new_test_cursor(1_000, chain);
@@ -331,48 +412,56 @@ mod tests {
         }
     }
 
+    /*
+     *
+     *               1_006/1     1_040/1
+     *                 o - - - - - o
+     *               /
+     *   o - - - - o - - - - o
+     * 1_000/0   1_005/0   1_010/0
+     */
     #[test]
-    fn test_canonical_chain_manager() {
-        let mut manager = CanonicalChainManager::new();
+    fn test_canonical_chain_builder() {
+        let mut builder = CanonicalChainBuilder::new();
 
         let mut block = genesis_block(0);
-        manager.grow(block.clone()).unwrap();
+        builder.grow(block.clone()).unwrap();
 
         for _ in 0..5 {
             block = next_block(&block, 0);
-            manager.grow(block.clone()).unwrap();
+            builder.grow(block.clone()).unwrap();
         }
 
         let checkpoint = block.clone();
 
         for _ in 0..5 {
             block = next_block(&block, 0);
-            manager.grow(block.clone()).unwrap();
+            builder.grow(block.clone()).unwrap();
         }
 
-        assert_eq!(manager.segment_size(), 11);
+        assert_eq!(builder.segment_size(), 11);
 
         // Can't shrink to a block that is not in the segment.
-        assert!(manager.shrink(new_test_cursor(999, 0)).is_err());
-        assert!(manager.shrink(new_test_cursor(1_011, 0)).is_err());
+        assert!(builder.shrink(new_test_cursor(999, 0)).is_err());
+        assert!(builder.shrink(new_test_cursor(1_011, 0)).is_err());
 
-        manager.shrink(checkpoint.cursor()).unwrap();
-        assert_eq!(manager.segment_size(), 6);
+        builder.shrink(checkpoint.cursor()).unwrap();
+        assert_eq!(builder.segment_size(), 6);
 
         // Can't grow to a block if the head has been reorged.
         block = next_block(&block, 0);
-        assert!(manager.grow(block.clone()).is_err());
+        assert!(builder.grow(block.clone()).is_err());
 
         block = checkpoint.clone();
         for _ in 0..35 {
             block = next_block(&block, 1);
-            manager.grow(block.clone()).unwrap();
+            builder.grow(block.clone()).unwrap();
         }
 
-        assert_eq!(manager.segment_size(), 41);
+        assert_eq!(builder.segment_size(), 41);
 
         {
-            let segment = manager.current_segment().unwrap();
+            let segment = builder.current_segment().unwrap();
             assert!(segment.previous_segment.is_none());
             assert_eq!(segment.info.first_block, new_test_cursor(1_000, 0));
             assert_eq!(segment.info.last_block, new_test_cursor(1_040, 1));
@@ -394,16 +483,28 @@ mod tests {
                     assert_eq!(canon.hash, new_test_cursor(block_number, 1).hash);
                 }
             }
+
+            let action = segment.reconnect(new_test_cursor(1_005, 0)).unwrap();
+            assert_eq!(action, ReconnectAction::Continue);
+
+            let action = segment.reconnect(new_test_cursor(1_006, 1)).unwrap();
+            assert_eq!(action, ReconnectAction::Continue);
+
+            let action = segment.reconnect(new_test_cursor(1_006, 0)).unwrap();
+            assert_eq!(
+                action,
+                ReconnectAction::OfflineReorg(new_test_cursor(1_005, 0))
+            );
         }
 
         {
-            let segment = manager.take_segment(25).unwrap();
+            let segment = builder.take_segment(25).unwrap();
             assert!(segment.previous_segment.is_none());
             assert_eq!(segment.info.first_block, new_test_cursor(1_000, 0));
             assert_eq!(segment.info.last_block, new_test_cursor(1_024, 1));
             assert_eq!(segment.canonical.len(), 25);
 
-            let segment = manager.current_segment().unwrap();
+            let segment = builder.current_segment().unwrap();
             let previous = segment.previous_segment.unwrap();
 
             assert_eq!(previous.first_block, new_test_cursor(1_000, 0));
@@ -414,16 +515,26 @@ mod tests {
         }
     }
 
+    /*
+     *
+     *               1_004/2     1_013/2
+     *                 o - - - - - o
+     *                 /       1_006/1 1_007/1
+     *                /         o - - - o
+     *               /        /
+     *   o - - - - o - - - - o - - - - o
+     * 1_000/0   1_003/0   1_005/0   1_010/0
+     */
     #[test]
     fn test_reorg_on_top_of_reorg() {
-        let mut manager = CanonicalChainManager::new();
+        let mut builder = CanonicalChainBuilder::new();
 
         let mut block = genesis_block(0);
-        manager.grow(block.clone()).unwrap();
+        builder.grow(block.clone()).unwrap();
 
         for _ in 0..3 {
             block = next_block(&block, 0);
-            manager.grow(block.clone()).unwrap();
+            builder.grow(block.clone()).unwrap();
         }
 
         let first_checkpoint = block.clone();
@@ -431,7 +542,7 @@ mod tests {
 
         for _ in 0..2 {
             block = next_block(&block, 0);
-            manager.grow(block.clone()).unwrap();
+            builder.grow(block.clone()).unwrap();
         }
 
         let second_checkpoint = block.clone();
@@ -439,26 +550,26 @@ mod tests {
 
         for _ in 0..5 {
             block = next_block(&block, 0);
-            manager.grow(block.clone()).unwrap();
+            builder.grow(block.clone()).unwrap();
         }
 
         {
-            let segment = manager.current_segment().unwrap();
+            let segment = builder.current_segment().unwrap();
             assert!(segment.previous_segment.is_none());
             assert_eq!(segment.info.first_block, new_test_cursor(1_000, 0));
             assert_eq!(segment.info.last_block, new_test_cursor(1_010, 0));
         }
 
-        manager.shrink(second_checkpoint.cursor()).unwrap();
+        builder.shrink(second_checkpoint.cursor()).unwrap();
 
         block = second_checkpoint.clone();
         for _ in 0..2 {
             block = next_block(&block, 1);
-            manager.grow(block.clone()).unwrap();
+            builder.grow(block.clone()).unwrap();
         }
 
         {
-            let segment = manager.current_segment().unwrap();
+            let segment = builder.current_segment().unwrap();
             assert!(segment.previous_segment.is_none());
             assert_eq!(segment.info.first_block, new_test_cursor(1_000, 0));
             assert_eq!(segment.info.last_block, new_test_cursor(1_007, 1));
@@ -481,15 +592,25 @@ mod tests {
             }
         }
 
-        manager.shrink(first_checkpoint.cursor()).unwrap();
+        builder.shrink(first_checkpoint.cursor()).unwrap();
+
+        {
+            let segment = builder.current_segment().unwrap();
+            let action = segment.reconnect(new_test_cursor(1_010, 0)).unwrap();
+            assert_eq!(
+                action,
+                ReconnectAction::OfflineReorg(second_checkpoint.cursor())
+            );
+        }
+
         block = first_checkpoint.clone();
         for _ in 0..10 {
             block = next_block(&block, 2);
-            manager.grow(block.clone()).unwrap();
+            builder.grow(block.clone()).unwrap();
         }
 
         {
-            let segment = manager.current_segment().unwrap();
+            let segment = builder.current_segment().unwrap();
             assert!(segment.previous_segment.is_none());
             assert_eq!(segment.info.first_block, new_test_cursor(1_000, 0));
             assert_eq!(segment.info.last_block, new_test_cursor(1_013, 2));
