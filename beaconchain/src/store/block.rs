@@ -3,7 +3,7 @@ use apibara_dna_common::{
         bitmap::BitmapMapBuilder,
         index::{IndexGroup, TaggedIndex},
     },
-    Cursor,
+    Cursor, Hash,
 };
 use error_stack::{Result, ResultExt};
 use rkyv::{Archive, Deserialize, Serialize};
@@ -41,7 +41,7 @@ pub struct IndexValidatorByStatus;
 impl Block {
     pub fn cursor(&self) -> Cursor {
         let slot = self.header.slot;
-        let hash = self.header.state_root.0.to_vec();
+        let hash = Hash(self.header.state_root.0.to_vec());
         Cursor::new(slot, hash)
     }
 }
@@ -156,7 +156,7 @@ impl BlockBuilder {
 impl fragment::Slot<Block> {
     pub fn cursor(&self) -> Cursor {
         match self {
-            fragment::Slot::Missed { slot } => Cursor::new(*slot, Vec::new()),
+            fragment::Slot::Missed { slot } => Cursor::new(*slot, Default::default()),
             fragment::Slot::Proposed(block) => block.cursor(),
         }
     }

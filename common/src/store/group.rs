@@ -316,13 +316,13 @@ mod tests {
 
         for (i, group) in indices.into_iter().enumerate() {
             blocks.push(SegmentBlock {
-                cursor: Cursor::new(start_block + i as u64, Vec::new()),
+                cursor: Cursor::new(start_block + i as u64, Default::default()),
                 data: group,
             });
         }
 
         IndexSegment {
-            first_block: Cursor::new(start_block, Vec::new()),
+            first_block: Cursor::new(start_block, Default::default()),
             blocks,
         }
     }

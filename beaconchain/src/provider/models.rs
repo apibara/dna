@@ -1,4 +1,4 @@
-use apibara_dna_common::{Cursor, GetCursor};
+use apibara_dna_common::{Cursor, GetCursor, Hash};
 use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, DisplayFromStr};
 
@@ -171,6 +171,7 @@ impl BlobSidecar {
 
 impl GetCursor for BeaconBlock {
     fn cursor(&self) -> Option<Cursor> {
-        Some(Cursor::new(self.slot, self.state_root.0.to_vec()))
+        let hash = Hash(self.state_root.0.to_vec());
+        Some(Cursor::new(self.slot, hash))
     }
 }

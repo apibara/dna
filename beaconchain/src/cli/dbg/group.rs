@@ -35,10 +35,7 @@ impl DebugGroupCommand {
 
                 info!("segment group dump of {}", file);
                 info!("first block number {}", group.first_block.number);
-                info!(
-                    "first block hash 0x{}",
-                    hex::encode(&group.first_block.hash)
-                );
+                info!("first block hash {}", group.first_block.hash);
 
                 print_index::<IndexTransactionByFromAddress>(&group.index)?;
                 print_index::<IndexTransactionByToAddress>(&group.index)?;

@@ -121,18 +121,14 @@ impl TextDumpCommand {
 
                 info!("segment dump of {}", args.file);
                 info!("first block number {}", segment.first_block.number);
-                info!(
-                    "first block hash 0x{}",
-                    hex::encode(&segment.first_block.hash)
-                );
+                info!("first block hash {}", segment.first_block.hash);
                 info!("block count: {}", segment.blocks.len());
 
                 for (block_index, block) in segment.blocks.iter().enumerate() {
                     info!("* offset: {}", block_index);
                     info!(
-                        "  cursor: number={} hash=0x{}",
-                        block.cursor.number,
-                        hex::encode(&block.cursor.hash)
+                        "  cursor: number={} hash={}",
+                        block.cursor.number, block.cursor.hash
                     );
                     info!("  index count: {}", block.data.tags.len());
 
@@ -156,18 +152,14 @@ impl TextDumpCommand {
 
                 info!("segment dump of {}", args.file);
                 info!("first block number {}", segment.first_block.number);
-                info!(
-                    "first block hash 0x{}",
-                    hex::encode(&segment.first_block.hash)
-                );
+                info!("first block hash {}", segment.first_block.hash);
                 info!("block count: {}", segment.blocks.len());
 
                 for (block_index, block) in segment.blocks.iter().enumerate() {
                     info!("* offset: {}", block_index);
                     info!(
-                        "  cursor: number={} hash=0x{}",
-                        block.cursor.number,
-                        hex::encode(&block.cursor.hash)
+                        "  cursor: number={} hash={}",
+                        block.cursor.number, block.cursor.hash
                     );
                     match &block.data {
                         fragment::ArchivedSlot::Missed { .. } => {
@@ -192,18 +184,14 @@ impl TextDumpCommand {
 
                 info!("segment dump of {}", args.file);
                 info!("first block number {}", segment.first_block.number);
-                info!(
-                    "first block hash 0x{}",
-                    hex::encode(&segment.first_block.hash)
-                );
+                info!("first block hash {}", segment.first_block.hash);
                 info!("block count: {}", segment.blocks.len());
 
                 for (block_index, block) in segment.blocks.iter().enumerate() {
                     info!("* offset: {}", block_index);
                     info!(
-                        "  cursor: number={} hash=0x{}",
-                        block.cursor.number,
-                        hex::encode(&block.cursor.hash)
+                        "  cursor: number={} hash={}",
+                        block.cursor.number, block.cursor.hash
                     );
                     match &block.data {
                         fragment::ArchivedSlot::Missed { .. } => {
@@ -225,18 +213,14 @@ impl TextDumpCommand {
 
                 info!("segment dump of {}", args.file);
                 info!("first block number {}", segment.first_block.number);
-                info!(
-                    "first block hash 0x{}",
-                    hex::encode(&segment.first_block.hash)
-                );
+                info!("first block hash {}", segment.first_block.hash);
                 info!("block count: {}", segment.blocks.len());
 
                 for (block_index, block) in segment.blocks.iter().enumerate() {
                     info!("* offset: {}", block_index);
                     info!(
-                        "  cursor: number={} hash=0x{}",
-                        block.cursor.number,
-                        hex::encode(&block.cursor.hash)
+                        "  cursor: number={} hash={}",
+                        block.cursor.number, block.cursor.hash
                     );
                     match &block.data {
                         fragment::ArchivedSlot::Missed { .. } => {
@@ -258,18 +242,14 @@ impl TextDumpCommand {
 
                 info!("segment dump of {}", args.file);
                 info!("first block number {}", segment.first_block.number);
-                info!(
-                    "first block hash 0x{}",
-                    hex::encode(&segment.first_block.hash)
-                );
+                info!("first block hash {}", segment.first_block.hash);
                 info!("block count: {}", segment.blocks.len());
 
                 for (block_index, block) in segment.blocks.iter().enumerate() {
                     info!("* offset: {}", block_index);
                     info!(
-                        "  cursor: number={} hash=0x{}",
-                        block.cursor.number,
-                        hex::encode(&block.cursor.hash)
+                        "  cursor: number={} hash={}",
+                        block.cursor.number, block.cursor.hash
                     );
                     match &block.data {
                         fragment::ArchivedSlot::Missed { .. } => {
