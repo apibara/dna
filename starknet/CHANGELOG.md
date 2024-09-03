@@ -6,6 +6,14 @@ The format is based on [Common Changelog](https://common-changelog.org/), and
 this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.2] - 2024-09-03
+
+_Fix crash when overriding the ingestion starting block._
+
+### Fixed
+
+-   Fix `InconsistentDatabase` error when overriding the ingestion starting block.
+
 ## [1.6.1] - 2024-07-31
 
 _Support filtering invoke transactions v3._
