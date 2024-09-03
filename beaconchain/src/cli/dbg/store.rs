@@ -173,7 +173,7 @@ impl DebugStoreCommand {
                         segment.name,
                         Byte::from_u64(segment.data.len() as u64)
                     );
-                    fs::write(&out_dir.join(segment.name), &segment.data)
+                    fs::write(out_dir.join(segment.name), &segment.data)
                         .change_context(BeaconChainError)
                         .attach_printable("failed to write segment")?;
                 }
