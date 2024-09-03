@@ -83,7 +83,15 @@ where
             .await
             .map_err(BlockIngestionError::provider)?;
 
-        let finalized = self.storage.highest_finalized_block()?;
+        let finalized = if let Some(starting_block) = self.config.ingestion_starting_block {
+            warn!("starting block is set, using it as finalized block");
+            self.storage
+                .highest_finalized_block()?
+                .unwrap_or(GlobalBlockId::from_u64(starting_block))
+                .into()
+        } else {
+            self.storage.highest_finalized_block()?
+        };
 
         let ingestion = AcceptedBlockIngestionImpl {
             current_head,
