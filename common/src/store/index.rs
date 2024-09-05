@@ -81,12 +81,10 @@ impl IndexGroup {
         }
 
         let data = &self.data[pos];
-        let archived = rkyv::access::<Archived<BitmapMap<TI::Key>>, _>(data).or_else(|err| {
-            Err(IndexError)
-                .attach_printable("failed to deserialize index")
-                .attach_printable_lazy(|| format!("error: {}", err))
-                .attach_printable_lazy(|| format!("tag: {}({})", TI::name(), TI::tag()))
-        })?;
+        let archived = rkyv::access::<Archived<BitmapMap<TI::Key>>, _>(data)
+            .change_context(IndexError)
+            .attach_printable("failed to deserialize index")
+            .attach_printable_lazy(|| format!("tag: {}({})", TI::name(), TI::tag()))?;
 
         Ok(archived)
     }
@@ -130,12 +128,10 @@ impl ArchivedIndexGroup {
         }
 
         let data = &self.data[pos];
-        let archived = rkyv::access::<Archived<BitmapMap<TI::Key>>, _>(data).or_else(|err| {
-            Err(IndexError)
-                .attach_printable("failed to deserialize index")
-                .attach_printable_lazy(|| format!("error: {}", err))
-                .attach_printable_lazy(|| format!("tag: {}({})", TI::name(), TI::tag()))
-        })?;
+        let archived = rkyv::access::<Archived<BitmapMap<TI::Key>>, _>(data)
+            .change_context(IndexError)
+            .attach_printable("failed to deserialize index")
+            .attach_printable_lazy(|| format!("tag: {}({})", TI::name(), TI::tag()))?;
 
         Ok(Some(archived))
     }

@@ -83,11 +83,8 @@ impl SegmentGroupBuilder {
                             .attach_printable_lazy(|| format!("invalid key size: {}", key_size))
                     }
                 }
-                .or_else(|err| {
-                    Err(SegmentGroupError)
-                        .attach_printable("failed to deserialize bitmap")
-                        .attach_printable_lazy(|| format!("error: {}", err))
-                })?;
+                .change_context(SegmentGroupError)
+                .attach_printable("failed to deserialize bitmap")?;
 
                 let index = self.block_indexes.entry(*tag).or_insert(match key_size {
                     0 => RawBitmapMapBuilder::Len0(Default::default()),
