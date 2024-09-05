@@ -2,6 +2,7 @@ mod dbg;
 mod rpc;
 
 use clap::{Parser, Subcommand};
+use dbg::DebugChainCommand;
 use error_stack::Result;
 
 use crate::error::BeaconChainError;
@@ -22,6 +23,12 @@ pub enum Command {
     DebugRpc {
         #[clap(subcommand)]
         command: DebugRpcCommand,
+    },
+    /// Debug command for the Beacon RPC.
+    #[command(name = "dbg-chain")]
+    DebugChain {
+        #[clap(subcommand)]
+        command: DebugChainCommand,
     },
     /// Debug utilities for the store.
     #[command(name = "dbg-store")]
@@ -47,6 +54,7 @@ impl Cli {
     pub async fn run(self) -> Result<(), BeaconChainError> {
         match self.command {
             Command::DebugRpc { command } => command.run().await,
+            Command::DebugChain { command } => command.run().await,
             Command::DebugStore { command } => command.run().await,
             Command::DebugSegment { command } => command.run().await,
             Command::DebugGroup { command } => command.run().await,

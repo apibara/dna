@@ -1,5 +1,6 @@
 //! Store fragments for the beacon chain.
 
+use apibara_dna_common::Hash;
 use rkyv::{Archive, Deserialize, Serialize};
 
 use crate::provider::models;
@@ -174,5 +175,11 @@ impl std::fmt::Debug for B384 {
 impl std::fmt::Debug for Bytes {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Bytes(0x{})", hex::encode(&self.0))
+    }
+}
+
+impl From<B256> for Hash {
+    fn from(value: B256) -> Self {
+        Hash(value.0.to_vec())
     }
 }

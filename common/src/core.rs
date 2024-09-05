@@ -36,6 +36,16 @@ impl Cursor {
     }
 }
 
+impl Hash {
+    pub fn as_slice(&self) -> &[u8] {
+        &self.0
+    }
+
+    pub fn is_zero(&self) -> bool {
+        self.0.iter().all(|b| *b == 0)
+    }
+}
+
 impl std::fmt::Debug for Cursor {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Cursor(n={} h={})", self.number, self.hash_as_hex())

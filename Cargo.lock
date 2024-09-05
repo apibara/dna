@@ -344,6 +344,7 @@ dependencies = [
  "byte-unit",
  "clap",
  "error-stack",
+ "futures",
  "hex",
  "reqwest",
  "rkyv",
@@ -352,6 +353,7 @@ dependencies = [
  "serde_json",
  "serde_with",
  "tokio",
+ "tokio-util",
  "tracing",
  "url",
 ]
@@ -364,12 +366,16 @@ dependencies = [
  "aws-config",
  "aws-sdk-s3",
  "bytes",
+ "clap",
  "error-stack",
+ "futures",
  "hex",
  "rkyv",
  "roaring",
  "testcontainers",
  "tokio",
+ "tokio-util",
+ "tracing",
 ]
 
 [[package]]

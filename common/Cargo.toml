@@ -15,12 +15,16 @@ apibara-dna-protocol = { path = "../protocol" }
 aws-config = { version = "1.5.5", features = ["behavior-version-latest"] }
 aws-sdk-s3 = "1.47.0"
 bytes.workspace = true
+clap.workspace = true
 error-stack.workspace = true
+futures.workspace = true
 hex.workspace = true
 rkyv.workspace = true
 roaring.workspace = true
 testcontainers.workspace = true
 tokio.workspace = true
+tokio-util.workspace = true
+tracing.workspace = true
 
 [dev-dependencies]
 testcontainers.workspace = true

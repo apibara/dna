@@ -1,6 +1,6 @@
 use std::{fmt::Debug, time::Duration};
 
-use error_stack::{Result, ResultExt};
+use error_stack::{Report, Result, ResultExt};
 use reqwest::{
     header::{HeaderMap, HeaderValue},
     Client,
@@ -91,6 +91,14 @@ impl BeaconApiProvider {
             .await
     }
 
+    pub async fn get_block_root(
+        &self,
+        block_id: BlockId,
+    ) -> Result<models::BlockRootResponse, BeaconApiError> {
+        let request = BlockRootRequest::new(block_id);
+        self.send_request(request, self.options.timeout).await
+    }
+
     /// Send a request to the beacon node.
     ///
     /// TODO: this function can be turned into a `Transport` trait if we ever need it.
@@ -172,6 +180,11 @@ pub struct ValidatorsRequest {
     block_id: BlockId,
 }
 
+#[derive(Debug)]
+pub struct BlockRootRequest {
+    block_id: BlockId,
+}
+
 impl std::fmt::Display for BlockId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -183,9 +196,19 @@ impl std::fmt::Display for BlockId {
     }
 }
 
+pub trait BeaconApiErrorExt {
+    fn is_not_found(&self) -> bool;
+}
+
 impl BeaconApiError {
     pub fn is_not_found(&self) -> bool {
         matches!(self, BeaconApiError::NotFound)
+    }
+}
+
+impl BeaconApiErrorExt for Report<BeaconApiError> {
+    fn is_not_found(&self) -> bool {
+        self.current_context().is_not_found()
     }
 }
 
@@ -257,6 +280,20 @@ impl BeaconApiRequest for ValidatorsRequest {
 
     fn path(&self) -> String {
         format!("/eth/v1/beacon/states/{}/validators", self.block_id)
+    }
+}
+
+impl BlockRootRequest {
+    pub fn new(block_id: BlockId) -> Self {
+        Self { block_id }
+    }
+}
+
+impl BeaconApiRequest for BlockRootRequest {
+    type Response = models::BlockRootResponse;
+
+    fn path(&self) -> String {
+        format!("/eth/v1/beacon/blocks/{}/root", self.block_id)
     }
 }
 

@@ -12,29 +12,12 @@ use tracing::info;
 use crate::{
     cli::rpc::RpcArgs,
     error::BeaconChainError,
-    provider::{
-        http::{BeaconApiError, BlockId},
-        models,
-    },
+    provider::{http::BlockId, models},
 };
 
 #[derive(Subcommand, Debug)]
 #[allow(clippy::enum_variant_names)]
 pub enum DebugRpcCommand {
-    /// Download all block pieces from the RPC.
-    ///
-    /// This command will download all block pieces from the RPC and write them to a JSON file.
-    /// The JSON file can then be used to assemble the block.
-    Download {
-        #[clap(flatten)]
-        rpc: RpcArgs,
-        /// The block ID.
-        #[arg(long, env, default_value = "head")]
-        block_id: String,
-        /// Write the response to a JSON file.
-        #[arg(long)]
-        json: PathBuf,
-    },
     /// Get the header of a block.
     GetHeader {
         #[clap(flatten)]
@@ -106,58 +89,6 @@ impl DebugRpcCommand {
 
         let start = Instant::now();
         let elapsed = match self {
-            DebugRpcCommand::Download { json, .. } => {
-                info!(block_id = %block_id, "downloading block");
-                let BlockId::Slot(slot) = block_id else {
-                    return Err(BeaconChainError)
-                        .attach_printable_lazy(|| format!("invalid block id: {block_id:?}"))
-                        .attach_printable("must be a slot");
-                };
-
-                let is_missed = match rpc_provider.get_header(block_id.clone()).await {
-                    Ok(_) => false,
-                    Err(err) => {
-                        if let Some(api_error) = err.downcast_ref::<BeaconApiError>() {
-                            if !api_error.is_not_found() {
-                                return Err(err).change_context(BeaconChainError);
-                            }
-                            true
-                        } else {
-                            return Err(err).change_context(BeaconChainError);
-                        }
-                    }
-                };
-
-                if is_missed {
-                    let elapsed = start.elapsed();
-                    write_json(json, &JsonBlock::Missed { slot })?;
-                    elapsed
-                } else {
-                    let block = rpc_provider
-                        .get_block(block_id.clone())
-                        .await
-                        .change_context(BeaconChainError)?;
-                    let sidecar = rpc_provider
-                        .get_blob_sidecar(block_id.clone())
-                        .await
-                        .change_context(BeaconChainError)?;
-                    let validators = rpc_provider
-                        .get_validators(block_id)
-                        .await
-                        .change_context(BeaconChainError)?;
-
-                    let elapsed = start.elapsed();
-
-                    let block = ProposedBlock {
-                        block: block.data.message,
-                        blob_sidecars: sidecar.data,
-                        validators: validators.data,
-                    };
-
-                    write_json(json, &JsonBlock::Proposed(block))?;
-                    elapsed
-                }
-            }
             DebugRpcCommand::GetHeader { json, .. } => {
                 info!(block_id = ?block_id, "getting header");
                 let header = rpc_provider
@@ -223,7 +154,6 @@ impl DebugRpcCommand {
 
     fn rpc_provider(&self) -> Result<crate::provider::http::BeaconApiProvider, BeaconChainError> {
         match self {
-            DebugRpcCommand::Download { rpc, .. } => rpc.to_beacon_api_provider(),
             DebugRpcCommand::GetHeader { rpc, .. } => rpc.to_beacon_api_provider(),
             DebugRpcCommand::GetBlock { rpc, .. } => rpc.to_beacon_api_provider(),
             DebugRpcCommand::GetBlobSidecar { rpc, .. } => rpc.to_beacon_api_provider(),
@@ -233,7 +163,6 @@ impl DebugRpcCommand {
 
     fn block_id(&self) -> Result<BlockId, BeaconChainError> {
         let block_id = match self {
-            DebugRpcCommand::Download { block_id, .. } => block_id,
             DebugRpcCommand::GetHeader { block_id, .. } => block_id,
             DebugRpcCommand::GetBlock { block_id, .. } => block_id,
             DebugRpcCommand::GetBlobSidecar { block_id, .. } => block_id,

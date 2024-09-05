@@ -1,6 +1,7 @@
+use alloy_rpc_types_beacon::header::BeaconBlockHeader;
 use apibara_dna_common::{Cursor, GetCursor, Hash};
 use serde::{Deserialize, Serialize};
-use serde_with::{serde_as, DisplayFromStr};
+use serde_with::{serde_as, DefaultOnNull, DisplayFromStr};
 
 pub use alloy_consensus::{
     Signed, TxEip1559, TxEip2930, TxEip4844, TxEip4844Variant, TxEip4844WithSidecar, TxEnvelope,
@@ -9,6 +10,17 @@ pub use alloy_consensus::{
 pub use alloy_eips::eip2930::AccessListItem;
 pub use alloy_primitives::{ruint::aliases::B384, Address, Bytes, Signature, TxKind, B256, U256};
 pub use alloy_rpc_types_beacon::header::HeaderResponse;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BlockRootResponse {
+    pub data: BlockRoot,
+    pub finalized: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BlockRoot {
+    pub root: B256,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BeaconBlockResponse {
@@ -68,7 +80,11 @@ pub struct ExecutionPayload {
     pub block_number: u64,
     #[serde_as(as = "DisplayFromStr")]
     pub timestamp: u64,
+    #[serde_as(deserialize_as = "DefaultOnNull")]
+    #[serde(default)]
     pub transactions: Vec<Bytes>,
+    #[serde_as(deserialize_as = "DefaultOnNull")]
+    #[serde(default)]
     pub withdrawals: Vec<Withdrawal>,
 }
 
@@ -173,5 +189,21 @@ impl GetCursor for BeaconBlock {
     fn cursor(&self) -> Option<Cursor> {
         let hash = Hash(self.state_root.0.to_vec());
         Some(Cursor::new(self.slot, hash))
+    }
+}
+
+pub trait BeaconCursorExt {
+    fn cursor(&self) -> Cursor;
+}
+
+impl BeaconCursorExt for HeaderResponse {
+    fn cursor(&self) -> Cursor {
+        self.data.header.message.cursor()
+    }
+}
+
+impl BeaconCursorExt for BeaconBlockHeader {
+    fn cursor(&self) -> Cursor {
+        Cursor::new(self.slot, Hash(self.state_root.0.to_vec()))
     }
 }

@@ -5,7 +5,7 @@ use rkyv::{with::AsVec, Archive, Deserialize, Serialize};
 
 use crate::{Cursor, Hash};
 
-#[derive(Clone, PartialEq, Eq, Hash, Archive, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, Archive, Serialize, Deserialize, Debug)]
 #[archive(check_bytes)]
 pub struct BlockInfo {
     pub number: u64,
@@ -51,7 +51,7 @@ pub struct ExtraReorg {
     pub reorgs: ReorgMap,
 }
 
-#[derive(Clone, PartialEq, Eq, Hash, Archive, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, Archive, Serialize, Deserialize, Debug)]
 #[archive(check_bytes)]
 pub struct CanonicalChainSegmentInfo {
     pub first_block: Cursor,
@@ -120,8 +120,12 @@ impl CanonicalChainBuilder {
                 canonical, info, ..
             } => {
                 let current_last_block = &info.last_block;
-                let can_apply = block.number == current_last_block.number + 1
-                    && block.parent == current_last_block.hash;
+                let can_apply = if current_last_block.hash.is_zero() {
+                    true
+                } else {
+                    block.number == current_last_block.number + 1
+                        && block.parent == current_last_block.hash
+                };
 
                 if !can_apply {
                     return Err(CanonicalChainError::Builder)
