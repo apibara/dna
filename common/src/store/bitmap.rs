@@ -1,7 +1,9 @@
 use std::collections::BTreeMap;
 
 use error_stack::{Result, ResultExt};
-use rkyv::{collections::util::Entry, with::AsVec, Archive, Deserialize, Serialize};
+use rkyv::{
+    collections::util::Entry, rancor::Strategy, with::AsVec, Archive, Deserialize, Serialize,
+};
 use roaring::RoaringBitmap;
 
 #[derive(Debug, Clone)]
@@ -51,17 +53,11 @@ where
 {
     pub fn deserialize<D>(&self, deserializer: &mut D) -> Result<BitmapMap<K>, BitmapError>
     where
-        D: rkyv::Fallible + ?Sized,
-        D::Error: std::fmt::Display,
-        K::Archived: rkyv::Deserialize<K, D>,
+        K::Archived: Deserialize<K, Strategy<D, rkyv::rancor::Error>>,
     {
-        <Self as rkyv::Deserialize<BitmapMap<K>, D>>::deserialize(self, deserializer).or_else(
-            |err| {
-                Err(BitmapError)
-                    .attach_printable("failed to deserialize bitmap")
-                    .attach_printable_lazy(|| format!("error: {}", err))
-            },
-        )
+        rkyv::api::deserialize_with::<_, _, rkyv::rancor::Error>(self, deserializer)
+            .change_context(BitmapError)
+            .attach_printable("failed to deserialize bitmap")
     }
 
     pub fn iter(&self) -> impl Iterator<Item = &Entry<K::Archived, ArchivedBitmap>> {

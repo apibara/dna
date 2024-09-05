@@ -1,9 +1,9 @@
 use bytes::Bytes;
 use error_stack::{Result, ResultExt};
-use rkyv::ser::serializers::AllocSerializer;
 
 use crate::{
     object_store::{ObjectETag, ObjectStore, PutOptions},
+    rkyv::Serializable,
     Cursor,
 };
 
@@ -19,7 +19,7 @@ pub struct BlockStore<B> {
 
 impl<B> BlockStore<B>
 where
-    B: rkyv::Serialize<AllocSerializer<0>>,
+    B: for<'a> Serializable<'a>,
 {
     pub fn new(client: ObjectStore) -> Self {
         Self {
@@ -29,7 +29,7 @@ where
     }
 
     pub async fn put(&self, cursor: &Cursor, block: &B) -> Result<ObjectETag, BlockStoreError> {
-        let serialized = rkyv::to_bytes::<_, 0>(block)
+        let serialized = rkyv::to_bytes(block)
             .change_context(BlockStoreError)
             .attach_printable("failed to serialize block")?;
 

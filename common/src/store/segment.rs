@@ -1,7 +1,7 @@
 use error_stack::{Result, ResultExt};
-use rkyv::{ser::serializers::AllocSerializer, AlignedVec, Archive, Deserialize, Serialize};
+use rkyv::{util::AlignedVec, Archive, Deserialize, Serialize};
 
-use crate::Cursor;
+use crate::{rkyv::Serializable, Cursor};
 
 use super::index::IndexGroup;
 
@@ -57,10 +57,10 @@ impl<TD> Segment<TD> {
 
 impl<TD> Segment<TD>
 where
-    TD: Fragment + Serialize<AllocSerializer<0>>,
+    TD: Fragment + for<'a> Serializable<'a>,
 {
     pub fn to_serialized_segment(&self) -> Result<SerializedSegment, SegmentError> {
-        let data = rkyv::to_bytes::<_, 0>(self).change_context(SegmentError)?;
+        let data = rkyv::to_bytes::<rkyv::rancor::Error>(self).change_context(SegmentError)?;
         let name = TD::name().to_string();
         Ok(SerializedSegment { name, data })
     }

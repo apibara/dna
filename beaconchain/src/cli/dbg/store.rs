@@ -32,13 +32,12 @@ impl DebugStoreCommand {
 
                 info!("reading first block from {}", file.display());
                 let bytes = fs::read(&file).change_context(BeaconChainError)?;
-                let block =
-                    rkyv::from_bytes::<'_, store::fragment::Slot<store::block::Block>>(&bytes)
-                        .or_else(|err| {
-                            Err(BeaconChainError)
-                                .attach_printable("failed to deserialize block")
-                                .attach_printable_lazy(|| format!("error: {}", err))
-                        })?;
+                let block = rkyv::from_bytes::<
+                    store::fragment::Slot<store::block::Block>,
+                    rkyv::rancor::Error,
+                >(&bytes)
+                .change_context(BeaconChainError)
+                .attach_printable("failed to deserialize block")?;
 
                 let first_block = block.cursor();
                 let mut segment_builder = SegmentBuilder::new(&first_block);
@@ -47,13 +46,12 @@ impl DebugStoreCommand {
                 for file in files {
                     info!("reading block from {}", file.display());
                     let bytes = fs::read(&file).change_context(BeaconChainError)?;
-                    let block =
-                        rkyv::from_bytes::<'_, store::fragment::Slot<store::block::Block>>(&bytes)
-                            .or_else(|err| {
-                                Err(BeaconChainError)
-                                    .attach_printable("failed to deserialize block")
-                                    .attach_printable_lazy(|| format!("error: {}", err))
-                            })?;
+                    let block = rkyv::from_bytes::<
+                        store::fragment::Slot<store::block::Block>,
+                        rkyv::rancor::Error,
+                    >(&bytes)
+                    .change_context(BeaconChainError)
+                    .attach_printable("failed to deserialize block")?;
 
                     segment_builder.add_block(block);
                 }

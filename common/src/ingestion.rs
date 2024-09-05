@@ -2,7 +2,6 @@ use std::{future::Future, sync::Arc};
 
 use error_stack::{Report, Result, ResultExt};
 use futures::{stream::FuturesOrdered, StreamExt};
-use rkyv::ser::serializers::AllocSerializer;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, trace};
@@ -12,6 +11,7 @@ use crate::{
     chain::{BlockInfo, CanonicalChainBuilder},
     chain_store::ChainStore,
     object_store::ObjectStore,
+    rkyv::Serializable,
     Cursor, Hash,
 };
 
@@ -80,7 +80,7 @@ struct IngestFinalizedState {
 impl<B, I> IngestionService<B, I>
 where
     I: BlockIngestion<Block = B> + Send + Sync + 'static,
-    B: Send + Sync + 'static + rkyv::Serialize<AllocSerializer<0>>,
+    B: Send + Sync + 'static + for<'a> Serializable<'a>,
 {
     pub fn new(ingestion: I, object_store: ObjectStore, options: IngestionServiceOptions) -> Self {
         let chain_store = ChainStore::new(object_store.clone());

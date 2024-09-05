@@ -46,7 +46,7 @@ impl ChainStore {
         name: &str,
         segment: &CanonicalChainSegment,
     ) -> Result<ObjectETag, ChainStoreError> {
-        let serialized = rkyv::to_bytes::<_, 0>(segment)
+        let serialized = rkyv::to_bytes::<rkyv::rancor::Error>(segment)
             .change_context(ChainStoreError)
             .attach_printable("failed to serialize chain segment")?;
 
@@ -79,11 +79,11 @@ impl ChainStore {
                     .attach_printable_lazy(|| format!("name: {}", name))?
                     .into_bytes();
 
-                let segment = rkyv::from_bytes::<CanonicalChainSegment>(&bytes).or_else(|err| {
-                    Err(ChainStoreError)
-                        .attach_printable("failed to deserialize chain segment")
-                        .attach_printable_lazy(|| format!("error: {}", err))
-                })?;
+                let segment = rkyv::from_bytes::<_, rkyv::rancor::Error>(&bytes)
+                    .change_context(ChainStoreError)
+                    .attach_printable("failed to deserialize chain segment")
+                    .attach_printable_lazy(|| format!("name: {}", name))?;
+
                 Ok(Some(segment))
             }
             Err(err) if err.is_not_found() => Ok(None),

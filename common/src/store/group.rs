@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use error_stack::{Result, ResultExt};
-use rkyv::{Archive, Deserialize, Serialize};
+use rkyv::{rancor::Strategy, Archive, Deserialize, Serialize};
 
 use crate::{store::bitmap::BitmapMap, Cursor};
 
@@ -28,6 +28,7 @@ pub struct SegmentGroup {
 pub struct SegmentGroupBuilder {
     first_block: Option<Cursor>,
     block_indexes: HashMap<u8, RawBitmapMapBuilder>,
+    deserializer: rkyv::de::Pool,
 }
 
 impl SegmentGroupBuilder {
@@ -36,7 +37,9 @@ impl SegmentGroupBuilder {
         segment: &ArchivedSegment<IndexGroup>,
     ) -> Result<(), SegmentGroupError> {
         let segment = segment
-            .deserialize(&mut rkyv::Infallible)
+            .deserialize(Strategy::<_, rkyv::rancor::Error>::wrap(
+                &mut self.deserializer,
+            ))
             .change_context(SegmentGroupError)
             .attach_printable("failed to deserialize segment")?;
         self.add_segment(&segment)
@@ -58,14 +61,22 @@ impl SegmentGroupBuilder {
                 .zip(index_group.data.iter())
             {
                 let bitmap = match key_size {
-                    0 => rkyv::check_archived_root::<BitmapMap<[u8; 0]>>(bitmap)
-                        .map(RawArchivedBitmapMap::Len0),
-                    1 => rkyv::check_archived_root::<BitmapMap<[u8; 1]>>(bitmap)
-                        .map(RawArchivedBitmapMap::Len1),
-                    20 => rkyv::check_archived_root::<BitmapMap<[u8; 20]>>(bitmap)
-                        .map(RawArchivedBitmapMap::Len20),
-                    32 => rkyv::check_archived_root::<BitmapMap<[u8; 32]>>(bitmap)
-                        .map(RawArchivedBitmapMap::Len32),
+                    0 => rkyv::access::<rkyv::Archived<BitmapMap<[u8; 0]>>, rkyv::rancor::Error>(
+                        bitmap,
+                    )
+                    .map(RawArchivedBitmapMap::Len0),
+                    1 => rkyv::access::<rkyv::Archived<BitmapMap<[u8; 1]>>, rkyv::rancor::Error>(
+                        bitmap,
+                    )
+                    .map(RawArchivedBitmapMap::Len1),
+                    20 => rkyv::access::<rkyv::Archived<BitmapMap<[u8; 20]>>, rkyv::rancor::Error>(
+                        bitmap,
+                    )
+                    .map(RawArchivedBitmapMap::Len20),
+                    32 => rkyv::access::<rkyv::Archived<BitmapMap<[u8; 32]>>, rkyv::rancor::Error>(
+                        bitmap,
+                    )
+                    .map(RawArchivedBitmapMap::Len32),
                     _ => {
                         return Err(SegmentGroupError)
                             .attach_printable("failed to deserialize bitmap")
@@ -193,7 +204,7 @@ impl std::fmt::Display for SegmentGroupError {
 
 #[cfg(test)]
 mod tests {
-    use rkyv::{Archive, Deserialize, Serialize};
+    use rkyv::{de::Pool, Archive, Deserialize, Serialize};
 
     use crate::{
         store::{
@@ -387,6 +398,8 @@ mod tests {
 
     #[test]
     fn test_segment_group_builder() {
+        let mut deserializer = Pool::default();
+
         let mut builder = super::SegmentGroupBuilder::default();
 
         let segment_size = 10;
@@ -409,7 +422,10 @@ mod tests {
 
         // Check key with size 20 works.
         {
-            let index = segment_group.index.get_index::<IndexBytes20>().unwrap();
+            let index = segment_group
+                .index
+                .deserialize_index::<IndexBytes20, _>(&mut deserializer)
+                .unwrap();
 
             // All blocks have values with this key.
             let bitmap = index.get_bitmap(&Byte20([0; 20])).unwrap().unwrap();
@@ -430,7 +446,7 @@ mod tests {
         {
             let index = segment_group
                 .index
-                .get_index::<IndexBytes20Again>()
+                .deserialize_index::<IndexBytes20Again, _>(&mut deserializer)
                 .unwrap();
 
             // Theres no value with this key.
@@ -450,7 +466,10 @@ mod tests {
 
         // Check key with size 32 works.
         {
-            let index = segment_group.index.get_index::<IndexBytes32>().unwrap();
+            let index = segment_group
+                .index
+                .deserialize_index::<IndexBytes32, _>(&mut deserializer)
+                .unwrap();
 
             // All blocks have values with this key.
             let bitmap = index.get_bitmap(&Byte32([0; 32])).unwrap().unwrap();
@@ -469,7 +488,10 @@ mod tests {
 
         // Check key with size 1 works.
         {
-            let index = segment_group.index.get_index::<IndexDU>().unwrap();
+            let index = segment_group
+                .index
+                .deserialize_index::<IndexDU, _>(&mut deserializer)
+                .unwrap();
 
             // All blocks have values with this key.
             let bitmap = index.get_bitmap(&DU::Odd).unwrap().unwrap();
@@ -484,7 +506,10 @@ mod tests {
 
         // Check key with size 0 works.
         {
-            let index = segment_group.index.get_index::<IndexEmpty>().unwrap();
+            let index = segment_group
+                .index
+                .deserialize_index::<IndexEmpty, _>(&mut deserializer)
+                .unwrap();
 
             // All blocks have values with this key.
             let bitmap = index.get_bitmap(&()).unwrap().unwrap();

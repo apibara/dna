@@ -83,9 +83,10 @@ impl DebugSegmentCommand {
 
                 for segment in segments {
                     let bytes = fs::read(&segment).change_context(BeaconChainError)?;
-                    let segment = rkyv::check_archived_root::<IndexSegment>(&bytes)
-                        .map_err(|_| BeaconChainError)
-                        .attach_printable("failed to deserialize segment")?;
+                    let segment =
+                        rkyv::access::<rkyv::Archived<IndexSegment>, rkyv::rancor::Error>(&bytes)
+                            .change_context(BeaconChainError)
+                            .attach_printable("failed to deserialize segment")?;
 
                     builder
                         .add_archived_segment(segment)
@@ -94,8 +95,8 @@ impl DebugSegmentCommand {
                 }
 
                 let segment_group = builder.build().change_context(BeaconChainError)?;
-                let data =
-                    rkyv::to_bytes::<_, 0>(&segment_group).change_context(BeaconChainError)?;
+                let data = rkyv::to_bytes::<rkyv::rancor::Error>(&segment_group)
+                    .change_context(BeaconChainError)?;
 
                 fs::write(out, &data)
                     .change_context(BeaconChainError)
@@ -115,9 +116,10 @@ impl TextDumpCommand {
                 display,
             } => {
                 let bytes = fs::read(&args.file).change_context(BeaconChainError)?;
-                let segment = rkyv::check_archived_root::<IndexSegment>(&bytes)
-                    .map_err(|_| BeaconChainError)
-                    .attach_printable("failed to deserialize segment")?;
+                let segment =
+                    rkyv::access::<rkyv::Archived<IndexSegment>, rkyv::rancor::Error>(&bytes)
+                        .change_context(BeaconChainError)
+                        .attach_printable("failed to deserialize segment")?;
 
                 info!("segment dump of {}", args.file);
                 info!("first block number {}", segment.first_block.number);
@@ -146,9 +148,10 @@ impl TextDumpCommand {
             }
             TextDumpCommand::Header { segment: args } => {
                 let bytes = fs::read(&args.file).change_context(BeaconChainError)?;
-                let segment = rkyv::check_archived_root::<HeaderSegment>(&bytes)
-                    .map_err(|_| BeaconChainError)
-                    .attach_printable("failed to deserialize segment")?;
+                let segment =
+                    rkyv::access::<rkyv::Archived<HeaderSegment>, rkyv::rancor::Error>(&bytes)
+                        .change_context(BeaconChainError)
+                        .attach_printable("failed to deserialize segment")?;
 
                 info!("segment dump of {}", args.file);
                 info!("first block number {}", segment.first_block.number);
@@ -178,9 +181,10 @@ impl TextDumpCommand {
             }
             TextDumpCommand::Transaction { segment: args } => {
                 let bytes = fs::read(&args.file).change_context(BeaconChainError)?;
-                let segment = rkyv::check_archived_root::<TransactionSegment>(&bytes)
-                    .map_err(|_| BeaconChainError)
-                    .attach_printable("failed to deserialize segment")?;
+                let segment =
+                    rkyv::access::<rkyv::Archived<TransactionSegment>, rkyv::rancor::Error>(&bytes)
+                        .change_context(BeaconChainError)
+                        .attach_printable("failed to deserialize segment")?;
 
                 info!("segment dump of {}", args.file);
                 info!("first block number {}", segment.first_block.number);
@@ -207,9 +211,10 @@ impl TextDumpCommand {
             }
             TextDumpCommand::Validator { segment: args } => {
                 let bytes = fs::read(&args.file).change_context(BeaconChainError)?;
-                let segment = rkyv::check_archived_root::<ValidatorSegment>(&bytes)
-                    .map_err(|_| BeaconChainError)
-                    .attach_printable("failed to deserialize segment")?;
+                let segment =
+                    rkyv::access::<rkyv::Archived<ValidatorSegment>, rkyv::rancor::Error>(&bytes)
+                        .change_context(BeaconChainError)
+                        .attach_printable("failed to deserialize segment")?;
 
                 info!("segment dump of {}", args.file);
                 info!("first block number {}", segment.first_block.number);
@@ -236,9 +241,10 @@ impl TextDumpCommand {
             }
             TextDumpCommand::Blob { segment: args } => {
                 let bytes = fs::read(&args.file).change_context(BeaconChainError)?;
-                let segment = rkyv::check_archived_root::<BlobSegment>(&bytes)
-                    .map_err(|_| BeaconChainError)
-                    .attach_printable("failed to deserialize segment")?;
+                let segment =
+                    rkyv::access::<rkyv::Archived<BlobSegment>, rkyv::rancor::Error>(&bytes)
+                        .change_context(BeaconChainError)
+                        .attach_printable("failed to deserialize segment")?;
 
                 info!("segment dump of {}", args.file);
                 info!("first block number {}", segment.first_block.number);

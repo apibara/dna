@@ -29,9 +29,10 @@ impl DebugGroupCommand {
         match self {
             DebugGroupCommand::TextDump { file } => {
                 let bytes = fs::read(&file).change_context(BeaconChainError)?;
-                let group = rkyv::check_archived_root::<SegmentGroup>(&bytes)
-                    .map_err(|_| BeaconChainError)
-                    .attach_printable("failed to deserialize segment group")?;
+                let group =
+                    rkyv::access::<rkyv::Archived<SegmentGroup>, rkyv::rancor::Error>(&bytes)
+                        .change_context(BeaconChainError)
+                        .attach_printable("failed to deserialize segment group")?;
 
                 info!("segment group dump of {}", file);
                 info!("first block number {}", group.first_block.number);

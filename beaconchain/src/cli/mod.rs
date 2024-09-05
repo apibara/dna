@@ -2,12 +2,13 @@ mod dbg;
 mod rpc;
 
 use clap::{Parser, Subcommand};
-use dbg::DebugChainCommand;
 use error_stack::Result;
 
 use crate::error::BeaconChainError;
 
-use self::dbg::{DebugGroupCommand, DebugRpcCommand, DebugSegmentCommand, DebugStoreCommand};
+use self::dbg::{
+    DebugChainCommand, DebugGroupCommand, DebugRpcCommand, DebugSegmentCommand, DebugStoreCommand,
+};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -19,16 +20,10 @@ pub struct Cli {
 #[derive(Subcommand, Debug)]
 pub enum Command {
     /// Debug command for the Beacon RPC.
-    #[command(name = "dbg-rpc")]
+    // #[command(name = "dbg-rpc")]
     DebugRpc {
         #[clap(subcommand)]
         command: DebugRpcCommand,
-    },
-    /// Debug command for the Beacon RPC.
-    #[command(name = "dbg-chain")]
-    DebugChain {
-        #[clap(subcommand)]
-        command: DebugChainCommand,
     },
     /// Debug utilities for the store.
     #[command(name = "dbg-store")]
@@ -47,6 +42,12 @@ pub enum Command {
     DebugGroup {
         #[clap(subcommand)]
         command: DebugGroupCommand,
+    },
+    /// Debug command for the Beacon RPC.
+    #[command(name = "dbg-chain")]
+    DebugChain {
+        #[clap(subcommand)]
+        command: DebugChainCommand,
     },
 }
 

@@ -1,5 +1,7 @@
 use error_stack::{Result, ResultExt};
-use rkyv::{validation::validators::DefaultValidator, Archive, Deserialize, Serialize};
+use rkyv::{rancor::Strategy, Archive, Archived, Deserialize, Portable, Serialize};
+
+use crate::rkyv::{Checked, Serializable};
 
 use super::bitmap::{ArchivedBitmapMap, BitmapMap};
 
@@ -29,7 +31,7 @@ impl IndexGroup {
         index: &BitmapMap<TI::Key>,
     ) -> Result<usize, IndexError>
     where
-        TI::Key: rkyv::Serialize<rkyv::ser::serializers::AllocSerializer<0>>,
+        TI::Key: for<'a> Serializable<'a>,
     {
         self.add_index_raw(TI::tag(), TI::key_size(), index, TI::name())
     }
@@ -42,7 +44,7 @@ impl IndexGroup {
         name: &'static str,
     ) -> Result<usize, IndexError>
     where
-        K: rkyv::Serialize<rkyv::ser::serializers::AllocSerializer<0>>,
+        K: for<'a> Serializable<'a>,
     {
         let id = self.tags.len();
         let data = rkyv::to_bytes(index)
@@ -62,7 +64,7 @@ impl IndexGroup {
         &'a self,
     ) -> Result<&'a ArchivedBitmapMap<TI::Key>, IndexError>
     where
-        <TI::Key as rkyv::Archive>::Archived: rkyv::CheckBytes<DefaultValidator<'a>>,
+        <TI::Key as rkyv::Archive>::Archived: Portable + for<'b> Checked<'b>,
     {
         let pos = self
             .tags
@@ -79,7 +81,7 @@ impl IndexGroup {
         }
 
         let data = &self.data[pos];
-        let archived = rkyv::check_archived_root::<BitmapMap<TI::Key>>(data).or_else(|err| {
+        let archived = rkyv::access::<Archived<BitmapMap<TI::Key>>, _>(data).or_else(|err| {
             Err(IndexError)
                 .attach_printable("failed to deserialize index")
                 .attach_printable_lazy(|| format!("error: {}", err))
@@ -89,18 +91,24 @@ impl IndexGroup {
         Ok(archived)
     }
 
-    pub fn get_index<'a, TI: TaggedIndex>(&'a self) -> Result<BitmapMap<TI::Key>, IndexError>
+    pub fn deserialize_index<'a, TI, D>(
+        &'a self,
+        deserializer: &mut D,
+    ) -> Result<BitmapMap<TI::Key>, IndexError>
     where
+        TI: TaggedIndex,
         <TI::Key as rkyv::Archive>::Archived:
-            rkyv::CheckBytes<DefaultValidator<'a>> + rkyv::Deserialize<TI::Key, rkyv::Infallible>,
-        TI::Key: 'a,
+            Portable + Deserialize<TI::Key, Strategy<D, rkyv::rancor::Error>> + for<'b> Checked<'b>,
+        <Self as Archive>::Archived: Deserialize<Self, Strategy<D, rkyv::rancor::Error>>,
     {
         let bitmap_map = self.get_archived_index::<TI>()?;
-        bitmap_map
-            .deserialize(&mut rkyv::Infallible)
-            .change_context(IndexError)
-            .attach_printable("failed to deserialize index")
-            .attach_printable_lazy(|| format!("tag: {}({})", TI::name(), TI::tag()))
+        rkyv::api::deserialize_with::<BitmapMap<TI::Key>, _, rkyv::rancor::Error>(
+            bitmap_map,
+            deserializer,
+        )
+        .change_context(IndexError)
+        .attach_printable("failed to deserialize index")
+        .attach_printable_lazy(|| format!("tag: {}({})", TI::name(), TI::tag()))
     }
 }
 
@@ -109,7 +117,7 @@ impl ArchivedIndexGroup {
         &'a self,
     ) -> Result<Option<&'a ArchivedBitmapMap<TI::Key>>, IndexError>
     where
-        <TI::Key as rkyv::Archive>::Archived: rkyv::CheckBytes<DefaultValidator<'a>>,
+        <TI::Key as rkyv::Archive>::Archived: Portable + for<'b> Checked<'b>,
     {
         let Some(pos) = self.tags.iter().position(|t| *t == TI::tag()) else {
             return Ok(None);
@@ -122,7 +130,7 @@ impl ArchivedIndexGroup {
         }
 
         let data = &self.data[pos];
-        let archived = rkyv::check_archived_root::<BitmapMap<TI::Key>>(data).or_else(|err| {
+        let archived = rkyv::access::<Archived<BitmapMap<TI::Key>>, _>(data).or_else(|err| {
             Err(IndexError)
                 .attach_printable("failed to deserialize index")
                 .attach_printable_lazy(|| format!("error: {}", err))
@@ -132,24 +140,31 @@ impl ArchivedIndexGroup {
         Ok(Some(archived))
     }
 
-    pub fn get_index<'a, TI: TaggedIndex>(
+    pub fn deserialize_index<'a, TI, D>(
         &'a self,
+        deserializer: &mut D,
     ) -> Result<Option<BitmapMap<TI::Key>>, IndexError>
     where
-        <TI::Key as rkyv::Archive>::Archived:
-            rkyv::CheckBytes<DefaultValidator<'a>> + rkyv::Deserialize<TI::Key, rkyv::Infallible>,
+        TI: TaggedIndex,
         TI::Key: 'a,
+        <TI::Key as rkyv::Archive>::Archived: Portable + for<'b> Checked<'b>,
+        // <TI::Key as rkyv::Archive>::Archived:
+        //     Portable + Deserialize<TI::Key, Strategy<D, rkyv::rancor::Error>> + for<'b> Checked<'b>,
+        <BitmapMap<TI::Key> as Archive>::Archived:
+            Deserialize<BitmapMap<TI::Key>, Strategy<D, rkyv::rancor::Error>>,
     {
         let Some(bitmap_map) = self.get_archived_index::<TI>()? else {
             return Ok(None);
         };
 
-        bitmap_map
-            .deserialize(&mut rkyv::Infallible)
-            .change_context(IndexError)
-            .attach_printable("failed to deserialize index")
-            .attach_printable_lazy(|| format!("tag: {}({})", TI::name(), TI::tag()))
-            .map(Some)
+        rkyv::api::deserialize_with::<BitmapMap<TI::Key>, _, rkyv::rancor::Error>(
+            bitmap_map,
+            deserializer,
+        )
+        .change_context(IndexError)
+        .attach_printable("failed to deserialize index")
+        .attach_printable_lazy(|| format!("tag: {}({})", TI::name(), TI::tag()))
+        .map(Some)
     }
 }
 
@@ -177,6 +192,8 @@ impl std::fmt::Debug for IndexGroup {
 
 #[cfg(test)]
 mod tests {
+    use rkyv::de::Pool;
+
     use crate::store::bitmap::BitmapMapBuilder;
 
     use super::*;
@@ -223,6 +240,8 @@ mod tests {
 
     #[test]
     fn test_index_group() {
+        let mut deserializer = Pool::default();
+
         let mut index_a = BitmapMapBuilder::default();
         index_a.entry([1, 2, 3, 4]).insert(100);
         index_a.entry([0, 0, 0, 0]).insert(200);
@@ -243,12 +262,12 @@ mod tests {
         let index_a = index_group
             .get_archived_index::<IndexA>()
             .unwrap()
-            .deserialize(&mut rkyv::Infallible)
+            .deserialize(&mut deserializer)
             .unwrap();
         let index_b = index_group
             .get_archived_index::<IndexB>()
             .unwrap()
-            .deserialize(&mut rkyv::Infallible)
+            .deserialize(&mut deserializer)
             .unwrap();
 
         assert!(index_a
