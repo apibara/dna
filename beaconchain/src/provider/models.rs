@@ -1,4 +1,3 @@
-use alloy_rpc_types_beacon::header::BeaconBlockHeader;
 use apibara_dna_common::{Cursor, GetCursor, Hash};
 use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, DefaultOnNull, DisplayFromStr};
@@ -198,12 +197,7 @@ pub trait BeaconCursorExt {
 
 impl BeaconCursorExt for HeaderResponse {
     fn cursor(&self) -> Cursor {
-        self.data.header.message.cursor()
-    }
-}
-
-impl BeaconCursorExt for BeaconBlockHeader {
-    fn cursor(&self) -> Cursor {
-        Cursor::new(self.slot, Hash(self.state_root.0.to_vec()))
+        let hash = Hash(self.data.root.0.to_vec());
+        Cursor::new(self.data.header.message.slot, hash)
     }
 }

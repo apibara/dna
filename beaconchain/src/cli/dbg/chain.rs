@@ -54,6 +54,7 @@ impl DebugChainCommand {
                     object_store,
                     IngestionServiceOptions {
                         chain_segment_size: 1000,
+                        override_starting_block: Some(5_824_000),
                         ..Default::default()
                     },
                 );

@@ -6,6 +6,8 @@ use crate::{
 };
 
 static INGESTED_KEY: &str = "ingestion/ingested";
+static STARTING_BLOCK_KEY: &str = "ingestion/starting_block";
+static FINALIZED_KEY: &str = "ingestion/finalized";
 
 #[derive(Debug)]
 pub struct IngestionStateClientError;
@@ -19,6 +21,31 @@ impl IngestionStateClient {
     pub fn new(client: &EtcdClient) -> Self {
         let client = client.kv_client();
         Self { client }
+    }
+
+    pub async fn put_starting_block(
+        &mut self,
+        block: u64,
+    ) -> Result<(), IngestionStateClientError> {
+        let value = block.to_string();
+        self.client
+            .put(STARTING_BLOCK_KEY, value.as_bytes())
+            .await
+            .change_context(IngestionStateClientError)
+            .attach_printable("failed to put starting block")?;
+
+        Ok(())
+    }
+
+    pub async fn put_finalized(&mut self, block: u64) -> Result<(), IngestionStateClientError> {
+        let value = block.to_string();
+        self.client
+            .put(FINALIZED_KEY, value.as_bytes())
+            .await
+            .change_context(IngestionStateClientError)
+            .attach_printable("failed to put finalized block")?;
+
+        Ok(())
     }
 
     pub async fn get_ingested(&mut self) -> Result<Option<ObjectETag>, IngestionStateClientError> {

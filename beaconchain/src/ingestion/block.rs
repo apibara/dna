@@ -153,6 +153,29 @@ impl BlockIngestion for BeaconChainBlockIngestion {
         Ok(cursor)
     }
 
+    async fn get_block_info_by_number(
+        &self,
+        block_number: u64,
+    ) -> Result<BlockInfo, IngestionError> {
+        let header = self
+            .provider
+            .get_header(BlockId::Slot(block_number))
+            .await
+            .change_context(IngestionError::RpcRequest)
+            .attach_printable("failed to get header by number header")
+            .attach_printable_lazy(|| format!("block number: {}", block_number))?;
+
+        let hash = header.data.root;
+        let parent = header.data.header.message.parent_root;
+        let number = header.data.header.message.slot;
+
+        Ok(BlockInfo {
+            number,
+            hash: Hash(hash.0.to_vec()),
+            parent: Hash(parent.0.to_vec()),
+        })
+    }
+
     async fn ingest_block_by_number(
         &self,
         block_number: u64,
