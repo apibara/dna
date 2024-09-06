@@ -1,7 +1,11 @@
 use aws_config::{meta::region::RegionProviderChain, Region};
 use clap::Args;
+use error_stack::Result;
 
-use crate::object_store::{ObjectStore, ObjectStoreOptions};
+use crate::{
+    etcd::{EtcdClient, EtcdClientError, EtcdClientOptions},
+    object_store::{ObjectStore, ObjectStoreOptions},
+};
 
 #[derive(Args, Clone, Debug)]
 pub struct ObjectStoreArgs {
@@ -10,13 +14,28 @@ pub struct ObjectStoreArgs {
     pub bucket: String,
     /// Under which prefix to store the data.
     #[arg(long = "s3.prefix", env = "DNA_S3_PREFIX")]
-    pub prefix: Option<String>,
+    pub s3_prefix: Option<String>,
     /// The S3 endpoint URL.
     #[arg(long = "s3.endpoint-url", env = "DNA_S3_ENDPOINT_URL")]
     pub endpoint_url: Option<String>,
     /// The S3 region.
     #[arg(long = "s3.region", env = "DNA_S3_REGION")]
     pub region: Option<String>,
+}
+
+#[derive(Args, Clone, Debug)]
+pub struct EtcdArgs {
+    /// The etcd endpoints.
+    #[arg(
+        long = "etcd.endpoints",
+        env = "DNA_ETCD_ENDPOINTS",
+        value_delimiter = ',',
+        num_args = 1..,
+    )]
+    pub etcd_endpoints: Vec<String>,
+    /// The etcd prefix.
+    #[arg(long = "etcd.prefix", env = "DNA_ETCD_PREFIX")]
+    pub etcd_prefix: Option<String>,
 }
 
 impl ObjectStoreArgs {
@@ -42,9 +61,19 @@ impl ObjectStoreArgs {
 
         let options = ObjectStoreOptions {
             bucket: self.bucket,
-            prefix: self.prefix,
+            prefix: self.s3_prefix,
         };
 
         ObjectStore::new_from_config(s3_config, options)
+    }
+}
+
+impl EtcdArgs {
+    pub async fn into_etcd_client(self) -> Result<EtcdClient, EtcdClientError> {
+        let options = EtcdClientOptions {
+            prefix: self.etcd_prefix,
+        };
+
+        EtcdClient::connect(self.etcd_endpoints, options).await
     }
 }

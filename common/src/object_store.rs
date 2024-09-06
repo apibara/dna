@@ -2,6 +2,8 @@ use aws_sdk_s3::{config::http::HttpResponse, error::SdkError, primitives::ByteSt
 use bytes::Bytes;
 use error_stack::{Report, Result, ResultExt};
 
+use crate::utils::normalize_prefix;
+
 #[derive(Debug)]
 pub enum ObjectStoreError {
     /// Precondition failed.
@@ -83,12 +85,7 @@ impl ObjectStore {
     pub fn new_from_config(config: aws_sdk_s3::Config, options: ObjectStoreOptions) -> Self {
         let client = aws_sdk_s3::Client::from_conf(config);
 
-        let prefix = options.prefix.unwrap_or_default();
-        let prefix = if prefix.ends_with("/") || prefix.is_empty() {
-            prefix
-        } else {
-            format!("{}/", prefix)
-        };
+        let prefix = normalize_prefix(options.prefix);
 
         Self {
             client,

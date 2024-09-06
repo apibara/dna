@@ -89,6 +89,35 @@ impl CanonicalChainBuilder {
         CanonicalChainBuilder::Empty
     }
 
+    pub fn restore_from_segment(
+        segment: CanonicalChainSegment,
+    ) -> Result<Self, CanonicalChainError> {
+        let previous_segment = segment.previous_segment;
+        let info = segment.info;
+        let mut canonical = Vec::with_capacity(segment.canonical.len());
+        let mut reorgs: BTreeMap<u64, ReorgMap> = BTreeMap::new();
+        for (offset, canonical_block) in segment.canonical.into_iter().enumerate() {
+            let block_number = info.first_block.number + offset as u64;
+
+            canonical.push(canonical_block.hash);
+            reorgs.insert(block_number, canonical_block.reorgs);
+        }
+
+        Ok(Self::Building {
+            previous_segment,
+            info,
+            canonical,
+            reorgs,
+        })
+    }
+
+    pub fn info(&self) -> Option<&CanonicalChainSegmentInfo> {
+        match self {
+            CanonicalChainBuilder::Empty => None,
+            CanonicalChainBuilder::Building { info, .. } => Some(info),
+        }
+    }
+
     /// Returns the number of blocks in the segment.
     pub fn segment_size(&self) -> usize {
         match self {

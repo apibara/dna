@@ -1,6 +1,6 @@
 use std::{future::Future, sync::Arc};
 
-use error_stack::{Report, Result, ResultExt};
+use error_stack::{Result, ResultExt};
 use futures::{stream::FuturesOrdered, StreamExt};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
@@ -10,20 +10,13 @@ use crate::{
     block_store::BlockStore,
     chain::{BlockInfo, CanonicalChainBuilder},
     chain_store::ChainStore,
+    etcd::EtcdClient,
     object_store::ObjectStore,
     rkyv::Serializable,
     Cursor, Hash,
 };
 
-#[derive(Debug, Clone)]
-pub enum IngestionError {
-    BlockNotFound,
-    RpcRequest,
-    CanonicalChainStoreRequest,
-    BlockStoreRequest,
-    BadHash,
-    Model,
-}
+use super::{error::IngestionError, state_client::IngestionStateClient};
 
 pub trait BlockIngestion {
     type Block;
@@ -52,6 +45,8 @@ pub struct IngestionServiceOptions {
     pub chain_segment_size: usize,
     /// How many finalized blocks to wait before uploading a chain segment.
     pub chain_segment_upload_offset_size: usize,
+    /// Override the ingestion starting block.
+    pub override_starting_block: Option<u64>,
 }
 
 pub struct IngestionService<B, I>
@@ -61,6 +56,7 @@ where
 {
     options: IngestionServiceOptions,
     ingestion: Arc<I>,
+    state_client: IngestionStateClient,
     chain_store: ChainStore,
     block_store: BlockStore<B>,
     chain_builder: CanonicalChainBuilder,
@@ -82,12 +78,19 @@ where
     I: BlockIngestion<Block = B> + Send + Sync + 'static,
     B: Send + Sync + 'static + for<'a> Serializable<'a>,
 {
-    pub fn new(ingestion: I, object_store: ObjectStore, options: IngestionServiceOptions) -> Self {
+    pub fn new(
+        ingestion: I,
+        etcd_client: EtcdClient,
+        object_store: ObjectStore,
+        options: IngestionServiceOptions,
+    ) -> Self {
         let chain_store = ChainStore::new(object_store.clone());
         let block_store = BlockStore::new(object_store);
+        let state_client = IngestionStateClient::new(&etcd_client);
         Self {
             options,
             ingestion: ingestion.into(),
+            state_client,
             chain_store,
             block_store,
             chain_builder: CanonicalChainBuilder::new(),
@@ -99,20 +102,7 @@ where
         let head = self.ingestion.get_head_cursor().await?;
         let finalized = self.ingestion.get_finalized_cursor().await?;
 
-        // TODO: fetch starting cursor from etcd.
-        // Also download the most recent canonical chain segment and restore from it.
-        let starting_cursor = Cursor::new_finalized(0);
-        let existing_chain_segment = self
-            .chain_store
-            .get_recent()
-            .await
-            .change_context(IngestionError::CanonicalChainStoreRequest)?;
-
-        if let Some(_existing_chain_segment) = existing_chain_segment {
-            println!("existing chain segment");
-        } else {
-            println!("no existing chain segment");
-        }
+        let starting_cursor = self.get_starting_cursor().await?;
 
         let mut state = if starting_cursor.number <= finalized.number {
             IngestionState::IngestFinalized(IngestFinalizedState {
@@ -146,7 +136,6 @@ where
     ) -> Result<IngestionState, IngestionError> {
         let mut block_number = state.cursor.number;
 
-        println!("ingesting finalized");
         loop {
             tokio::select! {
                 _ = ct.cancelled() => break,
@@ -165,12 +154,12 @@ where
                         {
                             let segment = self.chain_builder.take_segment(self.options.chain_segment_size).change_context(IngestionError::Model)?;
                             info!(first_block = %segment.info.first_block, "uploading chain segment");
-                            println!("uploading chain segment {:?}", segment.info);
                             self.chain_store.put(&segment).await.change_context(IngestionError::CanonicalChainStoreRequest)?;
 
                             let current_segment = self.chain_builder.current_segment().change_context(IngestionError::Model)?;
                             info!(first_block = %current_segment.info.first_block, "uploading recent chain segment");
-                            self.chain_store.put_recent(&current_segment).await.change_context(IngestionError::CanonicalChainStoreRequest)?;
+                            let recent_etag = self.chain_store.put_recent(&current_segment).await.change_context(IngestionError::CanonicalChainStoreRequest)?;
+                            self.state_client.put_ingested(recent_etag).await.change_context(IngestionError::StateClientRequest)?;
                         }
                     }
 
@@ -214,33 +203,37 @@ where
             }
         }));
     }
-}
 
-pub trait IngestionErrorExt {
-    fn is_block_not_found(&self) -> bool;
-}
+    async fn get_starting_cursor(&mut self) -> Result<Cursor, IngestionError> {
+        let recent_etag = self
+            .state_client
+            .get_ingested()
+            .await
+            .change_context(IngestionError::StateClientRequest)?;
 
-impl IngestionErrorExt for Report<IngestionError> {
-    fn is_block_not_found(&self) -> bool {
-        matches!(self.current_context(), IngestionError::BlockNotFound)
-    }
-}
+        let existing_chain_segment = self
+            .chain_store
+            .get_recent(recent_etag)
+            .await
+            .change_context(IngestionError::CanonicalChainStoreRequest)
+            .attach_printable("failed to get recent canonical chain segment")?;
 
-impl error_stack::Context for IngestionError {}
+        if let Some(existing_chain_segment) = existing_chain_segment {
+            info!("restoring canonical chain from recent segment");
+            self.chain_builder =
+                CanonicalChainBuilder::restore_from_segment(existing_chain_segment)
+                    .change_context(IngestionError::Model)
+                    .attach_printable("failed to restore canonical chain from recent segment")?;
+            let info = self.chain_builder.info().ok_or(IngestionError::Model)?;
 
-impl std::fmt::Display for IngestionError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            IngestionError::BlockNotFound => write!(f, "ingestion error: block not found"),
-            IngestionError::RpcRequest => write!(f, "ingestion error: rpc request error"),
-            IngestionError::BlockStoreRequest => {
-                write!(f, "ingestion error: block store request error")
-            }
-            IngestionError::CanonicalChainStoreRequest => {
-                write!(f, "ingestion error: canonical chain store request error")
-            }
-            IngestionError::BadHash => write!(f, "ingestion error: bad hash"),
-            IngestionError::Model => write!(f, "ingestion error: conversion error"),
+            info!(first_block = %info.first_block, last_block = %info.last_block, "ingestion state restored");
+
+            // TODO: check for offline reorgs.
+            Ok(Cursor::new_finalized(info.last_block.number + 1))
+        } else if let Some(starting_block) = self.options.override_starting_block {
+            Ok(Cursor::new_finalized(starting_block))
+        } else {
+            Ok(Cursor::new_finalized(0))
         }
     }
 }
@@ -251,6 +244,7 @@ impl Default for IngestionServiceOptions {
             max_concurrent_tasks: 100,
             chain_segment_size: 10_000,
             chain_segment_upload_offset_size: 100,
+            override_starting_block: None,
         }
     }
 }

@@ -44,6 +44,7 @@ clap = { version = "4.5.13", features = [
 # dirs = "4.0.0"
 # dotenvy = "0.15.7"
 error-stack = "0.5.0"
+etcd-client = { version = "0.14.0", features = ["tls", "tls-roots"] }
 # flate2 = "1.0"
 # flatbuffers = { version = "23.5.26", features = ["serialize"] }
 futures = "0.3.30"

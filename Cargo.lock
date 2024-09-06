@@ -374,6 +374,7 @@ dependencies = [
  "bytes",
  "clap",
  "error-stack",
+ "etcd-client",
  "futures",
  "hex",
  "rkyv 0.8.0-rc.1",
@@ -2173,6 +2174,22 @@ checksum = "fe413319145d1063f080f27556fd30b1d70b01e2ba10c2a6e40d4be982ffc5d1"
 dependencies = [
  "anyhow",
  "rustc_version 0.4.1",
+]
+
+[[package]]
+name = "etcd-client"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "39bde3ce50a626efeb1caa9ab1083972d178bebb55ca627639c8ded507dfcbde"
+dependencies = [
+ "http 1.1.0",
+ "prost",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+ "tonic-build",
+ "tower",
+ "tower-service",
 ]
 
 [[package]]

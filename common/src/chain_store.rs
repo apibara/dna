@@ -37,8 +37,11 @@ impl ChainStore {
         self.put_impl(RECENT_CHAIN_SEGMENT_NAME, segment).await
     }
 
-    pub async fn get_recent(&self) -> Result<Option<CanonicalChainSegment>, ChainStoreError> {
-        self.get(RECENT_CHAIN_SEGMENT_NAME).await
+    pub async fn get_recent(
+        &self,
+        etag: Option<ObjectETag>,
+    ) -> Result<Option<CanonicalChainSegment>, ChainStoreError> {
+        self.get(RECENT_CHAIN_SEGMENT_NAME, etag).await
     }
 
     async fn put_impl(
@@ -63,10 +66,14 @@ impl ChainStore {
         Ok(response.etag)
     }
 
-    async fn get(&self, name: &str) -> Result<Option<CanonicalChainSegment>, ChainStoreError> {
+    async fn get(
+        &self,
+        name: &str,
+        etag: Option<ObjectETag>,
+    ) -> Result<Option<CanonicalChainSegment>, ChainStoreError> {
         match self
             .client
-            .get(&self.format_key(name), GetOptions::default())
+            .get(&self.format_key(name), GetOptions { etag })
             .await
         {
             Ok(response) => {
