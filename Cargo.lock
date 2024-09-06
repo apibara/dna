@@ -369,6 +369,7 @@ name = "apibara-dna-common"
 version = "0.0.0"
 dependencies = [
  "apibara-dna-protocol",
+ "apibara-etcd",
  "aws-config",
  "aws-sdk-s3",
  "bytes",
@@ -399,6 +400,31 @@ dependencies = [
  "tokio-stream",
  "tonic",
  "tonic-build",
+]
+
+[[package]]
+name = "apibara-etcd"
+version = "0.1.0"
+dependencies = [
+ "error-stack",
+ "etcd-client",
+ "tokio",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
+name = "apibara-etcd-dbg"
+version = "0.1.0"
+dependencies = [
+ "apibara-etcd",
+ "apibara-observability",
+ "clap",
+ "error-stack",
+ "tokio",
+ "tokio-stream",
+ "tokio-util",
+ "tracing",
 ]
 
 [[package]]

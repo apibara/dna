@@ -1,8 +1,7 @@
+use apibara_etcd::normalize_prefix;
 use aws_sdk_s3::{config::http::HttpResponse, error::SdkError, primitives::ByteStream};
 use bytes::Bytes;
 use error_stack::{Report, Result, ResultExt};
-
-use crate::utils::normalize_prefix;
 
 #[derive(Debug)]
 pub enum ObjectStoreError {

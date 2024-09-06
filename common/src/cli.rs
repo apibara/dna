@@ -1,11 +1,9 @@
+use apibara_etcd::{EtcdClient, EtcdClientError, EtcdClientOptions};
 use aws_config::{meta::region::RegionProviderChain, Region};
 use clap::Args;
 use error_stack::Result;
 
-use crate::{
-    etcd::{EtcdClient, EtcdClientError, EtcdClientOptions},
-    object_store::{ObjectStore, ObjectStoreOptions},
-};
+use crate::object_store::{ObjectStore, ObjectStoreOptions};
 
 #[derive(Args, Clone, Debug)]
 pub struct ObjectStoreArgs {

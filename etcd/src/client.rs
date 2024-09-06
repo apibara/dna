@@ -1,26 +1,22 @@
 use error_stack::{Result, ResultExt};
 
-use crate::utils::normalize_prefix;
+use crate::{lock::LockOptions, utils::normalize_prefix};
 
-pub use etcd_client::{GetResponse, PutResponse, StatusResponse};
+pub use etcd_client::StatusResponse;
+
+use crate::{kv::KvClient, lock::LockClient};
 
 #[derive(Debug)]
 pub struct EtcdClientError;
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct EtcdClientOptions {
     pub prefix: Option<String>,
 }
 
 #[derive(Clone)]
 pub struct EtcdClient {
-    client: etcd_client::Client,
-    prefix: String,
-}
-
-#[derive(Clone)]
-pub struct KvClient {
-    client: etcd_client::KvClient,
+    pub(crate) client: etcd_client::Client,
     prefix: String,
 }
 
@@ -53,36 +49,13 @@ impl EtcdClient {
             prefix: self.prefix.clone(),
         }
     }
-}
 
-impl KvClient {
-    pub async fn get(&mut self, key: impl AsRef<str>) -> Result<GetResponse, EtcdClientError> {
-        let key = key.as_ref();
-        self.client
-            .get(self.format_key(key), None)
-            .await
-            .change_context(EtcdClientError)
-            .attach_printable("failed to get key from etcd")
-            .attach_printable_lazy(|| format!("key: {}", key))
-    }
-
-    pub async fn put(
-        &mut self,
-        key: impl AsRef<str>,
-        value: impl AsRef<[u8]>,
-    ) -> Result<PutResponse, EtcdClientError> {
-        let key = key.as_ref();
-        let value = value.as_ref();
-        self.client
-            .put(self.format_key(key), value, None)
-            .await
-            .change_context(EtcdClientError)
-            .attach_printable("failed to put key to etcd")
-            .attach_printable_lazy(|| format!("key: {}", key))
-    }
-
-    fn format_key(&self, key: &str) -> Vec<u8> {
-        format!("{}{}", self.prefix, key).into_bytes()
+    pub fn lock_client(&self, options: LockOptions) -> LockClient {
+        LockClient {
+            client: self.client.clone(),
+            prefix: self.prefix.clone(),
+            options,
+        }
     }
 }
 

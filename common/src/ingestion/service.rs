@@ -1,5 +1,6 @@
 use std::{future::Future, sync::Arc, time::Duration};
 
+use apibara_etcd::EtcdClient;
 use error_stack::{Result, ResultExt};
 use futures::{stream::FuturesOrdered, StreamExt};
 use tokio::{task::JoinHandle, time::Interval};
@@ -10,7 +11,6 @@ use crate::{
     block_store::BlockStore,
     chain::{BlockInfo, CanonicalChainBuilder},
     chain_store::ChainStore,
-    etcd::EtcdClient,
     object_store::ObjectStore,
     rkyv::Serializable,
     Cursor, Hash,

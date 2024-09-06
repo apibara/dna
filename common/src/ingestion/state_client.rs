@@ -1,9 +1,7 @@
+use apibara_etcd::{EtcdClient, KvClient};
 use error_stack::{Result, ResultExt};
 
-use crate::{
-    etcd::{EtcdClient, KvClient},
-    object_store::ObjectETag,
-};
+use crate::object_store::ObjectETag;
 
 static INGESTED_KEY: &str = "ingestion/ingested";
 static STARTING_BLOCK_KEY: &str = "ingestion/starting_block";
