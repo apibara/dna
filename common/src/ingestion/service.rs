@@ -82,6 +82,7 @@ where
 
 enum IngestionState {
     Ingest(IngestState),
+    Recover,
 }
 
 struct IngestState {
@@ -190,6 +191,11 @@ where
                 IngestionState::Ingest(inner_state) => {
                     state = self.tick(inner_state, ct.clone()).await?;
                 }
+                IngestionState::Recover => {
+                    // TODO: implement recovery.
+                    return Err(IngestionError::Model)
+                        .attach_printable("chain is in recovery state");
+                }
             }
         }
 
@@ -241,6 +247,15 @@ where
                     return Ok(IngestionState::Ingest(state));
                 }
 
+                if state.head.number > head.number {
+                    info!(old_head = %state.head, new_head = %head, "reorg detected");
+                    return Ok(IngestionState::Recover);
+                }
+
+                if state.head.number == head.number && state.head.hash != head.hash {
+                    return Ok(IngestionState::Recover);
+                }
+
                 info!(cursor = %head, "refreshed head cursor");
 
                 Ok(IngestionState::Ingest(IngestState {
@@ -261,6 +276,10 @@ where
 
                     // Always upload recent segment if the block is non-finalized.
                     let mut should_upload_recent_segment = block_info.number >= state.finalized.number;
+
+                    if !self.chain_builder.can_grow(&block_info) {
+                        return Ok(IngestionState::Recover);
+                    }
 
                     self.chain_builder.grow(block_info).change_context(IngestionError::Model)?;
 

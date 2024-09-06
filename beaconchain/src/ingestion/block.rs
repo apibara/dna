@@ -126,6 +126,34 @@ impl BeaconChainBlockIngestion {
 
         Ok((block_info, block).into())
     }
+
+    async fn get_block_info_for_missed_slot(
+        &self,
+        block_number: u64,
+    ) -> Result<BlockInfo, IngestionError> {
+        let parent_hash = match self
+            .provider
+            .get_block_root(BlockId::Slot(block_number - 1))
+            .await
+        {
+            Ok(response) => response.data.root,
+            Err(err) if err.is_not_found() => models::B256::default(),
+            Err(err) => {
+                return Err(err).change_context(IngestionError::RpcRequest);
+            }
+        };
+
+        let hash = fragment::B256::default();
+        let parent_hash = fragment::B256::from(parent_hash);
+
+        let block_info = BlockInfo {
+            number: block_number,
+            hash: hash.into(),
+            parent: parent_hash.into(),
+        };
+
+        Ok(block_info)
+    }
 }
 
 impl BlockIngestion for BeaconChainBlockIngestion {
@@ -157,13 +185,18 @@ impl BlockIngestion for BeaconChainBlockIngestion {
         &self,
         block_number: u64,
     ) -> Result<BlockInfo, IngestionError> {
-        let header = self
-            .provider
-            .get_header(BlockId::Slot(block_number))
-            .await
-            .change_context(IngestionError::RpcRequest)
-            .attach_printable("failed to get header by number header")
-            .attach_printable_lazy(|| format!("block number: {}", block_number))?;
+        let header = match self.provider.get_header(BlockId::Slot(block_number)).await {
+            Ok(header) => header,
+            Err(err) if err.is_not_found() => {
+                return self.get_block_info_for_missed_slot(block_number).await
+            }
+            Err(err) => {
+                return Err(err)
+                    .change_context(IngestionError::RpcRequest)
+                    .attach_printable("failed to get header by number")
+                    .attach_printable_lazy(|| format!("block number: {}", block_number))
+            }
+        };
 
         let hash = header.data.root;
         let parent = header.data.header.message.parent_root;
@@ -195,26 +228,7 @@ impl BlockIngestion for BeaconChainBlockIngestion {
             return Err(IngestionError::BlockNotFound).attach_printable("genesis block not found");
         }
 
-        let parent_hash = match self
-            .provider
-            .get_block_root(BlockId::Slot(block_number - 1))
-            .await
-        {
-            Ok(response) => response.data.root,
-            Err(err) if err.is_not_found() => models::B256::default(),
-            Err(err) => {
-                return Err(err).change_context(IngestionError::RpcRequest);
-            }
-        };
-
-        let hash = fragment::B256::default();
-        let parent_hash = fragment::B256::from(parent_hash);
-
-        let block_info = BlockInfo {
-            number: block_number,
-            hash: hash.into(),
-            parent: parent_hash.into(),
-        };
+        let block_info = self.get_block_info_for_missed_slot(block_number).await?;
 
         Ok((block_info, fragment::Slot::Missed { slot: block_number }))
     }

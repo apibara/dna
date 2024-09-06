@@ -126,8 +126,27 @@ impl CanonicalChainBuilder {
         }
     }
 
+    pub fn can_grow(&self, block: &BlockInfo) -> bool {
+        match self {
+            CanonicalChainBuilder::Empty => true,
+            CanonicalChainBuilder::Building { info, .. } => {
+                let last_block = &info.last_block;
+                if last_block.hash.is_zero() {
+                    true
+                } else {
+                    last_block.number + 1 == block.number && last_block.hash == block.parent
+                }
+            }
+        }
+    }
+
     /// Add the given block to the segment.
     pub fn grow(&mut self, block: BlockInfo) -> Result<(), CanonicalChainError> {
+        if !self.can_grow(&block) {
+            return Err(CanonicalChainError::Builder)
+                .attach_printable("block cannot be applied to the current segment");
+        }
+
         match self {
             CanonicalChainBuilder::Empty => {
                 // Initialize the segment builder.
@@ -148,19 +167,6 @@ impl CanonicalChainBuilder {
             CanonicalChainBuilder::Building {
                 canonical, info, ..
             } => {
-                let current_last_block = &info.last_block;
-                let can_apply = if current_last_block.hash.is_zero() {
-                    true
-                } else {
-                    block.number == current_last_block.number + 1
-                        && block.parent == current_last_block.hash
-                };
-
-                if !can_apply {
-                    return Err(CanonicalChainError::Builder)
-                        .attach_printable("block cannot be applied to the current segment");
-                }
-
                 info.last_block = block.cursor();
                 canonical.push(block.hash);
 
