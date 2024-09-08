@@ -17,6 +17,7 @@ use crate::{
     store::{self, fragment},
 };
 
+#[derive(Clone)]
 pub struct BeaconChainBlockIngestion {
     provider: BeaconApiProvider,
 }

@@ -1,13 +1,11 @@
 //! Debug commands.
 
-mod chain;
 mod group;
 mod helpers;
 mod rpc;
 mod segment;
 mod store;
 
-pub use self::chain::DebugChainCommand;
 pub use self::group::DebugGroupCommand;
 pub use self::rpc::DebugRpcCommand;
 pub use self::segment::DebugSegmentCommand;

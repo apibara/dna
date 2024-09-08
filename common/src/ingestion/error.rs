@@ -7,6 +7,7 @@ pub enum IngestionError {
     CanonicalChainStoreRequest,
     BlockStoreRequest,
     StateClientRequest,
+    LockKeepAlive,
     BadHash,
     Model,
 }
@@ -39,6 +40,9 @@ impl std::fmt::Display for IngestionError {
             }
             IngestionError::BadHash => write!(f, "ingestion error: bad hash"),
             IngestionError::Model => write!(f, "ingestion error: conversion error"),
+            IngestionError::LockKeepAlive => {
+                write!(f, "ingestion error: failed to keep lock alive")
+            }
         }
     }
 }

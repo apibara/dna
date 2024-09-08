@@ -1,6 +1,6 @@
 use std::{future::Future, sync::Arc, time::Duration};
 
-use apibara_etcd::EtcdClient;
+use apibara_etcd::{EtcdClient, Lock};
 use error_stack::{Result, ResultExt};
 use futures::{stream::FuturesOrdered, StreamExt};
 use tokio::{task::JoinHandle, time::Interval};
@@ -18,7 +18,7 @@ use crate::{
 
 use super::{error::IngestionError, state_client::IngestionStateClient};
 
-pub trait BlockIngestion {
+pub trait BlockIngestion: Clone {
     type Block;
 
     fn get_head_cursor(&self) -> impl Future<Output = Result<Cursor, IngestionError>> + Send;
@@ -41,7 +41,7 @@ pub trait BlockIngestion {
 
 type IngestionTaskHandle = JoinHandle<Result<BlockInfo, IngestionError>>;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct IngestionServiceOptions {
     /// Maximum number of concurrent ingestion tasks.
     pub max_concurrent_tasks: usize,
@@ -128,7 +128,11 @@ where
         }
     }
 
-    pub async fn start(mut self, ct: CancellationToken) -> Result<(), IngestionError> {
+    pub async fn start(
+        mut self,
+        lock: &mut Lock,
+        ct: CancellationToken,
+    ) -> Result<(), IngestionError> {
         let mut state = self.initialize().await?;
 
         loop {
@@ -144,6 +148,10 @@ where
                 task_queue_size = field::Empty,
                 action = field::Empty,
             );
+
+            lock.keep_alive()
+                .await
+                .change_context(IngestionError::LockKeepAlive)?;
 
             state = async {
                 match state {
@@ -409,7 +417,7 @@ where
                     .attach_printable("hint: did you use the correct prefixes?");
             }
 
-            info!("restoring canonical chain from recent segment");
+            info!("restoring canonical chain");
             self.chain_builder =
                 CanonicalChainBuilder::restore_from_segment(existing_chain_segment)
                     .change_context(IngestionError::Model)

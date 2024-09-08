@@ -24,6 +24,7 @@ apibara-dna-common = { path = "../common" }
 apibara-dna-protocol = { path = "../protocol" }
 byte-unit.workspace = true
 clap.workspace = true
+ctrlc.workspace = true
 error-stack.workspace = true
 futures.workspace = true
 hex.workspace = true

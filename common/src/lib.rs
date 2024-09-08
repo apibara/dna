@@ -8,4 +8,6 @@ pub mod object_store;
 pub mod rkyv;
 pub mod store;
 
+pub use apibara_etcd as etcd;
+
 pub use self::core::{testing::new_test_cursor, Cursor, GetCursor, Hash};
