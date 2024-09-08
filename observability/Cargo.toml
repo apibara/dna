@@ -6,16 +6,13 @@ authors.workspace = true
 repository.workspace = true
 license.workspace = true
 
-[features]
-default = []
-tokio_console = ["dep:console-subscriber"]
-
 [dependencies]
-console-subscriber = { version = "0.4.0", optional = true }
 error-stack.workspace = true
+nu-ansi-term = "0.50.1"
 opentelemetry.workspace = true
 opentelemetry-otlp.workspace = true
 opentelemetry_sdk.workspace = true
+time.workspace = true
 tracing.workspace = true
 tracing-opentelemetry.workspace = true
 tracing-subscriber.workspace = true

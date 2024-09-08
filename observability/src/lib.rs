@@ -1,7 +1,8 @@
 //! # OpenTelemetry helpers
 
+mod dna_fmt;
+
 use std::borrow::Cow;
-use std::fmt;
 
 use error_stack::{Result, ResultExt};
 use opentelemetry::global;
@@ -12,6 +13,7 @@ pub use opentelemetry::metrics::{ObservableCounter, ObservableGauge};
 pub use opentelemetry::trace::{SpanContext, TraceContextExt};
 pub use opentelemetry::{Context, Key, KeyValue};
 use tracing_opentelemetry::MetricsLayer;
+pub use tracing_opentelemetry::OpenTelemetrySpanExt;
 use tracing_subscriber::{prelude::*, registry::LookupSpan, EnvFilter, Layer};
 
 pub use opentelemetry::metrics::{Counter, Meter};
@@ -24,8 +26,8 @@ pub type BoxedLayer<S> = Box<dyn Layer<S> + Send + Sync>;
 pub struct OpenTelemetryInitError;
 impl error_stack::Context for OpenTelemetryInitError {}
 
-impl fmt::Display for OpenTelemetryInitError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl std::fmt::Display for OpenTelemetryInitError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("failed to initialize opentelemetry")
     }
 }
@@ -48,9 +50,6 @@ pub fn init_opentelemetry(
     package_name: impl Into<Cow<'static, str>>,
     package_version: impl Into<Cow<'static, str>>,
 ) -> Result<(), OpenTelemetryInitError> {
-    #[cfg(feature = "tokio_console")]
-    console_subscriber::init();
-    #[cfg(not(feature = "tokio_console"))]
     {
         // The otel sdk doesn't follow the disabled env variable flag.
         // so we manually implement it to disable otel exports.
@@ -140,7 +139,8 @@ where
     } else {
         tracing_subscriber::fmt::layer()
             .with_ansi(true)
-            .with_target(false)
+            .event_format(dna_fmt::DnaFormat::default())
+            .fmt_fields(dna_fmt::DnaFormat::default())
             .with_filter(log_env_filter)
             .boxed()
     }

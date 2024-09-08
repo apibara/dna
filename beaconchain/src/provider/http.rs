@@ -102,7 +102,7 @@ impl BeaconApiProvider {
     /// Send a request to the beacon node.
     ///
     /// TODO: this function can be turned into a `Transport` trait if we ever need it.
-    #[tracing::instrument(skip(self))]
+    #[tracing::instrument(level = "debug", skip(self))]
     async fn send_request<Req>(
         &self,
         request: Req,

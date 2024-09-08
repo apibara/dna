@@ -12,6 +12,7 @@ path = "src/lib.rs"
 
 [dependencies]
 apibara-etcd = { path = "../etcd" }
+apibara-observability = { path = "../observability" }
 apibara-dna-protocol = { path = "../protocol" }
 aws-config = { version = "1.5.5", features = ["behavior-version-latest"] }
 aws-sdk-s3 = "1.47.0"

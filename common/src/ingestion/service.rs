@@ -5,7 +5,7 @@ use error_stack::{Result, ResultExt};
 use futures::{stream::FuturesOrdered, StreamExt};
 use tokio::{task::JoinHandle, time::Interval};
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, info, trace};
+use tracing::{debug, field, info, trace, Instrument};
 
 use crate::{
     block_store::BlockStore,
@@ -35,7 +35,7 @@ pub trait BlockIngestion {
 
     fn ingest_block_by_hash(
         &self,
-        block_hash: impl Into<Hash> + Send,
+        block_hash: Hash,
     ) -> impl Future<Output = Result<(BlockInfo, Self::Block), IngestionError>> + Send;
 }
 
@@ -129,15 +129,59 @@ where
     }
 
     pub async fn start(mut self, ct: CancellationToken) -> Result<(), IngestionError> {
+        let mut state = self.initialize().await?;
+
+        loop {
+            if ct.is_cancelled() {
+                return Ok(());
+            }
+
+            let tick_span = tracing::info_span!(
+                "ingestion_tick",
+                state_name = state.state_name(),
+                head = field::Empty,
+                finalized = field::Empty,
+                task_queue_size = field::Empty,
+                action = field::Empty,
+            );
+
+            state = async {
+                match state {
+                    IngestionState::Ingest(inner_state) => {
+                        self.tick_ingest(inner_state, ct.clone()).await
+                    }
+                    IngestionState::Recover => {
+                        // TODO: implement recovery.
+                        Err(IngestionError::Model).attach_printable("chain is in recovery state")
+                    }
+                }
+            }
+            .instrument(tick_span)
+            .await?;
+        }
+    }
+
+    #[tracing::instrument(
+        name = "ingestion_init",
+        skip_all,
+        err(Debug),
+        fields(head, finalized, starting_block)
+    )]
+    async fn initialize(&mut self) -> Result<IngestionState, IngestionError> {
         let head = self.ingestion.get_head_cursor().await?;
         let finalized = self.ingestion.get_finalized_cursor().await?;
+
+        let current_span = tracing::Span::current();
+
+        current_span.record("head", head.number);
+        current_span.record("finalized", finalized.number);
 
         self.state_client
             .put_finalized(finalized.number)
             .await
             .change_context(IngestionError::StateClientRequest)?;
 
-        let mut state = match self.get_starting_cursor().await? {
+        match self.get_starting_cursor().await? {
             IngestionStartAction::Start(starting_block) => {
                 // Ingest genesis block here so that the rest of the body is the same
                 // as if we were resuming ingestion.
@@ -157,9 +201,11 @@ where
                     .grow(block_info)
                     .change_context(IngestionError::Model)?;
 
+                current_span.record("starting_block", starting_block);
+
                 info!(cursor = %starting_cursor, "uploaded genesis block");
 
-                IngestionState::Ingest(IngestState {
+                Ok(IngestionState::Ingest(IngestState {
                     queued_block_number: starting_cursor.number,
                     finalized,
                     head,
@@ -169,53 +215,48 @@ where
                     finalized_refresh_interval: tokio::time::interval(
                         self.options.finalized_refresh_interval,
                     ),
-                })
+                }))
             }
-            IngestionStartAction::Resume(starting_cursor) => IngestionState::Ingest(IngestState {
-                queued_block_number: starting_cursor.number,
-                finalized,
-                head,
-                head_refresh_interval: tokio::time::interval(self.options.head_refresh_interval),
-                finalized_refresh_interval: tokio::time::interval(
-                    self.options.finalized_refresh_interval,
-                ),
-            }),
-        };
+            IngestionStartAction::Resume(starting_cursor) => {
+                current_span.record("starting_block", starting_cursor.number);
 
-        loop {
-            if ct.is_cancelled() {
-                break;
-            }
-
-            match state {
-                IngestionState::Ingest(inner_state) => {
-                    state = self.tick(inner_state, ct.clone()).await?;
-                }
-                IngestionState::Recover => {
-                    // TODO: implement recovery.
-                    return Err(IngestionError::Model)
-                        .attach_printable("chain is in recovery state");
-                }
+                Ok(IngestionState::Ingest(IngestState {
+                    queued_block_number: starting_cursor.number,
+                    finalized,
+                    head,
+                    head_refresh_interval: tokio::time::interval(
+                        self.options.head_refresh_interval,
+                    ),
+                    finalized_refresh_interval: tokio::time::interval(
+                        self.options.finalized_refresh_interval,
+                    ),
+                }))
             }
         }
-
-        Ok(())
     }
 
     /// A single tick of ingestion.
     ///
     /// This is equivalent to `viewStep` in the Quint spec.
-    async fn tick(
+    async fn tick_ingest(
         &mut self,
         mut state: IngestState,
         ct: CancellationToken,
     ) -> Result<IngestionState, IngestionError> {
+        let current_span = tracing::Span::current();
+
+        current_span.record("head", state.head.number);
+        current_span.record("finalized", state.finalized.number);
+        current_span.record("task_queue_size", self.task_queue.len());
+
         tokio::select! {
             biased;
 
             _ = ct.cancelled() => Ok(IngestionState::Ingest(state)),
 
             _ = state.finalized_refresh_interval.tick() => {
+                current_span.record("action", "refresh_finalized");
+
                 let finalized = self.ingestion.get_finalized_cursor().await.change_context(IngestionError::RpcRequest)
                     .attach_printable("failed to refresh finalized cursor")?;
 
@@ -240,6 +281,8 @@ where
             }
 
             _ = state.head_refresh_interval.tick() => {
+                current_span.record("action", "refresh_head");
+
                 let head = self.ingestion.get_head_cursor().await.change_context(IngestionError::RpcRequest)
                     .attach_printable("failed to refresh head cursor")?;
 
@@ -258,13 +301,27 @@ where
 
                 info!(cursor = %head, "refreshed head cursor");
 
+                let mut block_number = state.queued_block_number;
+                while self.can_push_task() {
+                    if block_number + 1 > state.head.number {
+                        break;
+                    }
+
+                    block_number += 1;
+                    trace!(block_number, "pushing finalized ingestion task");
+                    self.push_ingest_block_by_number(block_number);
+                }
+
                 Ok(IngestionState::Ingest(IngestState {
                     head,
+                    queued_block_number: block_number,
                     ..state
                 }))
             }
 
-            join_result = self.task_queue.next() => {
+            join_result = self.task_queue.next(), if !self.task_queue.is_empty() => {
+                current_span.record("action", "finish_ingestion");
+
                 if let Some(join_result) = join_result {
                     let block_info = join_result
                         .change_context(IngestionError::RpcRequest)?
@@ -301,6 +358,7 @@ where
                 }
 
                 let mut block_number = state.queued_block_number;
+
                 while self.can_push_task() {
                     if block_number + 1 > state.head.number {
                         break;
@@ -390,6 +448,7 @@ where
     I: BlockIngestion<Block = B> + Send + Sync + 'static,
     B: Send + Sync + 'static + for<'a> Serializable<'a>,
 {
+    #[tracing::instrument("ingestion_ingest_block", skip(self), err(Debug))]
     async fn ingest_block_by_number(&self, block_number: u64) -> Result<BlockInfo, IngestionError> {
         let ingestion = self.ingestion.clone();
         let store = self.block_store.clone();
@@ -449,6 +508,15 @@ where
         Self {
             block_store: self.block_store.clone(),
             ingestion: self.ingestion.clone(),
+        }
+    }
+}
+
+impl IngestionState {
+    pub fn state_name(&self) -> &'static str {
+        match self {
+            IngestionState::Recover => "recover",
+            IngestionState::Ingest(_) => "ingest",
         }
     }
 }

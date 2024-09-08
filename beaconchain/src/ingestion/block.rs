@@ -7,6 +7,7 @@ use apibara_dna_common::{
     Cursor, Hash,
 };
 use error_stack::{FutureExt, Result, ResultExt};
+use tracing::Instrument;
 
 use crate::{
     provider::{
@@ -41,38 +42,57 @@ impl BeaconChainBlockIngestion {
         let block_hash = fragment::B256::from(block_root.data.root);
         let block_id = BlockId::BlockRoot(block_root.data.root);
 
-        let block = async {
-            self.provider
-                .get_block(block_id.clone())
-                .await
-                .change_context(IngestionError::RpcRequest)
-                .attach_printable("failed to get block")
-                .attach_printable_lazy(|| format!("block id: {block_id:?}"))
-        };
-
-        let blob_sidecar = async {
-            self.provider
-                .get_blob_sidecar(block_id.clone())
-                .await
-                .change_context(IngestionError::RpcRequest)
-                .attach_printable("failed to get blob sidecar")
-                .attach_printable_lazy(|| format!("block id: {block_id:?}"))
-        };
-
-        let validators = async {
-            match self.provider.get_validators(block_id.clone()).await {
-                Ok(response) => Ok(response.data),
-                Err(err) if err.is_not_found() => Ok(Vec::new()),
-                Err(err) => Err(err)
+        let block = tokio::spawn({
+            let provider = self.provider.clone();
+            let block_id = block_id.clone();
+            async move {
+                provider
+                    .get_block(block_id.clone())
+                    .await
                     .change_context(IngestionError::RpcRequest)
-                    .attach_printable("failed to get validators")
-                    .attach_printable_lazy(|| format!("block id: {block_id:?}")),
+                    .attach_printable("failed to get block")
+                    .attach_printable_lazy(|| format!("block id: {block_id:?}"))
             }
-        };
+        })
+        .instrument(tracing::info_span!("beaconchain_get_block"));
 
-        let block = block.await?;
-        let blob_sidecar = blob_sidecar.await?;
-        let validators = validators.await?;
+        let blob_sidecar = tokio::spawn({
+            let provider = self.provider.clone();
+            let block_id = block_id.clone();
+            async move {
+                provider
+                    .get_blob_sidecar(block_id.clone())
+                    .await
+                    .change_context(IngestionError::RpcRequest)
+                    .attach_printable("failed to get blob sidecar")
+                    .attach_printable_lazy(|| format!("block id: {block_id:?}"))
+            }
+        })
+        .instrument(tracing::info_span!("beaconchain_get_blob_sidecar"));
+
+        let validators = tokio::spawn({
+            let provider = self.provider.clone();
+            let block_id = block_id.clone();
+            async move {
+                match provider.get_validators(block_id.clone()).await {
+                    Ok(response) => Ok(response.data),
+                    Err(err) if err.is_not_found() => Ok(Vec::new()),
+                    Err(err) => Err(err)
+                        .change_context(IngestionError::RpcRequest)
+                        .attach_printable("failed to get validators")
+                        .attach_printable_lazy(|| format!("block id: {block_id:?}")),
+                }
+            }
+        })
+        .instrument(tracing::info_span!("beaconchain_get_validators"));
+
+        let block = block.await.change_context(IngestionError::RpcRequest)??;
+        let blob_sidecar = blob_sidecar
+            .await
+            .change_context(IngestionError::RpcRequest)??;
+        let validators = validators
+            .await
+            .change_context(IngestionError::RpcRequest)??;
 
         let mut block = block.data.message;
 
@@ -159,6 +179,7 @@ impl BeaconChainBlockIngestion {
 impl BlockIngestion for BeaconChainBlockIngestion {
     type Block = fragment::Slot<store::block::Block>;
 
+    #[tracing::instrument("beaconchain_get_head_cursor", skip(self), err(Debug))]
     async fn get_head_cursor(&self) -> Result<Cursor, IngestionError> {
         let cursor = self
             .provider
@@ -170,6 +191,7 @@ impl BlockIngestion for BeaconChainBlockIngestion {
         Ok(cursor)
     }
 
+    #[tracing::instrument("beaconchain_get_finalized_cursor", skip(self), err(Debug))]
     async fn get_finalized_cursor(&self) -> Result<Cursor, IngestionError> {
         let cursor = self
             .provider
@@ -181,6 +203,7 @@ impl BlockIngestion for BeaconChainBlockIngestion {
         Ok(cursor)
     }
 
+    #[tracing::instrument("beaconchain_get_block_info_by_number", skip(self), err(Debug))]
     async fn get_block_info_by_number(
         &self,
         block_number: u64,
@@ -209,6 +232,7 @@ impl BlockIngestion for BeaconChainBlockIngestion {
         })
     }
 
+    #[tracing::instrument("beaconchain_ingest_block_by_number", skip(self), err(Debug))]
     async fn ingest_block_by_number(
         &self,
         block_number: u64,
@@ -233,11 +257,11 @@ impl BlockIngestion for BeaconChainBlockIngestion {
         Ok((block_info, fragment::Slot::Missed { slot: block_number }))
     }
 
+    #[tracing::instrument("beaconchain_ingest_block_by_hash", skip(self), err(Debug))]
     async fn ingest_block_by_hash(
         &self,
-        block_hash: impl Into<Hash>,
+        hash: Hash,
     ) -> Result<(BlockInfo, Self::Block), IngestionError> {
-        let hash = block_hash.into();
         let hash = models::B256::try_from(hash.as_slice())
             .change_context(IngestionError::BadHash)
             .attach_printable("failed to convert hash to B256")

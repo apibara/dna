@@ -11,6 +11,7 @@ pub struct KvClient {
 }
 
 impl KvClient {
+    #[tracing::instrument(level = "debug", skip_all, fields(key = key.as_ref()))]
     pub async fn get(&mut self, key: impl AsRef<str>) -> Result<GetResponse, EtcdClientError> {
         let key = key.as_ref();
         self.client
@@ -21,6 +22,7 @@ impl KvClient {
             .attach_printable_lazy(|| format!("key: {}", key))
     }
 
+    #[tracing::instrument(level = "debug", skip_all, fields(key = key.as_ref()))]
     pub async fn put(
         &mut self,
         key: impl AsRef<str>,

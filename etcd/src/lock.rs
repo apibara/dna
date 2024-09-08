@@ -27,6 +27,7 @@ pub struct Lock {
 }
 
 impl LockClient {
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn lock(
         &mut self,
         key: impl AsRef<str>,
@@ -87,6 +88,7 @@ impl LockClient {
         }
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn unlock(&mut self, lock: Lock) -> Result<(), EtcdClientError> {
         let lock = lock.inner;
         let key = lock.key().to_vec();
@@ -99,6 +101,7 @@ impl LockClient {
         Ok(())
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn is_locked(&mut self, lock: &Lock) -> Result<bool, EtcdClientError> {
         let response = self
             .client
