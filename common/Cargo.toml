@@ -18,6 +18,7 @@ aws-config = { version = "1.5.5", features = ["behavior-version-latest"] }
 aws-sdk-s3 = "1.47.0"
 bytes.workspace = true
 clap.workspace = true
+dirs.workspace = true
 error-stack.workspace = true
 etcd-client.workspace = true
 futures.workspace = true
@@ -27,6 +28,9 @@ roaring.workspace = true
 testcontainers.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
+tonic.workspace = true
+tonic-health.workspace = true
+tonic-reflection.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]

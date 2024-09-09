@@ -370,6 +370,7 @@ dependencies = [
  "aws-sdk-s3",
  "bytes",
  "clap",
+ "dirs",
  "error-stack",
  "etcd-client",
  "futures",
@@ -379,6 +380,9 @@ dependencies = [
  "testcontainers",
  "tokio",
  "tokio-util",
+ "tonic",
+ "tonic-health",
+ "tonic-reflection",
  "tracing",
 ]
 
@@ -4869,6 +4873,32 @@ dependencies = [
  "prost-build",
  "quote",
  "syn 2.0.77",
+]
+
+[[package]]
+name = "tonic-health"
+version = "0.12.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ec0a34e6f706bae26b2b490e1da5c3f6a6ff87cae442bcbc7c881bab9631b5a7"
+dependencies = [
+ "async-stream",
+ "prost",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+]
+
+[[package]]
+name = "tonic-reflection"
+version = "0.12.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7b56b874eedb04f89907573b408eab1e87c1c1dce43aac6ad63742f57faa99ff"
+dependencies = [
+ "prost",
+ "prost-types",
+ "tokio",
+ "tokio-stream",
+ "tonic",
 ]
 
 [[package]]

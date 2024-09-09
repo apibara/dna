@@ -6,6 +6,7 @@ mod core;
 pub mod ingestion;
 pub mod object_store;
 pub mod rkyv;
+pub mod server;
 pub mod store;
 
 pub use apibara_etcd as etcd;
