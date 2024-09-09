@@ -7,6 +7,7 @@ use crate::client::EtcdClientError;
 
 pub use etcd_client::{WatchResponse, Watcher};
 
+#[derive(Clone)]
 pub struct WatchClient {
     pub(crate) client: etcd_client::WatchClient,
     pub(crate) prefix: String,

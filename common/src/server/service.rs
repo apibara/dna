@@ -4,11 +4,11 @@ use apibara_dna_protocol::dna::stream::{
     dna_stream_server::{self, DnaStream},
     StatusRequest, StatusResponse, StreamDataRequest, StreamDataResponse,
 };
-use error_stack::ResultExt;
-use futures::Stream;
-use tracing::info;
+use error_stack::Result;
+use futures::{Future, Stream};
+use tracing::{error, info};
 
-use crate::chain_view::ChainView;
+use crate::chain_view::{ChainView, ChainViewError};
 
 pub struct StreamService {
     chain_view: tokio::sync::watch::Receiver<Option<ChainView>>,
@@ -24,10 +24,15 @@ impl StreamService {
     }
 }
 
+trait ChainViewExt {
+    fn get_status(&self) -> impl Future<Output = Result<StatusResponse, ChainViewError>> + Send;
+}
+
 #[tonic::async_trait]
 impl DnaStream for StreamService {
-    type StreamDataStream =
-        Pin<Box<dyn Stream<Item = Result<StreamDataResponse, tonic::Status>> + Send + 'static>>;
+    type StreamDataStream = Pin<
+        Box<dyn Stream<Item = tonic::Result<StreamDataResponse, tonic::Status>> + Send + 'static>,
+    >;
 
     async fn status(
         &self,
@@ -37,12 +42,12 @@ impl DnaStream for StreamService {
             return Err(tonic::Status::unavailable("chain view not initialized yet"));
         };
 
-        let sb = chain_view
-            .get_finalized_cursor()
-            .await
-            .map_err(|_| tonic::Status::unavailable("chain view not initialized yet"))?;
-        println!("sb: {:?}", sb);
-        todo!();
+        let response = chain_view.get_status().await.map_err(|err| {
+            error!(error = ?err, "DnaStream::status error");
+            tonic::Status::internal("internal server error")
+        })?;
+
+        Ok(tonic::Response::new(response))
     }
 
     async fn stream_data(
@@ -52,5 +57,20 @@ impl DnaStream for StreamService {
         let request = request.into_inner();
         info!(request = ?request, "stream data request");
         todo!();
+    }
+}
+
+impl ChainViewExt for ChainView {
+    async fn get_status(&self) -> Result<StatusResponse, ChainViewError> {
+        let starting = self.get_starting_cursor().await?;
+        let finalized = self.get_finalized_cursor().await?;
+        let head = self.get_head().await?;
+
+        Ok(StatusResponse {
+            current_head: None,
+            last_ingested: Some(head.into()),
+            finalized: Some(finalized.into()),
+            starting: Some(starting.into()),
+        })
     }
 }

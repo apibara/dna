@@ -22,6 +22,14 @@ impl ChainStore {
         Self { client }
     }
 
+    pub async fn get(
+        &self,
+        first_block_number: u64,
+    ) -> Result<Option<CanonicalChainSegment>, ChainStoreError> {
+        let filename = self.segment_filename(first_block_number);
+        self.get_impl(&filename, None).await
+    }
+
     pub async fn put(
         &self,
         segment: &CanonicalChainSegment,
@@ -41,7 +49,7 @@ impl ChainStore {
         &self,
         etag: Option<ObjectETag>,
     ) -> Result<Option<CanonicalChainSegment>, ChainStoreError> {
-        self.get(RECENT_CHAIN_SEGMENT_NAME, etag).await
+        self.get_impl(RECENT_CHAIN_SEGMENT_NAME, etag).await
     }
 
     async fn put_impl(
@@ -66,7 +74,7 @@ impl ChainStore {
         Ok(response.etag)
     }
 
-    async fn get(
+    async fn get_impl(
         &self,
         name: &str,
         etag: Option<ObjectETag>,

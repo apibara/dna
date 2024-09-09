@@ -16,8 +16,8 @@ pub use self::cli::IngestionArgs;
 pub use self::error::{IngestionError, IngestionErrorExt};
 pub use self::service::{BlockIngestion, IngestionService, IngestionServiceOptions};
 pub use self::state_client::{
-    IngestionStateClient, IngestionStateClientError, FINALIZED_KEY, INGESTED_KEY,
-    INGESTION_PREFIX_KEY, STARTING_BLOCK_KEY,
+    IngestionStateClient, IngestionStateClientError, IngestionStateUpdate, FINALIZED_KEY,
+    INGESTED_KEY, INGESTION_PREFIX_KEY, STARTING_BLOCK_KEY,
 };
 
 pub async fn ingestion_service_loop<B, I>(

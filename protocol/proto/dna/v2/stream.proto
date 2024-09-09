@@ -33,6 +33,8 @@ message StatusResponse {
   Cursor last_ingested = 2;
   // The finalized block.
   Cursor finalized = 3;
+  // The first block available.
+  Cursor starting = 4;
 }
 
 // Request data to be streamed.

@@ -1,5 +1,7 @@
-use apibara_etcd::{EtcdClient, KvClient};
+use apibara_etcd::{EtcdClient, KvClient, WatchClient};
 use error_stack::{Result, ResultExt};
+use futures::{Stream, StreamExt};
+use tokio_util::sync::CancellationToken;
 
 use crate::object_store::ObjectETag;
 
@@ -13,13 +15,93 @@ pub struct IngestionStateClientError;
 
 #[derive(Clone)]
 pub struct IngestionStateClient {
-    client: KvClient,
+    kv_client: KvClient,
+    watch_client: WatchClient,
+}
+
+#[derive(Clone, Debug)]
+pub enum IngestionStateUpdate {
+    StartingBlock(u64),
+    Finalized(u64),
+    Ingested(String),
 }
 
 impl IngestionStateClient {
     pub fn new(client: &EtcdClient) -> Self {
-        let client = client.kv_client();
-        Self { client }
+        let kv_client = client.kv_client();
+        let watch_client = client.watch_client();
+
+        Self {
+            kv_client,
+            watch_client,
+        }
+    }
+
+    pub async fn watch_changes(
+        &mut self,
+        ct: CancellationToken,
+    ) -> Result<
+        impl Stream<Item = Result<IngestionStateUpdate, IngestionStateClientError>>,
+        IngestionStateClientError,
+    > {
+        let (_watcher, stream) = self
+            .watch_client
+            .watch_prefix(INGESTION_PREFIX_KEY, ct)
+            .await
+            .change_context(IngestionStateClientError)
+            .attach_printable("failed to watch ingestion state")?;
+
+        let changes = stream.flat_map(|response| {
+            let response = match response {
+                Err(err) => {
+                    return futures::stream::iter(vec![
+                        Err(err).change_context(IngestionStateClientError)
+                    ]);
+                }
+                Ok(response) => response,
+            };
+
+            let changes = response
+                .events()
+                .iter()
+                .filter_map(|event| {
+                    let kv = event.kv()?;
+
+                    match IngestionStateUpdate::from_kv(kv) {
+                        Ok(Some(update)) => Some(Ok(update)),
+                        Ok(None) => None,
+                        Err(err) => Some(Err(err)),
+                    }
+                })
+                .collect::<Vec<Result<IngestionStateUpdate, _>>>();
+            futures::stream::iter(changes)
+        });
+
+        Ok(changes)
+    }
+
+    pub async fn get_starting_block(&mut self) -> Result<Option<u64>, IngestionStateClientError> {
+        let response = self
+            .kv_client
+            .get(STARTING_BLOCK_KEY)
+            .await
+            .change_context(IngestionStateClientError)
+            .attach_printable("failed to get starting block")?;
+
+        let Some(kv) = response.kvs().first() else {
+            return Ok(None);
+        };
+
+        let value = String::from_utf8(kv.value().to_vec())
+            .change_context(IngestionStateClientError)
+            .attach_printable("failed to decode starting block")?;
+
+        let block = value
+            .parse::<u64>()
+            .change_context(IngestionStateClientError)
+            .attach_printable("failed to parse starting block")?;
+
+        Ok(Some(block))
     }
 
     pub async fn put_starting_block(
@@ -27,7 +109,7 @@ impl IngestionStateClient {
         block: u64,
     ) -> Result<(), IngestionStateClientError> {
         let value = block.to_string();
-        self.client
+        self.kv_client
             .put(STARTING_BLOCK_KEY, value.as_bytes())
             .await
             .change_context(IngestionStateClientError)
@@ -36,9 +118,33 @@ impl IngestionStateClient {
         Ok(())
     }
 
+    pub async fn get_finalized(&mut self) -> Result<Option<u64>, IngestionStateClientError> {
+        let response = self
+            .kv_client
+            .get(FINALIZED_KEY)
+            .await
+            .change_context(IngestionStateClientError)
+            .attach_printable("failed to get finalized block")?;
+
+        let Some(kv) = response.kvs().first() else {
+            return Ok(None);
+        };
+
+        let value = String::from_utf8(kv.value().to_vec())
+            .change_context(IngestionStateClientError)
+            .attach_printable("failed to decode finalized block")?;
+
+        let block = value
+            .parse::<u64>()
+            .change_context(IngestionStateClientError)
+            .attach_printable("failed to parse finalized block")?;
+
+        Ok(Some(block))
+    }
+
     pub async fn put_finalized(&mut self, block: u64) -> Result<(), IngestionStateClientError> {
         let value = block.to_string();
-        self.client
+        self.kv_client
             .put(FINALIZED_KEY, value.as_bytes())
             .await
             .change_context(IngestionStateClientError)
@@ -49,7 +155,7 @@ impl IngestionStateClient {
 
     pub async fn get_ingested(&mut self) -> Result<Option<ObjectETag>, IngestionStateClientError> {
         let response = self
-            .client
+            .kv_client
             .get(INGESTED_KEY)
             .await
             .change_context(IngestionStateClientError)
@@ -71,7 +177,7 @@ impl IngestionStateClient {
         etag: ObjectETag,
     ) -> Result<(), IngestionStateClientError> {
         let value = etag.0;
-        self.client
+        self.kv_client
             .put(INGESTED_KEY, value.as_bytes())
             .await
             .change_context(IngestionStateClientError)
@@ -86,5 +192,35 @@ impl error_stack::Context for IngestionStateClientError {}
 impl std::fmt::Display for IngestionStateClientError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "ingestion state client error")
+    }
+}
+
+impl IngestionStateUpdate {
+    pub fn from_kv(kv: &etcd_client::KeyValue) -> Result<Option<Self>, IngestionStateClientError> {
+        let key = String::from_utf8(kv.key().to_vec())
+            .change_context(IngestionStateClientError)
+            .attach_printable("failed to decode key")?;
+
+        let value = String::from_utf8(kv.value().to_vec())
+            .change_context(IngestionStateClientError)
+            .attach_printable("failed to decode value")?;
+
+        if key.ends_with(STARTING_BLOCK_KEY) {
+            let block = value
+                .parse::<u64>()
+                .change_context(IngestionStateClientError)
+                .attach_printable("failed to parse starting block")?;
+            Ok(Some(IngestionStateUpdate::StartingBlock(block)))
+        } else if key.ends_with(FINALIZED_KEY) {
+            let block = value
+                .parse::<u64>()
+                .change_context(IngestionStateClientError)
+                .attach_printable("failed to parse finalized block")?;
+            Ok(Some(IngestionStateUpdate::Finalized(block)))
+        } else if key.ends_with(INGESTED_KEY) {
+            Ok(Some(IngestionStateUpdate::Ingested(value)))
+        } else {
+            Ok(None)
+        }
     }
 }
