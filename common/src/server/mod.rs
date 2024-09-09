@@ -8,7 +8,6 @@ use apibara_dna_protocol::dna::stream::dna_stream_file_descriptor_set;
 use apibara_etcd::EtcdClient;
 use error::ServerError;
 use error_stack::{Result, ResultExt};
-use futures::TryFutureExt;
 use service::StreamService;
 use tokio_util::sync::CancellationToken;
 use tonic::transport::Server as TonicServer;
@@ -58,11 +57,7 @@ pub async fn server_loop(
             .change_context(ServerError)
             .attach_printable("failed to start chain view sync service")?;
 
-    let sync_handle = tokio::spawn(chain_view_sync.start(ct.clone()).or_else(|err| async {
-        Err(err)
-            .change_context(ServerError)
-            .attach_printable("chain view sync error")
-    }));
+    let sync_handle = tokio::spawn(chain_view_sync.start(ct.clone()));
 
     let stream_service = StreamService::new(chain_view);
 
@@ -76,14 +71,16 @@ pub async fn server_loop(
             .serve_with_shutdown(options.address, {
                 let ct = ct.clone();
                 async move { ct.cancelled().await }
-            })
-            .or_else(|err| async { Err(err).change_context(ServerError) }),
+            }),
     );
 
-    match tokio::try_join!(server_task, sync_handle).change_context(ServerError)? {
-        (Err(err), _) => return Err(err).change_context(ServerError),
-        (_, Err(err)) => return Err(err).change_context(ServerError),
-        _ => {}
+    tokio::select! {
+        server = server_task => {
+            server.change_context(ServerError)?.change_context(ServerError)?;
+        }
+        sync = sync_handle => {
+            sync.change_context(ServerError)?.change_context(ServerError)?;
+        }
     }
 
     Ok(())

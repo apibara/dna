@@ -436,7 +436,9 @@ where
             if info.last_block != block_info.cursor() {
                 return Err(IngestionError::Model)
                     .attach_printable("last block in chain does not match last block in state")
-                    .attach_printable("offline reorg not handled yet");
+                    .attach_printable("offline reorg not handled yet")
+                    .attach_printable_lazy(|| format!("last block in state: {}", info.last_block))
+                    .attach_printable_lazy(|| format!("last block: {}", block_info.cursor()));
             }
 
             Ok(IngestionStartAction::Resume(block_info.cursor()))

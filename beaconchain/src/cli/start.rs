@@ -5,7 +5,6 @@ use apibara_dna_common::{
 };
 use clap::Args;
 use error_stack::{Result, ResultExt};
-use futures::TryFutureExt;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
@@ -49,16 +48,13 @@ impl StartCommand {
         let ingestion_handle = if self.ingestion.ingestion_enabled {
             let ingestion_options = self.ingestion.to_ingestion_options();
             let ingestion = BeaconChainBlockIngestion::new(provider);
-            tokio::spawn(
-                ingestion_service_loop(
-                    ingestion,
-                    etcd_client.clone(),
-                    object_store.clone(),
-                    ingestion_options,
-                    ct.clone(),
-                )
-                .or_else(|err| async { Err(err).change_context(BeaconChainError) }),
-            )
+            tokio::spawn(ingestion_service_loop(
+                ingestion,
+                etcd_client.clone(),
+                object_store.clone(),
+                ingestion_options,
+                ct.clone(),
+            ))
         } else {
             tokio::spawn({
                 let ct = ct.clone();
@@ -74,10 +70,7 @@ impl StartCommand {
                 .server
                 .to_server_options()
                 .change_context(BeaconChainError)?;
-            tokio::spawn(
-                server_loop(etcd_client, object_store, options, ct)
-                    .or_else(|err| async { Err(err).change_context(BeaconChainError) }),
-            )
+            tokio::spawn(server_loop(etcd_client, object_store, options, ct))
         } else {
             tokio::spawn({
                 let ct = ct.clone();
@@ -88,10 +81,13 @@ impl StartCommand {
             })
         };
 
-        match tokio::try_join!(ingestion_handle, server_handle).change_context(BeaconChainError)? {
-            (Err(err), _) => return Err(err).change_context(BeaconChainError),
-            (_, Err(err)) => return Err(err).change_context(BeaconChainError),
-            _ => {}
+        tokio::select! {
+            ingestion = ingestion_handle => {
+                ingestion.change_context(BeaconChainError)?.change_context(BeaconChainError)?;
+            }
+            server = server_handle => {
+                server.change_context(BeaconChainError)?.change_context(BeaconChainError)?;
+            }
         }
 
         Ok(())
