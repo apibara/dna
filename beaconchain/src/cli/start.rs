@@ -1,6 +1,6 @@
 use apibara_dna_common::{
     cli::{EtcdArgs, ObjectStoreArgs},
-    ingestion::{ingestion_service_loop, IngestionServiceOptions},
+    ingestion::{ingestion_service_loop, IngestionArgs},
     server::{server_loop, ServerArgs},
 };
 use clap::Args;
@@ -19,11 +19,8 @@ pub struct StartCommand {
     object_store: ObjectStoreArgs,
     #[clap(flatten)]
     etcd: EtcdArgs,
-
-    // TODO: make this configurable.
-    #[arg(long = "role.ingestion", default_value = "true")]
-    role_ingestion: bool,
-
+    #[clap(flatten)]
+    ingestion: IngestionArgs,
     #[clap(flatten)]
     server: ServerArgs,
 }
@@ -49,12 +46,8 @@ impl StartCommand {
             "connected to etcd cluster"
         );
 
-        let ingestion_options = IngestionServiceOptions {
-            chain_segment_size: 1000,
-            ..Default::default()
-        };
-
-        let ingestion_handle = if self.role_ingestion {
+        let ingestion_handle = if self.ingestion.ingestion_enabled {
+            let ingestion_options = self.ingestion.to_ingestion_options();
             let ingestion = BeaconChainBlockIngestion::new(provider);
             tokio::spawn(
                 ingestion_service_loop(

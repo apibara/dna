@@ -1,3 +1,4 @@
+mod cli;
 mod error;
 mod service;
 mod state_client;
@@ -10,6 +11,7 @@ use tracing::{error, info, warn};
 use crate::object_store::ObjectStore;
 use crate::rkyv::Serializable;
 
+pub use self::cli::IngestionArgs;
 pub use self::error::{IngestionError, IngestionErrorExt};
 pub use self::service::{BlockIngestion, IngestionService, IngestionServiceOptions};
 
