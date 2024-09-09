@@ -9,6 +9,7 @@ license.workspace = true
 [dependencies]
 error-stack.workspace = true
 etcd-client.workspace = true
+futures.workspace = true
 tracing.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true

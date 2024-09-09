@@ -366,6 +366,29 @@ impl CanonicalChainBuilder {
 }
 
 impl CanonicalChainSegment {
+    pub fn canonical(&self, block_number: u64) -> Result<Cursor, CanonicalChainError> {
+        if block_number < self.info.first_block.number {
+            return Err(CanonicalChainError::View)
+                .attach_printable("block number is before the first block")
+                .attach_printable_lazy(|| format!("block number: {}", block_number))
+                .attach_printable_lazy(|| format!("first block: {:?}", self.info.first_block));
+        }
+
+        if block_number > self.info.last_block.number {
+            return Err(CanonicalChainError::View)
+                .attach_printable("block number is after the last block")
+                .attach_printable_lazy(|| format!("block number: {}", block_number))
+                .attach_printable_lazy(|| format!("last block: {:?}", self.info.last_block));
+        }
+
+        let offset = block_number - self.info.first_block.number;
+
+        let canonical = &self.canonical[offset as usize];
+        let cursor = Cursor::new(block_number, canonical.hash.clone());
+
+        Ok(cursor)
+    }
+
     pub fn reconnect(&self, cursor: Cursor) -> Result<ReconnectAction, CanonicalChainError> {
         if cursor.number < self.info.first_block.number {
             return Err(CanonicalChainError::View)

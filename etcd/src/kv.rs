@@ -1,5 +1,6 @@
 use error_stack::{Result, ResultExt};
 
+use etcd_client::GetOptions;
 pub use etcd_client::{GetResponse, PutResponse};
 
 use crate::client::EtcdClientError;
@@ -11,6 +12,21 @@ pub struct KvClient {
 }
 
 impl KvClient {
+    #[tracing::instrument(level = "debug", skip_all, fields(key = prefix.as_ref()))]
+    pub async fn get_prefix(
+        &mut self,
+        prefix: impl AsRef<str>,
+    ) -> Result<GetResponse, EtcdClientError> {
+        let prefix = prefix.as_ref();
+        let options = GetOptions::new().with_prefix();
+        self.client
+            .get(self.format_key(prefix), options.into())
+            .await
+            .change_context(EtcdClientError)
+            .attach_printable("failed to get key with prefix from etcd")
+            .attach_printable_lazy(|| format!("prefix: {}", prefix))
+    }
+
     #[tracing::instrument(level = "debug", skip_all, fields(key = key.as_ref()))]
     pub async fn get(&mut self, key: impl AsRef<str>) -> Result<GetResponse, EtcdClientError> {
         let key = key.as_ref();

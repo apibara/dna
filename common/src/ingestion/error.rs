@@ -8,6 +8,7 @@ pub enum IngestionError {
     BlockStoreRequest,
     StateClientRequest,
     LockKeepAlive,
+    Options,
     BadHash,
     Model,
 }
@@ -42,6 +43,9 @@ impl std::fmt::Display for IngestionError {
             IngestionError::Model => write!(f, "ingestion error: conversion error"),
             IngestionError::LockKeepAlive => {
                 write!(f, "ingestion error: failed to keep lock alive")
+            }
+            IngestionError::Options => {
+                write!(f, "ingestion error: invalid options")
             }
         }
     }

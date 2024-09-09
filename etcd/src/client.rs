@@ -1,6 +1,6 @@
 use error_stack::{Result, ResultExt};
 
-use crate::{lock::LockOptions, utils::normalize_prefix};
+use crate::{lock::LockOptions, utils::normalize_prefix, watch::WatchClient};
 
 pub use etcd_client::StatusResponse;
 
@@ -46,6 +46,13 @@ impl EtcdClient {
     pub fn kv_client(&self) -> KvClient {
         KvClient {
             client: self.client.kv_client(),
+            prefix: self.prefix.clone(),
+        }
+    }
+
+    pub fn watch_client(&self) -> WatchClient {
+        WatchClient {
+            client: self.client.watch_client(),
             prefix: self.prefix.clone(),
         }
     }

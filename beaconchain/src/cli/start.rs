@@ -52,8 +52,8 @@ impl StartCommand {
             tokio::spawn(
                 ingestion_service_loop(
                     ingestion,
-                    etcd_client,
-                    object_store,
+                    etcd_client.clone(),
+                    object_store.clone(),
                     ingestion_options,
                     ct.clone(),
                 )
@@ -75,7 +75,7 @@ impl StartCommand {
                 .to_server_options()
                 .change_context(BeaconChainError)?;
             tokio::spawn(
-                server_loop(options, ct)
+                server_loop(etcd_client, object_store, options, ct)
                     .or_else(|err| async { Err(err).change_context(BeaconChainError) }),
             )
         } else {

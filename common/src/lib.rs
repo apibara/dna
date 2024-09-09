@@ -1,10 +1,12 @@
 pub mod block_store;
 pub mod chain;
 pub mod chain_store;
+pub mod chain_view;
 pub mod cli;
 mod core;
 pub mod ingestion;
 pub mod object_store;
+pub mod options_store;
 pub mod rkyv;
 pub mod server;
 pub mod store;
