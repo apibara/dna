@@ -8,6 +8,7 @@ use tracing::{info, warn};
 
 use crate::{
     chain_store::ChainStore,
+    file_cache::FileCache,
     ingestion::{IngestionStateClient, IngestionStateUpdate},
     object_store::ObjectStore,
     options_store::OptionsStore,
@@ -24,10 +25,11 @@ pub struct ChainViewSyncService {
 impl ChainViewSyncService {
     fn new(
         tx: tokio::sync::watch::Sender<Option<ChainView>>,
+        chain_file_cache: FileCache,
         etcd_client: EtcdClient,
         object_store: ObjectStore,
     ) -> Self {
-        let chain_store = ChainStore::new(object_store);
+        let chain_store = ChainStore::new(object_store, chain_file_cache);
         Self {
             tx,
             etcd_client,
@@ -165,6 +167,7 @@ impl ChainViewSyncService {
 }
 
 pub async fn chain_view_sync_loop(
+    chain_file_cache: FileCache,
     etcd_client: EtcdClient,
     object_store: ObjectStore,
 ) -> Result<
@@ -176,7 +179,7 @@ pub async fn chain_view_sync_loop(
 > {
     let (tx, rx) = tokio::sync::watch::channel(None);
 
-    let sync_service = ChainViewSyncService::new(tx, etcd_client, object_store);
+    let sync_service = ChainViewSyncService::new(tx, chain_file_cache, etcd_client, object_store);
 
     Ok((rx, sync_service))
 }

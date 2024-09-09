@@ -11,6 +11,7 @@ use crate::{
     block_store::BlockStore,
     chain::{BlockInfo, CanonicalChainBuilder},
     chain_store::ChainStore,
+    file_cache::FileCache,
     object_store::ObjectStore,
     rkyv::Serializable,
     Cursor, Hash,
@@ -112,7 +113,8 @@ where
         object_store: ObjectStore,
         options: IngestionServiceOptions,
     ) -> Self {
-        let chain_store = ChainStore::new(object_store.clone());
+        let file_cache = FileCache::disabled();
+        let chain_store = ChainStore::new(object_store.clone(), file_cache.clone());
         let block_store = BlockStore::new(object_store);
         let state_client = IngestionStateClient::new(&etcd_client);
         Self {

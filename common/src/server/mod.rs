@@ -14,7 +14,11 @@ use tokio_util::sync::CancellationToken;
 use tonic::transport::Server as TonicServer;
 use tracing::info;
 
-use crate::{chain_view::chain_view_sync_loop, object_store::ObjectStore};
+use crate::{
+    chain_view::chain_view_sync_loop,
+    file_cache::{FileCache, FileCacheOptions},
+    object_store::ObjectStore,
+};
 
 pub use self::cli::ServerArgs;
 
@@ -32,6 +36,13 @@ pub async fn server_loop(
     options: ServerOptions,
     ct: CancellationToken,
 ) -> Result<(), ServerError> {
+    let cache_dir = PathBuf::from(&options.cache_dir);
+
+    let chain_file_cache = FileCache::new(FileCacheOptions {
+        base_dir: cache_dir,
+        ..Default::default()
+    });
+
     let (_health_reporter, health_service) = tonic_health::server::health_reporter();
 
     let reflection_service = tonic_reflection::server::Builder::configure()
@@ -41,10 +52,11 @@ pub async fn server_loop(
         .change_context(ServerError)
         .attach_printable("failed to create gRPC reflection service")?;
 
-    let (chain_view, chain_view_sync) = chain_view_sync_loop(etcd_client, object_store.clone())
-        .await
-        .change_context(ServerError)
-        .attach_printable("failed to start chain view sync service")?;
+    let (chain_view, chain_view_sync) =
+        chain_view_sync_loop(chain_file_cache, etcd_client, object_store.clone())
+            .await
+            .change_context(ServerError)
+            .attach_printable("failed to start chain view sync service")?;
 
     let sync_handle = tokio::spawn(chain_view_sync.start(ct.clone()).or_else(|err| async {
         Err(err)

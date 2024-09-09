@@ -16,12 +16,19 @@ pub struct FileCacheOptions {
     pub time_to_idle: Duration,
 }
 
+#[derive(Clone)]
 pub struct FileCache {
     options: FileCacheOptions,
     cache: Cache<String, Mmap>,
 }
 
 impl FileCache {
+    pub fn disabled() -> Self {
+        let options = FileCacheOptions::default();
+        let cache = Cache::<String, Mmap>::builder().max_capacity(0).build();
+        Self { options, cache }
+    }
+
     pub fn new(options: FileCacheOptions) -> Self {
         let cache = Cache::<String, Mmap>::builder()
             .max_capacity(options.max_size_bytes)
@@ -56,6 +63,9 @@ impl FileCache {
 
         let file_path = self.options.base_dir.join(&path);
         {
+            if let Some(root_dir) = file_path.parent() {
+                fs::create_dir_all(root_dir)?;
+            }
             let mut file = fs::File::options()
                 .write(true)
                 .truncate(true)

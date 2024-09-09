@@ -3,6 +3,7 @@ use error_stack::{Result, ResultExt};
 
 use crate::{
     chain::CanonicalChainSegment,
+    file_cache::FileCache,
     object_store::{GetOptions, ObjectETag, ObjectStore, ObjectStoreResultExt, PutOptions},
 };
 
@@ -14,12 +15,13 @@ pub struct ChainStoreError;
 
 #[derive(Clone)]
 pub struct ChainStore {
+    cache: FileCache,
     client: ObjectStore,
 }
 
 impl ChainStore {
-    pub fn new(client: ObjectStore) -> Self {
-        Self { client }
+    pub fn new(client: ObjectStore, cache: FileCache) -> Self {
+        Self { client, cache }
     }
 
     pub async fn get(
@@ -27,7 +29,7 @@ impl ChainStore {
         first_block_number: u64,
     ) -> Result<Option<CanonicalChainSegment>, ChainStoreError> {
         let filename = self.segment_filename(first_block_number);
-        self.get_impl(&filename, None).await
+        self.get_impl(&filename, None, false).await
     }
 
     pub async fn put(
@@ -49,7 +51,7 @@ impl ChainStore {
         &self,
         etag: Option<ObjectETag>,
     ) -> Result<Option<CanonicalChainSegment>, ChainStoreError> {
-        self.get_impl(RECENT_CHAIN_SEGMENT_NAME, etag).await
+        self.get_impl(RECENT_CHAIN_SEGMENT_NAME, etag, true).await
     }
 
     async fn put_impl(
@@ -78,12 +80,52 @@ impl ChainStore {
         &self,
         name: &str,
         etag: Option<ObjectETag>,
+        skip_cache: bool,
     ) -> Result<Option<CanonicalChainSegment>, ChainStoreError> {
-        match self
-            .client
-            .get(&self.format_key(name), GetOptions { etag })
-            .await
-        {
+        let key = self.format_key(name);
+
+        if skip_cache {
+            let Some(bytes) = self.get_as_bytes(&key, etag).await? else {
+                return Ok(None);
+            };
+
+            let segment = rkyv::from_bytes::<_, rkyv::rancor::Error>(&bytes)
+                .change_context(ChainStoreError)
+                .attach_printable("failed to deserialize chain segment")
+                .attach_printable_lazy(|| format!("name: {}", name))?;
+
+            return Ok(Some(segment));
+        }
+
+        let mmap = if let Some(existing) = self.cache.get(&key).await {
+            existing
+        } else {
+            let Some(bytes) = self.get_as_bytes(&key, etag).await? else {
+                return Ok(None);
+            };
+
+            self.cache
+                .insert(&key, bytes)
+                .await
+                .change_context(ChainStoreError)
+                .attach_printable("failed to insert chain segment into cache")
+                .attach_printable_lazy(|| format!("name: {}", name))?
+        };
+
+        let segment = rkyv::from_bytes::<_, rkyv::rancor::Error>(&mmap)
+            .change_context(ChainStoreError)
+            .attach_printable("failed to deserialize chain segment")
+            .attach_printable_lazy(|| format!("name: {}", name))?;
+
+        Ok(Some(segment))
+    }
+
+    async fn get_as_bytes(
+        &self,
+        key: &str,
+        etag: Option<ObjectETag>,
+    ) -> Result<Option<Bytes>, ChainStoreError> {
+        match self.client.get(key, GetOptions { etag }).await {
             Ok(response) => {
                 let bytes = response
                     .body
@@ -91,15 +133,9 @@ impl ChainStore {
                     .await
                     .change_context(ChainStoreError)
                     .attach_printable("failed to collect chain segment bytes")
-                    .attach_printable_lazy(|| format!("name: {}", name))?
+                    .attach_printable_lazy(|| format!("key: {}", key))?
                     .into_bytes();
-
-                let segment = rkyv::from_bytes::<_, rkyv::rancor::Error>(&bytes)
-                    .change_context(ChainStoreError)
-                    .attach_printable("failed to deserialize chain segment")
-                    .attach_printable_lazy(|| format!("name: {}", name))?;
-
-                Ok(Some(segment))
+                Ok(Some(bytes))
             }
             Err(err) if err.is_not_found() => Ok(None),
             Err(err) => Err(err).change_context(ChainStoreError),
