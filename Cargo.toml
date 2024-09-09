@@ -36,6 +36,8 @@ error-stack = "0.5.0"
 etcd-client = { version = "0.14.0", features = ["tls", "tls-roots"] }
 futures = "0.3.30"
 hex = { version = "0.4.3", features = ["serde"] }
+memmap2 = "0.9.4"
+moka = { version = "0.12.8", features = ["future"] }
 opentelemetry = { version = "0.24.0", features = ["trace", "metrics"] }
 opentelemetry_sdk = { version = "0.24.1", features = [
     "trace",
@@ -59,6 +61,7 @@ roaring = "0.10.6"
 serde = { version = "1.0.205", features = ["derive"] }
 serde_json = "1.0.122"
 serde_with = "3.9.0"
+tempdir = "0.3.7"
 testcontainers = "0.22.0"
 time = { version = "0.3.36", features = ["formatting", "local-offset"] }
 tokio = { version = "1.39.2", features = ["full"] }
