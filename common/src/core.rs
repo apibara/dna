@@ -82,7 +82,7 @@ impl std::fmt::Display for ArchivedHash {
     }
 }
 
-impl From<Cursor> for dna::common::Cursor {
+impl From<Cursor> for dna::stream::Cursor {
     fn from(value: Cursor) -> Self {
         Self {
             order_key: value.number,
@@ -91,8 +91,8 @@ impl From<Cursor> for dna::common::Cursor {
     }
 }
 
-impl From<dna::common::Cursor> for Cursor {
-    fn from(value: dna::common::Cursor) -> Self {
+impl From<dna::stream::Cursor> for Cursor {
+    fn from(value: dna::stream::Cursor) -> Self {
         Self {
             number: value.order_key,
             hash: Hash(value.unique_key),

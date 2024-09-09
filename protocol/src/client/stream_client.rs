@@ -4,12 +4,9 @@ use pin_project::pin_project;
 use tokio_stream::{Stream, StreamExt, Timeout};
 use tonic::{service::interceptor::InterceptedService, transport::Channel, IntoRequest, Streaming};
 
-use crate::dna::{
-    common::{StatusRequest, StatusResponse},
-    stream::{
-        dna_stream_client::DnaStreamClient, stream_data_response, StreamDataRequest,
-        StreamDataResponse,
-    },
+use crate::dna::stream::{
+    dna_stream_client::DnaStreamClient, stream_data_response, StatusRequest, StatusResponse,
+    StreamDataRequest, StreamDataResponse,
 };
 
 use super::MetadataInterceptor;
@@ -44,6 +41,7 @@ impl StreamClient {
         Self { inner, timeout }
     }
 
+    /// Start streaming data from the server.
     pub async fn stream_data(
         &mut self,
         request: impl IntoRequest<StreamDataRequest>,

@@ -3,21 +3,47 @@ syntax = "proto3";
 
 package dna.v2.stream;
 
-import "v2/common.proto";
-
 service DnaStream {
   // Stream data from the server.
   rpc StreamData(StreamDataRequest) returns (stream StreamDataResponse);
   // Get DNA server status.
-  rpc Status(dna.v2.common.StatusRequest)
-      returns (dna.v2.common.StatusResponse);
+  rpc Status(StatusRequest) returns (StatusResponse);
+}
+
+// A cursor over the stream content.
+message Cursor {
+  // Key used for ordering messages in the stream.
+  //
+  // This is usually the block or slot number.
+  uint64 order_key = 1;
+  // Key used to discriminate branches in the stream.
+  //
+  // This is usually the hash of the block.
+  bytes unique_key = 2;
+}
+
+// Request for the `Status` method.
+message StatusRequest {}
+
+// Response for the `Status` method.
+message StatusResponse {
+  // The current head of the chain.
+  Cursor current_head = 1;
+  // The last cursor that was ingested by the node.
+  Cursor last_ingested = 2;
+  // The finalized block.
+  Cursor finalized = 3;
 }
 
 // Request data to be streamed.
 message StreamDataRequest {
   // Cursor to start streaming from.
-  dna.v2.common.Cursor starting_cursor = 1;
+  //
+  // If not specified, starts from the genesis block.
+  // Use the data's message `end_cursor` field to resume streaming.
+  optional Cursor starting_cursor = 1;
   // Return data with the specified finality.
+  //
   // If not specified, defaults to `DATA_FINALITY_ACCEPTED`.
   optional DataFinality finality = 2;
   // Filters used to generate data.
@@ -29,15 +55,28 @@ message StreamDataResponse {
   oneof message {
     Data data = 1;
     Invalidate invalidate = 2;
-    Heartbeat heartbeat = 3;
-    SystemMessage system_message = 4;
+    Finalize finalize = 3;
+    Heartbeat heartbeat = 4;
+    SystemMessage system_message = 5;
   }
 }
 
 // Invalidate data after the given cursor.
 message Invalidate {
-  // The cursor of the message before the now invalid data.
-  dna.v2.common.Cursor cursor = 1;
+  // The cursor of the new chain's head.
+  //
+  // All data after this cursor should be considered invalid.
+  Cursor cursor = 1;
+  // List of blocks that were removed from the chain.
+  repeated Cursor removed = 2;
+}
+
+// Move the finalized block forward.
+message Finalize {
+  // The cursor of the new finalized block.
+  //
+  // All data before this cursor cannot be invalidated.
+  Cursor cursor = 1;
 }
 
 // A single block of data.
@@ -49,12 +88,14 @@ message Invalidate {
 // empty.
 message Data {
   // Cursor that generated this block of data.
-  dna.v2.common.Cursor cursor = 1;
+  optional Cursor cursor = 1;
   // Block cursor. Use this cursor to resume the stream.
-  dna.v2.common.Cursor end_cursor = 2;
+  Cursor end_cursor = 2;
   // The finality status of the block.
   DataFinality finality = 3;
   // The block data.
+  //
+  // This message contains chain-specific data serialized using protobuf.
   repeated bytes data = 4;
 }
 

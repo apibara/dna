@@ -2,8 +2,8 @@ pub mod stream {
     use std::fmt::{self, Display};
 
     use serde::{
-        de::{Deserialize, Deserializer},
-        ser::{Serialize, Serializer},
+        de::{self, Deserialize, Deserializer, Visitor},
+        ser::{Serialize, SerializeStruct, Serializer},
     };
 
     tonic::include_proto!("dna.v2.stream");
@@ -79,17 +79,6 @@ pub mod stream {
             }
         }
     }
-}
-
-pub mod common {
-    use std::fmt;
-
-    use serde::{
-        de::{self, Deserialize, Deserializer, Visitor},
-        ser::{Serialize, SerializeStruct, Serializer},
-    };
-
-    tonic::include_proto!("dna.v2.common");
 
     impl Cursor {
         pub fn new_finalized(order_key: u64) -> Self {
@@ -192,29 +181,9 @@ pub mod common {
     }
 }
 
-pub mod ingestion {
-    tonic::include_proto!("dna.v2.ingestion");
-
-    pub const INGESTION_DESCRIPTOR_SET: &[u8] =
-        tonic::include_file_descriptor_set!("ingestion_v2_descriptor");
-
-    pub fn ingestion_file_descriptor_set() -> &'static [u8] {
-        INGESTION_DESCRIPTOR_SET
-    }
-
-    impl SubscribeResponse {
-        pub fn as_snapshot(&self) -> Option<&Snapshot> {
-            self.message.as_ref().and_then(|msg| match msg {
-                subscribe_response::Message::Snapshot(snapshot) => Some(snapshot),
-                _ => None,
-            })
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use crate::dna::{common::Cursor, stream::DataFinality};
+    use crate::dna::stream::{Cursor, DataFinality};
 
     #[test]
     fn test_cursor_serialization() {
