@@ -126,17 +126,7 @@ impl ChainStore {
         etag: Option<ObjectETag>,
     ) -> Result<Option<Bytes>, ChainStoreError> {
         match self.client.get(key, GetOptions { etag }).await {
-            Ok(response) => {
-                let bytes = response
-                    .body
-                    .collect()
-                    .await
-                    .change_context(ChainStoreError)
-                    .attach_printable("failed to collect chain segment bytes")
-                    .attach_printable_lazy(|| format!("key: {}", key))?
-                    .into_bytes();
-                Ok(Some(bytes))
-            }
+            Ok(response) => Ok(Some(response.body)),
             Err(err) if err.is_not_found() => Ok(None),
             Err(err) => Err(err).change_context(ChainStoreError),
         }

@@ -1,6 +1,6 @@
 use apibara_etcd::normalize_prefix;
-use aws_sdk_s3::{config::http::HttpResponse, error::SdkError, primitives::ByteStream};
-use bytes::Bytes;
+use aws_sdk_s3::{config::http::HttpResponse, error::SdkError};
+use bytes::{Buf, BufMut, Bytes, BytesMut};
 use error_stack::{Report, Result, ResultExt};
 
 #[derive(Debug)]
@@ -15,6 +15,8 @@ pub enum ObjectStoreError {
     Request,
     /// Metadata is missing.
     Metadata,
+    /// Checksum mismatch.
+    ChecksumMismatch,
 }
 
 /// Options for the object store.
@@ -64,7 +66,7 @@ pub struct DeleteOptions {}
 
 #[derive(Debug)]
 pub struct GetResult {
-    pub body: ByteStream,
+    pub body: Bytes,
     pub etag: ObjectETag,
 }
 
@@ -141,10 +143,24 @@ impl ObjectStore {
             .attach_printable("missing etag")?
             .into();
 
-        Ok(GetResult {
-            body: response.body,
-            etag,
-        })
+        let body = response
+            .body
+            .collect()
+            .await
+            .change_context(ObjectStoreError::Request)
+            .attach_printable("failed to read object body")?
+            .into_bytes();
+
+        let checksum = body.slice(body.len() - 4..).get_u32();
+        let data = body.slice(..body.len() - 4);
+
+        if crc32fast::hash(&data) != checksum {
+            return Err(ObjectStoreError::ChecksumMismatch)
+                .attach_printable("checksum mismatch")
+                .attach_printable_lazy(|| format!("key: {key}"));
+        }
+
+        Ok(GetResult { body: data, etag })
     }
 
     #[tracing::instrument(name = "object_store_put", skip(self, body, options))]
@@ -155,12 +171,17 @@ impl ObjectStore {
         options: PutOptions,
     ) -> Result<PutResult, ObjectStoreError> {
         let key = self.full_key(path);
+
+        let checksum = crc32fast::hash(&body);
+        let mut body = BytesMut::from(body);
+        body.put_u32(checksum);
+
         let response = self
             .client
             .put_object()
             .bucket(&self.bucket)
             .key(&key)
-            .body(body.into())
+            .body(body.freeze().into())
             .customize()
             .mutate_request(move |request| match &options.mode {
                 PutMode::Overwrite => {}
@@ -222,6 +243,7 @@ impl std::fmt::Display for ObjectStoreError {
             ObjectStoreError::NotFound => write!(f, "object store: not found"),
             ObjectStoreError::Request => write!(f, "object store: request error"),
             ObjectStoreError::Metadata => write!(f, "object store: metadata is missing or invalid"),
+            ObjectStoreError::ChecksumMismatch => write!(f, "object store: checksum mismatch"),
         }
     }
 }
@@ -376,13 +398,12 @@ mod tests {
 
         assert_eq!(
             put_res.etag,
-            ObjectETag("\"82bb413746aee42f89dea2b59614f9ef\"".to_string())
+            ObjectETag("\"44c1a28248342a1327292095da04af54\"".to_string())
         );
 
         let get_res = client.get("test", GetOptions::default()).await.unwrap();
         assert_eq!(get_res.etag, put_res.etag);
-        let body = get_res.body.collect().await.unwrap().into_bytes();
-        assert_eq!(body, "Hello, World".as_bytes());
+        assert_eq!(get_res.body, "Hello, World".as_bytes());
     }
 
     #[tokio::test]
@@ -423,8 +444,7 @@ mod tests {
         }
 
         let get_res = client.get("test", GetOptions::default()).await.unwrap();
-        let body = get_res.body.collect().await.unwrap().into_bytes();
-        assert_eq!(body, "With my-prefix".as_bytes());
+        assert_eq!(get_res.body, "With my-prefix".as_bytes());
     }
 
     #[tokio::test]

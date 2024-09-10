@@ -370,6 +370,7 @@ dependencies = [
  "aws-sdk-s3",
  "bytes",
  "clap",
+ "crc32fast",
  "dirs",
  "error-stack",
  "etcd-client",
