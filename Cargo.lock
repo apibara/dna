@@ -348,6 +348,7 @@ dependencies = [
  "futures",
  "hex",
  "prost",
+ "prost-types",
  "reqwest",
  "rkyv 0.8.0-rc.1",
  "roaring",

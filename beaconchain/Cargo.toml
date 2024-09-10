@@ -29,6 +29,7 @@ error-stack.workspace = true
 futures.workspace = true
 hex.workspace = true
 prost.workspace = true
+prost-types.workspace = true
 reqwest.workspace = true
 roaring.workspace = true
 rkyv.workspace = true

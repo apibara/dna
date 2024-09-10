@@ -22,22 +22,27 @@ message HeaderFilter {
 }
 
 message TransactionFilter {
+  uint32 id = 1;
   // Filter based on the transaction's sender address.
-  Address from = 1;
+  Address from = 2;
   // Filter based on the transaction's recipient address.
-  Address to = 2;
+  Address to = 3;
+  // Only return `creat` transactions. Defaults to `false`.
+  optional bool create = 4;
   // Include the transaction's blob. Defaults to `false`.
-  optional bool include_blob = 3;
+  optional bool include_blob = 5;
 }
 
 message ValidatorFilter {
+  uint32 id = 1;
   // Filter the validator based on its index.
-  optional uint32 validator_index = 1;
+  optional uint32 validator_index = 2;
   // Filter based on the validator's status.
-  optional ValidatorStatus status = 2;
+  optional ValidatorStatus status = 3;
 }
 
 message BlobFilter {
+  uint32 id = 1;
   // Include the transaction that posted the blob.
-  optional bool include_transaction = 1;
+  optional bool include_transaction = 2;
 }

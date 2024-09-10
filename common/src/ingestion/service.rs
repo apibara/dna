@@ -8,7 +8,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, field, info, trace, Instrument};
 
 use crate::{
-    block_store::BlockStore,
+    block_store::BlockStoreWriter,
     chain::{BlockInfo, CanonicalChainBuilder},
     chain_store::ChainStore,
     file_cache::FileCache,
@@ -77,7 +77,7 @@ where
     I: BlockIngestion<Block = B>,
     B: Send + Sync + 'static,
 {
-    block_store: BlockStore<B>,
+    block_store: BlockStoreWriter<B>,
     ingestion: Arc<I>,
 }
 
@@ -115,7 +115,7 @@ where
     ) -> Self {
         let file_cache = FileCache::disabled();
         let chain_store = ChainStore::new(object_store.clone(), file_cache.clone());
-        let block_store = BlockStore::new(object_store);
+        let block_store = BlockStoreWriter::new(object_store);
         let state_client = IngestionStateClient::new(&etcd_client);
         Self {
             options,
@@ -475,7 +475,7 @@ where
         debug!(cursor = %block_cursor, "uploading block");
 
         store
-            .put(&block_cursor, &block)
+            .put_block(&block_cursor, &block)
             .await
             .change_context(IngestionError::BlockStoreRequest)?;
 
