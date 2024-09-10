@@ -15,6 +15,7 @@ use tracing::info;
 
 use crate::{
     chain_view::chain_view_sync_loop,
+    data_stream::ScannerFactory,
     file_cache::{FileCache, FileCacheOptions},
     object_store::ObjectStore,
 };
@@ -32,12 +33,16 @@ pub struct ServerOptions {
     pub stream_service_options: StreamServiceOptions,
 }
 
-pub async fn server_loop(
+pub async fn server_loop<SF>(
+    scanner_factory: SF,
     etcd_client: EtcdClient,
     object_store: ObjectStore,
     options: ServerOptions,
     ct: CancellationToken,
-) -> Result<(), ServerError> {
+) -> Result<(), ServerError>
+where
+    SF: ScannerFactory + Send + Sync + 'static,
+{
     let cache_dir = PathBuf::from(&options.cache_dir);
 
     let chain_file_cache = FileCache::new(FileCacheOptions {
@@ -62,7 +67,12 @@ pub async fn server_loop(
 
     let sync_handle = tokio::spawn(chain_view_sync.start(ct.clone()));
 
-    let stream_service = StreamService::new(chain_view, options.stream_service_options, ct.clone());
+    let stream_service = StreamService::new(
+        scanner_factory,
+        chain_view,
+        options.stream_service_options,
+        ct.clone(),
+    );
 
     info!(address = %options.address, "starting DNA server");
 

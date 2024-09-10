@@ -25,6 +25,7 @@ futures.workspace = true
 hex.workspace = true
 memmap2.workspace = true
 moka.workspace = true
+prost.workspace = true
 rkyv.workspace = true
 roaring.workspace = true
 testcontainers.workspace = true

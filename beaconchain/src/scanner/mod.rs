@@ -1,22 +1,57 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::ops::RangeInclusive;
 
-/// A set of filter ids.
-pub type FilterSet = BTreeSet<u16>;
+use apibara_dna_common::{
+    data_stream::{Scanner, ScannerError, ScannerFactory},
+    Cursor,
+};
+use error_stack::Result;
+use prost::Message;
+use roaring::RoaringBitmap;
+use tracing::info;
 
-/// Map a data index to a set of filter ids.
-#[derive(Debug, Default)]
-pub struct DataReference(BTreeMap<u32, FilterSet>);
+pub struct BeaconChainScannerFactory;
 
-#[derive(Debug, Default)]
-pub struct BeaconChainDataReference {
-    pub validators: DataReference,
-    pub transactions: DataReference,
-    pub blobs: DataReference,
+pub struct BeaconChainScanner;
+
+impl BeaconChainScannerFactory {
+    pub fn new() -> Self {
+        Self
+    }
 }
 
-impl DataReference {
-    /// Adds a matching filter for the given index.
-    pub fn add(&mut self, index: u32, filter: u16) {
-        self.0.entry(index).or_default().insert(filter);
+impl ScannerFactory for BeaconChainScannerFactory {
+    type Scanner = BeaconChainScanner;
+
+    fn create_scanner(&self, _filters: &[Vec<u8>]) -> tonic::Result<Self::Scanner, tonic::Status> {
+        Ok(BeaconChainScanner)
+    }
+}
+
+impl Scanner for BeaconChainScanner {
+    async fn fill_block_bitmap(
+        &mut self,
+        _bitmap: &mut RoaringBitmap,
+        _block_range: RangeInclusive<u32>,
+    ) -> Result<(), ScannerError> {
+        Ok(())
+    }
+
+    #[tracing::instrument(name = "stream_send_block", skip_all, err(Debug), fields(cursor = %cursor, data_size))]
+    async fn scan_single<S>(&mut self, cursor: &Cursor, cb: S) -> Result<(), ScannerError>
+    where
+        S: FnOnce(Vec<Vec<u8>>) + Send,
+    {
+        info!(cursor = %cursor, "scanning single block");
+        let block = apibara_dna_protocol::beaconchain::Block::default();
+
+        let encoded = vec![block.encode_to_vec()];
+        let data_size = encoded.iter().map(|b| b.len()).sum::<usize>();
+
+        let current_span = tracing::Span::current();
+        current_span.record("data_size", data_size);
+
+        cb(encoded);
+
+        Ok(())
     }
 }

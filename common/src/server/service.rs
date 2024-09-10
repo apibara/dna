@@ -13,7 +13,7 @@ use tracing::{error, info};
 
 use crate::{
     chain_view::{CanonicalCursor, ChainView, ChainViewError},
-    data_stream::DataStream,
+    data_stream::{DataStream, ScannerFactory},
     Cursor,
 };
 
@@ -27,25 +27,34 @@ pub struct StreamServiceOptions {
     pub max_concurrent_streams: usize,
 }
 
-pub struct StreamService {
-    _options: StreamServiceOptions,
+pub struct StreamService<SF>
+where
+    SF: ScannerFactory,
+{
+    scanner_factory: SF,
     stream_semaphore: Arc<Semaphore>,
     chain_view: tokio::sync::watch::Receiver<Option<ChainView>>,
     ct: CancellationToken,
+    _options: StreamServiceOptions,
 }
 
-impl StreamService {
+impl<SF> StreamService<SF>
+where
+    SF: ScannerFactory,
+{
     pub fn new(
+        scanner_factory: SF,
         chain_view: tokio::sync::watch::Receiver<Option<ChainView>>,
         options: StreamServiceOptions,
         ct: CancellationToken,
     ) -> Self {
         let stream_semaphore = Arc::new(Semaphore::new(options.max_concurrent_streams));
         Self {
-            _options: options,
+            scanner_factory,
             stream_semaphore,
             chain_view,
             ct,
+            _options: options,
         }
     }
 
@@ -55,7 +64,10 @@ impl StreamService {
 }
 
 #[tonic::async_trait]
-impl DnaStream for StreamService {
+impl<SF> DnaStream for StreamService<SF>
+where
+    SF: ScannerFactory + Send + Sync + 'static,
+{
     type StreamDataStream = Pin<
         Box<dyn Stream<Item = tonic::Result<StreamDataResponse, tonic::Status>> + Send + 'static>,
     >;
@@ -119,8 +131,9 @@ impl DnaStream for StreamService {
             .unwrap_or(DataFinality::Accepted);
 
         // Parse and validate filter.
+        let scanner = self.scanner_factory.create_scanner(&request.filter)?;
 
-        let ds = DataStream::new(starting_cursor, finality, chain_view, permit);
+        let ds = DataStream::new(scanner, starting_cursor, finality, chain_view, permit);
         let (tx, rx) = mpsc::channel(CHANNEL_SIZE);
 
         tokio::spawn(ds.start(tx, self.ct.clone()));

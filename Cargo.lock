@@ -347,6 +347,7 @@ dependencies = [
  "error-stack",
  "futures",
  "hex",
+ "prost",
  "reqwest",
  "rkyv 0.8.0-rc.1",
  "roaring",
@@ -355,6 +356,7 @@ dependencies = [
  "serde_with",
  "tokio",
  "tokio-util",
+ "tonic",
  "tracing",
  "url",
 ]
@@ -378,6 +380,7 @@ dependencies = [
  "hex",
  "memmap2",
  "moka",
+ "prost",
  "rkyv 0.8.0-rc.1",
  "roaring",
  "tempdir",

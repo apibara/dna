@@ -8,7 +8,10 @@ use error_stack::{Result, ResultExt};
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
-use crate::{cli::rpc::RpcArgs, error::BeaconChainError, ingestion::BeaconChainBlockIngestion};
+use crate::{
+    cli::rpc::RpcArgs, error::BeaconChainError, ingestion::BeaconChainBlockIngestion,
+    scanner::BeaconChainScannerFactory,
+};
 
 #[derive(Args, Debug)]
 pub struct StartCommand {
@@ -65,12 +68,20 @@ impl StartCommand {
             })
         };
 
+        let scanner_factory = BeaconChainScannerFactory::new();
+
         let server_handle = if self.server.server_enabled {
             let options = self
                 .server
                 .to_server_options()
                 .change_context(BeaconChainError)?;
-            tokio::spawn(server_loop(etcd_client, object_store, options, ct))
+            tokio::spawn(server_loop(
+                scanner_factory,
+                etcd_client,
+                object_store,
+                options,
+                ct,
+            ))
         } else {
             tokio::spawn({
                 let ct = ct.clone();
