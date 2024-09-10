@@ -20,6 +20,7 @@ use crate::{
 };
 
 pub use self::cli::ServerArgs;
+pub use self::service::StreamServiceOptions;
 
 #[derive(Debug, Clone)]
 pub struct ServerOptions {
@@ -27,6 +28,8 @@ pub struct ServerOptions {
     pub address: SocketAddr,
     /// Directory to store cached data.
     pub cache_dir: PathBuf,
+    /// Stream service options.
+    pub stream_service_options: StreamServiceOptions,
 }
 
 pub async fn server_loop(
@@ -59,7 +62,7 @@ pub async fn server_loop(
 
     let sync_handle = tokio::spawn(chain_view_sync.start(ct.clone()));
 
-    let stream_service = StreamService::new(chain_view);
+    let stream_service = StreamService::new(chain_view, options.stream_service_options, ct.clone());
 
     info!(address = %options.address, "starting DNA server");
 
@@ -92,6 +95,10 @@ impl Default for ServerOptions {
         let cache_dir = dirs::data_local_dir()
             .expect("failed to get data dir")
             .join("dna-v2");
-        Self { address, cache_dir }
+        Self {
+            address,
+            cache_dir,
+            stream_service_options: Default::default(),
+        }
     }
 }

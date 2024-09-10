@@ -5,7 +5,11 @@ use tokio::sync::RwLock;
 
 use crate::Cursor;
 
-use super::{error::ChainViewError, full::FullCanonicalChain, CanonicalCursor};
+use super::{
+    error::ChainViewError,
+    full::{FullCanonicalChain, NextCursor},
+    CanonicalCursor,
+};
 
 /// Provides a read-only view of the canonical chain.
 #[derive(Clone)]
@@ -24,6 +28,14 @@ impl ChainView {
         };
 
         Self(Arc::new(RwLock::new(inner)))
+    }
+
+    pub async fn get_next_cursor(
+        &self,
+        cursor: &Option<Cursor>,
+    ) -> Result<NextCursor, ChainViewError> {
+        let inner = self.0.read().await;
+        inner.canonical.get_next_cursor(cursor).await
     }
 
     pub async fn get_canonical(

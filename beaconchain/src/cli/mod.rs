@@ -21,7 +21,7 @@ pub struct Cli {
 #[derive(Subcommand, Debug)]
 pub enum Command {
     /// Start the Beaconchain DNA server.
-    Start(StartCommand),
+    Start(Box<StartCommand>),
     /// Debug command for the Beacon RPC.
     #[command(name = "dbg-rpc")]
     DebugRpc {

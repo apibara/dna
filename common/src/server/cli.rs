@@ -5,7 +5,7 @@ use error_stack::{Result, ResultExt};
 
 use crate::server::ServerOptions;
 
-use super::error::ServerError;
+use super::{error::ServerError, StreamServiceOptions};
 
 #[derive(Args, Debug)]
 pub struct ServerArgs {
@@ -26,6 +26,12 @@ pub struct ServerArgs {
         default_value = "/data"
     )]
     pub server_cache_dir: String,
+    #[clap(
+        long = "server.max-concurrent-streams",
+        env = "DNA_SERVER_MAX_CONCURRENT_STREAMS",
+        default_value = "1000"
+    )]
+    pub max_concurrent_streams: usize,
 }
 
 impl ServerArgs {
@@ -44,6 +50,14 @@ impl ServerArgs {
             .attach_printable("failed to parse cache dir")
             .attach_printable_lazy(|| format!("cache dir: {}", self.server_cache_dir))?;
 
-        Ok(ServerOptions { address, cache_dir })
+        let stream_service_options = StreamServiceOptions {
+            max_concurrent_streams: self.max_concurrent_streams,
+        };
+
+        Ok(ServerOptions {
+            address,
+            cache_dir,
+            stream_service_options,
+        })
     }
 }

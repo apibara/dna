@@ -389,7 +389,7 @@ impl CanonicalChainSegment {
         Ok(cursor)
     }
 
-    pub fn reconnect(&self, cursor: Cursor) -> Result<ReconnectAction, CanonicalChainError> {
+    pub fn reconnect(&self, cursor: &Cursor) -> Result<ReconnectAction, CanonicalChainError> {
         if cursor.number < self.info.first_block.number {
             return Err(CanonicalChainError::View)
                 .attach_printable("cursor is before the first block")
@@ -421,7 +421,7 @@ impl CanonicalChainSegment {
 
         let canonical = &self.canonical[offset as usize];
 
-        if canonical.hash == cursor.hash {
+        if canonical.hash == cursor.hash || cursor.hash.is_zero() {
             return Ok(ReconnectAction::Continue);
         }
 
@@ -546,13 +546,13 @@ mod tests {
                 }
             }
 
-            let action = segment.reconnect(new_test_cursor(1_005, 0)).unwrap();
+            let action = segment.reconnect(&new_test_cursor(1_005, 0)).unwrap();
             assert_eq!(action, ReconnectAction::Continue);
 
-            let action = segment.reconnect(new_test_cursor(1_006, 1)).unwrap();
+            let action = segment.reconnect(&new_test_cursor(1_006, 1)).unwrap();
             assert_eq!(action, ReconnectAction::Continue);
 
-            let action = segment.reconnect(new_test_cursor(1_006, 0)).unwrap();
+            let action = segment.reconnect(&new_test_cursor(1_006, 0)).unwrap();
             assert_eq!(
                 action,
                 ReconnectAction::OfflineReorg(new_test_cursor(1_005, 0))
@@ -658,7 +658,7 @@ mod tests {
 
         {
             let segment = builder.current_segment().unwrap();
-            let action = segment.reconnect(new_test_cursor(1_010, 0)).unwrap();
+            let action = segment.reconnect(&new_test_cursor(1_010, 0)).unwrap();
             assert_eq!(
                 action,
                 ReconnectAction::OfflineReorg(second_checkpoint.cursor())

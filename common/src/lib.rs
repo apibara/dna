@@ -4,6 +4,7 @@ pub mod chain_store;
 pub mod chain_view;
 pub mod cli;
 mod core;
+pub mod data_stream;
 pub mod file_cache;
 pub mod ingestion;
 pub mod object_store;

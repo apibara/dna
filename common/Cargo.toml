@@ -30,6 +30,7 @@ roaring.workspace = true
 testcontainers.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
+tokio-stream.workspace = true
 tonic.workspace = true
 tonic-health.workspace = true
 tonic-reflection.workspace = true
