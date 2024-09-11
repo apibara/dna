@@ -17,6 +17,7 @@ apibara-dna-protocol = { path = "../protocol" }
 aws-config = { version = "1.5.5", features = ["behavior-version-latest"] }
 aws-sdk-s3 = "1.47.0"
 bytes.workspace = true
+byte-unit.workspace = true
 clap.workspace = true
 dirs.workspace = true
 error-stack.workspace = true

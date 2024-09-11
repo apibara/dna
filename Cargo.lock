@@ -371,6 +371,7 @@ dependencies = [
  "apibara-observability",
  "aws-config",
  "aws-sdk-s3",
+ "byte-unit",
  "bytes",
  "clap",
  "crc32fast",

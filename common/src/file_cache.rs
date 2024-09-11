@@ -1,4 +1,4 @@
-use std::{fs, io::Write, ops::Deref, path::PathBuf, sync::Arc, time::Duration};
+use std::{fs, io::Write, ops::Deref, path::PathBuf, sync::Arc};
 
 use moka::future::Cache;
 use rkyv::util::AlignedVec;
@@ -12,8 +12,6 @@ pub struct Mmap(Arc<memmap2::Mmap>);
 pub struct FileCacheOptions {
     pub base_dir: PathBuf,
     pub max_size_bytes: u64,
-    pub time_to_live: Duration,
-    pub time_to_idle: Duration,
 }
 
 #[derive(Clone)]
@@ -32,8 +30,6 @@ impl FileCache {
     pub fn new(options: FileCacheOptions) -> Self {
         let cache = Cache::<String, Mmap>::builder()
             .max_capacity(options.max_size_bytes)
-            .time_to_live(options.time_to_live)
-            .time_to_idle(options.time_to_idle)
             .weigher(|_, mmap| mmap.len() as u32)
             .eviction_listener({
                 let base_dir = options.base_dir.clone();
@@ -150,8 +146,6 @@ impl Default for FileCacheOptions {
                 .expect("failed to get cache dir")
                 .join("dna"),
             max_size_bytes: 1024 * 1024 * 1024,
-            time_to_live: Duration::from_secs(60 * 60),
-            time_to_idle: Duration::from_secs(60 * 60),
         }
     }
 }

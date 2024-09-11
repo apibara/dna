@@ -1,9 +1,7 @@
-use std::path::PathBuf;
-
 use apibara_dna_common::{
     block_store::BlockStoreReader,
     cli::{EtcdArgs, ObjectStoreArgs},
-    file_cache::{FileCache, FileCacheOptions},
+    file_cache::FileCache,
     ingestion::{ingestion_service_loop, IngestionArgs},
     server::{server_loop, ServerArgs},
 };
@@ -72,12 +70,14 @@ impl StartCommand {
             })
         };
 
-        // TODO: configure cache size and restore it from the fs.
-        let data_file_cache = FileCache::new(FileCacheOptions {
-            base_dir: PathBuf::from(&self.server.server_cache_dir),
-            ..Default::default()
-        });
-        let data_store = BlockStoreReader::new(object_store.clone(), data_file_cache);
+        let file_cache_options = self
+            .server
+            .to_file_cache_options()
+            .change_context(BeaconChainError)?;
+        let file_cache = FileCache::new(file_cache_options);
+        // TODO: restore cache size from the fs.
+
+        let data_store = BlockStoreReader::new(object_store.clone(), file_cache.clone());
         let scanner_factory = BeaconChainScannerFactory::new(data_store);
 
         let server_handle = if self.server.server_enabled {
@@ -87,6 +87,7 @@ impl StartCommand {
                 .change_context(BeaconChainError)?;
             tokio::spawn(server_loop(
                 scanner_factory,
+                file_cache,
                 etcd_client,
                 object_store,
                 options,

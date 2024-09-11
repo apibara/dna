@@ -2,7 +2,7 @@ mod cli;
 mod error;
 mod service;
 
-use std::{net::SocketAddr, path::PathBuf};
+use std::net::SocketAddr;
 
 use apibara_dna_protocol::dna::stream::dna_stream_file_descriptor_set;
 use apibara_etcd::EtcdClient;
@@ -14,9 +14,7 @@ use tonic::transport::Server as TonicServer;
 use tracing::info;
 
 use crate::{
-    chain_view::chain_view_sync_loop,
-    data_stream::ScannerFactory,
-    file_cache::{FileCache, FileCacheOptions},
+    chain_view::chain_view_sync_loop, data_stream::ScannerFactory, file_cache::FileCache,
     object_store::ObjectStore,
 };
 
@@ -27,14 +25,13 @@ pub use self::service::StreamServiceOptions;
 pub struct ServerOptions {
     /// The server address.
     pub address: SocketAddr,
-    /// Directory to store cached data.
-    pub cache_dir: PathBuf,
     /// Stream service options.
     pub stream_service_options: StreamServiceOptions,
 }
 
 pub async fn server_loop<SF>(
     scanner_factory: SF,
+    file_cache: FileCache,
     etcd_client: EtcdClient,
     object_store: ObjectStore,
     options: ServerOptions,
@@ -43,13 +40,6 @@ pub async fn server_loop<SF>(
 where
     SF: ScannerFactory + Send + Sync + 'static,
 {
-    let cache_dir = PathBuf::from(&options.cache_dir);
-
-    let chain_file_cache = FileCache::new(FileCacheOptions {
-        base_dir: cache_dir,
-        ..Default::default()
-    });
-
     let (_health_reporter, health_service) = tonic_health::server::health_reporter();
 
     let reflection_service = tonic_reflection::server::Builder::configure()
@@ -60,7 +50,7 @@ where
         .attach_printable("failed to create gRPC reflection service")?;
 
     let (chain_view, chain_view_sync) =
-        chain_view_sync_loop(chain_file_cache, etcd_client, object_store.clone())
+        chain_view_sync_loop(file_cache, etcd_client, object_store.clone())
             .await
             .change_context(ServerError)
             .attach_printable("failed to start chain view sync service")?;
@@ -102,12 +92,8 @@ where
 impl Default for ServerOptions {
     fn default() -> Self {
         let address = "0.0.0.0:7007".parse().expect("failed to parse address");
-        let cache_dir = dirs::data_local_dir()
-            .expect("failed to get data dir")
-            .join("dna-v2");
         Self {
             address,
-            cache_dir,
             stream_service_options: Default::default(),
         }
     }
