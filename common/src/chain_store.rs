@@ -1,5 +1,6 @@
 use bytes::Bytes;
 use error_stack::{Result, ResultExt};
+use rkyv::util::AlignedVec;
 
 use crate::{
     chain::CanonicalChainSegment,
@@ -124,7 +125,7 @@ impl ChainStore {
         &self,
         key: &str,
         etag: Option<ObjectETag>,
-    ) -> Result<Option<Bytes>, ChainStoreError> {
+    ) -> Result<Option<AlignedVec>, ChainStoreError> {
         match self.client.get(key, GetOptions { etag }).await {
             Ok(response) => Ok(Some(response.body)),
             Err(err) if err.is_not_found() => Ok(None),

@@ -2,6 +2,7 @@ use apibara_etcd::normalize_prefix;
 use aws_sdk_s3::{config::http::HttpResponse, error::SdkError};
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use error_stack::{Report, Result, ResultExt};
+use rkyv::util::AlignedVec;
 
 #[derive(Debug)]
 pub enum ObjectStoreError {
@@ -66,7 +67,7 @@ pub struct DeleteOptions {}
 
 #[derive(Debug)]
 pub struct GetResult {
-    pub body: Bytes,
+    pub body: AlignedVec,
     pub etag: ObjectETag,
 }
 
@@ -148,19 +149,32 @@ impl ObjectStore {
             .collect()
             .await
             .change_context(ObjectStoreError::Request)
-            .attach_printable("failed to read object body")?
-            .into_bytes();
+            .attach_printable("failed to read object body")?;
 
-        let checksum = body.slice(body.len() - 4..).get_u32();
-        let data = body.slice(..body.len() - 4);
+        let mut aligned_body = AlignedVec::with_capacity(body.remaining());
+        aligned_body
+            .extend_from_reader(&mut body.reader())
+            .change_context(ObjectStoreError::Request)?;
 
-        if crc32fast::hash(&data) != checksum {
+        println!("body len: {}", aligned_body.len());
+        let checksum = aligned_body.as_slice()[aligned_body.len() - 4..]
+            .as_ref()
+            .get_u32();
+
+        let data = aligned_body.as_slice()[..aligned_body.len() - 4].as_ref();
+
+        if crc32fast::hash(data) != checksum {
             return Err(ObjectStoreError::ChecksumMismatch)
                 .attach_printable("checksum mismatch")
                 .attach_printable_lazy(|| format!("key: {key}"));
         }
 
-        Ok(GetResult { body: data, etag })
+        aligned_body.resize(aligned_body.len() - 4, 0);
+
+        Ok(GetResult {
+            body: aligned_body,
+            etag,
+        })
     }
 
     #[tracing::instrument(name = "object_store_put", skip(self, body, options))]
@@ -403,7 +417,7 @@ mod tests {
 
         let get_res = client.get("test", GetOptions::default()).await.unwrap();
         assert_eq!(get_res.etag, put_res.etag);
-        assert_eq!(get_res.body, "Hello, World".as_bytes());
+        assert_eq!(get_res.body.as_slice(), "Hello, World".as_bytes());
     }
 
     #[tokio::test]
@@ -444,7 +458,7 @@ mod tests {
         }
 
         let get_res = client.get("test", GetOptions::default()).await.unwrap();
-        assert_eq!(get_res.body, "With my-prefix".as_bytes());
+        assert_eq!(get_res.body.as_slice(), "With my-prefix".as_bytes());
     }
 
     #[tokio::test]

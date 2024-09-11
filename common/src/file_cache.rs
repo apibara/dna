@@ -1,7 +1,7 @@
 use std::{fs, io::Write, ops::Deref, path::PathBuf, sync::Arc, time::Duration};
 
-use bytes::Bytes;
 use moka::future::Cache;
+use rkyv::util::AlignedVec;
 use tracing::{debug, warn};
 
 /// A `mmap` that can be cloned.
@@ -58,7 +58,7 @@ impl FileCache {
         self.cache.contains_key(path.as_ref())
     }
 
-    pub async fn insert(&self, path: impl Into<String>, data: Bytes) -> std::io::Result<Mmap> {
+    pub async fn insert(&self, path: impl Into<String>, data: AlignedVec) -> std::io::Result<Mmap> {
         let path = path.into();
 
         let file_path = self.options.base_dir.join(&path);
@@ -160,7 +160,7 @@ impl Default for FileCacheOptions {
 mod tests {
     use std::fs::{self, DirEntry};
 
-    use bytes::Bytes;
+    use rkyv::util::AlignedVec;
     use tempdir::TempDir;
 
     use super::{FileCache, FileCacheOptions};
@@ -178,10 +178,9 @@ mod tests {
         let cache = FileCache::new(options);
 
         for i in 0..12 {
-            cache
-                .insert(format!("test-{i}"), Bytes::from("hello"))
-                .await
-                .unwrap();
+            let mut data = AlignedVec::with_capacity(5);
+            data.extend_from_slice(b"hello");
+            cache.insert(format!("test-{i}"), data).await.unwrap();
             cache.run_pending_tasks().await;
             assert_eq!(cache.entry_count(), i + 1);
             assert_eq!(cache.weighted_size(), (i + 1) * 5);
@@ -194,13 +193,9 @@ mod tests {
             assert!(in_cache);
         }
 
-        cache
-            .insert(
-                format!("large"),
-                Bytes::from("Chancellor on the brink of second bailout for banks."),
-            )
-            .await
-            .unwrap();
+        let mut data = AlignedVec::with_capacity(50);
+        data.extend_from_slice(b"Chancellor on the brink of second bailout for banks.");
+        cache.insert(format!("large"), data).await.unwrap();
 
         // Make large the most used file.
         for _ in 0..5 {
