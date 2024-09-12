@@ -75,7 +75,10 @@ impl StartCommand {
             .to_file_cache_options()
             .change_context(BeaconChainError)?;
         let file_cache = FileCache::new(file_cache_options);
-        // TODO: restore cache size from the fs.
+        file_cache
+            .restore_from_disk()
+            .await
+            .change_context(BeaconChainError)?;
 
         let data_store = BlockStoreReader::new(object_store.clone(), file_cache.clone());
         let scanner_factory = BeaconChainScannerFactory::new(data_store);

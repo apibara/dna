@@ -3,6 +3,7 @@ use std::{fs, io::Write, ops::Deref, path::PathBuf, sync::Arc};
 use moka::future::Cache;
 use rkyv::util::AlignedVec;
 use tracing::{debug, warn};
+use walkdir::WalkDir;
 
 /// A `mmap` that can be cloned.
 #[derive(Clone)]
@@ -44,6 +45,29 @@ impl FileCache {
             .build();
 
         Self { options, cache }
+    }
+
+    pub async fn restore_from_disk(&self) -> std::io::Result<()> {
+        for entry in WalkDir::new(&self.options.base_dir)
+            .into_iter()
+            .filter_map(|e| e.ok())
+        {
+            let path = entry.path();
+            if path.is_file() {
+                let relative_path = path
+                    .strip_prefix(&self.options.base_dir)
+                    .map_err(std::io::Error::other)?;
+                let key = relative_path
+                    .to_str()
+                    .ok_or_else(|| std::io::Error::other("failed to convert path to string"))?
+                    .to_string();
+                let file = fs::File::open(path)?;
+                let mmap = Mmap::mmap(&file)?;
+                self.cache.insert(key, mmap).await;
+            }
+        }
+
+        Ok(())
     }
 
     pub async fn get(&self, path: impl AsRef<str>) -> Option<Mmap> {
@@ -209,5 +233,45 @@ mod tests {
             .unwrap()
             .collect::<Vec<std::io::Result<DirEntry>>>();
         assert_eq!(files.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_file_cache_restore_from_disk() {
+        let cache_dir = TempDir::new("file_cache_test").unwrap();
+
+        let options = FileCacheOptions {
+            base_dir: cache_dir.path().to_path_buf(),
+            max_size_bytes: 64,
+            ..Default::default()
+        };
+
+        {
+            let cache = FileCache::new(options.clone());
+
+            for i in 0..12 {
+                let mut data = AlignedVec::with_capacity(5);
+                data.extend_from_slice(b"hello");
+                cache
+                    .insert(format!("test/folder/test-{i}"), data)
+                    .await
+                    .unwrap();
+            }
+
+            cache.run_pending_tasks().await;
+            assert_eq!(cache.weighted_size(), 60);
+            assert_eq!(cache.entry_count(), 12);
+        }
+
+        let cache = FileCache::new(options);
+        assert_eq!(cache.weighted_size(), 0);
+        assert_eq!(cache.entry_count(), 0);
+
+        cache.restore_from_disk().await.unwrap();
+        cache.run_pending_tasks().await;
+
+        assert_eq!(cache.weighted_size(), 60);
+        assert_eq!(cache.entry_count(), 12);
+
+        assert!(cache.contains_key("test/folder/test-0").await);
     }
 }

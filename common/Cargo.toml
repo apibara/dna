@@ -19,6 +19,7 @@ aws-sdk-s3 = "1.47.0"
 bytes.workspace = true
 byte-unit.workspace = true
 clap.workspace = true
+crc32fast = "1.4.2"
 dirs.workspace = true
 error-stack.workspace = true
 etcd-client.workspace = true
@@ -37,7 +38,7 @@ tonic.workspace = true
 tonic-health.workspace = true
 tonic-reflection.workspace = true
 tracing.workspace = true
-crc32fast = "1.4.2"
+walkdir.workspace = true
 
 [dev-dependencies]
 tempdir.workspace = true

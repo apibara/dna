@@ -82,3 +82,4 @@ tracing-subscriber = { version = "0.3.18", features = [
     "json",
 ] }
 url = "2.5"
+walkdir = "2.5.0"
