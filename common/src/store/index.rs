@@ -10,7 +10,6 @@ pub struct IndexError;
 
 /// A collection of tagged indices.
 #[derive(Archive, Serialize, Deserialize, Default)]
-#[archive(check_bytes)]
 pub struct IndexGroup {
     pub tags: Vec<u8>,
     pub key_sizes: Vec<usize>,
@@ -100,7 +99,7 @@ impl IndexGroup {
         <Self as Archive>::Archived: Deserialize<Self, Strategy<D, rkyv::rancor::Error>>,
     {
         let bitmap_map = self.get_archived_index::<TI>()?;
-        rkyv::api::deserialize_with::<BitmapMap<TI::Key>, _, rkyv::rancor::Error>(
+        rkyv::api::deserialize_using::<BitmapMap<TI::Key>, _, rkyv::rancor::Error>(
             bitmap_map,
             deserializer,
         )
@@ -153,7 +152,7 @@ impl ArchivedIndexGroup {
             return Ok(None);
         };
 
-        rkyv::api::deserialize_with::<BitmapMap<TI::Key>, _, rkyv::rancor::Error>(
+        rkyv::api::deserialize_using::<BitmapMap<TI::Key>, _, rkyv::rancor::Error>(
             bitmap_map,
             deserializer,
         )
@@ -195,11 +194,9 @@ mod tests {
     use super::*;
 
     #[derive(Archive, Serialize, Deserialize, Debug)]
-    #[archive(check_bytes)]
     pub struct IndexA;
 
     #[derive(Archive, Serialize, Deserialize, Debug)]
-    #[archive(check_bytes)]
     pub struct IndexB;
 
     impl TaggedIndex for IndexA {

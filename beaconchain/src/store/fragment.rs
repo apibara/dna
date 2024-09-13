@@ -7,7 +7,6 @@ use crate::provider::models;
 
 /// A beacon chain slot.
 #[derive(Archive, Serialize, Deserialize, Debug)]
-#[archive(check_bytes)]
 pub enum Slot<T> {
     Missed { slot: u64 },
     Proposed(T),
@@ -24,32 +23,26 @@ impl<T: rkyv::Archive> ArchivedSlot<T> {
 
 /// An address of 160 bits.
 #[derive(Archive, Serialize, Deserialize, PartialEq, Clone, Copy, Default, PartialOrd, Eq, Ord)]
-#[archive(check_bytes)]
 pub struct Address(pub [u8; 20]);
 
 /// A fixed-size byte array of 32 bytes.
 #[derive(Archive, Serialize, Deserialize, Default, PartialEq, Clone, Copy)]
-#[archive(check_bytes)]
 pub struct B256(pub [u8; 32]);
 
 /// An unsigned integer of 256 bits.
 #[derive(Archive, Serialize, Deserialize)]
-#[archive(check_bytes)]
 pub struct U256(pub [u8; 32]);
 
 /// A fixed-size byte array of 48 bytes.
 #[derive(Archive, Serialize, Deserialize)]
-#[archive(check_bytes)]
 pub struct B384(pub [u8; 48]);
 
 /// A variable-size byte array.
 #[derive(Archive, Serialize, Deserialize)]
-#[archive(check_bytes)]
 pub struct Bytes(pub Vec<u8>);
 
 /// A block header.
 #[derive(Archive, Serialize, Deserialize, Debug)]
-#[archive(check_bytes)]
 pub struct BlockHeader {
     pub slot: u64,
     pub proposer_index: u32,
@@ -66,7 +59,6 @@ pub struct BlockHeader {
 
 /// Execution payload.
 #[derive(Archive, Serialize, Deserialize, Debug)]
-#[archive(check_bytes)]
 pub struct ExecutionPayload {
     pub parent_hash: B256,
     pub fee_recipient: Address,
@@ -80,7 +72,6 @@ pub struct ExecutionPayload {
 
 /// A transaction.
 #[derive(Archive, Serialize, Deserialize, Debug)]
-#[archive(check_bytes)]
 pub struct Transaction {
     pub transaction_type: u64,
     pub transaction_index: u32,
@@ -103,7 +94,6 @@ pub struct Transaction {
 
 /// A transaction signature.
 #[derive(Archive, Serialize, Deserialize, Debug)]
-#[archive(check_bytes)]
 pub struct Signature {
     pub r: U256,
     pub s: U256,
@@ -111,7 +101,6 @@ pub struct Signature {
 
 /// A transaction access list item.
 #[derive(Archive, Serialize, Deserialize, Debug)]
-#[archive(check_bytes)]
 pub struct AccessListItem {
     pub address: Address,
     pub storage_keys: Vec<B256>,
@@ -119,7 +108,6 @@ pub struct AccessListItem {
 
 /// A validator.
 #[derive(Archive, Serialize, Deserialize, Debug)]
-#[archive(check_bytes)]
 pub struct Validator {
     pub validator_index: u32,
     pub balance: u64,
@@ -136,7 +124,6 @@ pub struct Validator {
 
 /// A blob.
 #[derive(Archive, Serialize, Deserialize, Debug)]
-#[archive(check_bytes)]
 pub struct Blob {
     pub blob_index: u32,
     pub blob: Bytes,

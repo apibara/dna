@@ -6,7 +6,6 @@ use rkyv::{with::AsVec, Archive, Deserialize, Serialize};
 use crate::{Cursor, Hash};
 
 #[derive(Clone, PartialEq, Eq, Hash, Archive, Serialize, Deserialize, Debug)]
-#[archive(check_bytes)]
 pub struct BlockInfo {
     pub number: u64,
     pub hash: Hash,
@@ -36,30 +35,26 @@ pub enum ReconnectAction {
 pub type ReorgMap = BTreeMap<Hash, Cursor>;
 
 #[derive(Clone, PartialEq, Eq, Hash, Archive, Serialize, Deserialize)]
-#[archive(check_bytes)]
 pub struct CanonicalBlock {
     pub hash: Hash,
-    #[with(AsVec)]
+    #[rkyv(with = AsVec)]
     pub reorgs: ReorgMap,
 }
 
 #[derive(Clone, PartialEq, Eq, Hash, Archive, Serialize, Deserialize)]
-#[archive(check_bytes)]
 pub struct ExtraReorg {
     pub block_number: u64,
-    #[with(AsVec)]
+    #[rkyv(with = AsVec)]
     pub reorgs: ReorgMap,
 }
 
 #[derive(Clone, PartialEq, Eq, Hash, Archive, Serialize, Deserialize, Debug)]
-#[archive(check_bytes)]
 pub struct CanonicalChainSegmentInfo {
     pub first_block: Cursor,
     pub last_block: Cursor,
 }
 
 #[derive(Clone, PartialEq, Eq, Hash, Archive, Serialize, Deserialize)]
-#[archive(check_bytes)]
 pub struct CanonicalChainSegment {
     pub previous_segment: Option<CanonicalChainSegmentInfo>,
     pub info: CanonicalChainSegmentInfo,

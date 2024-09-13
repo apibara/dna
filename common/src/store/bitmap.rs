@@ -11,12 +11,10 @@ pub struct BitmapError;
 
 /// Serialized roaring bitmap.
 #[derive(Archive, Serialize, Deserialize, Debug)]
-#[archive(check_bytes)]
 pub struct Bitmap(pub Vec<u8>);
 
 #[derive(Archive, Serialize, Deserialize, Default, Debug)]
-#[archive(check_bytes)]
-pub struct BitmapMap<K>(#[with(AsVec)] BTreeMap<K, Bitmap>);
+pub struct BitmapMap<K>(#[rkyv(with = AsVec)] BTreeMap<K, Bitmap>);
 
 impl<K: Ord> BitmapMap<K> {
     /// Returns true if the map is empty.
@@ -55,7 +53,7 @@ where
     where
         K::Archived: Deserialize<K, Strategy<D, rkyv::rancor::Error>>,
     {
-        rkyv::api::deserialize_with::<_, _, rkyv::rancor::Error>(self, deserializer)
+        rkyv::api::deserialize_using::<_, _, rkyv::rancor::Error>(self, deserializer)
             .change_context(BitmapError)
             .attach_printable("failed to deserialize bitmap")
     }
@@ -135,7 +133,6 @@ mod tests {
     use super::*;
 
     #[derive(Archive, Serialize, Deserialize, Debug, PartialEq, Eq, PartialOrd, Ord)]
-    #[archive(check_bytes)]
     pub struct Test(pub [u8; 4]);
 
     #[test]

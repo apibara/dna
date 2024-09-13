@@ -353,7 +353,6 @@ pub enum DataAvailabilityMode {
 }
 
 #[derive(Archive, Serialize, Deserialize, Debug)]
-#[archive(check_bytes)]
 pub struct SingleBlock {
     pub header: BlockHeader,
     pub transactions: Vec<Transaction>,
@@ -363,16 +362,14 @@ pub struct SingleBlock {
 }
 
 #[derive(Archive, Serialize, Deserialize, Debug)]
-#[archive(check_bytes)]
 pub struct Index {
-    #[with(AsVec)]
+    #[rkyv(with = AsVec)]
     pub event_by_address: BTreeMap<FieldElement, Bitmap>,
-    #[with(AsVec)]
+    #[rkyv(with = AsVec)]
     pub event_by_key_0: BTreeMap<FieldElement, Bitmap>,
 }
 
 #[derive(Archive, Serialize, Deserialize, Debug)]
-#[archive(check_bytes)]
 pub struct SegmentGroup {
     pub index: Index,
 }

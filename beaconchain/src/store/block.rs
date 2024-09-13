@@ -17,7 +17,6 @@ use super::{
 
 /// A block containing all fragments for a single block.
 #[derive(Archive, Serialize, Deserialize, Debug)]
-#[archive(check_bytes)]
 pub struct Block {
     pub index: IndexGroup,
     pub header: BlockHeader,

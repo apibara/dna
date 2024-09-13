@@ -3,12 +3,10 @@ use rkyv::{Archive, Deserialize, Serialize};
 
 /// Arbitrary length hash.
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Archive, Serialize, Deserialize, Default)]
-#[archive(check_bytes)]
 pub struct Hash(pub Vec<u8>);
 
 /// Cursor uniquely identifies a block by its number and hash.
 #[derive(Clone, PartialEq, Eq, Hash, Archive, Serialize, Deserialize)]
-#[archive(check_bytes)]
 pub struct Cursor {
     pub number: u64,
     pub hash: Hash,

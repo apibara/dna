@@ -10,14 +10,12 @@ use super::index::IndexGroup;
 pub struct SegmentError;
 
 #[derive(Archive, Serialize, Deserialize, Debug)]
-#[archive(check_bytes)]
 pub struct SegmentBlock<TD> {
     pub cursor: Cursor,
     pub data: TD,
 }
 
 #[derive(Archive, Serialize, Deserialize, Debug)]
-#[archive(check_bytes)]
 pub struct Segment<TD> {
     /// The first block in the segment.
     pub first_block: Cursor,

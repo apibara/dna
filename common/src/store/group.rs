@@ -15,7 +15,6 @@ use super::{
 pub struct SegmentGroupError;
 
 #[derive(Archive, Serialize, Deserialize, Debug)]
-#[archive(check_bytes)]
 pub struct SegmentGroup {
     /// The first block in the segment group.
     pub first_block: Cursor,
@@ -215,19 +214,16 @@ mod tests {
     #[derive(
         Archive, Serialize, Deserialize, PartialEq, Clone, Copy, Default, PartialOrd, Eq, Ord, Debug,
     )]
-    #[archive(check_bytes)]
     pub struct Byte20(pub [u8; 20]);
 
     #[derive(
         Archive, Serialize, Deserialize, Default, PartialEq, Clone, Copy, PartialOrd, Eq, Ord, Debug,
     )]
-    #[archive(check_bytes)]
     pub struct Byte32(pub [u8; 32]);
 
     #[derive(
         Archive, Serialize, Deserialize, PartialEq, Clone, Copy, PartialOrd, Eq, Ord, Debug,
     )]
-    #[archive(check_bytes)]
     pub enum DU {
         Even,
         Odd,
