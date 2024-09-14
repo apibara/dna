@@ -78,8 +78,19 @@ impl FileCache {
         self.cache.contains_key(path.as_ref())
     }
 
+    #[tracing::instrument(
+        level = "info",
+        name = "file_cache_insert",
+        skip_all,
+        fields(path, data_size, cache_size)
+    )]
     pub async fn insert(&self, path: impl Into<String>, data: AlignedVec) -> std::io::Result<Mmap> {
+        let current_span = tracing::Span::current();
         let path = path.into();
+
+        current_span.record("path", &path);
+        current_span.record("data_size", data.len());
+        current_span.record("cache_size", self.weighted_size());
 
         let file_path = self.options.base_dir.join(&path);
         {

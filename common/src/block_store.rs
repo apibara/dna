@@ -38,12 +38,23 @@ where
         }
     }
 
+    #[tracing::instrument(
+        name = "block_store_get_block",
+        skip_all,
+        err(Debug),
+        fields(cache_hit)
+    )]
     pub async fn get_block(&self, cursor: &Cursor) -> Result<Mmap, BlockStoreError> {
+        let current_span = tracing::Span::current();
         let key = format_block_key(cursor);
 
         if let Some(existing) = self.file_cache.get(&key).await {
+            current_span.record("cache_hit", 1);
+
             Ok(existing)
         } else {
+            current_span.record("cache_hit", 0);
+
             let response = self
                 .client
                 .get(&key, GetOptions::default())

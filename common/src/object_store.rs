@@ -156,7 +156,6 @@ impl ObjectStore {
             .extend_from_reader(&mut body.reader())
             .change_context(ObjectStoreError::Request)?;
 
-        println!("body len: {}", aligned_body.len());
         let checksum = aligned_body.as_slice()[aligned_body.len() - 4..]
             .as_ref()
             .get_u32();
