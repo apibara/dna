@@ -399,26 +399,14 @@ where
     }
 
     async fn get_starting_cursor(&mut self) -> Result<IngestionStartAction, IngestionError> {
-        let recent_etag = self
-            .state_client
-            .get_ingested()
-            .await
-            .change_context(IngestionError::StateClientRequest)?;
-
         let existing_chain_segment = self
             .chain_store
-            .get_recent(recent_etag.clone())
+            .get_recent(None)
             .await
             .change_context(IngestionError::CanonicalChainStoreRequest)
             .attach_printable("failed to get recent canonical chain segment")?;
 
         if let Some(existing_chain_segment) = existing_chain_segment {
-            if recent_etag.is_none() {
-                return Err(IngestionError::Model)
-                    .attach_printable("found recent chain segment but no etag in etcd")
-                    .attach_printable("hint: did you use the correct prefixes?");
-            }
-
             info!("restoring canonical chain");
             self.chain_builder =
                 CanonicalChainBuilder::restore_from_segment(existing_chain_segment)
