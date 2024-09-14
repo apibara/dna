@@ -13,7 +13,7 @@ use error_stack::{Result, ResultExt};
 use filter::{Filter, FilteredDataExt};
 use prost::Message;
 use roaring::RoaringBitmap;
-use tracing::info;
+use tracing::debug;
 
 use crate::store::{self, fragment};
 
@@ -85,12 +85,17 @@ impl Scanner for BeaconChainScanner {
         Ok(())
     }
 
-    #[tracing::instrument(name = "stream_send_block", skip_all, err(Debug), fields(cursor = %cursor, data_size))]
+    #[tracing::instrument(
+        name = "stream_send_block",
+        skip_all,
+        err(Debug),
+        fields(cursor = %cursor, data_size, blocks_count, transactions_count, validators_count, blobs_count)
+    )]
     async fn scan_single<S>(&mut self, cursor: &Cursor, cb: S) -> Result<(), ScannerError>
     where
         S: FnOnce(Vec<Vec<u8>>) + Send,
     {
-        info!(cursor = %cursor, "scanning single block");
+        debug!(cursor = %cursor, "scanning single block");
         let block_content = self
             .store
             .get_block(cursor)
@@ -120,6 +125,11 @@ impl Scanner for BeaconChainScanner {
         }
 
         let mut encoded = Vec::with_capacity(filtered.len());
+
+        let mut transactions_count = 0;
+        let mut validators_count = 0;
+        let mut blobs_count = 0;
+
         for mut data in filtered {
             let mut result = beaconchain::Block::default();
 
@@ -171,9 +181,9 @@ impl Scanner for BeaconChainScanner {
                 result.blobs.push(blob);
             }
 
-            println!("txs {:?}", result.transactions.len());
-            println!("blobs {:?}", result.blobs.len());
-            println!("valid {:?}", result.validators.len());
+            transactions_count += result.transactions.len();
+            validators_count += result.validators.len();
+            blobs_count += result.blobs.len();
 
             encoded.push(result.encode_to_vec());
         }
@@ -182,6 +192,10 @@ impl Scanner for BeaconChainScanner {
 
         let current_span = tracing::Span::current();
         current_span.record("data_size", data_size);
+        current_span.record("blocks_count", encoded.len());
+        current_span.record("transactions_count", transactions_count);
+        current_span.record("validators_count", validators_count);
+        current_span.record("blobs_count", blobs_count);
 
         cb(encoded);
 
