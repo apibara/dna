@@ -2,7 +2,7 @@ use apibara_dna_protocol::dna::stream::{
     stream_data_response::Message, Data, DataFinality, Invalidate, StreamDataResponse,
 };
 use error_stack::{Result, ResultExt};
-use tokio::sync::mpsc::{self, Permit};
+use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, warn};
 
@@ -55,11 +55,7 @@ where
         ct: CancellationToken,
     ) -> Result<(), DataStreamError> {
         while !ct.is_cancelled() && !tx.is_closed() {
-            let Ok(permit) = tx.reserve().await else {
-                return Ok(());
-            };
-
-            if let Err(err) = self.tick(permit).await {
+            if let Err(err) = self.tick(&tx, &ct).await {
                 warn!(error = ?err, "data stream error");
                 tx.send(Err(tonic::Status::internal("internal server error")))
                     .await
@@ -71,7 +67,60 @@ where
         Ok(())
     }
 
-    async fn tick(&mut self, tx: Permit<'_, DataStreamMessage>) -> Result<(), DataStreamError> {
+    async fn tick(
+        &mut self,
+        tx: &mpsc::Sender<DataStreamMessage>,
+        ct: &CancellationToken,
+    ) -> Result<(), DataStreamError> {
+        if let Some(_cursor) = self
+            .chain_view
+            .get_segment_group_cursor()
+            .await
+            .change_context(DataStreamError)?
+        {
+            todo!();
+        }
+
+        if let Some(_cursor) = self
+            .chain_view
+            .get_segment_cursor()
+            .await
+            .change_context(DataStreamError)?
+        {
+            todo!();
+        }
+
+        let head = self
+            .chain_view
+            .get_head()
+            .await
+            .change_context(DataStreamError)?;
+
+        let at_head = self.current.as_ref().map(|c| c == &head).unwrap_or(false);
+
+        if !at_head {
+            return self.tick_single(tx, ct).await;
+        }
+
+        debug!("head reached");
+        let Some(_) = ct.run_until_cancelled(self.chain_view.head_changed()).await else {
+            return Ok(());
+        };
+        debug!("head changed");
+
+        Ok(())
+    }
+
+    async fn tick_single(
+        &mut self,
+        tx: &mpsc::Sender<DataStreamMessage>,
+        ct: &CancellationToken,
+    ) -> Result<(), DataStreamError> {
+        debug!("tick: single block");
+        let Some(Ok(permit)) = ct.run_until_cancelled(tx.reserve()).await else {
+            return Ok(());
+        };
+
         match self
             .chain_view
             .get_next_cursor(&self.current)
@@ -95,7 +144,7 @@ where
                             ..Default::default()
                         });
 
-                        tx.send(Ok(StreamDataResponse {
+                        permit.send(Ok(StreamDataResponse {
                             message: Some(data),
                         }));
                     })
@@ -112,16 +161,13 @@ where
                     ..Default::default()
                 });
 
-                tx.send(Ok(StreamDataResponse {
+                permit.send(Ok(StreamDataResponse {
                     message: Some(invalidate),
                 }));
 
                 self.current = Some(cursor);
             }
-            NextCursor::AtHead => {
-                // TODO: this should not happen.
-                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-            }
+            NextCursor::AtHead => {}
         }
 
         Ok(())

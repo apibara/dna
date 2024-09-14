@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use error_stack::Result;
-use tokio::sync::RwLock;
+use tokio::sync::{Notify, RwLock};
 
 use crate::Cursor;
 
@@ -18,6 +18,7 @@ pub struct ChainView(Arc<RwLock<ChainViewInner>>);
 pub(crate) struct ChainViewInner {
     finalized: u64,
     canonical: FullCanonicalChain,
+    head_notify: Arc<Notify>,
 }
 
 impl ChainView {
@@ -25,6 +26,7 @@ impl ChainView {
         let inner = ChainViewInner {
             finalized,
             canonical,
+            head_notify: Arc::new(Notify::new()),
         };
 
         Self(Arc::new(RwLock::new(inner)))
@@ -51,6 +53,14 @@ impl ChainView {
         inner.canonical.get_head().await
     }
 
+    pub async fn head_changed(&self) {
+        let notify = {
+            let inner = self.0.read().await;
+            inner.head_notify.clone()
+        };
+        notify.notified().await;
+    }
+
     pub async fn get_starting_cursor(&self) -> Result<Cursor, ChainViewError> {
         let inner = self.0.read().await;
         let starting_block = inner.canonical.starting_block;
@@ -68,6 +78,16 @@ impl ChainView {
         }
     }
 
+    pub async fn get_segment_group_cursor(&self) -> Result<Option<Cursor>, ChainViewError> {
+        // TODO: get it from etcd.
+        Ok(None)
+    }
+
+    pub async fn get_segment_cursor(&self) -> Result<Option<Cursor>, ChainViewError> {
+        // TODO: get it from etcd.
+        Ok(None)
+    }
+
     pub(crate) async fn set_finalized_block(&self, block: u64) {
         let mut inner = self.0.write().await;
         inner.finalized = block;
@@ -75,6 +95,15 @@ impl ChainView {
 
     pub(crate) async fn refresh_recent(&self) -> Result<(), ChainViewError> {
         let mut inner = self.0.write().await;
-        inner.canonical.refresh_recent().await
+
+        let prev_head = inner.canonical.get_head().await?;
+        inner.canonical.refresh_recent().await?;
+        let new_head = inner.canonical.get_head().await?;
+
+        if prev_head != new_head {
+            inner.head_notify.notify_waiters();
+        }
+
+        Ok(())
     }
 }
