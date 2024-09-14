@@ -135,6 +135,13 @@ where
             .map_err(|_| tonic::Status::invalid_argument("invalid finality"))?
             .unwrap_or(DataFinality::Accepted);
 
+        let heartbeat_interval = request
+            .heartbeat_interval
+            .map(TryFrom::try_from)
+            .transpose()
+            .map_err(|_| tonic::Status::invalid_argument("invalid heartbeat interval"))
+            .and_then(validate_heartbeat_interval)?;
+
         // Parse and validate filter.
         let scanner = self.scanner_factory.create_scanner(&request.filter)?;
 
@@ -143,6 +150,7 @@ where
             starting_cursor,
             finalized,
             finality,
+            heartbeat_interval,
             chain_view,
             permit,
         );
@@ -206,5 +214,27 @@ impl Default for StreamServiceOptions {
         Self {
             max_concurrent_streams: 1_000,
         }
+    }
+}
+
+fn validate_heartbeat_interval(
+    heartbeat_interval: Option<Duration>,
+) -> tonic::Result<Duration, tonic::Status> {
+    let Some(heartbeat_interval) = heartbeat_interval else {
+        return Ok(Duration::from_secs(30));
+    };
+
+    if heartbeat_interval < Duration::from_secs(10) {
+        Err(tonic::Status::invalid_argument(format!(
+            "heartbeat interval must be at least 10 seconds, got {}",
+            heartbeat_interval.as_secs()
+        )))
+    } else if heartbeat_interval > Duration::from_secs(60) {
+        Err(tonic::Status::invalid_argument(format!(
+            "heartbeat interval must be at most 60 seconds, got {}",
+            heartbeat_interval.as_secs()
+        )))
+    } else {
+        Ok(heartbeat_interval)
     }
 }

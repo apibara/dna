@@ -1,5 +1,8 @@
+use std::time::Duration;
+
 use apibara_dna_protocol::dna::stream::{
-    stream_data_response::Message, Data, DataFinality, Finalize, Invalidate, StreamDataResponse,
+    stream_data_response::Message, Data, DataFinality, Finalize, Heartbeat, Invalidate,
+    StreamDataResponse,
 };
 use error_stack::{Result, ResultExt};
 use tokio::sync::mpsc;
@@ -25,6 +28,7 @@ where
     finalized: Cursor,
     _finality: DataFinality,
     chain_view: ChainView,
+    heartbeat_interval: tokio::time::Interval,
     _permit: tokio::sync::OwnedSemaphorePermit,
 }
 
@@ -39,14 +43,17 @@ where
         starting: Option<Cursor>,
         finalized: Cursor,
         finality: DataFinality,
+        heartbeat_interval: Duration,
         chain_view: ChainView,
         permit: tokio::sync::OwnedSemaphorePermit,
     ) -> Self {
+        let heartbeat_interval = tokio::time::interval(heartbeat_interval);
         Self {
             scanner,
             current: starting,
             finalized,
             _finality: finality,
+            heartbeat_interval,
             chain_view,
             _permit: permit,
         }
@@ -81,6 +88,7 @@ where
             .await
             .change_context(DataStreamError)?
         {
+            self.heartbeat_interval.reset();
             todo!();
         }
 
@@ -90,6 +98,7 @@ where
             .await
             .change_context(DataStreamError)?
         {
+            self.heartbeat_interval.reset();
             todo!();
         }
 
@@ -102,6 +111,7 @@ where
         let at_head = self.current.as_ref().map(|c| c == &head).unwrap_or(false);
 
         if !at_head {
+            self.heartbeat_interval.reset();
             return self.tick_single(tx, ct).await;
         }
 
@@ -109,6 +119,10 @@ where
 
         tokio::select! {
             _ = ct.cancelled() => Ok(()),
+            _ = self.heartbeat_interval.tick() => {
+                debug!("heartbeat");
+                self.send_heartbeat_message(tx, ct).await
+            }
             _ = self.chain_view.head_changed() => {
                 debug!("head changed");
                 Ok(())
@@ -118,6 +132,25 @@ where
                 self.send_finalize_message(tx, ct).await
             },
         }
+    }
+
+    async fn send_heartbeat_message(
+        &mut self,
+        tx: &mpsc::Sender<DataStreamMessage>,
+        ct: &CancellationToken,
+    ) -> Result<(), DataStreamError> {
+        debug!("tick: send heartbeat message");
+        let Some(Ok(permit)) = ct.run_until_cancelled(tx.reserve()).await else {
+            return Ok(());
+        };
+
+        let heartbeat = Message::Heartbeat(Heartbeat {});
+
+        permit.send(Ok(StreamDataResponse {
+            message: Some(heartbeat),
+        }));
+
+        Ok(())
     }
 
     async fn send_finalize_message(

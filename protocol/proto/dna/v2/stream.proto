@@ -3,6 +3,8 @@ syntax = "proto3";
 
 package dna.v2.stream;
 
+import "google/protobuf/duration.proto";
+
 service DnaStream {
   // Stream data from the server.
   rpc StreamData(StreamDataRequest) returns (stream StreamDataResponse);
@@ -50,6 +52,11 @@ message StreamDataRequest {
   optional DataFinality finality = 2;
   // Filters used to generate data.
   repeated bytes filter = 3;
+  // Heartbeat interval.
+  //
+  // Value must be between 10 and 60 seconds.
+  // If not specified, defaults to 30 seconds.
+  optional google.protobuf.Duration heartbeat_interval = 4;
 }
 
 // Contains a piece of streamed data.
