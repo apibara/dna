@@ -28,6 +28,13 @@
         };
 
         crates = {
+          dna-beaconchain = {
+            description = "The Beacon Chain DNA server";
+            path = ./beaconchain;
+            ports = {
+              "7007/tcp" = { };
+            };
+          };
           dna-evm = {
             description = "The EVM DNA server";
             path = ./evm;
