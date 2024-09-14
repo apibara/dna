@@ -1,5 +1,5 @@
 use apibara_dna_protocol::dna::stream::{
-    stream_data_response::Message, Data, DataFinality, Invalidate, StreamDataResponse,
+    stream_data_response::Message, Data, DataFinality, Finalize, Invalidate, StreamDataResponse,
 };
 use error_stack::{Result, ResultExt};
 use tokio::sync::mpsc;
@@ -22,6 +22,7 @@ where
 {
     scanner: S,
     current: Option<Cursor>,
+    finalized: Cursor,
     _finality: DataFinality,
     chain_view: ChainView,
     _permit: tokio::sync::OwnedSemaphorePermit,
@@ -36,6 +37,7 @@ where
     pub fn new(
         scanner: S,
         starting: Option<Cursor>,
+        finalized: Cursor,
         finality: DataFinality,
         chain_view: ChainView,
         permit: tokio::sync::OwnedSemaphorePermit,
@@ -43,6 +45,7 @@ where
         Self {
             scanner,
             current: starting,
+            finalized,
             _finality: finality,
             chain_view,
             _permit: permit,
@@ -103,10 +106,37 @@ where
         }
 
         debug!("head reached");
-        let Some(_) = ct.run_until_cancelled(self.chain_view.head_changed()).await else {
+
+        tokio::select! {
+            _ = ct.cancelled() => Ok(()),
+            _ = self.chain_view.head_changed() => {
+                debug!("head changed");
+                Ok(())
+            },
+            _ = self.chain_view.finalized_changed() => {
+                debug!("finalized changed");
+                self.send_finalize_message(tx, ct).await
+            },
+        }
+    }
+
+    async fn send_finalize_message(
+        &mut self,
+        tx: &mpsc::Sender<DataStreamMessage>,
+        ct: &CancellationToken,
+    ) -> Result<(), DataStreamError> {
+        debug!("tick: send finalize message");
+        let Some(Ok(permit)) = ct.run_until_cancelled(tx.reserve()).await else {
             return Ok(());
         };
-        debug!("head changed");
+
+        let finalize = Message::Finalize(Finalize {
+            cursor: Some(self.finalized.clone().into()),
+        });
+
+        permit.send(Ok(StreamDataResponse {
+            message: Some(finalize),
+        }));
 
         Ok(())
     }
@@ -157,6 +187,7 @@ where
             NextCursor::Invalidate(cursor) => {
                 debug!(cursor = %cursor, "invalidating data");
 
+                // TODO: collect removed blocks.
                 let invalidate = Message::Invalidate(Invalidate {
                     ..Default::default()
                 });

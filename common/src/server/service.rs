@@ -122,6 +122,11 @@ where
             None
         };
 
+        let finalized = chain_view
+            .get_finalized_cursor()
+            .await
+            .map_err(|_| tonic::Status::internal("internal server error"))?;
+
         // Convert finality.
         let finality: DataFinality = request
             .finality
@@ -133,7 +138,14 @@ where
         // Parse and validate filter.
         let scanner = self.scanner_factory.create_scanner(&request.filter)?;
 
-        let ds = DataStream::new(scanner, starting_cursor, finality, chain_view, permit);
+        let ds = DataStream::new(
+            scanner,
+            starting_cursor,
+            finalized,
+            finality,
+            chain_view,
+            permit,
+        );
         let (tx, rx) = mpsc::channel(CHANNEL_SIZE);
 
         tokio::spawn(ds.start(tx, self.ct.clone()));

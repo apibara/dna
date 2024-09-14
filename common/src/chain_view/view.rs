@@ -19,6 +19,7 @@ pub(crate) struct ChainViewInner {
     finalized: u64,
     canonical: FullCanonicalChain,
     head_notify: Arc<Notify>,
+    finalized_notify: Arc<Notify>,
 }
 
 impl ChainView {
@@ -27,6 +28,7 @@ impl ChainView {
             finalized,
             canonical,
             head_notify: Arc::new(Notify::new()),
+            finalized_notify: Arc::new(Notify::new()),
         };
 
         Self(Arc::new(RwLock::new(inner)))
@@ -61,6 +63,14 @@ impl ChainView {
         notify.notified().await;
     }
 
+    pub async fn finalized_changed(&self) {
+        let notify = {
+            let inner = self.0.read().await;
+            inner.finalized_notify.clone()
+        };
+        notify.notified().await;
+    }
+
     pub async fn get_starting_cursor(&self) -> Result<Cursor, ChainViewError> {
         let inner = self.0.read().await;
         let starting_block = inner.canonical.starting_block;
@@ -91,6 +101,7 @@ impl ChainView {
     pub(crate) async fn set_finalized_block(&self, block: u64) {
         let mut inner = self.0.write().await;
         inner.finalized = block;
+        inner.finalized_notify.notify_waiters();
     }
 
     pub(crate) async fn refresh_recent(&self) -> Result<(), ChainViewError> {
