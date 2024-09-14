@@ -5,7 +5,9 @@ mod lock;
 mod utils;
 mod watch;
 
-pub use self::client::{EtcdClient, EtcdClientError, EtcdClientOptions, StatusResponse};
+pub use self::client::{
+    AuthOptions, EtcdClient, EtcdClientError, EtcdClientOptions, StatusResponse,
+};
 pub use self::kv::{GetResponse, KvClient, PutResponse};
 pub use self::lock::{Lock, LockClient, LockOptions};
 pub use self::utils::normalize_prefix;

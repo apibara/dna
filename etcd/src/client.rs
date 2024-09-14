@@ -10,8 +10,15 @@ use crate::{kv::KvClient, lock::LockClient};
 pub struct EtcdClientError;
 
 #[derive(Debug, Default)]
+pub struct AuthOptions {
+    pub user: String,
+    pub password: String,
+}
+
+#[derive(Debug, Default)]
 pub struct EtcdClientOptions {
     pub prefix: Option<String>,
+    pub auth: Option<AuthOptions>,
 }
 
 #[derive(Clone)]
@@ -25,7 +32,15 @@ impl EtcdClient {
         endpoints: S,
         options: EtcdClientOptions,
     ) -> Result<Self, EtcdClientError> {
-        let client = etcd_client::Client::connect(endpoints, None)
+        let connect_options = if let Some(auth) = options.auth {
+            etcd_client::ConnectOptions::new()
+                .with_user(auth.user, auth.password)
+                .into()
+        } else {
+            None
+        };
+
+        let client = etcd_client::Client::connect(endpoints, connect_options)
             .await
             .change_context(EtcdClientError)
             .attach_printable("failed to connect to etcd")?;

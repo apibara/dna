@@ -48,7 +48,7 @@ async fn main() -> Result<(), CliError> {
             prefix,
         } => {
             let ct = CancellationToken::new();
-            let options = EtcdClientOptions { prefix };
+            let options = EtcdClientOptions { prefix, auth: None };
             let client = EtcdClient::connect(endpoints, options)
                 .await
                 .change_context(CliError)

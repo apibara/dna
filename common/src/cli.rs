@@ -1,4 +1,4 @@
-use apibara_etcd::{EtcdClient, EtcdClientError, EtcdClientOptions};
+use apibara_etcd::{AuthOptions, EtcdClient, EtcdClientError, EtcdClientOptions};
 use aws_config::{meta::region::RegionProviderChain, Region};
 use clap::Args;
 use error_stack::Result;
@@ -34,6 +34,12 @@ pub struct EtcdArgs {
     /// The etcd prefix.
     #[arg(long = "etcd.prefix", env = "DNA_ETCD_PREFIX")]
     pub etcd_prefix: Option<String>,
+    /// The etcd username.
+    #[arg(long = "etcd.user", env = "DNA_ETCD_USER")]
+    pub etcd_user: Option<String>,
+    /// The etcd password.
+    #[arg(long = "etcd.password", env = "DNA_ETCD_PASSWORD")]
+    pub etcd_password: Option<String>,
 }
 
 impl ObjectStoreArgs {
@@ -68,8 +74,15 @@ impl ObjectStoreArgs {
 
 impl EtcdArgs {
     pub async fn into_etcd_client(self) -> Result<EtcdClient, EtcdClientError> {
+        let auth = if let (Some(user), Some(password)) = (self.etcd_user, self.etcd_password) {
+            Some(AuthOptions { user, password })
+        } else {
+            None
+        };
+
         let options = EtcdClientOptions {
             prefix: self.etcd_prefix,
+            auth,
         };
 
         EtcdClient::connect(self.etcd_endpoints, options).await
