@@ -1,5 +1,6 @@
 use std::{fs, path::PathBuf};
 
+use apibara_dna_common::{cli::ObjectStoreArgs, object_store::GetOptions};
 use byte_unit::Byte;
 use clap::Subcommand;
 use error_stack::{Result, ResultExt};
@@ -9,6 +10,10 @@ use crate::{error::BeaconChainError, segment::SegmentBuilder, store};
 
 #[derive(Subcommand, Debug)]
 pub enum DebugStoreCommand {
+    RecentChain {
+        #[clap(flatten)]
+        object_store: ObjectStoreArgs,
+    },
     /// Create a segment from indexed blocks.
     CreateSegment {
         /// Files with the indexed blocks.
@@ -22,6 +27,21 @@ pub enum DebugStoreCommand {
 impl DebugStoreCommand {
     pub async fn run(self) -> Result<(), BeaconChainError> {
         match self {
+            DebugStoreCommand::RecentChain { object_store } => {
+                let client = object_store.into_object_store_client().await;
+                let response = client
+                    .get("canon/recent", GetOptions::default())
+                    .await
+                    .change_context(BeaconChainError)?;
+
+                info!(
+                    "recent canonical chain segment size: {}",
+                    response.body.len()
+                );
+                info!("recent canonical chain segment etag: {:?}", response.etag);
+
+                Ok(())
+            }
             DebugStoreCommand::CreateSegment { files, out_dir } => {
                 let mut files = files.into_iter();
 
