@@ -3,6 +3,7 @@ use error_stack::{Result, ResultExt};
 
 pub static OPTIONS_PREFIX_KEY: &str = "options/";
 pub static CHAIN_SEGMENT_SIZE_KEY: &str = "options/chain_segment_size";
+pub static SEGMENT_SIZE_KEY: &str = "options/segment_size";
 
 #[derive(Debug)]
 pub struct OptionsStoreError;
@@ -19,23 +20,47 @@ impl OptionsStore {
     }
 
     pub async fn set_chain_segment_size(&mut self, size: usize) -> Result<(), OptionsStoreError> {
+        self.set_usize(CHAIN_SEGMENT_SIZE_KEY, size)
+            .await
+            .attach_printable("failed to set chain segment size")
+    }
+
+    pub async fn set_segment_size(&mut self, size: usize) -> Result<(), OptionsStoreError> {
+        self.set_usize(SEGMENT_SIZE_KEY, size)
+            .await
+            .attach_printable("failed to set segment size")
+    }
+
+    async fn set_usize(&mut self, key: &str, size: usize) -> Result<(), OptionsStoreError> {
         let size = size.to_string();
         self.client
-            .put(CHAIN_SEGMENT_SIZE_KEY, size.as_bytes())
+            .put(key, size.as_bytes())
             .await
             .change_context(OptionsStoreError)
-            .attach_printable("failed to set chain segment size")?;
+            .attach_printable("failed to set size")?;
 
         Ok(())
     }
 
     pub async fn get_chain_segment_size(&mut self) -> Result<Option<usize>, OptionsStoreError> {
+        self.get_usize(CHAIN_SEGMENT_SIZE_KEY)
+            .await
+            .attach_printable("failed to get chain segment size")
+    }
+
+    pub async fn get_segment_size(&mut self) -> Result<Option<usize>, OptionsStoreError> {
+        self.get_usize(SEGMENT_SIZE_KEY)
+            .await
+            .attach_printable("failed to get segment size")
+    }
+
+    async fn get_usize(&mut self, key: &str) -> Result<Option<usize>, OptionsStoreError> {
         let response = self
             .client
-            .get(CHAIN_SEGMENT_SIZE_KEY)
+            .get(key)
             .await
             .change_context(OptionsStoreError)
-            .attach_printable("failed to get chain segment size")?;
+            .attach_printable("failed to get size options")?;
 
         let Some(kv) = response.kvs().first() else {
             return Ok(None);
@@ -43,13 +68,13 @@ impl OptionsStore {
 
         let size = String::from_utf8(kv.value().to_vec())
             .change_context(OptionsStoreError)
-            .attach_printable("failed to decode chain segment size")?;
+            .attach_printable("failed to decode size")?;
 
         let size = size
             .parse::<usize>()
             .change_context(OptionsStoreError)
-            .attach_printable("failed to parse chain segment size")
-            .attach_printable_lazy(|| format!("chain segment size: {}", size))?;
+            .attach_printable("failed to parse size")
+            .attach_printable_lazy(|| format!("size: {}", size))?;
 
         Ok(size.into())
     }

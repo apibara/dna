@@ -17,15 +17,21 @@ pub struct ChainView(Arc<RwLock<ChainViewInner>>);
 
 pub(crate) struct ChainViewInner {
     finalized: u64,
+    segmented: Option<u64>,
     canonical: FullCanonicalChain,
     head_notify: Arc<Notify>,
     finalized_notify: Arc<Notify>,
 }
 
 impl ChainView {
-    pub(crate) fn new(finalized: u64, canonical: FullCanonicalChain) -> Self {
+    pub(crate) fn new(
+        finalized: u64,
+        segmented: Option<u64>,
+        canonical: FullCanonicalChain,
+    ) -> Self {
         let inner = ChainViewInner {
             finalized,
+            segmented,
             canonical,
             head_notify: Arc::new(Notify::new()),
             finalized_notify: Arc::new(Notify::new()),
@@ -93,15 +99,27 @@ impl ChainView {
         Ok(None)
     }
 
-    pub async fn get_segment_cursor(&self) -> Result<Option<Cursor>, ChainViewError> {
-        // TODO: get it from etcd.
-        Ok(None)
+    pub async fn get_segmented_cursor(&self) -> Result<Option<Cursor>, ChainViewError> {
+        let inner = self.0.read().await;
+        let Some(segmented) = inner.segmented else {
+            return Ok(None);
+        };
+
+        match inner.canonical.get_canonical(segmented).await? {
+            CanonicalCursor::Canonical(cursor) => Ok(cursor.into()),
+            _ => Ok(Cursor::new_finalized(segmented).into()),
+        }
     }
 
     pub(crate) async fn set_finalized_block(&self, block: u64) {
         let mut inner = self.0.write().await;
         inner.finalized = block;
         inner.finalized_notify.notify_waiters();
+    }
+
+    pub(crate) async fn set_segmented_block(&self, block: u64) {
+        let mut inner = self.0.write().await;
+        inner.segmented = Some(block);
     }
 
     pub(crate) async fn refresh_recent(&self) -> Result<(), ChainViewError> {

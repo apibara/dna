@@ -5,37 +5,32 @@ use crate::{
     file_cache::{FileCache, Mmap},
     object_store::{GetOptions, ObjectETag, ObjectStore, PutOptions},
     rkyv::Serializable,
+    store::segment::SerializedSegment,
     Cursor,
 };
 
 static BLOCK_PREFIX: &str = "block";
+static SEGMENT_PREFIX: &str = "segment";
 
 #[derive(Debug)]
 pub struct BlockStoreError;
 
 /// Download blocks from the object store with a local cache.
-pub struct BlockStoreReader<B> {
+#[derive(Clone)]
+pub struct BlockStoreReader {
     client: ObjectStore,
     file_cache: FileCache,
-    _block_phantom: std::marker::PhantomData<B>,
 }
 
 /// Upload blocks to the object store.
-pub struct BlockStoreWriter<B> {
+#[derive(Clone)]
+pub struct BlockStoreWriter {
     client: ObjectStore,
-    _phantom: std::marker::PhantomData<B>,
 }
 
-impl<B> BlockStoreReader<B>
-where
-    B: for<'a> Serializable<'a>,
-{
+impl BlockStoreReader {
     pub fn new(client: ObjectStore, file_cache: FileCache) -> Self {
-        Self {
-            client,
-            file_cache,
-            _block_phantom: Default::default(),
-        }
+        Self { client, file_cache }
     }
 
     #[tracing::instrument(
@@ -72,22 +67,19 @@ where
     }
 }
 
-impl<B> BlockStoreWriter<B>
-where
-    B: for<'a> Serializable<'a>,
-{
+impl BlockStoreWriter {
     pub fn new(client: ObjectStore) -> Self {
-        Self {
-            client,
-            _phantom: Default::default(),
-        }
+        Self { client }
     }
 
-    pub async fn put_block(
+    pub async fn put_block<B>(
         &self,
         cursor: &Cursor,
         block: &B,
-    ) -> Result<ObjectETag, BlockStoreError> {
+    ) -> Result<ObjectETag, BlockStoreError>
+    where
+        B: for<'a> Serializable<'a>,
+    {
         let serialized = rkyv::to_bytes(block)
             .change_context(BlockStoreError)
             .attach_printable("failed to serialize block")?;
@@ -104,10 +96,37 @@ where
 
         Ok(response.etag)
     }
+
+    pub async fn put_segment(
+        &self,
+        first_cursor: &Cursor,
+        segment: &SerializedSegment,
+    ) -> Result<ObjectETag, BlockStoreError> {
+        let bytes = Bytes::copy_from_slice(segment.data.as_slice());
+
+        let response = self
+            .client
+            .put(
+                &format_segment_key(first_cursor, &segment.name),
+                bytes,
+                PutOptions::default(),
+            )
+            .await
+            .change_context(BlockStoreError)
+            .attach_printable("failed to put segment")
+            .attach_printable_lazy(|| format!("cursor: {}", first_cursor))
+            .attach_printable_lazy(|| format!("segment name: {}", segment.name))?;
+
+        Ok(response.etag)
+    }
 }
 
 fn format_block_key(cursor: &Cursor) -> String {
     format!("{}/{:0>10}/{}", BLOCK_PREFIX, cursor.number, cursor.hash)
+}
+
+fn format_segment_key(first_block: &Cursor, name: &str) -> String {
+    format!("{}/{:0>10}/{}", SEGMENT_PREFIX, first_block.number, name)
 }
 
 impl error_stack::Context for BlockStoreError {}
@@ -115,24 +134,5 @@ impl error_stack::Context for BlockStoreError {}
 impl std::fmt::Display for BlockStoreError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "block store error")
-    }
-}
-
-impl<B> Clone for BlockStoreWriter<B> {
-    fn clone(&self) -> Self {
-        Self {
-            client: self.client.clone(),
-            _phantom: Default::default(),
-        }
-    }
-}
-
-impl<B> Clone for BlockStoreReader<B> {
-    fn clone(&self) -> Self {
-        Self {
-            client: self.client.clone(),
-            file_cache: self.file_cache.clone(),
-            _block_phantom: Default::default(),
-        }
     }
 }

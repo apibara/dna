@@ -1,6 +1,8 @@
 use apibara_dna_common::{
     block_store::BlockStoreReader,
+    chain_view::chain_view_sync_loop,
     cli::{EtcdArgs, ObjectStoreArgs},
+    compaction::{compaction_service_loop, CompactionArgs},
     file_cache::FileCache,
     ingestion::{ingestion_service_loop, IngestionArgs},
     server::{server_loop, ServerArgs},
@@ -12,7 +14,7 @@ use tracing::info;
 
 use crate::{
     cli::rpc::RpcArgs, error::BeaconChainError, ingestion::BeaconChainBlockIngestion,
-    scanner::BeaconChainScannerFactory,
+    scanner::BeaconChainScannerFactory, segment::BeaconChainSegmentBuilder,
 };
 
 #[derive(Args, Debug)]
@@ -25,6 +27,8 @@ pub struct StartCommand {
     etcd: EtcdArgs,
     #[clap(flatten)]
     ingestion: IngestionArgs,
+    #[clap(flatten)]
+    compaction: CompactionArgs,
     #[clap(flatten)]
     server: ServerArgs,
 }
@@ -80,6 +84,39 @@ impl StartCommand {
             .await
             .change_context(BeaconChainError)?;
 
+        let (chain_view, chain_view_sync) = chain_view_sync_loop(
+            file_cache.clone(),
+            etcd_client.clone(),
+            object_store.clone(),
+        )
+        .await
+        .change_context(BeaconChainError)
+        .attach_printable("failed to start chain view sync service")?;
+
+        let sync_handle = tokio::spawn(chain_view_sync.start(ct.clone()));
+
+        let compaction_handle = if self.compaction.compaction_enabled {
+            let options = self.compaction.to_compaction_options();
+            let builder = BeaconChainSegmentBuilder::default();
+
+            tokio::spawn(compaction_service_loop(
+                builder,
+                etcd_client.clone(),
+                object_store.clone(),
+                chain_view.clone(),
+                options,
+                ct.clone(),
+            ))
+        } else {
+            tokio::spawn({
+                let ct = ct.clone();
+                async move {
+                    ct.cancelled().await;
+                    Ok(())
+                }
+            })
+        };
+
         let data_store = BlockStoreReader::new(object_store.clone(), file_cache.clone());
         let scanner_factory = BeaconChainScannerFactory::new(data_store);
 
@@ -88,14 +125,7 @@ impl StartCommand {
                 .server
                 .to_server_options()
                 .change_context(BeaconChainError)?;
-            tokio::spawn(server_loop(
-                scanner_factory,
-                file_cache,
-                etcd_client,
-                object_store,
-                options,
-                ct,
-            ))
+            tokio::spawn(server_loop(scanner_factory, chain_view, options, ct))
         } else {
             tokio::spawn({
                 let ct = ct.clone();
@@ -109,6 +139,12 @@ impl StartCommand {
         tokio::select! {
             ingestion = ingestion_handle => {
                 ingestion.change_context(BeaconChainError)?.change_context(BeaconChainError)?;
+            }
+            compaction = compaction_handle => {
+                compaction.change_context(BeaconChainError)?.change_context(BeaconChainError)?;
+            }
+            sync = sync_handle => {
+                sync.change_context(BeaconChainError)?.change_context(BeaconChainError)?;
             }
             server = server_handle => {
                 server.change_context(BeaconChainError)?.change_context(BeaconChainError)?;

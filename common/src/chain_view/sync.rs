@@ -77,6 +77,11 @@ impl ChainViewSyncService {
             tokio::time::sleep(Duration::from_secs(10)).await;
         };
 
+        let segmented = ingestion_state_client
+            .get_segmented()
+            .await
+            .change_context(ChainViewError)?;
+
         loop {
             if ct.is_cancelled() {
                 return Ok(());
@@ -115,7 +120,7 @@ impl ChainViewSyncService {
         )
         .await?;
 
-        let chain_view = ChainView::new(finalized, canonical_chain);
+        let chain_view = ChainView::new(finalized, segmented, canonical_chain);
 
         self.tx
             .send(Some(chain_view.clone()))
@@ -147,6 +152,9 @@ impl ChainViewSyncService {
                 }
                 IngestionStateUpdate::Finalized(block) => {
                     chain_view.set_finalized_block(block).await;
+                }
+                IngestionStateUpdate::Segmented(block) => {
+                    chain_view.set_segmented_block(block).await;
                 }
                 IngestionStateUpdate::Ingested(_etag) => {
                     chain_view.refresh_recent().await?;

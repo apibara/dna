@@ -77,7 +77,7 @@ where
     I: BlockIngestion<Block = B>,
     B: Send + Sync + 'static,
 {
-    block_store: BlockStoreWriter<B>,
+    block_store: BlockStoreWriter,
     ingestion: Arc<I>,
 }
 

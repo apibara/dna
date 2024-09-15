@@ -9,6 +9,7 @@ pub static INGESTION_PREFIX_KEY: &str = "ingestion/";
 pub static INGESTED_KEY: &str = "ingestion/ingested";
 pub static STARTING_BLOCK_KEY: &str = "ingestion/starting_block";
 pub static FINALIZED_KEY: &str = "ingestion/finalized";
+pub static SEGMENTED_KEY: &str = "ingestion/segmented";
 
 #[derive(Debug)]
 pub struct IngestionStateClientError;
@@ -23,6 +24,7 @@ pub struct IngestionStateClient {
 pub enum IngestionStateUpdate {
     StartingBlock(u64),
     Finalized(u64),
+    Segmented(u64),
     Ingested(String),
 }
 
@@ -185,6 +187,41 @@ impl IngestionStateClient {
 
         Ok(())
     }
+
+    pub async fn get_segmented(&mut self) -> Result<Option<u64>, IngestionStateClientError> {
+        let response = self
+            .kv_client
+            .get(SEGMENTED_KEY)
+            .await
+            .change_context(IngestionStateClientError)
+            .attach_printable("failed to get segmented block")?;
+
+        let Some(kv) = response.kvs().first() else {
+            return Ok(None);
+        };
+
+        let value = String::from_utf8(kv.value().to_vec())
+            .change_context(IngestionStateClientError)
+            .attach_printable("failed to decode segmented block")?;
+
+        let block = value
+            .parse::<u64>()
+            .change_context(IngestionStateClientError)
+            .attach_printable("failed to parse segmented block")?;
+
+        Ok(Some(block))
+    }
+
+    pub async fn put_segmented(&mut self, block: u64) -> Result<(), IngestionStateClientError> {
+        let value = block.to_string();
+        self.kv_client
+            .put(SEGMENTED_KEY, value.as_bytes())
+            .await
+            .change_context(IngestionStateClientError)
+            .attach_printable("failed to put segmented block")?;
+
+        Ok(())
+    }
 }
 
 impl error_stack::Context for IngestionStateClientError {}
@@ -219,6 +256,12 @@ impl IngestionStateUpdate {
             Ok(Some(IngestionStateUpdate::Finalized(block)))
         } else if key.ends_with(INGESTED_KEY) {
             Ok(Some(IngestionStateUpdate::Ingested(value)))
+        } else if key.ends_with(SEGMENTED_KEY) {
+            let block = value
+                .parse::<u64>()
+                .change_context(IngestionStateClientError)
+                .attach_printable("failed to parse segmented block")?;
+            Ok(Some(IngestionStateUpdate::Segmented(block)))
         } else {
             Ok(None)
         }

@@ -5,7 +5,6 @@ mod service;
 use std::net::SocketAddr;
 
 use apibara_dna_protocol::dna::stream::dna_stream_file_descriptor_set;
-use apibara_etcd::EtcdClient;
 use error::ServerError;
 use error_stack::{Result, ResultExt};
 use service::StreamService;
@@ -13,10 +12,8 @@ use tokio_util::sync::CancellationToken;
 use tonic::transport::Server as TonicServer;
 use tracing::info;
 
-use crate::{
-    chain_view::chain_view_sync_loop, data_stream::ScannerFactory, file_cache::FileCache,
-    object_store::ObjectStore,
-};
+use crate::chain_view::ChainView;
+use crate::data_stream::ScannerFactory;
 
 pub use self::cli::ServerArgs;
 pub use self::service::StreamServiceOptions;
@@ -31,9 +28,7 @@ pub struct ServerOptions {
 
 pub async fn server_loop<SF>(
     scanner_factory: SF,
-    file_cache: FileCache,
-    etcd_client: EtcdClient,
-    object_store: ObjectStore,
+    chain_view: tokio::sync::watch::Receiver<Option<ChainView>>,
     options: ServerOptions,
     ct: CancellationToken,
 ) -> Result<(), ServerError>
@@ -49,14 +44,6 @@ where
         .change_context(ServerError)
         .attach_printable("failed to create gRPC reflection service")?;
 
-    let (chain_view, chain_view_sync) =
-        chain_view_sync_loop(file_cache, etcd_client, object_store.clone())
-            .await
-            .change_context(ServerError)
-            .attach_printable("failed to start chain view sync service")?;
-
-    let sync_handle = tokio::spawn(chain_view_sync.start(ct.clone()));
-
     let stream_service = StreamService::new(
         scanner_factory,
         chain_view,
@@ -66,27 +53,16 @@ where
 
     info!(address = %options.address, "starting DNA server");
 
-    let server_task = tokio::spawn(
-        TonicServer::builder()
-            .add_service(health_service)
-            .add_service(reflection_service)
-            .add_service(stream_service.into_service())
-            .serve_with_shutdown(options.address, {
-                let ct = ct.clone();
-                async move { ct.cancelled().await }
-            }),
-    );
-
-    tokio::select! {
-        server = server_task => {
-            server.change_context(ServerError)?.change_context(ServerError)?;
-        }
-        sync = sync_handle => {
-            sync.change_context(ServerError)?.change_context(ServerError)?;
-        }
-    }
-
-    Ok(())
+    TonicServer::builder()
+        .add_service(health_service)
+        .add_service(reflection_service)
+        .add_service(stream_service.into_service())
+        .serve_with_shutdown(options.address, {
+            let ct = ct.clone();
+            async move { ct.cancelled().await }
+        })
+        .await
+        .change_context(ServerError)
 }
 
 impl Default for ServerOptions {

@@ -17,21 +17,19 @@ use tracing::debug;
 
 use crate::store::{self, fragment};
 
-pub type BeaconchainBlockStoreReader = BlockStoreReader<fragment::Slot<store::block::Block>>;
-
 const MAX_FILTERS_LEN: usize = 5;
 
 pub struct BeaconChainScannerFactory {
-    store: BeaconchainBlockStoreReader,
+    store: BlockStoreReader,
 }
 
 pub struct BeaconChainScanner {
     filters: Vec<Filter>,
-    store: BeaconchainBlockStoreReader,
+    store: BlockStoreReader,
 }
 
 impl BeaconChainScannerFactory {
-    pub fn new(store: BeaconchainBlockStoreReader) -> Self {
+    pub fn new(store: BlockStoreReader) -> Self {
         Self { store }
     }
 }

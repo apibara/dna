@@ -94,7 +94,7 @@ where
 
         if let Some(_cursor) = self
             .chain_view
-            .get_segment_cursor()
+            .get_segmented_cursor()
             .await
             .change_context(DataStreamError)?
         {

@@ -1,9 +1,6 @@
-use apibara_dna_common::{
-    store::{
-        bitmap::BitmapMapBuilder,
-        index::{IndexGroup, TaggedIndex},
-    },
-    Cursor, Hash,
+use apibara_dna_common::store::{
+    bitmap::BitmapMapBuilder,
+    index::{IndexGroup, TaggedIndex},
 };
 use error_stack::{Result, ResultExt};
 use rkyv::{Archive, Deserialize, Serialize};
@@ -36,14 +33,6 @@ pub struct IndexTransactionByCreate;
 
 /// ValidatorStatus -> ValidatorIndex
 pub struct IndexValidatorByStatus;
-
-impl Block {
-    pub fn cursor(&self) -> Cursor {
-        let slot = self.header.slot;
-        let hash = Hash(self.header.state_root.0.to_vec());
-        Cursor::new(slot, hash)
-    }
-}
 
 pub struct BlockBuilder {
     pub header: BlockHeader,
@@ -149,15 +138,6 @@ impl BlockBuilder {
             .change_context(StoreError::Indexing)?;
 
         Ok(())
-    }
-}
-
-impl fragment::Slot<Block> {
-    pub fn cursor(&self) -> Cursor {
-        match self {
-            fragment::Slot::Missed { slot } => Cursor::new(*slot, Default::default()),
-            fragment::Slot::Proposed(block) => block.cursor(),
-        }
     }
 }
 
