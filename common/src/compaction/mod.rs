@@ -1,5 +1,6 @@
 mod cli;
 mod error;
+mod group;
 mod segment;
 mod service;
 
@@ -42,6 +43,7 @@ where
 
         // Load options from etcd and check if they match the current options.
         let mut options_store = OptionsStore::new(&etcd_client);
+
         if let Some(segment_size) = options_store
             .get_segment_size()
             .await
@@ -62,6 +64,26 @@ where
                 .await
                 .change_context(CompactionError)
                 .attach_printable("failed to set segment size options")?;
+        }
+
+        if let Some(group_size) = options_store
+            .get_group_size()
+            .await
+            .change_context(CompactionError)
+            .attach_printable("failed to get group size options")?
+        {
+            if group_size != options.group_size {
+                return Err(CompactionError)
+                    .attach_printable("group size changed")
+                    .attach_printable_lazy(|| format!("stored group size: {}", group_size))
+                    .attach_printable_lazy(|| format!("new group size: {}", options.group_size));
+            }
+        } else {
+            options_store
+                .set_group_size(options.group_size)
+                .await
+                .change_context(CompactionError)
+                .attach_printable("failed to set group size options")?;
         }
 
         let compaction_service = CompactionService::new(

@@ -10,6 +10,7 @@ pub static INGESTED_KEY: &str = "ingestion/ingested";
 pub static STARTING_BLOCK_KEY: &str = "ingestion/starting_block";
 pub static FINALIZED_KEY: &str = "ingestion/finalized";
 pub static SEGMENTED_KEY: &str = "ingestion/segmented";
+pub static GROUPED_KEY: &str = "ingestion/grouped";
 
 #[derive(Debug)]
 pub struct IngestionStateClientError;
@@ -25,6 +26,7 @@ pub enum IngestionStateUpdate {
     StartingBlock(u64),
     Finalized(u64),
     Segmented(u64),
+    Grouped(u64),
     Ingested(String),
 }
 
@@ -222,6 +224,41 @@ impl IngestionStateClient {
 
         Ok(())
     }
+
+    pub async fn get_grouped(&mut self) -> Result<Option<u64>, IngestionStateClientError> {
+        let response = self
+            .kv_client
+            .get(GROUPED_KEY)
+            .await
+            .change_context(IngestionStateClientError)
+            .attach_printable("failed to get grouped block")?;
+
+        let Some(kv) = response.kvs().first() else {
+            return Ok(None);
+        };
+
+        let value = String::from_utf8(kv.value().to_vec())
+            .change_context(IngestionStateClientError)
+            .attach_printable("failed to decode grouped block")?;
+
+        let block = value
+            .parse::<u64>()
+            .change_context(IngestionStateClientError)
+            .attach_printable("failed to parse grouped block")?;
+
+        Ok(Some(block))
+    }
+
+    pub async fn put_grouped(&mut self, block: u64) -> Result<(), IngestionStateClientError> {
+        let value = block.to_string();
+        self.kv_client
+            .put(GROUPED_KEY, value.as_bytes())
+            .await
+            .change_context(IngestionStateClientError)
+            .attach_printable("failed to put grouped block")?;
+
+        Ok(())
+    }
 }
 
 impl error_stack::Context for IngestionStateClientError {}
@@ -262,6 +299,12 @@ impl IngestionStateUpdate {
                 .change_context(IngestionStateClientError)
                 .attach_printable("failed to parse segmented block")?;
             Ok(Some(IngestionStateUpdate::Segmented(block)))
+        } else if key.ends_with(GROUPED_KEY) {
+            let block = value
+                .parse::<u64>()
+                .change_context(IngestionStateClientError)
+                .attach_printable("failed to parse grouped block")?;
+            Ok(Some(IngestionStateUpdate::Grouped(block)))
         } else {
             Ok(None)
         }

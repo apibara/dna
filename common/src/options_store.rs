@@ -4,6 +4,7 @@ use error_stack::{Result, ResultExt};
 pub static OPTIONS_PREFIX_KEY: &str = "options/";
 pub static CHAIN_SEGMENT_SIZE_KEY: &str = "options/chain_segment_size";
 pub static SEGMENT_SIZE_KEY: &str = "options/segment_size";
+pub static GROUP_SIZE_KEY: &str = "options/group_size";
 
 #[derive(Debug)]
 pub struct OptionsStoreError;
@@ -31,15 +32,10 @@ impl OptionsStore {
             .attach_printable("failed to set segment size")
     }
 
-    async fn set_usize(&mut self, key: &str, size: usize) -> Result<(), OptionsStoreError> {
-        let size = size.to_string();
-        self.client
-            .put(key, size.as_bytes())
+    pub async fn set_group_size(&mut self, size: usize) -> Result<(), OptionsStoreError> {
+        self.set_usize(GROUP_SIZE_KEY, size)
             .await
-            .change_context(OptionsStoreError)
-            .attach_printable("failed to set size")?;
-
-        Ok(())
+            .attach_printable("failed to set group size")
     }
 
     pub async fn get_chain_segment_size(&mut self) -> Result<Option<usize>, OptionsStoreError> {
@@ -52,6 +48,23 @@ impl OptionsStore {
         self.get_usize(SEGMENT_SIZE_KEY)
             .await
             .attach_printable("failed to get segment size")
+    }
+
+    pub async fn get_group_size(&mut self) -> Result<Option<usize>, OptionsStoreError> {
+        self.get_usize(GROUP_SIZE_KEY)
+            .await
+            .attach_printable("failed to get group size")
+    }
+
+    async fn set_usize(&mut self, key: &str, size: usize) -> Result<(), OptionsStoreError> {
+        let size = size.to_string();
+        self.client
+            .put(key, size.as_bytes())
+            .await
+            .change_context(OptionsStoreError)
+            .attach_printable("failed to set size")?;
+
+        Ok(())
     }
 
     async fn get_usize(&mut self, key: &str) -> Result<Option<usize>, OptionsStoreError> {

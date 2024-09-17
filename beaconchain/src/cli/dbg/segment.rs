@@ -83,13 +83,12 @@ impl DebugSegmentCommand {
 
                 for segment in segments {
                     let bytes = fs::read(&segment).change_context(BeaconChainError)?;
-                    let segment =
-                        rkyv::access::<rkyv::Archived<IndexSegment>, rkyv::rancor::Error>(&bytes)
-                            .change_context(BeaconChainError)
-                            .attach_printable("failed to deserialize segment")?;
+
+                    let segment = rkyv::from_bytes::<IndexSegment, rkyv::rancor::Error>(&bytes)
+                        .change_context(BeaconChainError)?;
 
                     builder
-                        .add_archived_segment(segment)
+                        .add_segment(&segment)
                         .change_context(BeaconChainError)
                         .attach_printable("failed to add segment to group")?;
                 }

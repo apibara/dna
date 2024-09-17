@@ -18,23 +18,28 @@ pub struct ChainView(Arc<RwLock<ChainViewInner>>);
 pub(crate) struct ChainViewInner {
     finalized: u64,
     segmented: Option<u64>,
+    grouped: Option<u64>,
     canonical: FullCanonicalChain,
     head_notify: Arc<Notify>,
     finalized_notify: Arc<Notify>,
+    segmented_notify: Arc<Notify>,
 }
 
 impl ChainView {
     pub(crate) fn new(
         finalized: u64,
         segmented: Option<u64>,
+        grouped: Option<u64>,
         canonical: FullCanonicalChain,
     ) -> Self {
         let inner = ChainViewInner {
             finalized,
             segmented,
+            grouped,
             canonical,
             head_notify: Arc::new(Notify::new()),
             finalized_notify: Arc::new(Notify::new()),
+            segmented_notify: Arc::new(Notify::new()),
         };
 
         Self(Arc::new(RwLock::new(inner)))
@@ -77,6 +82,14 @@ impl ChainView {
         notify.notified().await;
     }
 
+    pub async fn segmented_changed(&self) {
+        let notify = {
+            let inner = self.0.read().await;
+            inner.segmented_notify.clone()
+        };
+        notify.notified().await;
+    }
+
     pub async fn get_starting_cursor(&self) -> Result<Cursor, ChainViewError> {
         let inner = self.0.read().await;
         let starting_block = inner.canonical.starting_block;
@@ -94,9 +107,16 @@ impl ChainView {
         }
     }
 
-    pub async fn get_segment_group_cursor(&self) -> Result<Option<Cursor>, ChainViewError> {
-        // TODO: get it from etcd.
-        Ok(None)
+    pub async fn get_grouped_cursor(&self) -> Result<Option<Cursor>, ChainViewError> {
+        let inner = self.0.read().await;
+        let Some(grouped) = inner.grouped else {
+            return Ok(None);
+        };
+
+        match inner.canonical.get_canonical(grouped).await? {
+            CanonicalCursor::Canonical(cursor) => Ok(cursor.into()),
+            _ => Ok(Cursor::new_finalized(grouped).into()),
+        }
     }
 
     pub async fn get_segmented_cursor(&self) -> Result<Option<Cursor>, ChainViewError> {
@@ -120,6 +140,12 @@ impl ChainView {
     pub(crate) async fn set_segmented_block(&self, block: u64) {
         let mut inner = self.0.write().await;
         inner.segmented = Some(block);
+        inner.segmented_notify.notify_waiters();
+    }
+
+    pub(crate) async fn set_grouped_block(&self, block: u64) {
+        let mut inner = self.0.write().await;
+        inner.grouped = Some(block);
     }
 
     pub(crate) async fn refresh_recent(&self) -> Result<(), ChainViewError> {

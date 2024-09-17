@@ -1,14 +1,14 @@
 use std::collections::HashMap;
 
 use error_stack::{Result, ResultExt};
-use rkyv::{rancor::Strategy, Archive, Deserialize, Serialize};
+use rkyv::{Archive, Deserialize, Serialize};
 
 use crate::{store::bitmap::BitmapMap, Cursor};
 
 use super::{
     bitmap::{ArchivedBitmapMap, BitmapMapBuilder},
     index::IndexGroup,
-    segment::{ArchivedSegment, Segment},
+    segment::Segment,
 };
 
 #[derive(Debug, Clone)]
@@ -27,23 +27,9 @@ pub struct SegmentGroup {
 pub struct SegmentGroupBuilder {
     first_block: Option<Cursor>,
     block_indexes: HashMap<u8, RawBitmapMapBuilder>,
-    deserializer: rkyv::de::Pool,
 }
 
 impl SegmentGroupBuilder {
-    pub fn add_archived_segment(
-        &mut self,
-        segment: &ArchivedSegment<IndexGroup>,
-    ) -> Result<(), SegmentGroupError> {
-        let segment = segment
-            .deserialize(Strategy::<_, rkyv::rancor::Error>::wrap(
-                &mut self.deserializer,
-            ))
-            .change_context(SegmentGroupError)
-            .attach_printable("failed to deserialize segment")?;
-        self.add_segment(&segment)
-    }
-
     pub fn add_segment(&mut self, segment: &Segment<IndexGroup>) -> Result<(), SegmentGroupError> {
         if self.first_block.is_none() {
             self.first_block = Some(segment.first_block.clone());

@@ -84,7 +84,7 @@ where
     ) -> Result<(), DataStreamError> {
         if let Some(_cursor) = self
             .chain_view
-            .get_segment_group_cursor()
+            .get_grouped_cursor()
             .await
             .change_context(DataStreamError)?
         {

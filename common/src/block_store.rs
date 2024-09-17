@@ -5,12 +5,13 @@ use crate::{
     file_cache::{FileCache, Mmap},
     object_store::{GetOptions, ObjectETag, ObjectStore, PutOptions},
     rkyv::Serializable,
-    store::segment::SerializedSegment,
+    store::{group::SegmentGroup, segment::SerializedSegment},
     Cursor,
 };
 
 static BLOCK_PREFIX: &str = "block";
 static SEGMENT_PREFIX: &str = "segment";
+static GROUP_PREFIX: &str = "group";
 
 #[derive(Debug)]
 pub struct BlockStoreError;
@@ -62,6 +63,49 @@ impl BlockStoreReader {
                 .await
                 .change_context(BlockStoreError)
                 .attach_printable("failed to insert block into cache")
+                .attach_printable_lazy(|| format!("key: {key}"))
+        }
+    }
+
+    pub async fn get_index_segment(&self, first_cursor: &Cursor) -> Result<Mmap, BlockStoreError> {
+        self.get_segment(first_cursor, "index").await
+    }
+
+    #[tracing::instrument(
+        name = "block_store_get_segment",
+        skip_all,
+        err(Debug),
+        fields(cache_hit)
+    )]
+    pub async fn get_segment(
+        &self,
+        first_cursor: &Cursor,
+        name: impl Into<String>,
+    ) -> Result<Mmap, BlockStoreError> {
+        let current_span = tracing::Span::current();
+        let name = name.into();
+        let key = format_segment_key(first_cursor, &name);
+
+        if let Some(existing) = self.file_cache.get(&key).await {
+            current_span.record("cache_hit", 1);
+
+            Ok(existing)
+        } else {
+            current_span.record("cache_hit", 0);
+
+            let response = self
+                .client
+                .get(&key, GetOptions::default())
+                .await
+                .change_context(BlockStoreError)
+                .attach_printable("failed to get segment")
+                .attach_printable_lazy(|| format!("key: {key}"))?;
+
+            self.file_cache
+                .insert(&key, response.body)
+                .await
+                .change_context(BlockStoreError)
+                .attach_printable("failed to insert segment into cache")
                 .attach_printable_lazy(|| format!("key: {key}"))
         }
     }
@@ -119,6 +163,32 @@ impl BlockStoreWriter {
 
         Ok(response.etag)
     }
+
+    pub async fn put_group(
+        &self,
+        first_cursor: &Cursor,
+        group: &SegmentGroup,
+    ) -> Result<ObjectETag, BlockStoreError> {
+        let serialized = rkyv::to_bytes::<rkyv::rancor::Error>(group)
+            .change_context(BlockStoreError)
+            .attach_printable("failed to serialize segment group")?;
+
+        let bytes = Bytes::copy_from_slice(serialized.as_slice());
+
+        let response = self
+            .client
+            .put(
+                &format_group_key(first_cursor),
+                bytes,
+                PutOptions::default(),
+            )
+            .await
+            .change_context(BlockStoreError)
+            .attach_printable("failed to put segment group")
+            .attach_printable_lazy(|| format!("cursor: {}", first_cursor))?;
+
+        Ok(response.etag)
+    }
 }
 
 fn format_block_key(cursor: &Cursor) -> String {
@@ -127,6 +197,10 @@ fn format_block_key(cursor: &Cursor) -> String {
 
 fn format_segment_key(first_block: &Cursor, name: &str) -> String {
     format!("{}/{:0>10}/{}", SEGMENT_PREFIX, first_block.number, name)
+}
+
+fn format_group_key(first_block: &Cursor) -> String {
+    format!("{}/{:0>10}/index", GROUP_PREFIX, first_block.number)
 }
 
 impl error_stack::Context for BlockStoreError {}

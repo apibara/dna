@@ -15,22 +15,44 @@ pub struct SegmentService<B>
 where
     B: SegmentBuilder,
 {
-    pub(crate) builder: B,
-    pub(crate) segment_size: usize,
-    pub(crate) chain_view: ChainView,
-    pub(crate) block_store_reader: BlockStoreReader,
-    pub(crate) block_store_writer: BlockStoreWriter,
-    pub(crate) state_client: IngestionStateClient,
+    builder: B,
+    segment_size: usize,
+    chain_view: ChainView,
+    block_store_reader: BlockStoreReader,
+    block_store_writer: BlockStoreWriter,
+    state_client: IngestionStateClient,
 }
 
 impl<B> SegmentService<B>
 where
     B: SegmentBuilder + Send + Sync + 'static,
 {
+    pub fn new(
+        builder: B,
+        segment_size: usize,
+        chain_view: ChainView,
+        block_store_reader: BlockStoreReader,
+        block_store_writer: BlockStoreWriter,
+        state_client: IngestionStateClient,
+    ) -> Self {
+        Self {
+            builder,
+            segment_size,
+            chain_view,
+            block_store_reader,
+            block_store_writer,
+            state_client,
+        }
+    }
+
     pub async fn start(mut self, ct: CancellationToken) -> Result<(), CompactionError> {
         let chain_view = self.chain_view;
 
         loop {
+            if ct.is_cancelled() {
+                return Ok(());
+            }
+
             let first_block_in_segment = if let Some(cursor) = chain_view
                 .get_segmented_cursor()
                 .await
@@ -66,7 +88,7 @@ where
                 next_cursor = %first_block_in_segment,
                 head = %head,
                 finalized = %finalized,
-                "compaction: tick"
+                "compaction: segment tick"
             );
 
             let latest_available = u64::min(finalized.number, head.number);

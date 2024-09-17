@@ -82,6 +82,11 @@ impl ChainViewSyncService {
             .await
             .change_context(ChainViewError)?;
 
+        let grouped = ingestion_state_client
+            .get_grouped()
+            .await
+            .change_context(ChainViewError)?;
+
         loop {
             if ct.is_cancelled() {
                 return Ok(());
@@ -120,7 +125,7 @@ impl ChainViewSyncService {
         )
         .await?;
 
-        let chain_view = ChainView::new(finalized, segmented, canonical_chain);
+        let chain_view = ChainView::new(finalized, segmented, grouped, canonical_chain);
 
         self.tx
             .send(Some(chain_view.clone()))
@@ -155,6 +160,9 @@ impl ChainViewSyncService {
                 }
                 IngestionStateUpdate::Segmented(block) => {
                     chain_view.set_segmented_block(block).await;
+                }
+                IngestionStateUpdate::Grouped(block) => {
+                    chain_view.set_grouped_block(block).await;
                 }
                 IngestionStateUpdate::Ingested(_etag) => {
                     chain_view.refresh_recent().await?;

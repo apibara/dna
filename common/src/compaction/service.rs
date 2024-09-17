@@ -6,6 +6,7 @@ use tracing::debug;
 use crate::{
     block_store::{BlockStoreReader, BlockStoreWriter},
     chain_view::ChainView,
+    compaction::group::SegmentGroupService,
     file_cache::{FileCache, Mmap},
     ingestion::IngestionStateClient,
     object_store::ObjectStore,
@@ -25,6 +26,8 @@ pub trait SegmentBuilder: Clone {
 pub struct CompactionServiceOptions {
     /// How many blocks in a single segment.
     pub segment_size: usize,
+    /// How many segments in a single segment group.
+    pub group_size: usize,
 }
 
 pub struct CompactionService<B>
@@ -85,16 +88,26 @@ where
             };
         };
 
-        let segment_service = SegmentService {
-            builder: self.builder,
-            segment_size: self.options.segment_size,
-            chain_view,
-            block_store_reader: self.block_store_reader.clone(),
-            block_store_writer: self.block_store_writer.clone(),
-            state_client: self.state_client.clone(),
-        };
+        let segment_service = SegmentService::new(
+            self.builder,
+            self.options.segment_size,
+            chain_view.clone(),
+            self.block_store_reader.clone(),
+            self.block_store_writer.clone(),
+            self.state_client.clone(),
+        );
+
+        let group_service = SegmentGroupService::new(
+            self.options.segment_size,
+            self.options.group_size,
+            chain_view.clone(),
+            self.block_store_reader.clone(),
+            self.block_store_writer.clone(),
+            self.state_client.clone(),
+        );
 
         let segment_service_handle = tokio::spawn(segment_service.start(ct.clone()));
+        let group_service_handle = tokio::spawn(group_service.start(ct.clone()));
 
         let lock_handle = lock_keep_alive_loop(lock, ct.clone());
 
@@ -106,6 +119,9 @@ where
                 Ok(())
             }
             _ = segment_service_handle => {
+                Ok(())
+            }
+            _ = group_service_handle => {
                 Ok(())
             }
         }
@@ -134,7 +150,8 @@ async fn lock_keep_alive_loop(
 impl Default for CompactionServiceOptions {
     fn default() -> Self {
         Self {
-            segment_size: 10_000,
+            segment_size: 1_000,
+            group_size: 100,
         }
     }
 }
