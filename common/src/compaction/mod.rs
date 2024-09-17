@@ -1,5 +1,6 @@
 mod cli;
 mod error;
+mod segment;
 mod service;
 
 use apibara_etcd::{EtcdClient, LockOptions};
@@ -22,7 +23,7 @@ pub async fn compaction_service_loop<B>(
     ct: CancellationToken,
 ) -> Result<(), CompactionError>
 where
-    B: SegmentBuilder,
+    B: SegmentBuilder + Send + Sync + 'static,
 {
     let mut lock_client = etcd_client.lock_client(LockOptions::default());
 
