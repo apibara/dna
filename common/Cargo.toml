@@ -39,6 +39,7 @@ tonic-health.workspace = true
 tonic-reflection.workspace = true
 tracing.workspace = true
 walkdir.workspace = true
+zstd.workspace = true
 
 [dev-dependencies]
 tempdir.workspace = true

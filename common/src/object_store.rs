@@ -3,6 +3,7 @@ use aws_sdk_s3::{config::http::HttpResponse, error::SdkError};
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use error_stack::{Report, Result, ResultExt};
 use rkyv::util::AlignedVec;
+use tracing::debug;
 
 #[derive(Debug)]
 pub enum ObjectStoreError {
@@ -151,16 +152,14 @@ impl ObjectStore {
             .change_context(ObjectStoreError::Request)
             .attach_printable("failed to read object body")?;
 
-        let mut aligned_body = AlignedVec::with_capacity(body.remaining());
-        aligned_body
-            .extend_from_reader(&mut body.reader())
+        let decompressed = BytesMut::with_capacity(body.remaining());
+        let mut writer = decompressed.writer();
+        zstd::stream::copy_decode(&mut body.reader(), &mut writer)
             .change_context(ObjectStoreError::Request)?;
+        let decompressed = writer.into_inner();
 
-        let checksum = aligned_body.as_slice()[aligned_body.len() - 4..]
-            .as_ref()
-            .get_u32();
-
-        let data = aligned_body.as_slice()[..aligned_body.len() - 4].as_ref();
+        let checksum = decompressed[decompressed.len() - 4..].as_ref().get_u32();
+        let data = decompressed[..decompressed.len() - 4].as_ref();
 
         if crc32fast::hash(data) != checksum {
             return Err(ObjectStoreError::ChecksumMismatch)
@@ -168,7 +167,10 @@ impl ObjectStore {
                 .attach_printable_lazy(|| format!("key: {key}"));
         }
 
-        aligned_body.resize(aligned_body.len() - 4, 0);
+        let mut aligned_body = AlignedVec::with_capacity(data.len());
+        aligned_body
+            .extend_from_reader(&mut data.reader())
+            .change_context(ObjectStoreError::Request)?;
 
         Ok(GetResult {
             body: aligned_body,
@@ -176,25 +178,40 @@ impl ObjectStore {
         })
     }
 
-    #[tracing::instrument(name = "object_store_put", skip(self, body, options))]
+    #[tracing::instrument(name = "object_store_put", skip_all, fields(key, compression_ratio))]
     pub async fn put(
         &self,
         path: &str,
         body: Bytes,
         options: PutOptions,
     ) -> Result<PutResult, ObjectStoreError> {
+        let current_span = tracing::Span::current();
+
         let key = self.full_key(path);
+        let size_before = body.len();
 
         let checksum = crc32fast::hash(&body);
         let mut body = BytesMut::from(body);
         body.put_u32(checksum);
+
+        let mut compressed = BytesMut::with_capacity(body.len()).writer();
+        zstd::stream::copy_encode(body.reader(), &mut compressed, 0)
+            .change_context(ObjectStoreError::Request)?;
+        let compressed = compressed.into_inner();
+
+        let size_after = compressed.len();
+        let compression_ratio = size_before as f64 / size_after as f64;
+
+        current_span.record("key", &key);
+        current_span.record("compression_ratio", compression_ratio);
+        debug!(compression_ratio, key, "compressed object");
 
         let response = self
             .client
             .put_object()
             .bucket(&self.bucket)
             .key(&key)
-            .body(body.freeze().into())
+            .body(compressed.freeze().into())
             .customize()
             .mutate_request(move |request| match &options.mode {
                 PutMode::Overwrite => {}
@@ -411,7 +428,7 @@ mod tests {
 
         assert_eq!(
             put_res.etag,
-            ObjectETag("\"44c1a28248342a1327292095da04af54\"".to_string())
+            ObjectETag("\"600335e986d6c8ce1e348d20d6d16045\"".to_string())
         );
 
         let get_res = client.get("test", GetOptions::default()).await.unwrap();
