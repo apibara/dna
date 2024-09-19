@@ -64,13 +64,3 @@ where
         .await
         .change_context(ServerError)
 }
-
-impl Default for ServerOptions {
-    fn default() -> Self {
-        let address = "0.0.0.0:7007".parse().expect("failed to parse address");
-        Self {
-            address,
-            stream_service_options: Default::default(),
-        }
-    }
-}

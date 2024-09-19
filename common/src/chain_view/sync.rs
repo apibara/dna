@@ -125,7 +125,30 @@ impl ChainViewSyncService {
         )
         .await?;
 
-        let chain_view = ChainView::new(finalized, segmented, grouped, canonical_chain);
+        let segment_size = options_store
+            .get_segment_size()
+            .await
+            .change_context(ChainViewError)
+            .attach_printable("failed to get segment size options")?
+            .ok_or(ChainViewError)
+            .attach_printable("segment size option not found")?;
+
+        let group_size = options_store
+            .get_group_size()
+            .await
+            .change_context(ChainViewError)
+            .attach_printable("failed to get group size options")?
+            .ok_or(ChainViewError)
+            .attach_printable("group size option not found")?;
+
+        let chain_view = ChainView::new(
+            finalized,
+            segmented,
+            grouped,
+            segment_size as u64,
+            group_size as u64,
+            canonical_chain,
+        );
 
         self.tx
             .send(Some(chain_view.clone()))

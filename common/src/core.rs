@@ -25,6 +25,14 @@ impl Cursor {
         }
     }
 
+    pub fn strict_before(&self, other: &Self) -> bool {
+        self.number < other.number
+    }
+
+    pub fn strict_after(&self, other: &Self) -> bool {
+        self.number > other.number
+    }
+
     pub fn new(number: u64, hash: Hash) -> Self {
         Self { number, hash }
     }

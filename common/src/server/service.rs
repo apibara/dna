@@ -35,7 +35,6 @@ where
     stream_semaphore: Arc<Semaphore>,
     chain_view: tokio::sync::watch::Receiver<Option<ChainView>>,
     ct: CancellationToken,
-    _options: StreamServiceOptions,
 }
 
 impl<SF> StreamService<SF>
@@ -54,7 +53,6 @@ where
             stream_semaphore,
             chain_view,
             ct,
-            _options: options,
         }
     }
 
@@ -198,21 +196,13 @@ impl ChainViewExt for ChainView {
                 "cursor {} is after the last ingested block {}",
                 cursor.number, last.number
             ))),
-            CanonicalCursor::BeforeAvailable(cursor) => {
+            CanonicalCursor::BeforeAvailable(first) => {
                 Err(tonic::Status::invalid_argument(format!(
                     "cursor {} is before the first ingested block {}",
-                    cursor.number, cursor.number
+                    cursor.number, first.number
                 )))
             }
             CanonicalCursor::Canonical(_) => Ok(()),
-        }
-    }
-}
-
-impl Default for StreamServiceOptions {
-    fn default() -> Self {
-        Self {
-            max_concurrent_streams: 1_000,
         }
     }
 }

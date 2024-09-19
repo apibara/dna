@@ -55,7 +55,7 @@ impl StartCommand {
         );
 
         let ingestion_handle = if self.ingestion.ingestion_enabled {
-            let ingestion_options = self.ingestion.to_ingestion_options();
+            let ingestion_options = self.ingestion.to_ingestion_service_options();
             let ingestion = BeaconChainBlockIngestion::new(provider);
             tokio::spawn(ingestion_service_loop(
                 ingestion,

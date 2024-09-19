@@ -5,12 +5,14 @@ use apibara_dna_protocol::dna::stream::{
     StreamDataResponse,
 };
 use error_stack::{Result, ResultExt};
+use futures::FutureExt;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, warn};
 
 use crate::{
-    chain_view::{ChainView, NextCursor},
+    chain_view::{CanonicalCursor, ChainView, NextCursor},
+    data_stream::{ScannerAction, SegmentBlock},
     Cursor,
 };
 
@@ -82,56 +84,63 @@ where
         tx: &mpsc::Sender<DataStreamMessage>,
         ct: &CancellationToken,
     ) -> Result<(), DataStreamError> {
-        if let Some(_cursor) = self
+        let next_cursor = match self
             .chain_view
-            .get_grouped_cursor()
+            .get_next_cursor(&self.current)
             .await
             .change_context(DataStreamError)?
         {
-            self.heartbeat_interval.reset();
-            todo!();
-        }
+            NextCursor::Continue(cursor) => cursor,
+            NextCursor::Invalidate(cursor) => {
+                debug!(cursor = %cursor, "invalidating data");
 
-        if let Some(_cursor) = self
-            .chain_view
-            .get_segmented_cursor()
-            .await
-            .change_context(DataStreamError)?
-        {
-            self.heartbeat_interval.reset();
-            todo!();
-        }
+                // TODO: collect removed blocks.
+                let invalidate = Message::Invalidate(Invalidate {
+                    ..Default::default()
+                });
 
-        let head = self
-            .chain_view
-            .get_head()
-            .await
-            .change_context(DataStreamError)?;
+                let Some(Ok(permit)) = ct.run_until_cancelled(tx.reserve()).await else {
+                    return Ok(());
+                };
 
-        let at_head = self.current.as_ref().map(|c| c == &head).unwrap_or(false);
+                permit.send(Ok(StreamDataResponse {
+                    message: Some(invalidate),
+                }));
 
-        if !at_head {
-            self.heartbeat_interval.reset();
-            return self.tick_single(tx, ct).await;
-        }
+                self.heartbeat_interval.reset();
+                self.current = Some(cursor);
 
-        debug!("head reached");
-
-        tokio::select! {
-            _ = ct.cancelled() => Ok(()),
-            _ = self.heartbeat_interval.tick() => {
-                debug!("heartbeat");
-                self.send_heartbeat_message(tx, ct).await
+                return Ok(());
             }
-            _ = self.chain_view.head_changed() => {
-                debug!("head changed");
-                Ok(())
-            },
-            _ = self.chain_view.finalized_changed() => {
-                debug!("finalized changed");
-                self.send_finalize_message(tx, ct).await
-            },
+            NextCursor::AtHead => {
+                debug!("head reached. waiting for new head");
+                tokio::select! {
+                    _ = ct.cancelled() => return Ok(()),
+                    _ = self.heartbeat_interval.tick() => {
+                        debug!("heartbeat");
+                        return self.send_heartbeat_message(tx, ct).await;
+                    }
+                    _ = self.chain_view.head_changed() => {
+                        debug!("head changed");
+                        return Ok(());
+                    },
+                    _ = self.chain_view.finalized_changed() => {
+                        debug!("finalized changed");
+                        return self.send_finalize_message(tx, ct).await;
+                    },
+                }
+            }
+        };
+
+        if self
+            .chain_view
+            .has_segment_for_block(next_cursor.number)
+            .await
+        {
+            return self.tick_segment(next_cursor, tx, ct).await;
         }
+
+        self.tick_single(next_cursor, tx, ct).await
     }
 
     async fn send_heartbeat_message(
@@ -174,65 +183,139 @@ where
         Ok(())
     }
 
-    async fn tick_single(
+    async fn tick_segment(
         &mut self,
+        cursor: Cursor,
         tx: &mpsc::Sender<DataStreamMessage>,
         ct: &CancellationToken,
     ) -> Result<(), DataStreamError> {
+        let mut current = cursor.clone();
+
+        let segment_size = self.chain_view.get_segment_size().await;
+        let segment_start = self
+            .chain_view
+            .get_segment_start_block(current.number)
+            .await;
+        let segment_end = self.chain_view.get_segment_end_block(current.number).await;
+
+        let starting_block_number = cursor.number;
+        // Notice that we could be starting from anywhere in the segment.
+        let base_offset = current.number - segment_start;
+
+        let mut blocks = vec![SegmentBlock {
+            cursor: self.current.clone(),
+            end_cursor: current.clone(),
+            offset: base_offset as usize,
+        }];
+
+        for i in 1..segment_size {
+            if current.number >= segment_end {
+                break;
+            }
+
+            let CanonicalCursor::Canonical(next_cursor) = self
+                .chain_view
+                .get_canonical(starting_block_number + i)
+                .await
+                .change_context(DataStreamError)?
+            else {
+                return Err(DataStreamError).attach_printable("missing canonical block");
+            };
+
+            blocks.push(SegmentBlock {
+                cursor: current.clone().into(),
+                end_cursor: next_cursor.clone(),
+                offset: (base_offset + i) as usize,
+            });
+
+            current = next_cursor;
+        }
+
+        let segment_cursor = Cursor::new_finalized(segment_start);
+
+        self.scanner
+            .scan_segment(segment_cursor, blocks, |data| async move {
+                use apibara_dna_protocol::dna::stream::Cursor as ProtoCursor;
+
+                let Some(Ok(permit)) = ct.run_until_cancelled(tx.reserve()).await else {
+                    return ScannerAction::Stop;
+                };
+
+                let proto_cursor: Option<ProtoCursor> = data.cursor.map(Into::into);
+                let proto_end_cursor: Option<ProtoCursor> = Some(data.end_cursor.into());
+
+                let data = Message::Data(Data {
+                    cursor: proto_cursor.clone(),
+                    end_cursor: proto_end_cursor.clone(),
+                    data: data.data,
+                    finality: DataFinality::Finalized as i32,
+                });
+
+                permit.send(Ok(StreamDataResponse {
+                    message: Some(data),
+                }));
+
+                ScannerAction::Continue
+            })
+            .boxed()
+            .await
+            .change_context(DataStreamError)?;
+
+        self.heartbeat_interval.reset();
+        self.current = current.into();
+
+        Ok(())
+    }
+
+    async fn tick_single(
+        &mut self,
+        cursor: Cursor,
+        tx: &mpsc::Sender<DataStreamMessage>,
+        ct: &CancellationToken,
+    ) -> Result<(), DataStreamError> {
+        use apibara_dna_protocol::dna::stream::Cursor as ProtoCursor;
+
         debug!("tick: single block");
         let Some(Ok(permit)) = ct.run_until_cancelled(tx.reserve()).await else {
             return Ok(());
         };
 
-        match self
+        debug!(cursor = ?self.current, end_cursor = %cursor, "sending data");
+
+        let proto_cursor: Option<ProtoCursor> = self.current.clone().map(Into::into);
+        let proto_end_cursor: Option<ProtoCursor> = Some(cursor.clone().into());
+
+        let finalized = self
             .chain_view
-            .get_next_cursor(&self.current)
+            .get_finalized_cursor()
             .await
-            .change_context(DataStreamError)?
-        {
-            NextCursor::Continue(cursor) => {
-                use apibara_dna_protocol::dna::stream::Cursor as ProtoCursor;
+            .change_context(DataStreamError)?;
 
-                debug!(cursor = ?self.current, end_cursor = %cursor, "sending data");
+        let finality = if finalized.strict_after(&cursor) {
+            DataFinality::Finalized
+        } else {
+            DataFinality::Accepted
+        };
 
-                let proto_cursor: Option<ProtoCursor> = self.current.clone().map(Into::into);
-                let proto_end_cursor: Option<ProtoCursor> = Some(cursor.clone().into());
-
-                self.scanner
-                    .scan_single(&cursor, |blocks| {
-                        let data = Message::Data(Data {
-                            cursor: proto_cursor.clone(),
-                            end_cursor: proto_end_cursor.clone(),
-                            data: blocks,
-                            ..Default::default()
-                        });
-
-                        permit.send(Ok(StreamDataResponse {
-                            message: Some(data),
-                        }));
-                    })
-                    .await
-                    .change_context(DataStreamError)
-                    .attach_printable("failed to scan single block")?;
-
-                self.current = Some(cursor);
-            }
-            NextCursor::Invalidate(cursor) => {
-                debug!(cursor = %cursor, "invalidating data");
-
-                // TODO: collect removed blocks.
-                let invalidate = Message::Invalidate(Invalidate {
-                    ..Default::default()
+        self.scanner
+            .scan_single(&cursor, |blocks| {
+                let data = Message::Data(Data {
+                    cursor: proto_cursor.clone(),
+                    end_cursor: proto_end_cursor.clone(),
+                    data: blocks,
+                    finality: finality.into(),
                 });
 
                 permit.send(Ok(StreamDataResponse {
-                    message: Some(invalidate),
+                    message: Some(data),
                 }));
+            })
+            .await
+            .change_context(DataStreamError)
+            .attach_printable("failed to scan single block")?;
 
-                self.current = Some(cursor);
-            }
-            NextCursor::AtHead => {}
-        }
+        self.heartbeat_interval.reset();
+        self.current = Some(cursor);
 
         Ok(())
     }

@@ -42,7 +42,7 @@ pub struct IngestionArgs {
 }
 
 impl IngestionArgs {
-    pub fn to_ingestion_options(&self) -> super::IngestionServiceOptions {
+    pub fn to_ingestion_service_options(&self) -> super::IngestionServiceOptions {
         super::IngestionServiceOptions {
             max_concurrent_tasks: self.ingestion_max_concurrent_tasks,
             chain_segment_size: self.ingestion_chain_segment_size,

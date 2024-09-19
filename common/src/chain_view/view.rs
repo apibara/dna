@@ -20,6 +20,8 @@ pub(crate) struct ChainViewInner {
     segmented: Option<u64>,
     grouped: Option<u64>,
     canonical: FullCanonicalChain,
+    segment_size: u64,
+    group_size: u64,
     head_notify: Arc<Notify>,
     finalized_notify: Arc<Notify>,
     segmented_notify: Arc<Notify>,
@@ -30,6 +32,8 @@ impl ChainView {
         finalized: u64,
         segmented: Option<u64>,
         grouped: Option<u64>,
+        segment_size: u64,
+        group_size: u64,
         canonical: FullCanonicalChain,
     ) -> Self {
         let inner = ChainViewInner {
@@ -37,12 +41,37 @@ impl ChainView {
             segmented,
             grouped,
             canonical,
+            segment_size,
+            group_size,
             head_notify: Arc::new(Notify::new()),
             finalized_notify: Arc::new(Notify::new()),
             segmented_notify: Arc::new(Notify::new()),
         };
 
         Self(Arc::new(RwLock::new(inner)))
+    }
+
+    pub async fn get_segment_size(&self) -> u64 {
+        self.0.read().await.segment_size
+    }
+
+    pub async fn get_group_size(&self) -> u64 {
+        self.0.read().await.group_size
+    }
+
+    pub async fn get_segment_start_block(&self, block: u64) -> u64 {
+        let inner = self.0.read().await;
+        inner.get_segment_start_block(block)
+    }
+
+    pub async fn get_segment_end_block(&self, block: u64) -> u64 {
+        let inner = self.0.read().await;
+        inner.get_segment_end_block(block)
+    }
+
+    pub async fn has_segment_for_block(&self, block: u64) -> bool {
+        let inner = self.0.read().await;
+        inner.has_segment_for_block(block)
     }
 
     pub async fn get_next_cursor(
@@ -160,5 +189,27 @@ impl ChainView {
         }
 
         Ok(())
+    }
+}
+
+impl ChainViewInner {
+    pub fn get_segment_start_block(&self, block: u64) -> u64 {
+        let starting_block = self.canonical.starting_block;
+        let blocks = block - starting_block;
+        let segment_count = blocks / self.segment_size;
+        starting_block + segment_count * self.segment_size
+    }
+
+    pub fn get_segment_end_block(&self, block: u64) -> u64 {
+        self.get_segment_start_block(block) + self.segment_size - 1
+    }
+
+    pub fn has_segment_for_block(&self, block: u64) -> bool {
+        let Some(segmented) = self.segmented else {
+            return false;
+        };
+
+        let segment_end = self.get_segment_end_block(block);
+        segment_end <= segmented
     }
 }

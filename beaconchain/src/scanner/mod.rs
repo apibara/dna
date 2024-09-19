@@ -5,7 +5,8 @@ use std::ops::RangeInclusive;
 
 use apibara_dna_common::{
     block_store::BlockStoreReader,
-    data_stream::{Scanner, ScannerError, ScannerFactory},
+    data_stream::{Scanner, ScannerAction, ScannerError, ScannerFactory, SegmentBlock, SendData},
+    store::segment::IndexSegment,
     Cursor,
 };
 use apibara_dna_protocol::beaconchain;
@@ -13,9 +14,15 @@ use error_stack::{Result, ResultExt};
 use filter::{Filter, FilteredDataExt};
 use prost::Message;
 use roaring::RoaringBitmap;
-use tracing::debug;
+use tracing::{debug, field};
 
-use crate::store::{self, fragment};
+use crate::{
+    segment::{BlobSegment, HeaderSegment, TransactionSegment, ValidatorSegment},
+    store::{
+        self,
+        fragment::{self, ArchivedSlot},
+    },
+};
 
 const MAX_FILTERS_LEN: usize = 5;
 
@@ -80,6 +87,223 @@ impl Scanner for BeaconChainScanner {
         _bitmap: &mut RoaringBitmap,
         _block_range: RangeInclusive<u32>,
     ) -> Result<(), ScannerError> {
+        todo!();
+    }
+
+    async fn scan_segment<S, SR>(
+        &mut self,
+        segment_cursor: Cursor,
+        blocks: Vec<SegmentBlock>,
+        cb: S,
+    ) -> Result<(), ScannerError>
+    where
+        S: Fn(SendData) -> SR + Send,
+        SR: futures::Future<Output = ScannerAction> + Send,
+    {
+        debug!("scanning segment");
+
+        // TODO: avoid loading segments if they're not needed by the filters.
+        // TODO: refactor scanner to share logic between single and segment.
+
+        let index_segment = self
+            .store
+            .get_index_segment(&segment_cursor)
+            .await
+            .change_context(ScannerError)
+            .attach_printable("failed to get index segment")?;
+
+        let index =
+            rkyv::access::<rkyv::Archived<IndexSegment>, rkyv::rancor::Error>(&index_segment)
+                .change_context(ScannerError)
+                .attach_printable("failed to deserialize index segment")?;
+
+        let header_segment = self
+            .store
+            .get_segment(&segment_cursor, "header")
+            .await
+            .change_context(ScannerError)
+            .attach_printable("failed to get header segment")?;
+        let header_segment =
+            rkyv::access::<rkyv::Archived<HeaderSegment>, rkyv::rancor::Error>(&header_segment)
+                .change_context(ScannerError)
+                .attach_printable("failed to deserialize header segment")?;
+
+        let transaction_segment = self
+            .store
+            .get_segment(&segment_cursor, "transaction")
+            .await
+            .change_context(ScannerError)
+            .attach_printable("failed to get transaction segment")?;
+        let transaction_segment = rkyv::access::<
+            rkyv::Archived<TransactionSegment>,
+            rkyv::rancor::Error,
+        >(&transaction_segment)
+        .change_context(ScannerError)
+        .attach_printable("failed to deserialize transaction segment")?;
+
+        let validator_segment = self
+            .store
+            .get_segment(&segment_cursor, "validator")
+            .await
+            .change_context(ScannerError)
+            .attach_printable("failed to get validator segment")?;
+        let validator_segment =
+            rkyv::access::<rkyv::Archived<ValidatorSegment>, rkyv::rancor::Error>(
+                &validator_segment,
+            )
+            .change_context(ScannerError)
+            .attach_printable("failed to deserialize validator segment")?;
+
+        let blob_segment = self
+            .store
+            .get_segment(&segment_cursor, "blob")
+            .await
+            .change_context(ScannerError)
+            .attach_printable("failed to get blob segment")?;
+        let blob_segment =
+            rkyv::access::<rkyv::Archived<BlobSegment>, rkyv::rancor::Error>(&blob_segment)
+                .change_context(ScannerError)
+                .attach_printable("failed to deserialize blob segment")?;
+
+        for block in blocks {
+            let span = tracing::info_span!(
+                "stream_send_block",
+                cursor = %block.end_cursor,
+                data_size = field::Empty,
+                blocks_count = field::Empty,
+                transactions_count = field::Empty,
+                validators_count = field::Empty,
+                blobs_count = field::Empty
+            );
+
+            debug!(block = ?block, "scanning segment block");
+            let block_index = &index.blocks[block.offset];
+
+            // Missed slots have no data and no indices.
+            if block_index.data.tags.is_empty() {
+                continue;
+            }
+
+            let filtered = self
+                .filters
+                .iter()
+                .map(|f| f.filter_data(&block_index.data))
+                .collect::<Result<Vec<_>, _>>()?;
+
+            if filtered.has_no_data() {
+                continue;
+            }
+
+            let ArchivedSlot::Proposed(block_header) = &header_segment.blocks[block.offset].data
+            else {
+                return Err(ScannerError)
+                    .attach_printable("header segment data is not a block")
+                    .attach_printable_lazy(|| format!("block: {block:?}"));
+            };
+
+            let ArchivedSlot::Proposed(block_transactions) =
+                &transaction_segment.blocks[block.offset].data
+            else {
+                return Err(ScannerError)
+                    .attach_printable("transaction segment data is not a block")
+                    .attach_printable_lazy(|| format!("block: {block:?}"));
+            };
+
+            let ArchivedSlot::Proposed(block_validators) =
+                &validator_segment.blocks[block.offset].data
+            else {
+                return Err(ScannerError)
+                    .attach_printable("validator segment data is not a block")
+                    .attach_printable_lazy(|| format!("block: {block:?}"));
+            };
+
+            let ArchivedSlot::Proposed(block_blobs) = &blob_segment.blocks[block.offset].data
+            else {
+                return Err(ScannerError)
+                    .attach_printable("blob segment data is not a block")
+                    .attach_printable_lazy(|| format!("block: {block:?}"));
+            };
+
+            let mut encoded = Vec::with_capacity(filtered.len());
+
+            let mut transactions_count = 0;
+            let mut validators_count = 0;
+            let mut blobs_count = 0;
+
+            for mut data in filtered {
+                let mut result = beaconchain::Block::default();
+
+                let header: beaconchain::BlockHeader = block_header.into();
+                result.header = Some(header);
+
+                for data_ref in data
+                    .transactions_by_blob
+                    .take_matches(block_transactions.len())
+                {
+                    for blob in block_blobs.iter() {
+                        if blob.transaction_index == data_ref.index {
+                            data.transactions.add_data_ref(data_ref);
+                            break;
+                        }
+                    }
+                }
+
+                for data_ref in data.blobs_by_transaction.take_matches(block_blobs.len()) {
+                    for transaction in block_transactions.iter() {
+                        if transaction.transaction_index == data_ref.index {
+                            data.blobs.add_data_ref(data_ref);
+                            break;
+                        }
+                    }
+                }
+
+                for data_ref in data.transactions.take_matches(block_transactions.len()) {
+                    let mut transaction: beaconchain::Transaction =
+                        (&block_transactions[data_ref.index as usize]).into();
+                    transaction.filter_ids = data_ref.filter_ids.into_iter().collect();
+                    result.transactions.push(transaction);
+                }
+
+                for data_ref in data.validators.take_matches(block_validators.len()) {
+                    let mut validator: beaconchain::Validator =
+                        (&block_validators[data_ref.index as usize]).into();
+                    validator.filter_ids = data_ref.filter_ids.into_iter().collect();
+                    result.validators.push(validator);
+                }
+
+                for data_ref in data.blobs.take_matches(block_blobs.len()) {
+                    let mut blob: beaconchain::Blob =
+                        (&block_blobs[data_ref.index as usize]).into();
+                    blob.filter_ids = data_ref.filter_ids.into_iter().collect();
+                    result.blobs.push(blob);
+                }
+
+                transactions_count += result.transactions.len();
+                validators_count += result.validators.len();
+                blobs_count += result.blobs.len();
+
+                encoded.push(result.encode_to_vec());
+            }
+
+            let data_size = encoded.iter().map(|b| b.len()).sum::<usize>();
+
+            span.record("data_size", data_size);
+            span.record("blocks_count", encoded.len());
+            span.record("transactions_count", transactions_count);
+            span.record("validators_count", validators_count);
+            span.record("blobs_count", blobs_count);
+
+            let data = SendData {
+                cursor: block.cursor,
+                end_cursor: block.end_cursor,
+                data: encoded,
+            };
+
+            if cb(data).await == ScannerAction::Stop {
+                return Ok(());
+            }
+        }
+
         Ok(())
     }
 
