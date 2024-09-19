@@ -1,7 +1,7 @@
 use apibara_etcd::{EtcdClient, Lock};
 use error_stack::{Result, ResultExt};
 use tokio_util::sync::CancellationToken;
-use tracing::debug;
+use tracing::{debug, info};
 
 use crate::{
     block_store::{BlockStoreReader, BlockStoreWriter},
@@ -115,14 +115,17 @@ where
             _ = ct.cancelled() => {
                 Ok(())
             }
-            _ = lock_handle => {
-                Ok(())
+            lock = lock_handle => {
+                info!("compaction lock loop terminated");
+                lock.change_context(CompactionError)
             }
-            _ = segment_service_handle => {
-                Ok(())
+            segment_service = segment_service_handle => {
+                info!("compaction segmentation loop terminated");
+                segment_service.change_context(CompactionError)?.change_context(CompactionError)
             }
-            _ = group_service_handle => {
-                Ok(())
+            group_service = group_service_handle => {
+                info!("compaction group service loop terminated");
+                group_service.change_context(CompactionError)?.change_context(CompactionError)
             }
         }
     }

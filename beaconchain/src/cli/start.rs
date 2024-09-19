@@ -138,15 +138,19 @@ impl StartCommand {
 
         tokio::select! {
             ingestion = ingestion_handle => {
+                info!("ingestion loop terminated");
                 ingestion.change_context(BeaconChainError)?.change_context(BeaconChainError)?;
             }
             compaction = compaction_handle => {
+                info!("compaction loop terminated");
                 compaction.change_context(BeaconChainError)?.change_context(BeaconChainError)?;
             }
             sync = sync_handle => {
+                info!("sync loop terminated");
                 sync.change_context(BeaconChainError)?.change_context(BeaconChainError)?;
             }
             server = server_handle => {
+                info!("server terminated");
                 server.change_context(BeaconChainError)?.change_context(BeaconChainError)?;
             }
         }
