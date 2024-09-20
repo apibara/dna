@@ -75,7 +75,7 @@ impl BlockStoreReader {
         name = "block_store_get_segment",
         skip_all,
         err(Debug),
-        fields(cache_hit)
+        fields(name, cache_hit)
     )]
     pub async fn get_segment(
         &self,
@@ -85,6 +85,8 @@ impl BlockStoreReader {
         let current_span = tracing::Span::current();
         let name = name.into();
         let key = format_segment_key(first_cursor, &name);
+
+        current_span.record("name", &name);
 
         if let Some(existing) = self.file_cache.get(&key).await {
             current_span.record("cache_hit", 1);
@@ -106,6 +108,40 @@ impl BlockStoreReader {
                 .await
                 .change_context(BlockStoreError)
                 .attach_printable("failed to insert segment into cache")
+                .attach_printable_lazy(|| format!("key: {key}"))
+        }
+    }
+
+    #[tracing::instrument(
+        name = "block_store_get_group",
+        skip_all,
+        err(Debug),
+        fields(cache_hit)
+    )]
+    pub async fn get_group(&self, cursor: &Cursor) -> Result<Mmap, BlockStoreError> {
+        let current_span = tracing::Span::current();
+        let key = format_group_key(cursor);
+
+        if let Some(existing) = self.file_cache.get(&key).await {
+            current_span.record("cache_hit", 1);
+
+            Ok(existing)
+        } else {
+            current_span.record("cache_hit", 0);
+
+            let response = self
+                .client
+                .get(&key, GetOptions::default())
+                .await
+                .change_context(BlockStoreError)
+                .attach_printable("failed to get group")
+                .attach_printable_lazy(|| format!("key: {key}"))?;
+
+            self.file_cache
+                .insert(&key, response.body)
+                .await
+                .change_context(BlockStoreError)
+                .attach_printable("failed to insert group into cache")
                 .attach_printable_lazy(|| format!("key: {key}"))
         }
     }

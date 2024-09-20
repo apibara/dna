@@ -6,7 +6,7 @@ use std::ops::RangeInclusive;
 use apibara_dna_common::{
     block_store::BlockStoreReader,
     data_stream::{Scanner, ScannerAction, ScannerError, ScannerFactory, SegmentBlock, SendData},
-    store::segment::IndexSegment,
+    store::{group::SegmentGroup, segment::IndexSegment},
     Cursor,
 };
 use apibara_dna_protocol::beaconchain;
@@ -14,7 +14,7 @@ use error_stack::{Result, ResultExt};
 use filter::{Filter, FilteredDataExt};
 use prost::Message;
 use roaring::RoaringBitmap;
-use tracing::{debug, field};
+use tracing::{debug, field, warn};
 
 use crate::{
     segment::{BlobSegment, HeaderSegment, TransactionSegment, ValidatorSegment},
@@ -84,10 +84,72 @@ impl ScannerFactory for BeaconChainScannerFactory {
 impl Scanner for BeaconChainScanner {
     async fn fill_block_bitmap(
         &mut self,
-        _bitmap: &mut RoaringBitmap,
-        _block_range: RangeInclusive<u32>,
+        group_cursor: Cursor,
+        blocks_in_group: usize,
+        bitmap: &mut RoaringBitmap,
+        block_range: RangeInclusive<u32>,
     ) -> Result<(), ScannerError> {
-        todo!();
+        debug!("filling block bitmap");
+
+        let group_bytes = self
+            .store
+            .get_group(&group_cursor)
+            .await
+            .change_context(ScannerError)?;
+
+        let group = rkyv::access::<rkyv::Archived<SegmentGroup>, rkyv::rancor::Error>(&group_bytes)
+            .change_context(ScannerError)?;
+
+        if group.index.tags.is_empty() {
+            warn!("group is empty. this should not happen.");
+            return Ok(());
+        }
+
+        let filtered = self
+            .filters
+            .iter()
+            .map(|f| f.filter_data(&group.index))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        for mut filter in filtered {
+            if filter.header {
+                bitmap.insert_range(block_range);
+                break;
+            }
+
+            if !filter.transactions_by_blob.is_empty() {
+                bitmap.insert_range(block_range);
+                break;
+            }
+
+            if !filter.blobs_by_transaction.is_empty() {
+                bitmap.insert_range(block_range);
+                break;
+            }
+
+            for block in filter
+                .transactions
+                .take_matches_with_range(group_cursor.number as u32, blocks_in_group)
+            {
+                bitmap.insert(block.index);
+            }
+
+            for block in filter
+                .validators
+                .take_matches_with_range(group_cursor.number as u32, blocks_in_group)
+            {
+                bitmap.insert(block.index);
+            }
+
+            for block in filter
+                .blobs
+                .take_matches_with_range(group_cursor.number as u32, blocks_in_group)
+            {
+                bitmap.insert(block.index);
+            }
+        }
+
+        Ok(())
     }
 
     async fn scan_segment<S, SR>(

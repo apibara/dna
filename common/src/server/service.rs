@@ -5,7 +5,7 @@ use apibara_dna_protocol::dna::stream::{
     DataFinality, StatusRequest, StatusResponse, StreamDataRequest, StreamDataResponse,
 };
 use error_stack::Result;
-use futures::{Future, Stream, StreamExt};
+use futures::{Future, Stream, StreamExt, TryFutureExt};
 use tokio::sync::{mpsc, Semaphore};
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::CancellationToken;
@@ -154,7 +154,9 @@ where
         );
         let (tx, rx) = mpsc::channel(CHANNEL_SIZE);
 
-        tokio::spawn(ds.start(tx, self.ct.clone()));
+        tokio::spawn(ds.start(tx, self.ct.clone()).inspect_err(|err| {
+            error!(error = ?err, "data stream error");
+        }));
 
         let stream = ReceiverStream::new(rx).boxed();
 

@@ -55,12 +55,20 @@ impl FilterMatchSet {
     }
 
     pub fn take_matches(&mut self, count: usize) -> impl Iterator<Item = DataReference> {
+        self.take_matches_with_range(0, count)
+    }
+
+    pub fn take_matches_with_range(
+        &mut self,
+        start: u32,
+        count: usize,
+    ) -> impl Iterator<Item = DataReference> {
         let all = std::mem::take(&mut self.all);
         let exact = std::mem::take(&mut self.exact);
 
         DataReferenceIter {
-            index: 0,
-            count: count as u32,
+            index: start,
+            count: start + count as u32,
             all,
             exact,
         }

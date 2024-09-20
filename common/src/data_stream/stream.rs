@@ -6,6 +6,7 @@ use apibara_dna_protocol::dna::stream::{
 };
 use error_stack::{Result, ResultExt};
 use futures::FutureExt;
+use roaring::RoaringBitmap;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, warn};
@@ -126,11 +127,20 @@ where
                     },
                     _ = self.chain_view.finalized_changed() => {
                         debug!("finalized changed");
+                        self.finalized = self.chain_view.get_finalized_cursor().await.change_context(DataStreamError)?;
                         return self.send_finalize_message(tx, ct).await;
                     },
                 }
             }
         };
+
+        if self
+            .chain_view
+            .has_group_for_block(next_cursor.number)
+            .await
+        {
+            return self.tick_group(next_cursor, tx, ct).await;
+        }
 
         if self
             .chain_view
@@ -179,6 +189,147 @@ where
         permit.send(Ok(StreamDataResponse {
             message: Some(finalize),
         }));
+
+        Ok(())
+    }
+
+    async fn tick_group(
+        &mut self,
+        cursor: Cursor,
+        tx: &mpsc::Sender<DataStreamMessage>,
+        ct: &CancellationToken,
+    ) -> Result<(), DataStreamError> {
+        debug!("tick: group");
+
+        let group_start = self.chain_view.get_group_start_block(cursor.number).await;
+        let group_end = self.chain_view.get_group_end_block(cursor.number).await;
+        let blocks_in_group = self.chain_view.get_blocks_in_group().await;
+
+        let group_start_cursor = Cursor::new_finalized(group_start);
+        let mut data_bitmap = RoaringBitmap::default();
+        let block_range = (cursor.number as u32)..=(group_end as u32);
+
+        self.scanner
+            .fill_block_bitmap(
+                group_start_cursor,
+                blocks_in_group as usize,
+                &mut data_bitmap,
+                block_range,
+            )
+            .await
+            .change_context(DataStreamError)?;
+
+        debug!(blocks = ?data_bitmap, "group bitmap");
+
+        let mut current_segment_start = self.chain_view.get_segment_start_block(group_start).await;
+        let mut current_segment_end = self.chain_view.get_segment_end_block(group_start).await;
+        let mut blocks = Vec::with_capacity(self.chain_view.get_segment_size().await as usize);
+
+        for block in data_bitmap.iter() {
+            if ct.is_cancelled() || tx.is_closed() {
+                return Ok(());
+            }
+
+            let block = block as u64;
+            if block > current_segment_end {
+                current_segment_start = self.chain_view.get_segment_start_block(block).await;
+                current_segment_end = self.chain_view.get_segment_end_block(block).await;
+
+                let segment_cursor = Cursor::new_finalized(current_segment_start);
+                let segment_blocks = std::mem::take(&mut blocks);
+                blocks = Vec::with_capacity(self.chain_view.get_segment_size().await as usize);
+
+                self.scanner
+                    .scan_segment(segment_cursor, segment_blocks, |data| {
+                        let tx = tx.clone();
+                        async move {
+                            use apibara_dna_protocol::dna::stream::Cursor as ProtoCursor;
+
+                            let Some(Ok(permit)) = ct.run_until_cancelled(tx.reserve()).await
+                            else {
+                                return ScannerAction::Stop;
+                            };
+
+                            let proto_cursor: Option<ProtoCursor> = data.cursor.map(Into::into);
+                            let proto_end_cursor: Option<ProtoCursor> =
+                                Some(data.end_cursor.into());
+
+                            let data = Message::Data(Data {
+                                cursor: proto_cursor.clone(),
+                                end_cursor: proto_end_cursor.clone(),
+                                data: data.data,
+                                finality: DataFinality::Finalized as i32,
+                            });
+
+                            permit.send(Ok(StreamDataResponse {
+                                message: Some(data),
+                            }));
+
+                            ScannerAction::Continue
+                        }
+                    })
+                    .boxed()
+                    .await
+                    .change_context(DataStreamError)?;
+            }
+
+            let CanonicalCursor::Canonical(cursor) = self
+                .chain_view
+                .get_canonical(block)
+                .await
+                .change_context(DataStreamError)?
+            else {
+                return Err(DataStreamError).attach_printable("missing canonical block");
+            };
+
+            blocks.push(SegmentBlock {
+                // cursor: current.clone().into(),
+                cursor: None,
+                end_cursor: cursor.clone(),
+                offset: (block - current_segment_start) as usize,
+            });
+        }
+
+        let segment_cursor = Cursor::new_finalized(current_segment_start);
+        self.scanner
+            .scan_segment(segment_cursor, blocks, |data| async move {
+                use apibara_dna_protocol::dna::stream::Cursor as ProtoCursor;
+
+                let Some(Ok(permit)) = ct.run_until_cancelled(tx.reserve()).await else {
+                    return ScannerAction::Stop;
+                };
+
+                let proto_cursor: Option<ProtoCursor> = data.cursor.map(Into::into);
+                let proto_end_cursor: Option<ProtoCursor> = Some(data.end_cursor.into());
+
+                let data = Message::Data(Data {
+                    cursor: proto_cursor.clone(),
+                    end_cursor: proto_end_cursor.clone(),
+                    data: data.data,
+                    finality: DataFinality::Finalized as i32,
+                });
+
+                permit.send(Ok(StreamDataResponse {
+                    message: Some(data),
+                }));
+
+                ScannerAction::Continue
+            })
+            .boxed()
+            .await
+            .change_context(DataStreamError)?;
+
+        let CanonicalCursor::Canonical(group_end_cursor) = self
+            .chain_view
+            .get_canonical(group_end)
+            .await
+            .change_context(DataStreamError)?
+        else {
+            return Err(DataStreamError).attach_printable("missing canonical block");
+        };
+
+        self.heartbeat_interval.reset();
+        self.current = group_end_cursor.into();
 
         Ok(())
     }

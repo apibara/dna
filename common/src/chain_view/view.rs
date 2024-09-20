@@ -74,6 +74,26 @@ impl ChainView {
         inner.has_segment_for_block(block)
     }
 
+    pub async fn has_group_for_block(&self, block: u64) -> bool {
+        let inner = self.0.read().await;
+        inner.has_group_for_block(block)
+    }
+
+    pub async fn get_group_start_block(&self, block: u64) -> u64 {
+        let inner = self.0.read().await;
+        inner.get_group_start_block(block)
+    }
+
+    pub async fn get_group_end_block(&self, block: u64) -> u64 {
+        let inner = self.0.read().await;
+        inner.get_group_end_block(block)
+    }
+
+    pub async fn get_blocks_in_group(&self) -> u64 {
+        let inner = self.0.read().await;
+        inner.group_size * inner.segment_size
+    }
+
     pub async fn get_next_cursor(
         &self,
         cursor: &Option<Cursor>,
@@ -211,5 +231,26 @@ impl ChainViewInner {
 
         let segment_end = self.get_segment_end_block(block);
         segment_end <= segmented
+    }
+
+    pub fn has_group_for_block(&self, block: u64) -> bool {
+        let Some(grouped) = self.grouped else {
+            return false;
+        };
+
+        let group_end = self.get_group_end_block(block);
+        group_end <= grouped
+    }
+
+    pub fn get_group_end_block(&self, block: u64) -> u64 {
+        let blocks_in_group = self.group_size * self.segment_size;
+        self.get_group_start_block(block) + blocks_in_group - 1
+    }
+
+    pub fn get_group_start_block(&self, block: u64) -> u64 {
+        let starting_block = self.canonical.starting_block;
+        let blocks_in_group = self.group_size * self.segment_size;
+        let group_count = (block - starting_block) / blocks_in_group;
+        starting_block + group_count * blocks_in_group
     }
 }
