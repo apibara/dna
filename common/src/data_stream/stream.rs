@@ -221,103 +221,93 @@ where
 
         debug!(blocks = ?data_bitmap, "group bitmap");
 
+        let mut segments = Vec::new();
+        let mut current_segment_data = Vec::default();
+
         let mut current_segment_start = self.chain_view.get_segment_start_block(group_start).await;
         let mut current_segment_end = self.chain_view.get_segment_end_block(group_start).await;
-        let mut blocks = Vec::with_capacity(self.chain_view.get_segment_size().await as usize);
 
-        for block in data_bitmap.iter() {
-            if ct.is_cancelled() || tx.is_closed() {
-                return Ok(());
+        for block_number in data_bitmap.iter() {
+            let block_number = block_number as u64;
+
+            if block_number > current_segment_end {
+                let blocks = std::mem::take(&mut current_segment_data);
+                let current_segment_cursor = Cursor::new_finalized(current_segment_start);
+
+                segments.push((current_segment_cursor, blocks));
+
+                // TODO: prefetch segments.
+
+                current_segment_start = self.chain_view.get_segment_start_block(block_number).await;
+                current_segment_end = self.chain_view.get_segment_end_block(block_number).await;
             }
 
-            let block = block as u64;
-            if block > current_segment_end {
-                current_segment_start = self.chain_view.get_segment_start_block(block).await;
-                current_segment_end = self.chain_view.get_segment_end_block(block).await;
-
-                let segment_cursor = Cursor::new_finalized(current_segment_start);
-                let segment_blocks = std::mem::take(&mut blocks);
-                blocks = Vec::with_capacity(self.chain_view.get_segment_size().await as usize);
-
-                self.scanner
-                    .scan_segment(segment_cursor, segment_blocks, |data| {
-                        let tx = tx.clone();
-                        async move {
-                            use apibara_dna_protocol::dna::stream::Cursor as ProtoCursor;
-
-                            let Some(Ok(permit)) = ct.run_until_cancelled(tx.reserve()).await
-                            else {
-                                return ScannerAction::Stop;
-                            };
-
-                            let proto_cursor: Option<ProtoCursor> = data.cursor.map(Into::into);
-                            let proto_end_cursor: Option<ProtoCursor> =
-                                Some(data.end_cursor.into());
-
-                            let data = Message::Data(Data {
-                                cursor: proto_cursor.clone(),
-                                end_cursor: proto_end_cursor.clone(),
-                                data: data.data,
-                                finality: DataFinality::Finalized as i32,
-                            });
-
-                            permit.send(Ok(StreamDataResponse {
-                                message: Some(data),
-                            }));
-
-                            ScannerAction::Continue
-                        }
-                    })
-                    .boxed()
-                    .await
-                    .change_context(DataStreamError)?;
-            }
-
-            let CanonicalCursor::Canonical(cursor) = self
+            let CanonicalCursor::Canonical(block_cursor) = self
                 .chain_view
-                .get_canonical(block)
+                .get_canonical(block_number)
                 .await
                 .change_context(DataStreamError)?
             else {
                 return Err(DataStreamError).attach_printable("missing canonical block");
             };
 
-            blocks.push(SegmentBlock {
-                // cursor: current.clone().into(),
-                cursor: None,
-                end_cursor: cursor.clone(),
-                offset: (block - current_segment_start) as usize,
+            let CanonicalCursor::Canonical(previous_cursor) = self
+                .chain_view
+                .get_canonical(block_number - 1)
+                .await
+                .change_context(DataStreamError)?
+            else {
+                return Err(DataStreamError).attach_printable("missing canonical block");
+            };
+
+            current_segment_data.push(SegmentBlock {
+                cursor: previous_cursor.into(),
+                end_cursor: block_cursor.clone(),
+                offset: (block_number - current_segment_start) as usize,
             });
         }
 
-        let segment_cursor = Cursor::new_finalized(current_segment_start);
-        self.scanner
-            .scan_segment(segment_cursor, blocks, |data| async move {
-                use apibara_dna_protocol::dna::stream::Cursor as ProtoCursor;
+        let blocks = std::mem::take(&mut current_segment_data);
+        let current_segment_cursor = Cursor::new_finalized(current_segment_start);
 
-                let Some(Ok(permit)) = ct.run_until_cancelled(tx.reserve()).await else {
-                    return ScannerAction::Stop;
-                };
+        segments.push((current_segment_cursor, blocks));
 
-                let proto_cursor: Option<ProtoCursor> = data.cursor.map(Into::into);
-                let proto_end_cursor: Option<ProtoCursor> = Some(data.end_cursor.into());
+        for (segment_cursor, segment_data) in segments {
+            if ct.is_cancelled() || tx.is_closed() {
+                return Ok(());
+            }
 
-                let data = Message::Data(Data {
-                    cursor: proto_cursor.clone(),
-                    end_cursor: proto_end_cursor.clone(),
-                    data: data.data,
-                    finality: DataFinality::Finalized as i32,
-                });
+            self.scanner
+                .scan_segment(segment_cursor, segment_data, |data| {
+                    let tx = tx.clone();
+                    async move {
+                        use apibara_dna_protocol::dna::stream::Cursor as ProtoCursor;
 
-                permit.send(Ok(StreamDataResponse {
-                    message: Some(data),
-                }));
+                        let Some(Ok(permit)) = ct.run_until_cancelled(tx.reserve()).await else {
+                            return ScannerAction::Stop;
+                        };
 
-                ScannerAction::Continue
-            })
-            .boxed()
-            .await
-            .change_context(DataStreamError)?;
+                        let proto_cursor: Option<ProtoCursor> = data.cursor.map(Into::into);
+                        let proto_end_cursor: Option<ProtoCursor> = Some(data.end_cursor.into());
+
+                        let data = Message::Data(Data {
+                            cursor: proto_cursor.clone(),
+                            end_cursor: proto_end_cursor.clone(),
+                            data: data.data,
+                            finality: DataFinality::Finalized as i32,
+                        });
+
+                        permit.send(Ok(StreamDataResponse {
+                            message: Some(data),
+                        }));
+
+                        ScannerAction::Continue
+                    }
+                })
+                .boxed()
+                .await
+                .change_context(DataStreamError)?;
+        }
 
         let CanonicalCursor::Canonical(group_end_cursor) = self
             .chain_view
