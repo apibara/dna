@@ -3,6 +3,7 @@ use std::ops::RangeInclusive;
 use error_stack::Result;
 use futures::Future;
 use roaring::RoaringBitmap;
+use tokio::task::JoinSet;
 
 use crate::Cursor;
 
@@ -43,6 +44,13 @@ pub trait ScannerFactory {
 }
 
 pub trait Scanner: Send {
+    fn prefetch_segment(
+        &self,
+        join_set: &mut JoinSet<Result<(), ScannerError>>,
+        cursor: Cursor,
+    ) -> Result<(), ScannerError>;
+
+    /// Fills the given bitmap with the blocks that match the filters.
     fn fill_block_bitmap(
         &mut self,
         group_cursor: Cursor,
@@ -51,6 +59,7 @@ pub trait Scanner: Send {
         block_range: RangeInclusive<u32>,
     ) -> impl Future<Output = Result<(), ScannerError>> + Send;
 
+    /// Scans a single segment.
     fn scan_segment<S, SR>(
         &mut self,
         segment_cursor: Cursor,
@@ -61,6 +70,7 @@ pub trait Scanner: Send {
         S: Fn(SendData) -> SR + Send,
         SR: Future<Output = ScannerAction> + Send;
 
+    /// Scans a single block.
     fn scan_single<S>(
         &mut self,
         cursor: &Cursor,

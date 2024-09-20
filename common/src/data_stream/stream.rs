@@ -7,7 +7,7 @@ use apibara_dna_protocol::dna::stream::{
 use error_stack::{Result, ResultExt};
 use futures::FutureExt;
 use roaring::RoaringBitmap;
-use tokio::sync::mpsc;
+use tokio::{sync::mpsc, task::JoinSet};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, warn};
 
@@ -227,6 +227,7 @@ where
         let mut current_segment_start = self.chain_view.get_segment_start_block(group_start).await;
         let mut current_segment_end = self.chain_view.get_segment_end_block(group_start).await;
 
+        let mut prefetch_tasks = JoinSet::new();
         for block_number in data_bitmap.iter() {
             let block_number = block_number as u64;
 
@@ -234,9 +235,11 @@ where
                 let blocks = std::mem::take(&mut current_segment_data);
                 let current_segment_cursor = Cursor::new_finalized(current_segment_start);
 
-                segments.push((current_segment_cursor, blocks));
+                self.scanner
+                    .prefetch_segment(&mut prefetch_tasks, current_segment_cursor.clone())
+                    .change_context(DataStreamError)?;
 
-                // TODO: prefetch segments.
+                segments.push((current_segment_cursor, blocks));
 
                 current_segment_start = self.chain_view.get_segment_start_block(block_number).await;
                 current_segment_end = self.chain_view.get_segment_end_block(block_number).await;
@@ -270,7 +273,13 @@ where
         let blocks = std::mem::take(&mut current_segment_data);
         let current_segment_cursor = Cursor::new_finalized(current_segment_start);
 
+        self.scanner
+            .prefetch_segment(&mut prefetch_tasks, current_segment_cursor.clone())
+            .change_context(DataStreamError)?;
+
         segments.push((current_segment_cursor, blocks));
+
+        prefetch_tasks.join_all().await;
 
         for (segment_cursor, segment_data) in segments {
             if ct.is_cancelled() || tx.is_closed() {

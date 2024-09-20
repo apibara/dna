@@ -14,6 +14,7 @@ use error_stack::{Result, ResultExt};
 use filter::{Filter, FilteredDataExt};
 use prost::Message;
 use roaring::RoaringBitmap;
+use tokio::task::JoinSet;
 use tracing::{debug, field, warn};
 
 use crate::{
@@ -82,6 +83,41 @@ impl ScannerFactory for BeaconChainScannerFactory {
 }
 
 impl Scanner for BeaconChainScanner {
+    fn prefetch_segment(
+        &self,
+        join_set: &mut JoinSet<Result<(), ScannerError>>,
+        segment_cursor: Cursor,
+    ) -> Result<(), ScannerError> {
+        let store = self.store.clone();
+        join_set.spawn({
+            let store = store.clone();
+            let segment_cursor = segment_cursor.clone();
+            async move {
+                store
+                    .get_index_segment(&segment_cursor)
+                    .await
+                    .change_context(ScannerError)?;
+                Ok(())
+            }
+        });
+
+        for segment in ["header", "transaction", "validator", "blob"] {
+            join_set.spawn({
+                let store = store.clone();
+                let segment_cursor = segment_cursor.clone();
+                async move {
+                    store
+                        .get_segment(&segment_cursor, segment)
+                        .await
+                        .change_context(ScannerError)?;
+                    Ok(())
+                }
+            });
+        }
+
+        Ok(())
+    }
+
     async fn fill_block_bitmap(
         &mut self,
         group_cursor: Cursor,
