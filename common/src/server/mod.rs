@@ -12,8 +12,7 @@ use tokio_util::sync::CancellationToken;
 use tonic::transport::Server as TonicServer;
 use tracing::info;
 
-use crate::chain_view::ChainView;
-use crate::data_stream::ScannerFactory;
+use crate::{block_store::BlockStoreReader, chain_view::ChainView, data_stream::ScannerFactory};
 
 pub use self::cli::ServerArgs;
 pub use self::service::StreamServiceOptions;
@@ -29,6 +28,7 @@ pub struct ServerOptions {
 pub async fn server_loop<SF>(
     scanner_factory: SF,
     chain_view: tokio::sync::watch::Receiver<Option<ChainView>>,
+    block_store: BlockStoreReader,
     options: ServerOptions,
     ct: CancellationToken,
 ) -> Result<(), ServerError>
@@ -47,6 +47,7 @@ where
     let stream_service = StreamService::new(
         scanner_factory,
         chain_view,
+        block_store,
         options.stream_service_options,
         ct.clone(),
     );

@@ -4,6 +4,7 @@ use alloy_eips::eip2718::Decodable2718;
 use apibara_dna_common::{
     chain::BlockInfo,
     ingestion::{BlockIngestion, IngestionError},
+    store::Block,
     Cursor, Hash,
 };
 use error_stack::{FutureExt, Result, ResultExt};
@@ -14,7 +15,7 @@ use crate::{
         http::{BeaconApiErrorExt, BeaconApiProvider, BlockId},
         models::{self, BeaconCursorExt},
     },
-    store::{self, fragment},
+    store::{block::BlockBuilder, fragment},
 };
 
 #[derive(Clone)]
@@ -30,7 +31,7 @@ impl BeaconChainBlockIngestion {
     async fn ingest_block_by_id(
         &self,
         block_id: BlockId,
-    ) -> Result<Option<(BlockInfo, store::block::Block)>, IngestionError> {
+    ) -> Result<Option<(BlockInfo, Block)>, IngestionError> {
         // Fetch all data using the block root to avoid issues with reorgs.
         let block_root = match self.provider.get_block_root(block_id).await {
             Ok(header) => header,
@@ -135,7 +136,7 @@ impl BeaconChainBlockIngestion {
             .collect::<Vec<_>>();
 
         let block = {
-            let mut block_builder = store::block::BlockBuilder::new(header);
+            let mut block_builder = BlockBuilder::new(header);
             block_builder.add_transactions(transactions);
             block_builder.add_validators(validators);
             block_builder.add_blobs(blobs);
@@ -178,8 +179,6 @@ impl BeaconChainBlockIngestion {
 }
 
 impl BlockIngestion for BeaconChainBlockIngestion {
-    type Block = fragment::Slot<store::block::Block>;
-
     #[tracing::instrument("beaconchain_get_head_cursor", skip(self), err(Debug))]
     async fn get_head_cursor(&self) -> Result<Cursor, IngestionError> {
         let cursor = self
@@ -237,7 +236,7 @@ impl BlockIngestion for BeaconChainBlockIngestion {
     async fn ingest_block_by_number(
         &self,
         block_number: u64,
-    ) -> Result<(BlockInfo, Self::Block), IngestionError> {
+    ) -> Result<(BlockInfo, Block), IngestionError> {
         let block = self
             .ingest_block_by_id(BlockId::Slot(block_number))
             .change_context(IngestionError::RpcRequest)
@@ -246,7 +245,7 @@ impl BlockIngestion for BeaconChainBlockIngestion {
             .await?;
 
         if let Some((block_info, block)) = block {
-            return Ok((block_info, fragment::Slot::Proposed(block)));
+            return Ok((block_info, block));
         }
 
         if block_number == 0 {
@@ -254,15 +253,14 @@ impl BlockIngestion for BeaconChainBlockIngestion {
         }
 
         let block_info = self.get_block_info_for_missed_slot(block_number).await?;
+        let block =
+            BlockBuilder::missed_block(block_number).change_context(IngestionError::Model)?;
 
-        Ok((block_info, fragment::Slot::Missed { slot: block_number }))
+        Ok((block_info, block))
     }
 
     #[tracing::instrument("beaconchain_ingest_block_by_hash", skip(self), err(Debug))]
-    async fn ingest_block_by_hash(
-        &self,
-        hash: Hash,
-    ) -> Result<(BlockInfo, Self::Block), IngestionError> {
+    async fn ingest_block_by_hash(&self, hash: Hash) -> Result<(BlockInfo, Block), IngestionError> {
         let hash = models::B256::try_from(hash.as_slice())
             .change_context(IngestionError::BadHash)
             .attach_printable("failed to convert hash to B256")
@@ -278,7 +276,7 @@ impl BlockIngestion for BeaconChainBlockIngestion {
             .attach_printable("block with the given hash not found")
             .attach_printable_lazy(|| format!("block hash: {}", hash))?;
 
-        Ok((block_info, fragment::Slot::Proposed(block)))
+        Ok((block_info, block))
     }
 }
 

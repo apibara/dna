@@ -1,44 +1,64 @@
 use apibara_dna_common::store::{
     bitmap::BitmapMapBuilder,
-    index::{IndexGroup, TaggedIndex},
+    fragment::{Block, Fragment},
+    index::IndexGroup,
 };
 use error_stack::{Result, ResultExt};
-use rkyv::{Archive, Deserialize, Serialize};
-
-use crate::provider::models;
 
 use super::{
     error::StoreError,
-    fragment::{self, Blob, BlockHeader, Transaction, Validator},
+    fragment::{Blob, BlockHeader, Slot, Transaction, Validator},
+    index::{
+        IndexTransactionByCreate, IndexTransactionByFromAddress, IndexTransactionByToAddress,
+        IndexValidatorByStatus,
+    },
 };
-
-/// A block containing all fragments for a single block.
-#[derive(Archive, Serialize, Deserialize, Debug)]
-pub struct Block {
-    pub index: IndexGroup,
-    pub header: BlockHeader,
-    pub transactions: Vec<Transaction>,
-    pub validators: Vec<Validator>,
-    pub blobs: Vec<Blob>,
-}
-
-/// FromAddress -> TransactionIndex
-pub struct IndexTransactionByFromAddress;
-
-/// ToAddress -> TransactionIndex
-pub struct IndexTransactionByToAddress;
-
-/// CreateTransaction -> TransactionIndex
-pub struct IndexTransactionByCreate;
-
-/// ValidatorStatus -> ValidatorIndex
-pub struct IndexValidatorByStatus;
 
 pub struct BlockBuilder {
     pub header: BlockHeader,
     pub transactions: Vec<Transaction>,
     pub validators: Vec<Validator>,
     pub blobs: Vec<Blob>,
+}
+
+impl Fragment for Slot<BlockHeader> {
+    fn tag() -> u8 {
+        1
+    }
+
+    fn name() -> &'static str {
+        "header"
+    }
+}
+
+impl Fragment for Slot<Vec<Transaction>> {
+    fn tag() -> u8 {
+        2
+    }
+
+    fn name() -> &'static str {
+        "transaction"
+    }
+}
+
+impl Fragment for Slot<Vec<Validator>> {
+    fn tag() -> u8 {
+        3
+    }
+
+    fn name() -> &'static str {
+        "validator"
+    }
+}
+
+impl Fragment for Slot<Vec<Blob>> {
+    fn tag() -> u8 {
+        4
+    }
+
+    fn name() -> &'static str {
+        "blob"
+    }
 }
 
 impl BlockBuilder {
@@ -69,13 +89,54 @@ impl BlockBuilder {
         self.index_transactions(&mut index)?;
         self.index_validators(&mut index)?;
 
-        Ok(Block {
-            index,
-            header: self.header,
-            transactions: self.transactions,
-            validators: self.validators,
-            blobs: self.blobs,
-        })
+        let header_fragment = Slot::Proposed(self.header);
+        let transactions_fragment = Slot::Proposed(self.transactions);
+        let validators_fragment = Slot::Proposed(self.validators);
+        let blobs_fragment = Slot::Proposed(self.blobs);
+
+        let mut block = Block::default();
+        block
+            .add_fragment(index)
+            .change_context(StoreError::Fragment)?;
+        block
+            .add_fragment(header_fragment)
+            .change_context(StoreError::Fragment)?;
+        block
+            .add_fragment(transactions_fragment)
+            .change_context(StoreError::Fragment)?;
+        block
+            .add_fragment(validators_fragment)
+            .change_context(StoreError::Fragment)?;
+        block
+            .add_fragment(blobs_fragment)
+            .change_context(StoreError::Fragment)?;
+
+        Ok(block)
+    }
+
+    pub fn missed_block(slot: u64) -> Result<Block, StoreError> {
+        let index = IndexGroup::default();
+
+        let mut block = Block::default();
+
+        block
+            .add_fragment(index)
+            .change_context(StoreError::Fragment)?;
+
+        block
+            .add_fragment::<Slot<BlockHeader>>(Slot::Missed { slot })
+            .change_context(StoreError::Fragment)?;
+        block
+            .add_fragment::<Slot<Vec<Transaction>>>(Slot::Missed { slot })
+            .change_context(StoreError::Fragment)?;
+        block
+            .add_fragment::<Slot<Vec<Validator>>>(Slot::Missed { slot })
+            .change_context(StoreError::Fragment)?;
+        block
+            .add_fragment::<Slot<Vec<Blob>>>(Slot::Missed { slot })
+            .change_context(StoreError::Fragment)?;
+
+        Ok(block)
     }
 
     fn index_transactions(&self, index: &mut IndexGroup) -> Result<(), StoreError> {
@@ -138,69 +199,5 @@ impl BlockBuilder {
             .change_context(StoreError::Indexing)?;
 
         Ok(())
-    }
-}
-
-impl TaggedIndex for IndexTransactionByFromAddress {
-    type Key = fragment::Address;
-
-    fn tag() -> u8 {
-        1
-    }
-
-    fn key_size() -> usize {
-        20
-    }
-
-    fn name() -> &'static str {
-        "transaction_by_from_address"
-    }
-}
-
-impl TaggedIndex for IndexTransactionByToAddress {
-    type Key = fragment::Address;
-
-    fn tag() -> u8 {
-        2
-    }
-
-    fn key_size() -> usize {
-        20
-    }
-
-    fn name() -> &'static str {
-        "transaction_by_to_address"
-    }
-}
-
-impl TaggedIndex for IndexTransactionByCreate {
-    type Key = ();
-
-    fn tag() -> u8 {
-        3
-    }
-
-    fn key_size() -> usize {
-        0
-    }
-
-    fn name() -> &'static str {
-        "transaction_by_create"
-    }
-}
-
-impl TaggedIndex for IndexValidatorByStatus {
-    type Key = models::ValidatorStatus;
-
-    fn tag() -> u8 {
-        4
-    }
-
-    fn key_size() -> usize {
-        1
-    }
-
-    fn name() -> &'static str {
-        "validator_by_status"
     }
 }

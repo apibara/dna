@@ -3,5 +3,4 @@ pub mod error;
 pub mod ingestion;
 pub mod provider;
 pub mod scanner;
-pub mod segment;
 pub mod store;

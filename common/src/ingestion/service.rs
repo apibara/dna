@@ -13,15 +13,13 @@ use crate::{
     chain_store::ChainStore,
     file_cache::FileCache,
     object_store::ObjectStore,
-    rkyv::Serializable,
+    store::Block,
     Cursor, Hash,
 };
 
 use super::{error::IngestionError, state_client::IngestionStateClient};
 
 pub trait BlockIngestion: Clone {
-    type Block;
-
     fn get_head_cursor(&self) -> impl Future<Output = Result<Cursor, IngestionError>> + Send;
     fn get_finalized_cursor(&self) -> impl Future<Output = Result<Cursor, IngestionError>> + Send;
     fn get_block_info_by_number(
@@ -32,12 +30,12 @@ pub trait BlockIngestion: Clone {
     fn ingest_block_by_number(
         &self,
         block_number: u64,
-    ) -> impl Future<Output = Result<(BlockInfo, Self::Block), IngestionError>> + Send;
+    ) -> impl Future<Output = Result<(BlockInfo, Block), IngestionError>> + Send;
 
     fn ingest_block_by_hash(
         &self,
         block_hash: Hash,
-    ) -> impl Future<Output = Result<(BlockInfo, Self::Block), IngestionError>> + Send;
+    ) -> impl Future<Output = Result<(BlockInfo, Block), IngestionError>> + Send;
 }
 
 type IngestionTaskHandle = JoinHandle<Result<BlockInfo, IngestionError>>;
@@ -58,13 +56,12 @@ pub struct IngestionServiceOptions {
     pub finalized_refresh_interval: Duration,
 }
 
-pub struct IngestionService<B, I>
+pub struct IngestionService<I>
 where
-    I: BlockIngestion<Block = B>,
-    B: Send + Sync + 'static,
+    I: BlockIngestion,
 {
     options: IngestionServiceOptions,
-    ingestion: IngestionInner<B, I>,
+    ingestion: IngestionInner<I>,
     state_client: IngestionStateClient,
     chain_store: ChainStore,
     chain_builder: CanonicalChainBuilder,
@@ -72,10 +69,10 @@ where
 }
 
 /// Wrap ingestion-related clients so we can clone them and push them to the task queue.
-struct IngestionInner<B, I>
+#[derive(Clone)]
+struct IngestionInner<I>
 where
-    I: BlockIngestion<Block = B>,
-    B: Send + Sync + 'static,
+    I: BlockIngestion,
 {
     block_store: BlockStoreWriter,
     ingestion: Arc<I>,
@@ -102,10 +99,9 @@ enum IngestionStartAction {
     Start(u64),
 }
 
-impl<B, I> IngestionService<B, I>
+impl<I> IngestionService<I>
 where
-    I: BlockIngestion<Block = B> + Send + Sync + 'static,
-    B: Send + Sync + 'static + for<'a> Serializable<'a>,
+    I: BlockIngestion + Send + Sync + 'static,
 {
     pub fn new(
         ingestion: I,
@@ -443,10 +439,9 @@ where
     }
 }
 
-impl<B, I> IngestionInner<B, I>
+impl<I> IngestionInner<I>
 where
-    I: BlockIngestion<Block = B> + Send + Sync + 'static,
-    B: Send + Sync + 'static + for<'a> Serializable<'a>,
+    I: BlockIngestion + Send + Sync + 'static,
 {
     #[tracing::instrument("ingestion_ingest_block", skip(self), err(Debug))]
     async fn ingest_block_by_number(&self, block_number: u64) -> Result<BlockInfo, IngestionError> {
@@ -495,19 +490,6 @@ impl Default for IngestionServiceOptions {
             override_starting_block: None,
             head_refresh_interval: Duration::from_secs(3),
             finalized_refresh_interval: Duration::from_secs(30),
-        }
-    }
-}
-
-impl<B, I> Clone for IngestionInner<B, I>
-where
-    I: BlockIngestion<Block = B> + Send + Sync + 'static,
-    B: Send + Sync + 'static + for<'a> Serializable<'a>,
-{
-    fn clone(&self) -> Self {
-        Self {
-            block_store: self.block_store.clone(),
-            ingestion: self.ingestion.clone(),
         }
     }
 }

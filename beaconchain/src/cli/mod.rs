@@ -9,7 +9,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::error::BeaconChainError;
 
-use self::dbg::{DebugGroupCommand, DebugRpcCommand, DebugSegmentCommand};
+use self::dbg::DebugRpcCommand;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -28,18 +28,6 @@ pub enum Command {
         #[clap(subcommand)]
         command: DebugRpcCommand,
     },
-    /// Debug the content of a segment.
-    #[command(name = "dbg-segment")]
-    DebugSegment {
-        #[clap(subcommand)]
-        command: DebugSegmentCommand,
-    },
-    /// Debug the content of a segment group.
-    #[command(name = "dbg-group")]
-    DebugGroup {
-        #[clap(subcommand)]
-        command: DebugGroupCommand,
-    },
 }
 
 impl Cli {
@@ -47,8 +35,6 @@ impl Cli {
         match self.command {
             Command::Start(command) => command.run(ct).await,
             Command::DebugRpc { command } => command.run().await,
-            Command::DebugSegment { command } => command.run().await,
-            Command::DebugGroup { command } => command.run().await,
         }
     }
 }

@@ -6,7 +6,7 @@ use crate::{
     block_store::{BlockStoreReader, BlockStoreWriter},
     chain_view::{ChainView, NextCursor},
     ingestion::IngestionStateClient,
-    store::{group::SegmentGroupBuilder, segment::IndexSegment},
+    store::{group::SegmentGroupBuilder, segment::Segment},
     Cursor,
 };
 
@@ -105,7 +105,7 @@ impl SegmentGroupService {
                         .await
                         .change_context(CompactionError)?;
 
-                    let segment = rkyv::from_bytes::<IndexSegment, rkyv::rancor::Error>(&segment)
+                    let segment = rkyv::from_bytes::<Segment, rkyv::rancor::Error>(&segment)
                         .change_context(CompactionError)?;
 
                     builder

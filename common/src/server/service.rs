@@ -12,6 +12,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
 use crate::{
+    block_store::BlockStoreReader,
     chain_view::{CanonicalCursor, ChainView, ChainViewError},
     data_stream::{DataStream, ScannerFactory},
     Cursor,
@@ -34,6 +35,7 @@ where
     scanner_factory: SF,
     stream_semaphore: Arc<Semaphore>,
     chain_view: tokio::sync::watch::Receiver<Option<ChainView>>,
+    block_store: BlockStoreReader,
     ct: CancellationToken,
 }
 
@@ -44,6 +46,7 @@ where
     pub fn new(
         scanner_factory: SF,
         chain_view: tokio::sync::watch::Receiver<Option<ChainView>>,
+        block_store: BlockStoreReader,
         options: StreamServiceOptions,
         ct: CancellationToken,
     ) -> Self {
@@ -52,6 +55,7 @@ where
             scanner_factory,
             stream_semaphore,
             chain_view,
+            block_store,
             ct,
         }
     }
@@ -150,6 +154,7 @@ where
             finality,
             heartbeat_interval,
             chain_view,
+            self.block_store.clone(),
             permit,
         );
         let (tx, rx) = mpsc::channel(CHANNEL_SIZE);

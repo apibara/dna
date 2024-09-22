@@ -10,7 +10,6 @@ use tracing::{error, info, warn};
 
 use crate::object_store::ObjectStore;
 use crate::options_store::OptionsStore;
-use crate::rkyv::Serializable;
 
 pub use self::cli::IngestionArgs;
 pub use self::error::{IngestionError, IngestionErrorExt};
@@ -20,7 +19,7 @@ pub use self::state_client::{
     INGESTED_KEY, INGESTION_PREFIX_KEY, STARTING_BLOCK_KEY,
 };
 
-pub async fn ingestion_service_loop<B, I>(
+pub async fn ingestion_service_loop<I>(
     ingestion: I,
     etcd_client: EtcdClient,
     object_store: ObjectStore,
@@ -28,8 +27,7 @@ pub async fn ingestion_service_loop<B, I>(
     ct: CancellationToken,
 ) -> Result<(), IngestionError>
 where
-    I: BlockIngestion<Block = B> + Send + Sync + 'static,
-    B: Send + Sync + 'static + for<'a> Serializable<'a>,
+    I: BlockIngestion + Send + Sync + 'static,
 {
     let mut lock_client = etcd_client.lock_client(LockOptions::default());
 

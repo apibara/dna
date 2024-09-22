@@ -3,17 +3,25 @@ use rkyv::{rancor::Strategy, Archive, Archived, Deserialize, Portable, Serialize
 
 use crate::rkyv::{Checked, Serializable};
 
-use super::bitmap::{ArchivedBitmapMap, BitmapMap};
+use super::{
+    bitmap::{ArchivedBitmapMap, BitmapMap},
+    fragment::Fragment,
+};
 
 #[derive(Debug, Clone)]
 pub struct IndexError;
 
-/// A collection of tagged indices.
 #[derive(Archive, Serialize, Deserialize, Default)]
+pub struct SerializedIndex {
+    pub tag: u8,
+    pub key_size: usize,
+    pub data: Vec<u8>,
+}
+
+/// A collection of tagged indices.
+#[derive(Archive, Serialize, Deserialize, Debug, Default)]
 pub struct IndexGroup {
-    pub tags: Vec<u8>,
-    pub key_sizes: Vec<usize>,
-    pub data: Vec<Vec<u8>>,
+    pub indices: Vec<SerializedIndex>,
 }
 
 pub trait TaggedIndex {
@@ -22,6 +30,16 @@ pub trait TaggedIndex {
     fn tag() -> u8;
     fn key_size() -> usize;
     fn name() -> &'static str;
+}
+
+impl Fragment for IndexGroup {
+    fn name() -> &'static str {
+        "index"
+    }
+
+    fn tag() -> u8 {
+        0
+    }
 }
 
 impl IndexGroup {
@@ -45,42 +63,35 @@ impl IndexGroup {
     where
         K: for<'a> Serializable<'a>,
     {
-        let id = self.tags.len();
+        let id = self.indices.len();
         let data = rkyv::to_bytes(index)
             .change_context(IndexError)
             .attach_printable("failed to serialize index")
             .attach_printable_lazy(|| format!("tag: {}({})", name, tag))?
             .to_vec();
 
-        self.tags.push(tag);
-        self.key_sizes.push(key_size);
-        self.data.push(data);
+        self.indices.push(SerializedIndex {
+            tag,
+            key_size,
+            data,
+        });
 
         Ok(id)
     }
 
-    pub fn get_archived_index<'a, TI: TaggedIndex>(
+    pub fn access_archived_index<'a, TI: TaggedIndex>(
         &'a self,
     ) -> Result<&'a ArchivedBitmapMap<TI::Key>, IndexError>
     where
         <TI::Key as rkyv::Archive>::Archived: Portable + for<'b> Checked<'b>,
     {
-        let pos = self
-            .tags
-            .iter()
-            .position(|t| *t == TI::tag())
-            .ok_or(IndexError)
-            .attach_printable("missing index")
-            .attach_printable_lazy(|| format!("tag: {}({})", TI::name(), TI::tag()))?;
-
-        if pos >= self.tags.len() {
+        let Some(serialized) = self.indices.iter().find(|i| i.tag == TI::tag()) else {
             return Err(IndexError)
-                .attach_printable("invalid index (out of bounds)")
+                .attach_printable("missing index")
                 .attach_printable_lazy(|| format!("tag: {}({})", TI::name(), TI::tag()));
-        }
+        };
 
-        let data = &self.data[pos];
-        let archived = rkyv::access::<Archived<BitmapMap<TI::Key>>, _>(data)
+        let archived = rkyv::access::<Archived<BitmapMap<TI::Key>>, _>(&serialized.data)
             .change_context(IndexError)
             .attach_printable("failed to deserialize index")
             .attach_printable_lazy(|| format!("tag: {}({})", TI::name(), TI::tag()))?;
@@ -98,7 +109,7 @@ impl IndexGroup {
             Portable + Deserialize<TI::Key, Strategy<D, rkyv::rancor::Error>> + for<'b> Checked<'b>,
         <Self as Archive>::Archived: Deserialize<Self, Strategy<D, rkyv::rancor::Error>>,
     {
-        let bitmap_map = self.get_archived_index::<TI>()?;
+        let bitmap_map = self.access_archived_index::<TI>()?;
         rkyv::api::deserialize_using::<BitmapMap<TI::Key>, _, rkyv::rancor::Error>(
             bitmap_map,
             deserializer,
@@ -110,24 +121,17 @@ impl IndexGroup {
 }
 
 impl ArchivedIndexGroup {
-    pub fn get_archived_index<'a, TI: TaggedIndex>(
+    pub fn access_archived_index<'a, TI: TaggedIndex>(
         &'a self,
     ) -> Result<Option<&'a ArchivedBitmapMap<TI::Key>>, IndexError>
     where
         <TI::Key as rkyv::Archive>::Archived: Portable + for<'b> Checked<'b>,
     {
-        let Some(pos) = self.tags.iter().position(|t| *t == TI::tag()) else {
+        let Some(serialized) = self.indices.iter().find(|i| i.tag == TI::tag()) else {
             return Ok(None);
         };
 
-        if pos >= self.tags.len() {
-            return Err(IndexError)
-                .attach_printable("invalid index (out of bounds)")
-                .attach_printable_lazy(|| format!("tag: {}({})", TI::name(), TI::tag()));
-        }
-
-        let data = &self.data[pos];
-        let archived = rkyv::access::<Archived<BitmapMap<TI::Key>>, _>(data)
+        let archived = rkyv::access::<Archived<BitmapMap<TI::Key>>, _>(&serialized.data)
             .change_context(IndexError)
             .attach_printable("failed to deserialize index")
             .attach_printable_lazy(|| format!("tag: {}({})", TI::name(), TI::tag()))?;
@@ -148,7 +152,7 @@ impl ArchivedIndexGroup {
         <BitmapMap<TI::Key> as Archive>::Archived:
             Deserialize<BitmapMap<TI::Key>, Strategy<D, rkyv::rancor::Error>>,
     {
-        let Some(bitmap_map) = self.get_archived_index::<TI>()? else {
+        let Some(bitmap_map) = self.access_archived_index::<TI>()? else {
             return Ok(None);
         };
 
@@ -171,16 +175,12 @@ impl std::fmt::Display for IndexError {
     }
 }
 
-impl std::fmt::Debug for IndexGroup {
+impl std::fmt::Debug for SerializedIndex {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let data = self
-            .data
-            .iter()
-            .map(|d| format!("<{} bytes>", d.len()))
-            .collect::<Vec<_>>();
-        f.debug_struct("IndexGroup")
-            .field("tags", &self.tags)
-            .field("data", &data)
+        f.debug_struct("SerializedIndex")
+            .field("tag", &self.tag)
+            .field("key_size", &self.key_size)
+            .field("data", &format!("<{} bytes>", self.data.len()))
             .finish()
     }
 }
@@ -253,12 +253,12 @@ mod tests {
         assert_eq!(index_b_id, 1);
 
         let index_a = index_group
-            .get_archived_index::<IndexA>()
+            .access_archived_index::<IndexA>()
             .unwrap()
             .deserialize(&mut deserializer)
             .unwrap();
         let index_b = index_group
-            .get_archived_index::<IndexB>()
+            .access_archived_index::<IndexB>()
             .unwrap()
             .deserialize(&mut deserializer)
             .unwrap();

@@ -3,9 +3,10 @@ use std::ops::RangeInclusive;
 use error_stack::Result;
 use futures::Future;
 use roaring::RoaringBitmap;
-use tokio::task::JoinSet;
 
-use crate::Cursor;
+use crate::{store::group::ArchivedSegmentGroup, Cursor};
+
+use super::fragment_access::FragmentAccess;
 
 #[derive(Debug)]
 pub struct ScannerError;
@@ -44,36 +45,21 @@ pub trait ScannerFactory {
 }
 
 pub trait Scanner: Send {
-    fn prefetch_segment(
-        &self,
-        join_set: &mut JoinSet<Result<(), ScannerError>>,
-        cursor: Cursor,
-    ) -> Result<(), ScannerError>;
-
     /// Fills the given bitmap with the blocks that match the filters.
     fn fill_block_bitmap(
         &mut self,
-        group_cursor: Cursor,
+        group_cursor: &Cursor,
         blocks_in_group: usize,
+        group: &ArchivedSegmentGroup,
         bitmap: &mut RoaringBitmap,
         block_range: RangeInclusive<u32>,
     ) -> impl Future<Output = Result<(), ScannerError>> + Send;
-
-    /// Scans a single segment.
-    fn scan_segment<S, SR>(
-        &mut self,
-        segment_cursor: Cursor,
-        blocks: Vec<SegmentBlock>,
-        cb: S,
-    ) -> impl Future<Output = Result<(), ScannerError>> + Send
-    where
-        S: Fn(SendData) -> SR + Send,
-        SR: Future<Output = ScannerAction> + Send;
 
     /// Scans a single block.
     fn scan_single<S>(
         &mut self,
         cursor: &Cursor,
+        fragment_access: &FragmentAccess,
         cb: S,
     ) -> impl Future<Output = Result<(), ScannerError>> + Send
     where

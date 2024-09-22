@@ -30,21 +30,22 @@ pub struct SegmentGroupBuilder {
 }
 
 impl SegmentGroupBuilder {
-    pub fn add_segment(&mut self, segment: &Segment<IndexGroup>) -> Result<(), SegmentGroupError> {
+    pub fn add_segment(&mut self, segment: &Segment) -> Result<(), SegmentGroupError> {
         if self.first_block.is_none() {
             self.first_block = Some(segment.first_block.clone());
         }
 
-        for block_data in segment.blocks.iter() {
+        for block_data in segment.data.iter() {
             let cursor: Cursor = block_data.cursor.clone();
 
-            let index_group = &block_data.data;
-            for ((tag, key_size), bitmap) in index_group
-                .tags
-                .iter()
-                .zip(index_group.key_sizes.iter())
-                .zip(index_group.data.iter())
-            {
+            let index_group = block_data
+                .access_fragment::<IndexGroup>()
+                .change_context(SegmentGroupError)?;
+
+            for serialized_index in index_group.indices.iter() {
+                let key_size = serialized_index.key_size.to_native();
+                let bitmap = &serialized_index.data;
+
                 let bitmap = match key_size {
                     0 => rkyv::access::<rkyv::Archived<BitmapMap<[u8; 0]>>, rkyv::rancor::Error>(
                         bitmap,
@@ -71,17 +72,22 @@ impl SegmentGroupBuilder {
                 .change_context(SegmentGroupError)
                 .attach_printable("failed to deserialize bitmap")?;
 
-                let index = self.block_indexes.entry(*tag).or_insert(match key_size {
-                    0 => RawBitmapMapBuilder::Len0(Default::default()),
-                    1 => RawBitmapMapBuilder::Len1(Default::default()),
-                    20 => RawBitmapMapBuilder::Len20(Default::default()),
-                    32 => RawBitmapMapBuilder::Len32(Default::default()),
-                    _ => {
-                        return Err(SegmentGroupError)
-                            .attach_printable("failed to deserialize bitmap")
-                            .attach_printable_lazy(|| format!("invalid key size: {}", key_size))
-                    }
-                });
+                let index =
+                    self.block_indexes
+                        .entry(serialized_index.tag)
+                        .or_insert(match key_size {
+                            0 => RawBitmapMapBuilder::Len0(Default::default()),
+                            1 => RawBitmapMapBuilder::Len1(Default::default()),
+                            20 => RawBitmapMapBuilder::Len20(Default::default()),
+                            32 => RawBitmapMapBuilder::Len32(Default::default()),
+                            _ => {
+                                return Err(SegmentGroupError)
+                                    .attach_printable("failed to deserialize bitmap")
+                                    .attach_printable_lazy(|| {
+                                        format!("invalid key size: {}", key_size)
+                                    })
+                            }
+                        });
 
                 match (bitmap, index) {
                     (RawArchivedBitmapMap::Len0(bitmap), RawBitmapMapBuilder::Len0(index)) => {
@@ -186,6 +192,7 @@ impl std::fmt::Display for SegmentGroupError {
 
 #[cfg(test)]
 mod tests {
+    /*
     use rkyv::{de::Pool, Archive, Deserialize, Serialize};
 
     use crate::{
@@ -374,9 +381,11 @@ mod tests {
 
         index_group
     }
+    */
 
     #[test]
     fn test_segment_group_builder() {
+        /*
         let mut deserializer = Pool::default();
 
         let mut builder = super::SegmentGroupBuilder::default();
@@ -397,7 +406,7 @@ mod tests {
         let segment_group = builder.build().unwrap();
 
         assert!(segment_group.first_block.number == 100);
-        assert!(segment_group.index.tags.len() == 5);
+        assert!(segment_group.index.indices.len() == 5);
 
         // Check key with size 20 works.
         {
@@ -494,5 +503,7 @@ mod tests {
             let bitmap = index.get_bitmap(&()).unwrap().unwrap();
             assert!(bitmap.len() == segment_size * 3);
         }
+        */
+        todo!();
     }
 }

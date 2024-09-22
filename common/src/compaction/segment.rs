@@ -9,13 +9,9 @@ use crate::{
     ingestion::IngestionStateClient,
 };
 
-use super::{CompactionError, SegmentBuilder};
+use super::{segment_builder::SegmentBuilder, CompactionError};
 
-pub struct SegmentService<B>
-where
-    B: SegmentBuilder,
-{
-    builder: B,
+pub struct SegmentService {
     segment_size: usize,
     chain_view: ChainView,
     block_store_reader: BlockStoreReader,
@@ -23,12 +19,8 @@ where
     state_client: IngestionStateClient,
 }
 
-impl<B> SegmentService<B>
-where
-    B: SegmentBuilder + Send + Sync + 'static,
-{
+impl SegmentService {
     pub fn new(
-        builder: B,
         segment_size: usize,
         chain_view: ChainView,
         block_store_reader: BlockStoreReader,
@@ -36,7 +28,6 @@ where
         state_client: IngestionStateClient,
     ) -> Self {
         Self {
-            builder,
             segment_size,
             chain_view,
             block_store_reader,
@@ -46,6 +37,8 @@ where
     }
 
     pub async fn start(mut self, ct: CancellationToken) -> Result<(), CompactionError> {
+        let mut builder = SegmentBuilder::default();
+
         let chain_view = self.chain_view;
 
         loop {
@@ -102,7 +95,7 @@ where
                 let mut current = first_block_in_segment.clone();
                 let mut last_block_in_segment = first_block_in_segment.clone();
 
-                self.builder
+                builder
                     .start_new_segment(current.clone())
                     .change_context(CompactionError)?;
 
@@ -115,7 +108,7 @@ where
                         .attach_printable("failed to get block")
                         .attach_printable_lazy(|| format!("cursor: {current}"))?;
 
-                    self.builder
+                    builder
                         .add_block(&current, bytes)
                         .change_context(CompactionError)
                         .attach_printable("failed to add block to segment")
@@ -135,10 +128,7 @@ where
                     current = next_cursor;
                 }
 
-                let segment_data = self
-                    .builder
-                    .segment_data()
-                    .change_context(CompactionError)?;
+                let segment_data = builder.segment_data().change_context(CompactionError)?;
 
                 info!(
                     first_block = %first_block_in_segment,

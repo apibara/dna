@@ -9,7 +9,7 @@ use roaring::RoaringBitmap;
 
 use crate::{
     provider::models::ValidatorStatus,
-    store::{self, fragment},
+    store::{fragment, index},
 };
 
 #[derive(Debug)]
@@ -103,7 +103,7 @@ impl Filter {
 
         if !self.transactions.is_empty() {
             let transaction_by_from_address = index
-                .get_archived_index::<store::block::IndexTransactionByFromAddress>()
+                .access_archived_index::<index::IndexTransactionByFromAddress>()
                 .change_context(ScannerError)?
                 .ok_or(ScannerError)
                 .attach_printable("missing transaction by from address index")?
@@ -111,7 +111,7 @@ impl Filter {
                 .change_context(ScannerError)?;
 
             let transaction_by_to_address = index
-                .get_archived_index::<store::block::IndexTransactionByToAddress>()
+                .access_archived_index::<index::IndexTransactionByToAddress>()
                 .change_context(ScannerError)?
                 .ok_or(ScannerError)
                 .attach_printable("missing transaction by to address index")?
@@ -119,7 +119,7 @@ impl Filter {
                 .change_context(ScannerError)?;
 
             let transaction_by_create = index
-                .get_archived_index::<store::block::IndexTransactionByCreate>()
+                .access_archived_index::<index::IndexTransactionByCreate>()
                 .change_context(ScannerError)?
                 .ok_or(ScannerError)
                 .attach_printable("missing transaction by create index")?
@@ -183,7 +183,7 @@ impl Filter {
 
         if !self.validators.is_empty() {
             let validator_by_status = index
-                .get_archived_index::<store::block::IndexValidatorByStatus>()
+                .access_archived_index::<index::IndexValidatorByStatus>()
                 .change_context(ScannerError)?
                 .ok_or(ScannerError)
                 .attach_printable("missing validator by status index")?

@@ -14,7 +14,7 @@ use tracing::info;
 
 use crate::{
     cli::rpc::RpcArgs, error::BeaconChainError, ingestion::BeaconChainBlockIngestion,
-    scanner::BeaconChainScannerFactory, segment::BeaconChainSegmentBuilder,
+    scanner::BeaconChainScannerFactory,
 };
 
 #[derive(Args, Debug)]
@@ -97,10 +97,8 @@ impl StartCommand {
 
         let compaction_handle = if self.compaction.compaction_enabled {
             let options = self.compaction.to_compaction_options();
-            let builder = BeaconChainSegmentBuilder::default();
 
             tokio::spawn(compaction_service_loop(
-                builder,
                 etcd_client.clone(),
                 object_store.clone(),
                 chain_view.clone(),
@@ -117,15 +115,22 @@ impl StartCommand {
             })
         };
 
-        let data_store = BlockStoreReader::new(object_store.clone(), file_cache.clone());
-        let scanner_factory = BeaconChainScannerFactory::new(data_store);
+        let scanner_factory = BeaconChainScannerFactory;
+
+        let block_store = BlockStoreReader::new(object_store.clone(), file_cache.clone());
 
         let server_handle = if self.server.server_enabled {
             let options = self
                 .server
                 .to_server_options()
                 .change_context(BeaconChainError)?;
-            tokio::spawn(server_loop(scanner_factory, chain_view, options, ct))
+            tokio::spawn(server_loop(
+                scanner_factory,
+                chain_view,
+                block_store,
+                options,
+                ct,
+            ))
         } else {
             tokio::spawn({
                 let ct = ct.clone();

@@ -2,6 +2,7 @@ mod cli;
 mod error;
 mod group;
 mod segment;
+mod segment_builder;
 mod service;
 
 use apibara_etcd::{EtcdClient, LockOptions};
@@ -13,19 +14,15 @@ use crate::{chain_view::ChainView, object_store::ObjectStore, options_store::Opt
 
 pub use self::cli::CompactionArgs;
 pub use self::error::CompactionError;
-pub use self::service::{CompactionService, CompactionServiceOptions, SegmentBuilder};
+pub use self::service::{CompactionService, CompactionServiceOptions};
 
-pub async fn compaction_service_loop<B>(
-    builder: B,
+pub async fn compaction_service_loop(
     etcd_client: EtcdClient,
     object_store: ObjectStore,
     chain_view: tokio::sync::watch::Receiver<Option<ChainView>>,
     options: CompactionServiceOptions,
     ct: CancellationToken,
-) -> Result<(), CompactionError>
-where
-    B: SegmentBuilder + Send + Sync + 'static,
-{
+) -> Result<(), CompactionError> {
     let mut lock_client = etcd_client.lock_client(LockOptions::default());
 
     while !ct.is_cancelled() {
@@ -87,7 +84,6 @@ where
         }
 
         let compaction_service = CompactionService::new(
-            builder.clone(),
             etcd_client.clone(),
             object_store.clone(),
             chain_view.clone(),

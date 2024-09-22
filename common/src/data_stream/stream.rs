@@ -5,15 +5,16 @@ use apibara_dna_protocol::dna::stream::{
     StreamDataResponse,
 };
 use error_stack::{Result, ResultExt};
-use futures::FutureExt;
 use roaring::RoaringBitmap;
-use tokio::{sync::mpsc, task::JoinSet};
+use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, warn};
 
 use crate::{
+    block_store::BlockStoreReader,
     chain_view::{CanonicalCursor, ChainView, NextCursor},
-    data_stream::{ScannerAction, SegmentBlock},
+    data_stream::{FragmentAccess, SegmentBlock},
+    store::group::SegmentGroup,
     Cursor,
 };
 
@@ -31,6 +32,7 @@ where
     finalized: Cursor,
     _finality: DataFinality,
     chain_view: ChainView,
+    store: BlockStoreReader,
     heartbeat_interval: tokio::time::Interval,
     _permit: tokio::sync::OwnedSemaphorePermit,
 }
@@ -41,6 +43,7 @@ impl<S> DataStream<S>
 where
     S: Scanner + Send,
 {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         scanner: S,
         starting: Option<Cursor>,
@@ -48,6 +51,7 @@ where
         finality: DataFinality,
         heartbeat_interval: Duration,
         chain_view: ChainView,
+        store: BlockStoreReader,
         permit: tokio::sync::OwnedSemaphorePermit,
     ) -> Self {
         let heartbeat_interval = tokio::time::interval(heartbeat_interval);
@@ -58,6 +62,7 @@ where
             _finality: finality,
             heartbeat_interval,
             chain_view,
+            store,
             _permit: permit,
         }
     }
@@ -209,15 +214,29 @@ where
         let mut data_bitmap = RoaringBitmap::default();
         let block_range = (cursor.number as u32)..=(group_end as u32);
 
-        self.scanner
-            .fill_block_bitmap(
-                group_start_cursor,
-                blocks_in_group as usize,
-                &mut data_bitmap,
-                block_range,
-            )
-            .await
-            .change_context(DataStreamError)?;
+        {
+            let group_bytes = self
+                .store
+                .get_group(&group_start_cursor)
+                .await
+                .change_context(DataStreamError)
+                .attach_printable("failed to get group")?;
+            let group =
+                rkyv::access::<rkyv::Archived<SegmentGroup>, rkyv::rancor::Error>(&group_bytes)
+                    .change_context(DataStreamError)
+                    .attach_printable("failed to access group")?;
+
+            self.scanner
+                .fill_block_bitmap(
+                    &group_start_cursor,
+                    blocks_in_group as usize,
+                    group,
+                    &mut data_bitmap,
+                    block_range,
+                )
+                .await
+                .change_context(DataStreamError)?;
+        }
 
         debug!(blocks = ?data_bitmap, "group bitmap");
 
@@ -227,7 +246,7 @@ where
         let mut current_segment_start = self.chain_view.get_segment_start_block(group_start).await;
         let mut current_segment_end = self.chain_view.get_segment_end_block(group_start).await;
 
-        let mut prefetch_tasks = JoinSet::new();
+        // let mut prefetch_tasks = JoinSet::new();
         for block_number in data_bitmap.iter() {
             let block_number = block_number as u64;
 
@@ -235,9 +254,10 @@ where
                 let blocks = std::mem::take(&mut current_segment_data);
                 let current_segment_cursor = Cursor::new_finalized(current_segment_start);
 
-                self.scanner
-                    .prefetch_segment(&mut prefetch_tasks, current_segment_cursor.clone())
-                    .change_context(DataStreamError)?;
+                // TODO: prefetch segments.
+                // self.scanner
+                //     .prefetch_segment(&mut prefetch_tasks, current_segment_cursor.clone())
+                //     .change_context(DataStreamError)?;
 
                 segments.push((current_segment_cursor, blocks));
 
@@ -273,49 +293,56 @@ where
         let blocks = std::mem::take(&mut current_segment_data);
         let current_segment_cursor = Cursor::new_finalized(current_segment_start);
 
-        self.scanner
-            .prefetch_segment(&mut prefetch_tasks, current_segment_cursor.clone())
-            .change_context(DataStreamError)?;
+        // TODO: prefetch segments.
+        // self.scanner
+        //     .prefetch_segment(&mut prefetch_tasks, current_segment_cursor.clone())
+        //     .change_context(DataStreamError)?;
 
         segments.push((current_segment_cursor, blocks));
 
-        prefetch_tasks.join_all().await;
+        // prefetch_tasks.join_all().await;
 
         for (segment_cursor, segment_data) in segments {
             if ct.is_cancelled() || tx.is_closed() {
                 return Ok(());
             }
 
-            self.scanner
-                .scan_segment(segment_cursor, segment_data, |data| {
-                    let tx = tx.clone();
-                    async move {
-                        use apibara_dna_protocol::dna::stream::Cursor as ProtoCursor;
+            for block in segment_data {
+                use apibara_dna_protocol::dna::stream::Cursor as ProtoCursor;
 
-                        let Some(Ok(permit)) = ct.run_until_cancelled(tx.reserve()).await else {
-                            return ScannerAction::Stop;
-                        };
+                let fragment_access = FragmentAccess::new_in_segment(
+                    self.store.clone(),
+                    segment_cursor.clone(),
+                    block.offset,
+                );
 
-                        let proto_cursor: Option<ProtoCursor> = data.cursor.map(Into::into);
-                        let proto_end_cursor: Option<ProtoCursor> = Some(data.end_cursor.into());
+                let proto_cursor: Option<ProtoCursor> = block.cursor.map(Into::into);
+                let proto_end_cursor: Option<ProtoCursor> = Some(block.end_cursor.clone().into());
 
+                let Some(Ok(permit)) = ct.run_until_cancelled(tx.reserve()).await else {
+                    return Ok(());
+                };
+
+                self.scanner
+                    .scan_single(&block.end_cursor, &fragment_access, |data| {
                         let data = Message::Data(Data {
                             cursor: proto_cursor.clone(),
                             end_cursor: proto_end_cursor.clone(),
-                            data: data.data,
+                            data,
                             finality: DataFinality::Finalized as i32,
                         });
 
                         permit.send(Ok(StreamDataResponse {
                             message: Some(data),
                         }));
-
-                        ScannerAction::Continue
-                    }
-                })
-                .boxed()
-                .await
-                .change_context(DataStreamError)?;
+                    })
+                    .await
+                    .change_context(DataStreamError)
+                    .attach_printable("failed to scan segment block in group")
+                    .attach_printable_lazy(|| format!("block: {}", block.end_cursor))
+                    .attach_printable_lazy(|| format!("segment: {}", segment_cursor))
+                    .attach_printable_lazy(|| format!("group: {}", group_start_cursor))?;
+            }
         }
 
         let CanonicalCursor::Canonical(group_end_cursor) = self
@@ -383,33 +410,41 @@ where
 
         let segment_cursor = Cursor::new_finalized(segment_start);
 
-        self.scanner
-            .scan_segment(segment_cursor, blocks, |data| async move {
-                use apibara_dna_protocol::dna::stream::Cursor as ProtoCursor;
+        for block in blocks {
+            use apibara_dna_protocol::dna::stream::Cursor as ProtoCursor;
 
-                let Some(Ok(permit)) = ct.run_until_cancelled(tx.reserve()).await else {
-                    return ScannerAction::Stop;
-                };
+            let fragment_access = FragmentAccess::new_in_segment(
+                self.store.clone(),
+                segment_cursor.clone(),
+                block.offset,
+            );
 
-                let proto_cursor: Option<ProtoCursor> = data.cursor.map(Into::into);
-                let proto_end_cursor: Option<ProtoCursor> = Some(data.end_cursor.into());
+            let proto_cursor: Option<ProtoCursor> = block.cursor.map(Into::into);
+            let proto_end_cursor: Option<ProtoCursor> = Some(block.end_cursor.clone().into());
 
-                let data = Message::Data(Data {
-                    cursor: proto_cursor.clone(),
-                    end_cursor: proto_end_cursor.clone(),
-                    data: data.data,
-                    finality: DataFinality::Finalized as i32,
-                });
+            let Some(Ok(permit)) = ct.run_until_cancelled(tx.reserve()).await else {
+                return Ok(());
+            };
 
-                permit.send(Ok(StreamDataResponse {
-                    message: Some(data),
-                }));
+            self.scanner
+                .scan_single(&block.end_cursor, &fragment_access, |data| {
+                    let data = Message::Data(Data {
+                        cursor: proto_cursor.clone(),
+                        end_cursor: proto_end_cursor.clone(),
+                        data,
+                        finality: DataFinality::Finalized as i32,
+                    });
 
-                ScannerAction::Continue
-            })
-            .boxed()
-            .await
-            .change_context(DataStreamError)?;
+                    permit.send(Ok(StreamDataResponse {
+                        message: Some(data),
+                    }));
+                })
+                .await
+                .change_context(DataStreamError)
+                .attach_printable("failed to scan segment block")
+                .attach_printable_lazy(|| format!("block: {}", block.end_cursor))
+                .attach_printable_lazy(|| format!("segment: {}", segment_cursor))?;
+        }
 
         self.heartbeat_interval.reset();
         self.current = current.into();
@@ -447,8 +482,10 @@ where
             DataFinality::Accepted
         };
 
+        let fragment_access = FragmentAccess::new_in_block(self.store.clone(), cursor.clone());
+
         self.scanner
-            .scan_single(&cursor, |blocks| {
+            .scan_single(&cursor, &fragment_access, |blocks| {
                 let data = Message::Data(Data {
                     cursor: proto_cursor.clone(),
                     end_cursor: proto_end_cursor.clone(),

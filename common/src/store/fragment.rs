@@ -9,14 +9,19 @@ pub struct FragmentError;
 /// A fragment is a piece of block data.
 pub trait Fragment: Archive {
     /// The unique tag of the fragment.
+    ///
+    /// The tag `0` is reserved for the index fragment.
     fn tag() -> u8;
     /// The unique name of the fragment.
+    ///
+    /// The name `index` is reserved for the index fragment.
     fn name() -> &'static str;
 }
 
 #[derive(Archive, Serialize, Deserialize, Debug)]
 pub struct SerializedFragment {
     pub tag: u8,
+    pub name: String,
     #[rkyv(with = Aligned<16>)]
     pub data: Vec<u8>,
 }
@@ -41,6 +46,7 @@ impl Block {
 
         self.fragments.push(SerializedFragment {
             tag,
+            name: F::name().to_string(),
             data: bytes.to_vec(),
         });
 

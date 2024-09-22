@@ -7,20 +7,12 @@ use crate::{
     block_store::{BlockStoreReader, BlockStoreWriter},
     chain_view::ChainView,
     compaction::group::SegmentGroupService,
-    file_cache::{FileCache, Mmap},
+    file_cache::FileCache,
     ingestion::IngestionStateClient,
     object_store::ObjectStore,
-    store::segment::SerializedSegment,
-    Cursor,
 };
 
 use super::{error::CompactionError, segment::SegmentService};
-
-pub trait SegmentBuilder: Clone {
-    fn start_new_segment(&mut self, first_block: Cursor) -> Result<(), CompactionError>;
-    fn add_block(&mut self, cursor: &Cursor, bytes: Mmap) -> Result<(), CompactionError>;
-    fn segment_data(&mut self) -> Result<Vec<SerializedSegment>, CompactionError>;
-}
 
 #[derive(Debug, Clone)]
 pub struct CompactionServiceOptions {
@@ -30,11 +22,7 @@ pub struct CompactionServiceOptions {
     pub group_size: usize,
 }
 
-pub struct CompactionService<B>
-where
-    B: SegmentBuilder,
-{
-    builder: B,
+pub struct CompactionService {
     options: CompactionServiceOptions,
     block_store_reader: BlockStoreReader,
     block_store_writer: BlockStoreWriter,
@@ -42,12 +30,8 @@ where
     chain_view: tokio::sync::watch::Receiver<Option<ChainView>>,
 }
 
-impl<B> CompactionService<B>
-where
-    B: SegmentBuilder + Send + Sync + 'static,
-{
+impl CompactionService {
     pub fn new(
-        builder: B,
         etcd_client: EtcdClient,
         object_store: ObjectStore,
         chain_view: tokio::sync::watch::Receiver<Option<ChainView>>,
@@ -59,7 +43,6 @@ where
         let state_client = IngestionStateClient::new(&etcd_client);
 
         Self {
-            builder,
             options,
             block_store_reader,
             block_store_writer,
@@ -89,7 +72,6 @@ where
         };
 
         let segment_service = SegmentService::new(
-            self.builder,
             self.options.segment_size,
             chain_view.clone(),
             self.block_store_reader.clone(),
