@@ -2,11 +2,12 @@ use std::collections::HashMap;
 
 use error_stack::{Result, ResultExt};
 use rkyv::{Archive, Deserialize, Serialize};
+use roaring::RoaringBitmap;
 
 use crate::{store::bitmap::BitmapMap, Cursor};
 
 use super::{
-    bitmap::{ArchivedBitmapMap, BitmapMapBuilder},
+    bitmap::{ArchivedBitmapMap, BitmapMapBuilder, RoaringBitmapExt},
     index::IndexGroup,
     segment::Segment,
 };
@@ -25,14 +26,14 @@ pub struct SegmentGroup {
 /// Builder for a segment group.
 #[derive(Default)]
 pub struct SegmentGroupBuilder {
-    first_block: Option<Cursor>,
+    block_range: Option<(Cursor, Cursor)>,
     block_indexes: HashMap<u8, RawBitmapMapBuilder>,
 }
 
 impl SegmentGroupBuilder {
     pub fn add_segment(&mut self, segment: &Segment) -> Result<(), SegmentGroupError> {
-        if self.first_block.is_none() {
-            self.first_block = Some(segment.first_block.clone());
+        if self.block_range.is_none() {
+            self.block_range = Some((segment.first_block.clone(), segment.first_block.clone()));
         }
 
         for block_data in segment.data.iter() {
@@ -55,6 +56,10 @@ impl SegmentGroupBuilder {
                         bitmap,
                     )
                     .map(RawArchivedBitmapMap::Len1),
+                    4 => rkyv::access::<rkyv::Archived<BitmapMap<[u8; 4]>>, rkyv::rancor::Error>(
+                        bitmap,
+                    )
+                    .map(RawArchivedBitmapMap::Len4),
                     20 => rkyv::access::<rkyv::Archived<BitmapMap<[u8; 20]>>, rkyv::rancor::Error>(
                         bitmap,
                     )
@@ -70,7 +75,9 @@ impl SegmentGroupBuilder {
                     }
                 }
                 .change_context(SegmentGroupError)
-                .attach_printable("failed to deserialize bitmap")?;
+                .attach_printable("failed to deserialize bitmap")
+                .attach_printable_lazy(|| format!("tag: {}", serialized_index.tag))
+                .attach_printable_lazy(|| format!("key size: {}", serialized_index.key_size))?;
 
                 let index =
                     self.block_indexes
@@ -78,6 +85,7 @@ impl SegmentGroupBuilder {
                         .or_insert(match key_size {
                             0 => RawBitmapMapBuilder::Len0(Default::default()),
                             1 => RawBitmapMapBuilder::Len1(Default::default()),
+                            4 => RawBitmapMapBuilder::Len4(Default::default()),
                             20 => RawBitmapMapBuilder::Len20(Default::default()),
                             32 => RawBitmapMapBuilder::Len32(Default::default()),
                             _ => {
@@ -94,6 +102,9 @@ impl SegmentGroupBuilder {
                         add_cursor_to_bitmap_map(&cursor, bitmap, index);
                     }
                     (RawArchivedBitmapMap::Len1(bitmap), RawBitmapMapBuilder::Len1(index)) => {
+                        add_cursor_to_bitmap_map(&cursor, bitmap, index);
+                    }
+                    (RawArchivedBitmapMap::Len4(bitmap), RawBitmapMapBuilder::Len4(index)) => {
                         add_cursor_to_bitmap_map(&cursor, bitmap, index);
                     }
                     (RawArchivedBitmapMap::Len20(bitmap), RawBitmapMapBuilder::Len20(index)) => {
@@ -115,37 +126,48 @@ impl SegmentGroupBuilder {
     }
 
     pub fn build(self) -> Result<SegmentGroup, SegmentGroupError> {
-        let Some(first_block) = self.first_block else {
+        let Some((first_block, last_block)) = self.block_range else {
             return Err(SegmentGroupError)
                 .attach_printable("segment group builder has no segments");
         };
 
         let mut index_group = IndexGroup::default();
+        let block_range = (first_block.number as u32)..=(last_block.number as u32);
+        let block_range = RoaringBitmap::from_iter(block_range)
+            .into_bitmap()
+            .change_context(SegmentGroupError)
+            .attach_printable("failed to convert block range to bitmap")?;
 
         for (tag, index) in self.block_indexes {
             match index {
                 RawBitmapMapBuilder::Len0(index) => {
                     let bitmap = index.into_bitmap_map().change_context(SegmentGroupError)?;
                     index_group
-                        .add_index_raw(tag, 0, &bitmap, "index size 0")
+                        .add_index_raw(tag, 0, block_range.clone(), bitmap, "index size 0")
                         .change_context(SegmentGroupError)?;
                 }
                 RawBitmapMapBuilder::Len1(index) => {
                     let bitmap = index.into_bitmap_map().change_context(SegmentGroupError)?;
                     index_group
-                        .add_index_raw(tag, 1, &bitmap, "index size 1")
+                        .add_index_raw(tag, 1, block_range.clone(), bitmap, "index size 1")
+                        .change_context(SegmentGroupError)?;
+                }
+                RawBitmapMapBuilder::Len4(index) => {
+                    let bitmap = index.into_bitmap_map().change_context(SegmentGroupError)?;
+                    index_group
+                        .add_index_raw(tag, 4, block_range.clone(), bitmap, "index size 4")
                         .change_context(SegmentGroupError)?;
                 }
                 RawBitmapMapBuilder::Len20(index) => {
                     let bitmap = index.into_bitmap_map().change_context(SegmentGroupError)?;
                     index_group
-                        .add_index_raw(tag, 20, &bitmap, "index size 20")
+                        .add_index_raw(tag, 20, block_range.clone(), bitmap, "index size 20")
                         .change_context(SegmentGroupError)?;
                 }
                 RawBitmapMapBuilder::Len32(index) => {
                     let bitmap = index.into_bitmap_map().change_context(SegmentGroupError)?;
                     index_group
-                        .add_index_raw(tag, 32, &bitmap, "index size 32")
+                        .add_index_raw(tag, 32, block_range.clone(), bitmap, "index size 32")
                         .change_context(SegmentGroupError)?;
                 }
             };
@@ -171,6 +193,7 @@ fn add_cursor_to_bitmap_map<K: Copy + Ord + rkyv::Archive<Archived = K>>(
 enum RawBitmapMapBuilder {
     Len0(BitmapMapBuilder<[u8; 0]>),
     Len1(BitmapMapBuilder<[u8; 1]>),
+    Len4(BitmapMapBuilder<[u8; 4]>),
     Len20(BitmapMapBuilder<[u8; 20]>),
     Len32(BitmapMapBuilder<[u8; 32]>),
 }
@@ -178,6 +201,7 @@ enum RawBitmapMapBuilder {
 enum RawArchivedBitmapMap<'a> {
     Len0(&'a ArchivedBitmapMap<[u8; 0]>),
     Len1(&'a ArchivedBitmapMap<[u8; 1]>),
+    Len4(&'a ArchivedBitmapMap<[u8; 4]>),
     Len20(&'a ArchivedBitmapMap<[u8; 20]>),
     Len32(&'a ArchivedBitmapMap<[u8; 32]>),
 }

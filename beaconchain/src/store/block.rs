@@ -1,16 +1,17 @@
 use apibara_dna_common::store::{
-    bitmap::BitmapMapBuilder,
-    fragment::{Block, Fragment},
+    bitmap::{BitmapMapBuilder, RoaringBitmapExt},
+    fragment::Block,
     index::IndexGroup,
 };
 use error_stack::{Result, ResultExt};
+use roaring::RoaringBitmap;
 
 use super::{
     error::StoreError,
     fragment::{Blob, BlockHeader, Slot, Transaction, Validator},
     index::{
-        IndexTransactionByCreate, IndexTransactionByFromAddress, IndexTransactionByToAddress,
-        IndexValidatorByStatus,
+        IndexBlobByTransactionIndex, IndexTransactionByBlobIndex, IndexTransactionByCreate,
+        IndexTransactionByFromAddress, IndexTransactionByToAddress, IndexValidatorByStatus,
     },
 };
 
@@ -19,46 +20,6 @@ pub struct BlockBuilder {
     pub transactions: Vec<Transaction>,
     pub validators: Vec<Validator>,
     pub blobs: Vec<Blob>,
-}
-
-impl Fragment for Slot<BlockHeader> {
-    fn tag() -> u8 {
-        1
-    }
-
-    fn name() -> &'static str {
-        "header"
-    }
-}
-
-impl Fragment for Slot<Vec<Transaction>> {
-    fn tag() -> u8 {
-        2
-    }
-
-    fn name() -> &'static str {
-        "transaction"
-    }
-}
-
-impl Fragment for Slot<Vec<Validator>> {
-    fn tag() -> u8 {
-        3
-    }
-
-    fn name() -> &'static str {
-        "validator"
-    }
-}
-
-impl Fragment for Slot<Vec<Blob>> {
-    fn tag() -> u8 {
-        4
-    }
-
-    fn name() -> &'static str {
-        "blob"
-    }
 }
 
 impl BlockBuilder {
@@ -88,6 +49,7 @@ impl BlockBuilder {
 
         self.index_transactions(&mut index)?;
         self.index_validators(&mut index)?;
+        self.index_blobs(&mut index)?;
 
         let header_fragment = Slot::Proposed(self.header);
         let transactions_fragment = Slot::Proposed(self.transactions);
@@ -143,6 +105,7 @@ impl BlockBuilder {
         let mut transaction_by_from_address = BitmapMapBuilder::default();
         let mut transaction_by_to_address = BitmapMapBuilder::default();
         let mut transaction_by_create = BitmapMapBuilder::default();
+        let mut transaction_by_blob_index = BitmapMapBuilder::default();
 
         for tx in &self.transactions {
             transaction_by_from_address
@@ -158,6 +121,12 @@ impl BlockBuilder {
             }
         }
 
+        for blob in &self.blobs {
+            transaction_by_blob_index
+                .entry(blob.blob_index)
+                .insert(blob.transaction_index);
+        }
+
         let transaction_by_from_address = transaction_by_from_address
             .into_bitmap_map()
             .change_context(StoreError::Indexing)?;
@@ -167,15 +136,32 @@ impl BlockBuilder {
         let transaction_by_create = transaction_by_create
             .into_bitmap_map()
             .change_context(StoreError::Indexing)?;
+        let transaction_by_blob_index = transaction_by_blob_index
+            .into_bitmap_map()
+            .change_context(StoreError::Indexing)?;
+
+        let transactions_length = self.transactions.len();
+        let transaction_range = RoaringBitmap::from_iter(0..transactions_length as u32)
+            .into_bitmap()
+            .change_context(StoreError::Indexing)?;
 
         index
-            .add_index::<IndexTransactionByFromAddress>(&transaction_by_from_address)
+            .add_index::<IndexTransactionByFromAddress>(
+                transaction_range.clone(),
+                transaction_by_from_address,
+            )
             .change_context(StoreError::Indexing)?;
         index
-            .add_index::<IndexTransactionByToAddress>(&transaction_by_to_address)
+            .add_index::<IndexTransactionByToAddress>(
+                transaction_range.clone(),
+                transaction_by_to_address,
+            )
             .change_context(StoreError::Indexing)?;
         index
-            .add_index::<IndexTransactionByCreate>(&transaction_by_create)
+            .add_index::<IndexTransactionByCreate>(transaction_range.clone(), transaction_by_create)
+            .change_context(StoreError::Indexing)?;
+        index
+            .add_index::<IndexTransactionByBlobIndex>(transaction_range, transaction_by_blob_index)
             .change_context(StoreError::Indexing)?;
 
         Ok(())
@@ -190,12 +176,42 @@ impl BlockBuilder {
                 .insert(validator.validator_index);
         }
 
+        let validators_length = self.validators.len();
+        let validator_range = RoaringBitmap::from_iter(0..validators_length as u32)
+            .into_bitmap()
+            .change_context(StoreError::Indexing)?;
+
         let validator_by_status = validator_by_status
             .into_bitmap_map()
             .change_context(StoreError::Indexing)?;
 
         index
-            .add_index::<IndexValidatorByStatus>(&validator_by_status)
+            .add_index::<IndexValidatorByStatus>(validator_range, validator_by_status)
+            .change_context(StoreError::Indexing)?;
+
+        Ok(())
+    }
+
+    fn index_blobs(&self, index: &mut IndexGroup) -> Result<(), StoreError> {
+        let mut blob_by_transaction_index = BitmapMapBuilder::default();
+
+        for blob in &self.blobs {
+            blob_by_transaction_index
+                .entry(blob.transaction_index)
+                .insert(blob.blob_index);
+        }
+
+        let blobs_length = self.blobs.len();
+        let blob_range = RoaringBitmap::from_iter(0..blobs_length as u32)
+            .into_bitmap()
+            .change_context(StoreError::Indexing)?;
+
+        let blob_by_transaction_index = blob_by_transaction_index
+            .into_bitmap_map()
+            .change_context(StoreError::Indexing)?;
+
+        index
+            .add_index::<IndexBlobByTransactionIndex>(blob_range, blob_by_transaction_index)
             .change_context(StoreError::Indexing)?;
 
         Ok(())

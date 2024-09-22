@@ -1,9 +1,49 @@
 //! Store fragments for the beacon chain.
 
-use apibara_dna_common::Hash;
+use apibara_dna_common::{store::Fragment, Hash};
 use rkyv::{Archive, Deserialize, Serialize};
 
 use crate::provider::models;
+
+impl Fragment for Slot<BlockHeader> {
+    fn tag() -> u8 {
+        1
+    }
+
+    fn name() -> &'static str {
+        "header"
+    }
+}
+
+impl Fragment for Slot<Vec<Transaction>> {
+    fn tag() -> u8 {
+        2
+    }
+
+    fn name() -> &'static str {
+        "transaction"
+    }
+}
+
+impl Fragment for Slot<Vec<Validator>> {
+    fn tag() -> u8 {
+        3
+    }
+
+    fn name() -> &'static str {
+        "validator"
+    }
+}
+
+impl Fragment for Slot<Vec<Blob>> {
+    fn tag() -> u8 {
+        4
+    }
+
+    fn name() -> &'static str {
+        "blob"
+    }
+}
 
 /// A beacon chain slot.
 #[derive(Archive, Serialize, Deserialize, Debug)]

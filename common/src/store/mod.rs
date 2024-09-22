@@ -4,4 +4,4 @@ pub mod group;
 pub mod index;
 pub mod segment;
 
-pub use self::fragment::{ArchivedBlock, Block};
+pub use self::fragment::{ArchivedBlock, Block, Fragment};

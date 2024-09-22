@@ -10,7 +10,7 @@ use roaring::RoaringBitmap;
 pub struct BitmapError;
 
 /// Serialized roaring bitmap.
-#[derive(Archive, Serialize, Deserialize, Debug)]
+#[derive(Archive, Serialize, Deserialize, Debug, Clone)]
 pub struct Bitmap(pub Vec<u8>);
 
 #[derive(Archive, Serialize, Deserialize, Default, Debug)]

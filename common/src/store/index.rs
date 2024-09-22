@@ -1,20 +1,22 @@
 use error_stack::{Result, ResultExt};
 use rkyv::{rancor::Strategy, Archive, Archived, Deserialize, Portable, Serialize};
 
-use crate::rkyv::{Checked, Serializable};
+use crate::rkyv::{Aligned, Checked, Serializable};
 
 use super::{
-    bitmap::{ArchivedBitmapMap, BitmapMap},
+    bitmap::{ArchivedBitmapMap, Bitmap, BitmapMap},
     fragment::Fragment,
 };
 
 #[derive(Debug, Clone)]
 pub struct IndexError;
 
-#[derive(Archive, Serialize, Deserialize, Default)]
+#[derive(Archive, Serialize, Deserialize)]
 pub struct SerializedIndex {
     pub tag: u8,
     pub key_size: usize,
+    pub range: Bitmap,
+    #[rkyv(with = Aligned<16>)]
     pub data: Vec<u8>,
 }
 
@@ -45,26 +47,28 @@ impl Fragment for IndexGroup {
 impl IndexGroup {
     pub fn add_index<TI: TaggedIndex>(
         &mut self,
-        index: &BitmapMap<TI::Key>,
+        range: Bitmap,
+        index: BitmapMap<TI::Key>,
     ) -> Result<usize, IndexError>
     where
         TI::Key: for<'a> Serializable<'a>,
     {
-        self.add_index_raw(TI::tag(), TI::key_size(), index, TI::name())
+        self.add_index_raw(TI::tag(), TI::key_size(), range, index, TI::name())
     }
 
     pub fn add_index_raw<K>(
         &mut self,
         tag: u8,
         key_size: usize,
-        index: &BitmapMap<K>,
+        range: Bitmap,
+        index: BitmapMap<K>,
         name: &'static str,
     ) -> Result<usize, IndexError>
     where
         K: for<'a> Serializable<'a>,
     {
         let id = self.indices.len();
-        let data = rkyv::to_bytes(index)
+        let data = rkyv::to_bytes(&index)
             .change_context(IndexError)
             .attach_printable("failed to serialize index")
             .attach_printable_lazy(|| format!("tag: {}({})", name, tag))?
@@ -73,6 +77,7 @@ impl IndexGroup {
         self.indices.push(SerializedIndex {
             tag,
             key_size,
+            range,
             data,
         });
 
@@ -188,8 +193,9 @@ impl std::fmt::Debug for SerializedIndex {
 #[cfg(test)]
 mod tests {
     use rkyv::de::Pool;
+    use roaring::RoaringBitmap;
 
-    use crate::store::bitmap::BitmapMapBuilder;
+    use crate::store::bitmap::{BitmapMapBuilder, RoaringBitmapExt};
 
     use super::*;
 
@@ -246,8 +252,11 @@ mod tests {
         let index_b = index_b.into_bitmap_map().unwrap();
 
         let mut index_group = IndexGroup::default();
-        let index_a_id = index_group.add_index::<IndexA>(&index_a).unwrap();
-        let index_b_id = index_group.add_index::<IndexB>(&index_b).unwrap();
+        let range_a = RoaringBitmap::from_iter(100..200).into_bitmap().unwrap();
+        let range_b = RoaringBitmap::from_iter(10..20).into_bitmap().unwrap();
+
+        let index_a_id = index_group.add_index::<IndexA>(range_a, index_a).unwrap();
+        let index_b_id = index_group.add_index::<IndexB>(range_b, index_b).unwrap();
 
         assert_eq!(index_a_id, 0);
         assert_eq!(index_b_id, 1);
