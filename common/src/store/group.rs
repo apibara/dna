@@ -32,9 +32,12 @@ pub struct SegmentGroupBuilder {
 
 impl SegmentGroupBuilder {
     pub fn add_segment(&mut self, segment: &Segment) -> Result<(), SegmentGroupError> {
-        if self.block_range.is_none() {
-            self.block_range = Some((segment.first_block.clone(), segment.first_block.clone()));
-        }
+        let segment_cursor = segment.first_block.clone();
+
+        self.block_range = match self.block_range.take() {
+            None => Some((segment_cursor.clone(), segment_cursor)),
+            Some((first_block, _)) => Some((first_block, segment_cursor)),
+        };
 
         for block_data in segment.data.iter() {
             let cursor: Cursor = block_data.cursor.clone();

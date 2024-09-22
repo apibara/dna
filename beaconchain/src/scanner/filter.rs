@@ -1,5 +1,5 @@
 use apibara_dna_common::{
-    data_stream::{FilterMatch, FilterMatchSet, ScannerError},
+    data_stream::{FilterMatch, ScannerError},
     store::index::ArchivedIndexGroup,
 };
 use apibara_dna_protocol::beaconchain;
@@ -51,20 +51,16 @@ struct BlobFilter {
 #[derive(Debug)]
 pub struct FilteredData {
     pub header: bool,
-    pub transactions: FilterMatchSet,
-    pub transactions_by_blob: FilterMatchSet,
-    pub blobs: FilterMatchSet,
-    pub blobs_by_transaction: FilterMatchSet,
-    pub validators: FilterMatchSet,
+    pub transactions: FilterMatch,
+    pub validators: FilterMatch,
+    pub blobs: FilterMatch,
 }
 
 impl FilteredData {
     pub fn is_empty(&self) -> bool {
         !self.header
             && self.transactions.is_empty()
-            && self.transactions_by_blob.is_empty()
             && self.blobs.is_empty()
-            && self.blobs_by_transaction.is_empty()
             && self.validators.is_empty()
     }
 }
@@ -88,20 +84,27 @@ impl Filter {
             && self.blobs.is_empty()
     }
 
-    pub fn filter_data(&self, index: &ArchivedIndexGroup) -> Result<FilteredData, ScannerError> {
+    pub fn filter_data(
+        &self,
+        index: &ArchivedIndexGroup,
+        is_group: bool,
+    ) -> Result<FilteredData, ScannerError> {
         let mut deserializer = Pool::default();
 
-        let mut local = FilterMatch::default();
+        let mut local = RoaringBitmap::new();
 
-        let mut transactions = FilterMatchSet::default();
-        let mut transactions_by_blob = FilterMatchSet::default();
-
-        let mut blobs = FilterMatchSet::default();
-        let mut blobs_by_transaction = FilterMatchSet::default();
-
-        let mut validators = FilterMatchSet::default();
+        let mut transactions = FilterMatch::default();
+        let mut validators = FilterMatch::default();
+        let mut blobs = FilterMatch::default();
 
         if !self.transactions.is_empty() {
+            let transaction_range = index
+                .range::<index::IndexTransactionByFromAddress>()
+                .ok_or(ScannerError)
+                .attach_printable("missing transaction range index")?
+                .deserialize()
+                .change_context(ScannerError)?;
+
             let transaction_by_from_address = index
                 .access_archived_index::<index::IndexTransactionByFromAddress>()
                 .change_context(ScannerError)?
@@ -127,14 +130,15 @@ impl Filter {
                 .change_context(ScannerError)?;
 
             for tx_filter in &self.transactions {
-                local.reset();
+                local.clear();
+                local |= &transaction_range;
 
                 if let Some(from_address) = tx_filter.from {
                     if let Some(bitmap) = transaction_by_from_address
                         .get_bitmap(&from_address)
                         .change_context(ScannerError)?
                     {
-                        local.intersect(&bitmap);
+                        local &= bitmap;
                     } else {
                         local.clear();
                     }
@@ -147,7 +151,7 @@ impl Filter {
                             .get_bitmap(&to_address)
                             .change_context(ScannerError)?
                         {
-                            local.intersect(&bitmap);
+                            local &= bitmap;
                         } else {
                             local.clear();
                         }
@@ -157,7 +161,7 @@ impl Filter {
                             .get_bitmap(&())
                             .change_context(ScannerError)?
                         {
-                            local.intersect(&bitmap);
+                            local &= bitmap;
                         } else {
                             local.clear();
                         }
@@ -166,22 +170,77 @@ impl Filter {
 
                 transactions.add_match(tx_filter.id, &local);
 
-                if tx_filter.include_blob {
-                    blobs_by_transaction.add_match(tx_filter.id, &local);
+                if tx_filter.include_blob && !is_group {
+                    let blobs_by_transaction_index = index
+                        .access_archived_index::<index::IndexBlobByTransactionIndex>()
+                        .change_context(ScannerError)?
+                        .ok_or(ScannerError)
+                        .attach_printable("missing blob by transaction index index")?
+                        .deserialize(&mut deserializer)
+                        .change_context(ScannerError)?;
+
+                    for tx_index in local.iter() {
+                        if let Some(bitmap) = blobs_by_transaction_index
+                            .get_bitmap(&tx_index)
+                            .change_context(ScannerError)?
+                        {
+                            blobs.add_match(tx_filter.id, &bitmap);
+                        }
+                    }
                 }
             }
         }
 
-        for blob_filter in &self.blobs {
-            local.reset();
-            blobs.add_match(blob_filter.id, &local);
+        if !self.blobs.is_empty() {
+            let blob_range = index
+                .range::<index::IndexBlobByTransactionIndex>()
+                .ok_or(ScannerError)
+                .attach_printable("missing blob range index")?
+                .deserialize()
+                .change_context(ScannerError)?;
 
-            if blob_filter.include_transaction {
-                transactions_by_blob.add_match(blob_filter.id, &local);
+            for blob_filter in &self.blobs {
+                local.clear();
+                local |= &blob_range;
+
+                blobs.add_match(blob_filter.id, &local);
+
+                if blob_filter.include_transaction && !is_group {
+                    let transaction_by_blob_index = index
+                        .access_archived_index::<index::IndexTransactionByBlobIndex>()
+                        .change_context(ScannerError)?
+                        .ok_or(ScannerError)
+                        .attach_printable("missing transaction by blob index index")?
+                        .deserialize(&mut deserializer)
+                        .change_context(ScannerError)?;
+
+                    for blob_index in local.iter() {
+                        if let Some(bitmap) = transaction_by_blob_index
+                            .get_bitmap(&blob_index)
+                            .change_context(ScannerError)?
+                        {
+                            transactions.add_match(blob_filter.id, &bitmap);
+                        } else {
+                            return Err(ScannerError)
+                                .attach_printable("missing transaction by blob index")
+                                .attach_printable_lazy(|| format!("blob index: {}", blob_index))
+                                .attach_printable_lazy(|| {
+                                    format!("transaction filter: {}", blob_filter.id)
+                                });
+                        }
+                    }
+                }
             }
         }
 
         if !self.validators.is_empty() {
+            let validator_range = index
+                .range::<index::IndexValidatorByStatus>()
+                .ok_or(ScannerError)
+                .attach_printable("missing validator range index")?
+                .deserialize()
+                .change_context(ScannerError)?;
+
             let validator_by_status = index
                 .access_archived_index::<index::IndexValidatorByStatus>()
                 .change_context(ScannerError)?
@@ -191,12 +250,14 @@ impl Filter {
                 .change_context(ScannerError)?;
 
             for validator_filter in &self.validators {
-                local.reset();
+                local.clear();
+                local |= &validator_range;
 
                 if let Some(index) = validator_filter.validator_index {
-                    let mut bitmap = RoaringBitmap::new();
-                    bitmap.insert(index);
-                    local.intersect(&bitmap);
+                    if !is_group {
+                        local.clear();
+                        local.insert(index);
+                    }
                 }
 
                 if let Some(status) = validator_filter.status {
@@ -204,7 +265,7 @@ impl Filter {
                         .get_bitmap(&status)
                         .change_context(ScannerError)?
                     {
-                        local.intersect(&bitmap);
+                        local &= bitmap;
                     } else {
                         local.clear();
                     }
@@ -217,9 +278,7 @@ impl Filter {
         Ok(FilteredData {
             header: self.always_include_header,
             transactions,
-            transactions_by_blob,
             blobs,
-            blobs_by_transaction,
             validators,
         })
     }

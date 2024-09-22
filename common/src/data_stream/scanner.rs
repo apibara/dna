@@ -48,8 +48,6 @@ pub trait Scanner: Send {
     /// Fills the given bitmap with the blocks that match the filters.
     fn fill_block_bitmap(
         &mut self,
-        group_cursor: &Cursor,
-        blocks_in_group: usize,
         group: &ArchivedSegmentGroup,
         bitmap: &mut RoaringBitmap,
         block_range: RangeInclusive<u32>,

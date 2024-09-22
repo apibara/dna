@@ -66,8 +66,6 @@ impl ScannerFactory for BeaconChainScannerFactory {
 impl Scanner for BeaconChainScanner {
     async fn fill_block_bitmap(
         &mut self,
-        group_cursor: &Cursor,
-        blocks_in_group: usize,
         group: &ArchivedSegmentGroup,
         bitmap: &mut RoaringBitmap,
         block_range: RangeInclusive<u32>,
@@ -82,44 +80,25 @@ impl Scanner for BeaconChainScanner {
         let filtered = self
             .filters
             .iter()
-            .map(|f| f.filter_data(&group.index))
+            .map(|f| f.filter_data(&group.index, true))
             .collect::<Result<Vec<_>, _>>()?;
 
-        for mut filter in filtered {
+        for filter in filtered {
             if filter.header {
                 bitmap.insert_range(block_range);
                 break;
             }
 
-            if !filter.transactions_by_blob.is_empty() {
-                bitmap.insert_range(block_range);
-                break;
+            for match_ in filter.transactions.iter() {
+                bitmap.insert(match_.index);
             }
 
-            if !filter.blobs_by_transaction.is_empty() {
-                bitmap.insert_range(block_range);
-                break;
+            for match_ in filter.validators.iter() {
+                bitmap.insert(match_.index);
             }
 
-            for block in filter
-                .transactions
-                .take_matches_with_range(group_cursor.number as u32, blocks_in_group)
-            {
-                bitmap.insert(block.index);
-            }
-
-            for block in filter
-                .validators
-                .take_matches_with_range(group_cursor.number as u32, blocks_in_group)
-            {
-                bitmap.insert(block.index);
-            }
-
-            for block in filter
-                .blobs
-                .take_matches_with_range(group_cursor.number as u32, blocks_in_group)
-            {
-                bitmap.insert(block.index);
+            for match_ in filter.blobs.iter() {
+                bitmap.insert(match_.index);
             }
         }
 
@@ -162,7 +141,7 @@ impl Scanner for BeaconChainScanner {
         let filtered = self
             .filters
             .iter()
-            .map(|f| f.filter_data(index))
+            .map(|f| f.filter_data(index, false))
             .collect::<Result<Vec<_>, _>>()?;
 
         if filtered.has_no_data() {
@@ -177,21 +156,11 @@ impl Scanner for BeaconChainScanner {
 
         let header: beaconchain::BlockHeader = header.into();
 
-        for mut data in filtered {
+        for data in filtered {
             let mut result = beaconchain::Block {
                 header: Some(header.clone()),
                 ..Default::default()
             };
-
-            if !data.transactions_by_blob.is_empty() {
-                // TODO
-                return Err(ScannerError).attach_printable("unimplemented");
-            }
-
-            if !data.blobs_by_transaction.is_empty() {
-                // TODO
-                return Err(ScannerError).attach_printable("unimplemented");
-            }
 
             if !data.transactions.is_empty() {
                 let transactions = fragment_access
@@ -205,10 +174,10 @@ impl Scanner for BeaconChainScanner {
                     .ok_or(ScannerError)
                     .attach_printable("missing transactions")?;
 
-                for data_ref in data.transactions.take_matches(transactions.len()) {
+                for match_ in data.transactions.iter() {
                     let mut transaction: beaconchain::Transaction =
-                        (&transactions[data_ref.index as usize]).into();
-                    transaction.filter_ids = data_ref.filter_ids.into_iter().collect();
+                        (&transactions[match_.index as usize]).into();
+                    transaction.filter_ids = match_.filter_ids;
                     result.transactions.push(transaction);
                 }
             }
@@ -225,10 +194,10 @@ impl Scanner for BeaconChainScanner {
                     .ok_or(ScannerError)
                     .attach_printable("missing validators")?;
 
-                for data_ref in data.validators.take_matches(validators.len()) {
+                for match_ in data.validators.iter() {
                     let mut validator: beaconchain::Validator =
-                        (&validators[data_ref.index as usize]).into();
-                    validator.filter_ids = data_ref.filter_ids.into_iter().collect();
+                        (&validators[match_.index as usize]).into();
+                    validator.filter_ids = match_.filter_ids;
                     result.validators.push(validator);
                 }
             }
@@ -245,9 +214,9 @@ impl Scanner for BeaconChainScanner {
                     .ok_or(ScannerError)
                     .attach_printable("missing blobs")?;
 
-                for data_ref in data.blobs.take_matches(blobs.len()) {
-                    let mut blob: beaconchain::Blob = (&blobs[data_ref.index as usize]).into();
-                    blob.filter_ids = data_ref.filter_ids.into_iter().collect();
+                for match_ in data.blobs.iter() {
+                    let mut blob: beaconchain::Blob = (&blobs[match_.index as usize]).into();
+                    blob.filter_ids = match_.filter_ids;
                     result.blobs.push(blob);
                 }
             }

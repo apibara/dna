@@ -4,7 +4,7 @@ use rkyv::{rancor::Strategy, Archive, Archived, Deserialize, Portable, Serialize
 use crate::rkyv::{Aligned, Checked, Serializable};
 
 use super::{
-    bitmap::{ArchivedBitmapMap, Bitmap, BitmapMap},
+    bitmap::{ArchivedBitmap, ArchivedBitmapMap, Bitmap, BitmapMap},
     fragment::Fragment,
 };
 
@@ -152,8 +152,6 @@ impl ArchivedIndexGroup {
         TI: TaggedIndex,
         TI::Key: 'a,
         <TI::Key as rkyv::Archive>::Archived: Portable + for<'b> Checked<'b>,
-        // <TI::Key as rkyv::Archive>::Archived:
-        //     Portable + Deserialize<TI::Key, Strategy<D, rkyv::rancor::Error>> + for<'b> Checked<'b>,
         <BitmapMap<TI::Key> as Archive>::Archived:
             Deserialize<BitmapMap<TI::Key>, Strategy<D, rkyv::rancor::Error>>,
     {
@@ -169,6 +167,14 @@ impl ArchivedIndexGroup {
         .attach_printable("failed to deserialize index")
         .attach_printable_lazy(|| format!("tag: {}({})", TI::name(), TI::tag()))
         .map(Some)
+    }
+
+    pub fn range<'a, TI: TaggedIndex>(&'a self) -> Option<&'a ArchivedBitmap>
+    where
+        <TI::Key as rkyv::Archive>::Archived: Portable + for<'b> Checked<'b>,
+    {
+        let serialized = self.indices.iter().find(|i| i.tag == TI::tag())?;
+        Some(&serialized.range)
     }
 }
 

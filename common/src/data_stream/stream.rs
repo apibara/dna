@@ -208,7 +208,6 @@ where
 
         let group_start = self.chain_view.get_group_start_block(cursor.number).await;
         let group_end = self.chain_view.get_group_end_block(cursor.number).await;
-        let blocks_in_group = self.chain_view.get_blocks_in_group().await;
 
         let group_start_cursor = Cursor::new_finalized(group_start);
         let mut data_bitmap = RoaringBitmap::default();
@@ -227,13 +226,7 @@ where
                     .attach_printable("failed to access group")?;
 
             self.scanner
-                .fill_block_bitmap(
-                    &group_start_cursor,
-                    blocks_in_group as usize,
-                    group,
-                    &mut data_bitmap,
-                    block_range,
-                )
+                .fill_block_bitmap(group, &mut data_bitmap, block_range)
                 .await
                 .change_context(DataStreamError)?;
         }
@@ -271,20 +264,26 @@ where
                 .await
                 .change_context(DataStreamError)?
             else {
-                return Err(DataStreamError).attach_printable("missing canonical block");
+                return Err(DataStreamError)
+                    .attach_printable("missing canonical block")
+                    .attach_printable_lazy(|| format!("block number: {}", block_number));
             };
 
-            let CanonicalCursor::Canonical(previous_cursor) = self
+            let previous_cursor = if block_number == 0 {
+                None
+            } else if let CanonicalCursor::Canonical(previous_cursor) = self
                 .chain_view
                 .get_canonical(block_number - 1)
                 .await
                 .change_context(DataStreamError)?
-            else {
-                return Err(DataStreamError).attach_printable("missing canonical block");
+            {
+                previous_cursor.into()
+            } else {
+                None
             };
 
             current_segment_data.push(SegmentBlock {
-                cursor: previous_cursor.into(),
+                cursor: previous_cursor,
                 end_cursor: block_cursor.clone(),
                 offset: (block_number - current_segment_start) as usize,
             });
