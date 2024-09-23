@@ -258,26 +258,6 @@ impl BlockIngestion for BeaconChainBlockIngestion {
 
         Ok((block_info, block))
     }
-
-    #[tracing::instrument("beaconchain_ingest_block_by_hash", skip(self), err(Debug))]
-    async fn ingest_block_by_hash(&self, hash: Hash) -> Result<(BlockInfo, Block), IngestionError> {
-        let hash = models::B256::try_from(hash.as_slice())
-            .change_context(IngestionError::BadHash)
-            .attach_printable("failed to convert hash to B256")
-            .attach_printable_lazy(|| format!("hash: {}", hash))?;
-
-        let (block_info, block) = self
-            .ingest_block_by_id(BlockId::BlockRoot(hash))
-            .change_context(IngestionError::RpcRequest)
-            .attach_printable("failed to get block by hash")
-            .attach_printable_lazy(|| format!("block hash: {}", hash))
-            .await?
-            .ok_or(IngestionError::BlockNotFound)
-            .attach_printable("block with the given hash not found")
-            .attach_printable_lazy(|| format!("block hash: {}", hash))?;
-
-        Ok((block_info, block))
-    }
 }
 
 pub fn decode_transaction(

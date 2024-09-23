@@ -14,7 +14,7 @@ use crate::{
     file_cache::FileCache,
     object_store::ObjectStore,
     store::Block,
-    Cursor, Hash,
+    Cursor,
 };
 
 use super::{error::IngestionError, state_client::IngestionStateClient};
@@ -30,11 +30,6 @@ pub trait BlockIngestion: Clone {
     fn ingest_block_by_number(
         &self,
         block_number: u64,
-    ) -> impl Future<Output = Result<(BlockInfo, Block), IngestionError>> + Send;
-
-    fn ingest_block_by_hash(
-        &self,
-        block_hash: Hash,
     ) -> impl Future<Output = Result<(BlockInfo, Block), IngestionError>> + Send;
 }
 

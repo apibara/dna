@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use error_stack::{Result, ResultExt};
 use reqwest::header::{HeaderMap, HeaderValue};
@@ -33,8 +33,9 @@ pub struct StarknetProviderOptions {
     pub headers: HeaderMap<HeaderValue>,
 }
 
+#[derive(Clone)]
 pub struct StarknetProvider {
-    client: JsonRpcClient<HttpTransport>,
+    client: Arc<JsonRpcClient<HttpTransport>>,
     options: StarknetProviderOptions,
 }
 
@@ -51,7 +52,7 @@ impl StarknetProvider {
             transport.add_header(key, value);
         }
 
-        let client = JsonRpcClient::new(transport);
+        let client = JsonRpcClient::new(transport).into();
 
         Ok(Self { client, options })
     }
