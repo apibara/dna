@@ -57,6 +57,25 @@ impl StarknetProvider {
         Ok(Self { client, options })
     }
 
+    pub async fn get_block_with_tx_hashes(
+        &self,
+        block_id: &BlockId,
+    ) -> Result<models::MaybePendingBlockWithTxHashes, StarknetProviderError> {
+        let starknet_block_id: starknet::core::types::BlockId = block_id.into();
+
+        let request = self.client.get_block_with_tx_hashes(starknet_block_id);
+        let Ok(response) = tokio::time::timeout(self.options.timeout, request).await else {
+            return Err(StarknetProviderError::Timeout)
+                .attach_printable("failed to get block with transaction hashes")
+                .attach_printable_lazy(|| format!("block id: {block_id:?}"));
+        };
+
+        response
+            .or_else(convert_error)
+            .attach_printable("failed to get block with transaction hashes")
+            .attach_printable_lazy(|| format!("block id: {block_id:?}"))
+    }
+
     pub async fn get_block_with_receipts(
         &self,
         block_id: &BlockId,
@@ -66,12 +85,32 @@ impl StarknetProvider {
         let request = self.client.get_block_with_receipts(starknet_block_id);
         let Ok(response) = tokio::time::timeout(self.options.timeout, request).await else {
             return Err(StarknetProviderError::Timeout)
+                .attach_printable("failed to get block with receipts")
                 .attach_printable_lazy(|| format!("block id: {block_id:?}"));
         };
 
         response
             .or_else(convert_error)
             .attach_printable("failed to get block with receipts")
+            .attach_printable_lazy(|| format!("block id: {block_id:?}"))
+    }
+
+    pub async fn get_state_update(
+        &self,
+        block_id: &BlockId,
+    ) -> Result<models::MaybePendingStateUpdate, StarknetProviderError> {
+        let starknet_block_id: starknet::core::types::BlockId = block_id.into();
+
+        let request = self.client.get_state_update(starknet_block_id);
+        let Ok(response) = tokio::time::timeout(self.options.timeout, request).await else {
+            return Err(StarknetProviderError::Timeout)
+                .attach_printable("failed to get block state update")
+                .attach_printable_lazy(|| format!("block id: {block_id:?}"));
+        };
+
+        response
+            .or_else(convert_error)
+            .attach_printable("failed to get block state update")
             .attach_printable_lazy(|| format!("block id: {block_id:?}"))
     }
 }
