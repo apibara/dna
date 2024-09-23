@@ -8,7 +8,10 @@ use error_stack::{Result, ResultExt};
 use tokio::sync::Mutex;
 use tracing::trace;
 
-use crate::provider::{models, BlockExt, BlockId, StarknetProvider};
+use crate::{
+    provider::{models, BlockExt, BlockId, StarknetProvider},
+    store::{fragment, BlockBuilder},
+};
 
 pub struct StarknetBlockIngestion {
     provider: StarknetProvider,
@@ -131,12 +134,13 @@ impl BlockIngestion for StarknetBlockIngestion {
             .attach_printable("failed to get block by number")
             .attach_printable_lazy(|| format!("block number: {}", block_number))?;
 
-        let models::MaybePendingBlockWithReceipts::Block(block) = block else {
+        let models::MaybePendingBlockWithReceipts::Block(mut block) = block else {
             return Err(IngestionError::RpcRequest)
                 .attach_printable("unexpected pending block")
                 .attach_printable_lazy(|| format!("block number: {}", block_number));
         };
 
+        /*
         // Use the block hash to avoid issues with reorgs.
         let block_id = BlockId::Hash(block.block_hash.clone());
 
@@ -151,6 +155,7 @@ impl BlockIngestion for StarknetBlockIngestion {
                 .attach_printable("unexpected pending state update")
                 .attach_printable_lazy(|| format!("block number: {}", block_number));
         };
+        */
 
         let hash = block.block_hash.to_bytes_be().to_vec();
         let parent = block.parent_hash.to_bytes_be().to_vec();
@@ -162,11 +167,28 @@ impl BlockIngestion for StarknetBlockIngestion {
             parent: Hash(parent),
         };
 
-        println!("{:?}", state_update);
-        println!("{:?}", block);
-        println!("{:?}", block_info);
+        let transactions_with_receipts = std::mem::take(&mut block.transactions);
 
-        todo!();
+        let header = fragment::BlockHeader::from(&block);
+        let (transactions, receipts, events, messages) =
+            decompose_block(&transactions_with_receipts);
+
+        let block = {
+            let block_builder = BlockBuilder {
+                header,
+                transactions,
+                receipts,
+                events,
+                messages,
+            };
+
+            block_builder
+                .build()
+                .change_context(IngestionError::Model)
+                .attach_printable("failed to build block")?
+        };
+
+        Ok((block_info, block))
     }
 }
 
@@ -176,6 +198,122 @@ impl Clone for StarknetBlockIngestion {
             provider: self.provider.clone(),
             finalized_hint: Mutex::new(None),
         }
+    }
+}
+
+fn decompose_block(
+    transactions: &[models::TransactionWithReceipt],
+) -> (
+    Vec<fragment::Transaction>,
+    Vec<fragment::TransactionReceipt>,
+    Vec<fragment::Event>,
+    Vec<fragment::MessageToL1>,
+) {
+    let mut block_transactions = Vec::new();
+    let mut block_receipts = Vec::new();
+    let mut block_events = Vec::new();
+    let mut block_messages = Vec::new();
+
+    for (transaction_index, transaction_with_receipt) in transactions.iter().enumerate() {
+        let transaction_index = transaction_index as u32;
+        let transaction_hash =
+            fragment::FieldElement::from(transaction_with_receipt.transaction.transaction_hash());
+        let transaction_reverted = matches!(
+            transaction_with_receipt.receipt.execution_result(),
+            models::ExecutionResult::Reverted { .. }
+        );
+
+        let events = match &transaction_with_receipt.receipt {
+            models::TransactionReceipt::Invoke(rx) => &rx.events,
+            models::TransactionReceipt::L1Handler(rx) => &rx.events,
+            models::TransactionReceipt::Declare(rx) => &rx.events,
+            models::TransactionReceipt::Deploy(rx) => &rx.events,
+            models::TransactionReceipt::DeployAccount(rx) => &rx.events,
+        };
+
+        for event in events.iter() {
+            let mut event = fragment::Event::from(event);
+
+            event.event_index = block_events.len() as u32;
+            event.transaction_index = transaction_index;
+            event.transaction_hash = transaction_hash.clone();
+            event.transaction_reverted = transaction_reverted;
+
+            block_events.push(event);
+        }
+
+        let messages = match &transaction_with_receipt.receipt {
+            models::TransactionReceipt::Invoke(rx) => &rx.messages_sent,
+            models::TransactionReceipt::L1Handler(rx) => &rx.messages_sent,
+            models::TransactionReceipt::Declare(rx) => &rx.messages_sent,
+            models::TransactionReceipt::Deploy(rx) => &rx.messages_sent,
+            models::TransactionReceipt::DeployAccount(rx) => &rx.messages_sent,
+        };
+
+        for message in messages.iter() {
+            let mut message = fragment::MessageToL1::from(message);
+
+            message.message_index = block_messages.len() as u32;
+            message.transaction_index = transaction_index;
+            message.transaction_hash = transaction_hash.clone();
+            message.transaction_reverted = transaction_reverted;
+
+            block_messages.push(message);
+        }
+
+        let mut transaction = fragment::Transaction::from(&transaction_with_receipt.transaction);
+        set_transaction_index_and_reverted(
+            &mut transaction,
+            transaction_index,
+            transaction_reverted,
+        );
+
+        let mut receipt = fragment::TransactionReceipt::from(&transaction_with_receipt.receipt);
+        set_receipt_transaction_index(&mut receipt, transaction_index);
+
+        block_transactions.push(transaction);
+        block_receipts.push(receipt);
+    }
+
+    (
+        block_transactions,
+        block_receipts,
+        block_events,
+        block_messages,
+    )
+}
+
+fn set_transaction_index_and_reverted(
+    transaction: &mut fragment::Transaction,
+    index: u32,
+    reverted: bool,
+) {
+    use fragment::Transaction::*;
+    let meta = match transaction {
+        InvokeTransactionV0(tx) => &mut tx.meta,
+        InvokeTransactionV1(tx) => &mut tx.meta,
+        InvokeTransactionV3(tx) => &mut tx.meta,
+        L1HandlerTransaction(tx) => &mut tx.meta,
+        DeployTransaction(tx) => &mut tx.meta,
+        DeclareTransactionV0(tx) => &mut tx.meta,
+        DeclareTransactionV1(tx) => &mut tx.meta,
+        DeclareTransactionV2(tx) => &mut tx.meta,
+        DeclareTransactionV3(tx) => &mut tx.meta,
+        DeployAccountTransactionV1(tx) => &mut tx.meta,
+        DeployAccountTransactionV3(tx) => &mut tx.meta,
+    };
+    meta.transaction_index = index;
+    meta.transaction_reverted = reverted;
+}
+
+fn set_receipt_transaction_index(receipt: &mut fragment::TransactionReceipt, index: u32) {
+    use fragment::TransactionReceipt::*;
+    match receipt {
+        Invoke(rx) => rx.meta.transaction_index = index,
+        L1Handler(rx) => rx.meta.transaction_index = index,
+        Deploy(rx) => rx.meta.transaction_index = index,
+        Declare(rx) => rx.meta.transaction_index = index,
+        DeployAccount(rx) => rx.meta.transaction_index = index,
     }
 }
 

@@ -1,7 +1,15 @@
 use apibara_dna_common::{Cursor, Hash};
 pub use starknet::core::types::{
-    Felt as FieldElement, MaybePendingBlockWithReceipts, MaybePendingBlockWithTxHashes,
-    MaybePendingStateUpdate,
+    BlockWithReceipts, ComputationResources, DataAvailabilityMode, DataResources,
+    DeclareTransaction, DeclareTransactionReceipt, DeclareTransactionV0, DeclareTransactionV1,
+    DeclareTransactionV2, DeclareTransactionV3, DeployAccountTransaction,
+    DeployAccountTransactionReceipt, DeployAccountTransactionV1, DeployAccountTransactionV3,
+    DeployTransaction, DeployTransactionReceipt, Event, ExecutionResources, ExecutionResult,
+    FeePayment, Felt as FieldElement, InvokeTransaction, InvokeTransactionReceipt,
+    InvokeTransactionV0, InvokeTransactionV1, InvokeTransactionV3, L1DataAvailabilityMode,
+    L1HandlerTransaction, L1HandlerTransactionReceipt, MaybePendingBlockWithReceipts,
+    MaybePendingBlockWithTxHashes, MaybePendingStateUpdate, MsgToL1, PriceUnit, ResourceBounds,
+    ResourceBoundsMapping, ResourcePrice, Transaction, TransactionReceipt, TransactionWithReceipt,
 };
 
 pub trait BlockExt {

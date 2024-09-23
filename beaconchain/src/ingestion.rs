@@ -15,7 +15,7 @@ use crate::{
         http::{BeaconApiErrorExt, BeaconApiProvider, BlockId},
         models::{self, BeaconCursorExt},
     },
-    store::{block::BlockBuilder, fragment},
+    store::{block_builder::BlockBuilder, fragment},
 };
 
 #[derive(Clone)]

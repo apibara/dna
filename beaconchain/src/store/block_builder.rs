@@ -2,12 +2,12 @@ use apibara_dna_common::store::{
     bitmap::{BitmapMapBuilder, RoaringBitmapExt},
     fragment::Block,
     index::IndexGroup,
+    StoreError,
 };
 use error_stack::{Result, ResultExt};
 use roaring::RoaringBitmap;
 
 use super::{
-    error::StoreError,
     fragment::{Blob, BlockHeader, Slot, Transaction, Validator},
     index::{
         IndexBlobByTransactionIndex, IndexTransactionByBlobIndex, IndexTransactionByCreate,

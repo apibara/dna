@@ -20,7 +20,7 @@ pub struct Cli {
 #[derive(Subcommand, Debug)]
 pub enum Command {
     /// Start the Starknet DNA server.
-    Start(StartCommand),
+    Start(Box<StartCommand>),
     /// Debug Starknet RPC calls.
     #[command(name = "dbg-rpc")]
     DebugRpc {
