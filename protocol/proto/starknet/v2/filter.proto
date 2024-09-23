@@ -23,93 +23,103 @@ message HeaderFilter {
 
 // Filter events.
 message EventFilter {
+  uint32 id = 1;
   // Filter by contract emitting the event.
-  FieldElement from_address = 1;
+  FieldElement address = 2;
   // Filter keys that prefix-match the given data.
-  repeated Key keys = 2;
+  repeated Key keys = 3;
   // Only returns events with keys of exactly the same length as the filter.
   //
   // Defaults to `false`.
-  optional bool strict = 3;
+  optional bool strict = 4;
   // Include events emitted by reverted transactions.
   //
   // Defaults to false.
-  optional bool include_reverted = 4;
+  optional bool include_reverted = 5;
   // Include the transaction that emitted the event.
   //
   // Defaults to false.
-  optional bool include_transaction = 5;
+  optional bool include_transaction = 6;
   // Include the receipt of the transaction that emitted the event.
   //
   // Defaults to false.
-  optional bool include_receipt = 6;
+  optional bool include_receipt = 7;
   // Include the messages to L1 sent by the transaction that emitted the event.
   //
   // Defaults to false.
-  optional bool include_messages = 7;
+  optional bool include_messages = 8;
   // Include sibling events, that is events emitted by the same transaction.
+  //
+  // Defaults to false.
+  optional bool include_siblings = 9;
+}
+
+message Key {
+  // The event key. If empty, matches any event key.
+  FieldElement value = 1;
+}
+
+// Filter messages to L1.
+message MessageToL1Filter {
+  uint32 id = 1;
+  // Filter by sender address.
+  FieldElement from_address = 2;
+  // Filter by destination address.
+  FieldElement to_address = 3;
+  // Include messages sent by reverted transactions.
+  //
+  // Defaults to false.
+  optional bool include_reverted = 4;
+  // Include the transaction that sent the message.
+  //
+  // Defaults to false.
+  optional bool include_transaction = 5;
+  // Include the receipt of the transaction that sent the message.
+  //
+  // Defaults to false.
+  optional bool include_receipt = 6;
+  // Include the events of the transaction that sent the message.
+  //
+  // Defaults to false.
+  optional bool include_events = 7;
+  // Include the messages of the transaction that sent the message.
   //
   // Defaults to false.
   optional bool include_siblings = 8;
 }
 
-message Key { FieldElement value = 1; }
-
-// Filter messages to L1.
-message MessageToL1Filter {
-  // Filter by sender address.
-  FieldElement from_address = 1;
-  // Filter by destination address.
-  FieldElement to_address = 2;
-  // Include messages sent by reverted transactions.
-  //
-  // Defaults to false.
-  optional bool include_reverted = 3;
-  // Include the transaction that sent the message.
-  //
-  // Defaults to false.
-  optional bool include_transaction = 4;
-  // Include the receipt of the transaction that sent the message.
-  //
-  // Defaults to false.
-  optional bool include_receipt = 5;
-  // Include the events of the transaction that sent the message.
-  //
-  // Defaults to false.
-  optional bool include_events = 6;
-}
-
 // Filter transactions.
 message TransactionFilter {
+  uint32 id = 1;
   // Include reverted transactions.
   //
   // Defaults to false.
-  optional bool include_reverted = 1;
+  optional bool include_reverted = 2;
   // Flag to request the transaction's receipt.
   //
   // Defaults to `false`.
-  optional bool include_receipt = 2;
+  optional bool include_receipt = 3;
   // Flag to request the transaction's events.
   //
   // Defaults to `false`.
-  optional bool include_events = 3;
+  optional bool include_events = 4;
   // Flag to request the transaction's messages to L1.
   //
   // Defaults to `false`.
-  optional bool include_messages = 4;
+  optional bool include_messages = 5;
 
   oneof inner {
-    InvokeTransactionV0Filter invoke_v0 = 5;
-    InvokeTransactionV1Filter invoke_v1 = 6;
-    InvokeTransactionV3Filter invoke_v3 = 7;
-    DeployTransactionFilter deploy = 8;
-    DeclareV0TransactionFilter declare_v0 = 9;
-    DeclareV1TransactionFilter declare_v1 = 10;
-    DeclareV2TransactionFilter declare_v2 = 11;
-    DeclareV3TransactionFilter declare_v3 = 12;
-    L1HandlerTransactionFilter l1_handler = 13;
-    DeployAccountV1TransactionFilter deploy_account_v1 = 14;
-    DeployAccountV3TransactionFilter deploy_account_v3 = 15;
+    InvokeTransactionV0Filter invoke_v0 = 6;
+    InvokeTransactionV1Filter invoke_v1 = 7;
+    InvokeTransactionV3Filter invoke_v3 = 8;
+    DeployTransactionFilter deploy = 9;
+    DeclareV0TransactionFilter declare_v0 = 10;
+    DeclareV1TransactionFilter declare_v1 = 11;
+    DeclareV2TransactionFilter declare_v2 = 12;
+    DeclareV3TransactionFilter declare_v3 = 13;
+    L1HandlerTransactionFilter l1_handler = 14;
+    DeployAccountV1TransactionFilter deploy_account_v1 = 15;
+    DeployAccountV3TransactionFilter deploy_account_v3 = 16;
   }
 }
 

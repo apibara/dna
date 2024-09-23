@@ -144,7 +144,7 @@ pub struct DataResources {
 
 #[derive(Archive, Serialize, Deserialize, Debug, PartialEq)]
 pub struct Event {
-    pub from_address: FieldElement,
+    pub address: FieldElement,
     pub keys: Vec<FieldElement>,
     pub data: Vec<FieldElement>,
 
@@ -164,6 +164,24 @@ pub struct MessageToL1 {
     pub transaction_index: u32,
     pub transaction_hash: FieldElement,
     pub transaction_reverted: bool,
+}
+
+#[derive(Archive, Serialize, Deserialize, Debug, PartialEq, Clone, PartialOrd, Ord, Hash, Eq)]
+pub enum TransactionType {
+    InvokeTransactionV0,
+    InvokeTransactionV1,
+    InvokeTransactionV3,
+
+    L1HandlerTransaction,
+    DeployTransaction,
+
+    DeclareTransactionV0,
+    DeclareTransactionV1,
+    DeclareTransactionV2,
+    DeclareTransactionV3,
+
+    DeployAccountTransactionV1,
+    DeployAccountTransactionV3,
 }
 
 #[derive(Archive, Serialize, Deserialize, Debug, PartialEq)]
@@ -387,6 +405,27 @@ impl From<FieldElement> for Hash {
 
 impl std::fmt::Debug for FieldElement {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "F(0x{})", hex::encode(&self.0))
+        write!(f, "F(0x{})", hex::encode(self.0))
+    }
+}
+
+impl Transaction {
+    pub fn transaction_index(&self) -> u32 {
+        match self {
+            Transaction::InvokeTransactionV0(tx) => tx.meta.transaction_index,
+            Transaction::InvokeTransactionV1(tx) => tx.meta.transaction_index,
+            Transaction::InvokeTransactionV3(tx) => tx.meta.transaction_index,
+
+            Transaction::L1HandlerTransaction(tx) => tx.meta.transaction_index,
+            Transaction::DeployTransaction(tx) => tx.meta.transaction_index,
+
+            Transaction::DeclareTransactionV0(tx) => tx.meta.transaction_index,
+            Transaction::DeclareTransactionV1(tx) => tx.meta.transaction_index,
+            Transaction::DeclareTransactionV2(tx) => tx.meta.transaction_index,
+            Transaction::DeclareTransactionV3(tx) => tx.meta.transaction_index,
+
+            Transaction::DeployAccountTransactionV1(tx) => tx.meta.transaction_index,
+            Transaction::DeployAccountTransactionV3(tx) => tx.meta.transaction_index,
+        }
     }
 }

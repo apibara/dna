@@ -236,7 +236,7 @@ fn decompose_block(
 
             event.event_index = block_events.len() as u32;
             event.transaction_index = transaction_index;
-            event.transaction_hash = transaction_hash.clone();
+            event.transaction_hash = transaction_hash;
             event.transaction_reverted = transaction_reverted;
 
             block_events.push(event);
@@ -255,7 +255,7 @@ fn decompose_block(
 
             message.message_index = block_messages.len() as u32;
             message.transaction_index = transaction_index;
-            message.transaction_hash = transaction_hash.clone();
+            message.transaction_hash = transaction_hash;
             message.transaction_reverted = transaction_reverted;
 
             block_messages.push(message);

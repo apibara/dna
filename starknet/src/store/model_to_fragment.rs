@@ -539,7 +539,7 @@ impl From<&models::DeployAccountTransactionReceipt> for store::TransactionReceip
 impl From<&models::Event> for store::Event {
     fn from(event: &models::Event) -> Self {
         store::Event {
-            from_address: event.from_address.into(),
+            address: event.from_address.into(),
             keys: event.keys.iter().map(store::FieldElement::from).collect(),
             data: event.data.iter().map(store::FieldElement::from).collect(),
 

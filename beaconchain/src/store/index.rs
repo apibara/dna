@@ -9,31 +9,6 @@ use super::fragment;
 /// Used by: TransactionFilter.from
 pub struct IndexTransactionByFromAddress;
 
-/// ToAddress -> TransactionIndex
-///
-/// Used by: TransactionFilter.to
-pub struct IndexTransactionByToAddress;
-
-/// CreateTransaction -> TransactionIndex
-///
-/// Used by: TransactionFilter.create
-pub struct IndexTransactionByCreate;
-
-/// BlobIndex -> TransactionIndex
-///
-/// Used by: TransactionFilter.include_blob
-pub struct IndexTransactionByBlobIndex;
-
-/// ValidatorStatus -> ValidatorIndex
-///
-/// Used by: ValidatorFilter.status
-pub struct IndexValidatorByStatus;
-
-/// TransactionIndex -> BlobIndex
-///
-/// Used by: BlobFilter.include_transaction
-pub struct IndexBlobByTransactionIndex;
-
 impl TaggedIndex for IndexTransactionByFromAddress {
     type Key = fragment::Address;
 
@@ -49,6 +24,11 @@ impl TaggedIndex for IndexTransactionByFromAddress {
         "transaction_by_from_address"
     }
 }
+
+/// ToAddress -> TransactionIndex
+///
+/// Used by: TransactionFilter.to
+pub struct IndexTransactionByToAddress;
 
 impl TaggedIndex for IndexTransactionByToAddress {
     type Key = fragment::Address;
@@ -66,6 +46,11 @@ impl TaggedIndex for IndexTransactionByToAddress {
     }
 }
 
+/// CreateTransaction -> TransactionIndex
+///
+/// Used by: TransactionFilter.create
+pub struct IndexTransactionByCreate;
+
 impl TaggedIndex for IndexTransactionByCreate {
     type Key = ();
 
@@ -81,6 +66,11 @@ impl TaggedIndex for IndexTransactionByCreate {
         "transaction_by_create"
     }
 }
+
+/// BlobIndex -> TransactionIndex
+///
+/// Used by: TransactionFilter.include_blob
+pub struct IndexTransactionByBlobIndex;
 
 impl TaggedIndex for IndexTransactionByBlobIndex {
     type Key = u32;
@@ -98,6 +88,11 @@ impl TaggedIndex for IndexTransactionByBlobIndex {
     }
 }
 
+/// ValidatorStatus -> ValidatorIndex
+///
+/// Used by: ValidatorFilter.status
+pub struct IndexValidatorByStatus;
+
 impl TaggedIndex for IndexValidatorByStatus {
     type Key = models::ValidatorStatus;
 
@@ -113,6 +108,11 @@ impl TaggedIndex for IndexValidatorByStatus {
         "validator_by_status"
     }
 }
+
+/// TransactionIndex -> BlobIndex
+///
+/// Used by: BlobFilter.include_transaction
+pub struct IndexBlobByTransactionIndex;
 
 impl TaggedIndex for IndexBlobByTransactionIndex {
     type Key = u32;

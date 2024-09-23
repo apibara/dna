@@ -18,7 +18,7 @@ pub trait Fragment: Archive {
     fn name() -> &'static str;
 }
 
-#[derive(Archive, Serialize, Deserialize, Debug)]
+#[derive(Archive, Serialize, Deserialize)]
 pub struct SerializedFragment {
     pub tag: u8,
     pub name: String,
@@ -79,6 +79,16 @@ impl error_stack::Context for FragmentError {}
 impl std::fmt::Display for FragmentError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "fragment error")
+    }
+}
+
+impl std::fmt::Debug for SerializedFragment {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SerializedFragment")
+            .field("tag", &self.tag)
+            .field("name", &self.name)
+            .field("data", &format!("<{} bytes>", self.data.len()))
+            .finish()
     }
 }
 
