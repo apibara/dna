@@ -13,7 +13,7 @@ members = [
     "protocol",
     "common",
     # "evm",
-    # "starknet",
+    "starknet",
     "beaconchain",
 ]
 

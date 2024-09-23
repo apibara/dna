@@ -14,41 +14,27 @@ path = "src/lib.rs"
 name = "apibara-dna-starknet"
 path = "src/bin.rs"
 
-[features]
-default = ["jemalloc"]
-jemalloc = ["dep:jemallocator"]
-
 [dependencies]
 apibara-observability = { path = "../observability" }
 apibara-dna-common = { path = "../common" }
 apibara-dna-protocol = { path = "../protocol" }
-async-channel.workspace = true
-async-stream.workspace = true
-async-trait.workspace = true
-bytecheck.workspace = true
-bytes.workspace = true
+byte-unit.workspace = true
 clap.workspace = true
+ctrlc.workspace = true
 error-stack.workspace = true
-governor.workspace = true
+futures.workspace = true
 hex.workspace = true
-futures-util.workspace = true
-memmap2.workspace = true
 prost.workspace = true
 prost-types.workspace = true
+reqwest.workspace = true
 roaring.workspace = true
 rkyv.workspace = true
-tonic.workspace = true
-tonic-reflection.workspace = true
-tokio.workspace = true
-tokio-stream.workspace = true
-tokio-util.workspace = true
-starknet = { git = "https://github.com/xJonathanLEI/starknet-rs", rev = "7153d0e42" }
-tracing.workspace = true
-tracing-opentelemetry.workspace = true
-
-[target.'cfg(not(windows))'.dependencies]
-jemallocator = { workspace = true, optional = true }
-
-[dev-dependencies]
 serde.workspace = true
 serde_json.workspace = true
+serde_with.workspace = true
+starknet = "0.12.0"
+tonic.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+tracing.workspace = true
+url.workspace = true

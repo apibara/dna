@@ -1,36 +1,38 @@
-mod common;
-mod ingestion;
-// mod inspect;
-mod server;
+mod dbg;
+mod rpc;
 
 use clap::{Parser, Subcommand};
 use error_stack::Result;
-use ingestion::{run_ingestion, StartIngestionArgs};
+use tokio_util::sync::CancellationToken;
 
-use crate::error::DnaStarknetError;
-// use inspect::{run_inspect, InspectArgs};
-use server::{run_server, StartServerArgs};
+use crate::error::StarknetError;
+
+use self::dbg::DebugRpcCommand;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 pub struct Cli {
     #[command(subcommand)]
-    subcommand: Command,
+    command: Command,
 }
 
 #[derive(Subcommand, Debug)]
-enum Command {
-    StartIngestion(StartIngestionArgs),
-    StartServer(StartServerArgs),
-    // Inspect(InspectArgs),
+pub enum Command {
+    /// Start the Starknet DNA server.
+    Start,
+    /// Debug Starknet RPC calls.
+    #[command(name = "dbg-rpc")]
+    DebugRpc {
+        #[clap(subcommand)]
+        command: DebugRpcCommand,
+    },
 }
 
 impl Cli {
-    pub async fn run(self) -> Result<(), DnaStarknetError> {
-        match self.subcommand {
-            Command::StartIngestion(args) => run_ingestion(args).await,
-            Command::StartServer(args) => run_server(args).await,
-            // Command::Inspect(args) => run_inspect(args).await,
+    pub async fn run(self, _ct: CancellationToken) -> Result<(), StarknetError> {
+        match self.command {
+            Command::Start => todo!(),
+            Command::DebugRpc { command } => command.run().await,
         }
     }
 }
