@@ -13,8 +13,8 @@ members = [
     "protocol",
     "common",
     # "evm",
-    "starknet",
-    "beaconchain",
+    # "starknet",
+    # "beaconchain",
 ]
 
 [workspace.dependencies]

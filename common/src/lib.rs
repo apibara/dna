@@ -7,6 +7,7 @@ pub mod compaction;
 mod core;
 pub mod data_stream;
 pub mod file_cache;
+pub mod index;
 pub mod ingestion;
 pub mod object_store;
 pub mod options_store;
