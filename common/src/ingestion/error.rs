@@ -11,6 +11,7 @@ pub enum IngestionError {
     Options,
     BadHash,
     Model,
+    Indexing,
 }
 
 pub trait IngestionErrorExt {
@@ -46,6 +47,9 @@ impl std::fmt::Display for IngestionError {
             }
             IngestionError::Options => {
                 write!(f, "ingestion error: invalid options")
+            }
+            IngestionError::Indexing => {
+                write!(f, "ingestion error: indexing error")
             }
         }
     }

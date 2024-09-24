@@ -1,8 +1,14 @@
 //! Block fragments contain pieces of block data.
 
-use rkyv::{Archive, Deserialize, Serialize};
+use std::collections::BTreeMap;
+
+use rkyv::{with::AsVec, Archive, Deserialize, Serialize};
+
+use crate::index;
 
 pub type FragmentId = u8;
+
+pub type IndexId = u8;
 
 /// A pre-serialized protobuf message without the `filter_ids` field.
 pub type SerializedProto = Vec<u8>;
@@ -10,14 +16,12 @@ pub type SerializedProto = Vec<u8>;
 pub trait Fragment {
     /// Returns the fragment's unique ID.
     fn id(&self) -> FragmentId;
-
-    fn byte_size(&self) -> usize;
 }
 
 #[derive(Archive, Serialize, Deserialize, Debug)]
 pub struct Block {
-    pub index: IndexFragment,
     pub header: HeaderFragment,
+    pub indexes: Vec<FragmentIndexes>,
     pub body: Vec<BodyFragment>,
 }
 
@@ -26,8 +30,26 @@ pub struct HeaderFragment {
     pub data: SerializedProto,
 }
 
+/// Information needed to join the fragment with another fragment.
 #[derive(Archive, Serialize, Deserialize, Debug)]
-pub struct IndexFragment {}
+pub struct JoinIndex {
+    /// Map the source index to the index in the destination index.
+    pub indexes: Vec<u32>,
+}
+
+#[derive(Archive, Serialize, Deserialize, Debug)]
+pub struct Index {
+    pub index_id: IndexId,
+    pub index: index::Index,
+}
+
+#[derive(Archive, Serialize, Deserialize, Debug)]
+pub struct FragmentIndexes {
+    pub fragment_id: FragmentId,
+    pub indexes: Vec<Index>,
+    // #[rkyv(with = AsVec)]
+    // pub joins: BTreeMap<FragmentId, JoinIndex>,
+}
 
 #[derive(Archive, Serialize, Deserialize, Debug)]
 pub struct BodyFragment {
@@ -41,36 +63,10 @@ impl Fragment for HeaderFragment {
     fn id(&self) -> FragmentId {
         1
     }
-
-    fn byte_size(&self) -> usize {
-        self.data.len()
-    }
-}
-
-impl Fragment for IndexFragment {
-    fn id(&self) -> FragmentId {
-        0
-    }
-
-    fn byte_size(&self) -> usize {
-        0
-    }
 }
 
 impl Fragment for BodyFragment {
     fn id(&self) -> FragmentId {
         self.id
-    }
-
-    fn byte_size(&self) -> usize {
-        self.data.iter().map(Vec::len).sum()
-    }
-}
-
-impl Block {
-    pub fn byte_size(&self) -> usize {
-        self.index.byte_size()
-            + self.header.byte_size()
-            + self.body.iter().map(Fragment::byte_size).sum::<usize>()
     }
 }

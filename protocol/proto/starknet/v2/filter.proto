@@ -32,10 +32,10 @@ message EventFilter {
   //
   // Defaults to `false`.
   optional bool strict = 4;
-  // Include events emitted by reverted transactions.
+  // Filter based on the transaction status.
   //
-  // Defaults to false.
-  optional bool include_reverted = 5;
+  // Defaults to `Succeeded`.
+  optional TransactionStatusFilter transaction_status = 5;
   // Include the transaction that emitted the event.
   //
   // Defaults to false.
@@ -66,10 +66,10 @@ message MessageToL1Filter {
   FieldElement from_address = 2;
   // Filter by destination address.
   FieldElement to_address = 3;
-  // Include messages sent by reverted transactions.
+  // Filter based on the transaction status.
   //
-  // Defaults to false.
-  optional bool include_reverted = 4;
+  // Defaults to `Succeeded`.
+  optional TransactionStatusFilter transaction_status = 4;
   // Include the transaction that sent the message.
   //
   // Defaults to false.
@@ -91,10 +91,10 @@ message MessageToL1Filter {
 // Filter transactions.
 message TransactionFilter {
   uint32 id = 1;
-  // Include reverted transactions.
+  // Filter based on the transaction status.
   //
-  // Defaults to false.
-  optional bool include_reverted = 2;
+  // Defaults to `Succeeded`.
+  optional TransactionStatusFilter transaction_status = 2;
   // Flag to request the transaction's receipt.
   //
   // Defaults to `false`.
@@ -134,3 +134,10 @@ message DeclareV3TransactionFilter {}
 message L1HandlerTransactionFilter {}
 message DeployAccountV1TransactionFilter {}
 message DeployAccountV3TransactionFilter {}
+
+enum TransactionStatusFilter {
+  TRANSACTION_STATUS_FILTER_UNSPECIFIED = 0;
+  TRANSACTION_STATUS_FILTER_SUCCEEDED = 1;
+  TRANSACTION_STATUS_FILTER_REVERTED = 2;
+  TRANSACTION_STATUS_FILTER_ALL = 3;
+}
