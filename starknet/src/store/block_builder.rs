@@ -12,9 +12,10 @@ use super::{
     fragment::{BlockHeader, Event, MessageToL1, Transaction, TransactionReceipt, TransactionType},
     index::{
         IndexEventByAddress, IndexEventByKey0, IndexEventByKey1, IndexEventByKey2,
-        IndexEventByKey3, IndexEventByTransactionIndex, IndexMessageByFromAddress,
-        IndexMessageByToAddress, IndexMessageByTransactionIndex, IndexTransactionByEventIndex,
-        IndexTransactionByMessageIndex, IndexTransactionByType,
+        IndexEventByKey3, IndexEventBySuccess, IndexEventByTransactionIndex,
+        IndexMessageByFromAddress, IndexMessageBySuccess, IndexMessageByToAddress,
+        IndexMessageByTransactionIndex, IndexTransactionByEventIndex,
+        IndexTransactionByMessageIndex, IndexTransactionBySuccess, IndexTransactionByType,
     },
 };
 
@@ -38,7 +39,7 @@ impl BlockBuilder {
         self.index_messages(&mut index, message_range, transaction_range.clone())?;
         self.index_transactions(&mut index, transaction_range)?;
 
-        assert_eq!(index.indices.len(), 12);
+        assert_eq!(index.indices.len(), 15);
 
         let mut block = Block::default();
         block
@@ -107,12 +108,17 @@ impl BlockBuilder {
         let mut event_by_key_2 = BitmapMapBuilder::default();
         let mut event_by_key_3 = BitmapMapBuilder::default();
         let mut event_by_transaction_index = BitmapMapBuilder::default();
+        let mut event_by_success = BitmapMapBuilder::default();
         let mut transaction_by_event_index = BitmapMapBuilder::default();
 
         for event in self.events.iter() {
             let event_index = event.event_index;
 
             event_by_address.entry(event.address).insert(event_index);
+
+            if !event.transaction_reverted {
+                event_by_success.entry(()).insert(event_index);
+            }
 
             let mut keys = event.keys.iter();
 
@@ -156,6 +162,9 @@ impl BlockBuilder {
         let event_by_transaction_index = event_by_transaction_index
             .into_bitmap_map()
             .change_context(StoreError::Indexing)?;
+        let event_by_success = event_by_success
+            .into_bitmap_map()
+            .change_context(StoreError::Indexing)?;
         let transaction_by_event_index = transaction_by_event_index
             .into_bitmap_map()
             .change_context(StoreError::Indexing)?;
@@ -183,7 +192,13 @@ impl BlockBuilder {
             .add_index::<IndexEventByKey3>(event_range.clone(), event_by_key_3)
             .change_context(StoreError::Indexing)?;
         index
-            .add_index::<IndexEventByTransactionIndex>(event_range, event_by_transaction_index)
+            .add_index::<IndexEventByTransactionIndex>(
+                event_range.clone(),
+                event_by_transaction_index,
+            )
+            .change_context(StoreError::Indexing)?;
+        index
+            .add_index::<IndexEventBySuccess>(event_range, event_by_success)
             .change_context(StoreError::Indexing)?;
         index
             .add_index::<IndexTransactionByEventIndex>(
@@ -205,9 +220,14 @@ impl BlockBuilder {
         let mut message_by_transaction_index = BitmapMapBuilder::default();
         let mut message_by_from_address = BitmapMapBuilder::default();
         let mut message_by_to_address = BitmapMapBuilder::default();
+        let mut message_by_success = BitmapMapBuilder::default();
 
         for message in self.messages.iter() {
             let message_index = message.message_index;
+
+            if !message.transaction_reverted {
+                message_by_success.entry(()).insert(message_index);
+            }
 
             transaction_by_message_index
                 .entry(message_index)
@@ -238,6 +258,9 @@ impl BlockBuilder {
         let message_by_to_address = message_by_to_address
             .into_bitmap_map()
             .change_context(StoreError::Indexing)?;
+        let message_by_success = message_by_success
+            .into_bitmap_map()
+            .change_context(StoreError::Indexing)?;
 
         let message_range = message_range
             .into_bitmap()
@@ -264,6 +287,9 @@ impl BlockBuilder {
         index
             .add_index::<IndexMessageByToAddress>(message_range.clone(), message_by_to_address)
             .change_context(StoreError::Indexing)?;
+        index
+            .add_index::<IndexMessageBySuccess>(message_range, message_by_success)
+            .change_context(StoreError::Indexing)?;
 
         Ok(())
     }
@@ -274,9 +300,14 @@ impl BlockBuilder {
         transaction_range: RoaringBitmap,
     ) -> Result<(), StoreError> {
         let mut transaction_by_type = BitmapMapBuilder::default();
+        let mut transaction_by_success = BitmapMapBuilder::default();
 
         for tx in self.transactions.iter() {
             let transaction_index = tx.transaction_index();
+
+            if !tx.is_reverted() {
+                transaction_by_success.entry(()).insert(transaction_index);
+            }
 
             let tx_type = match tx {
                 Transaction::InvokeTransactionV0(_) => TransactionType::InvokeTransactionV0,
@@ -309,9 +340,15 @@ impl BlockBuilder {
         let transaction_by_type = transaction_by_type
             .into_bitmap_map()
             .change_context(StoreError::Indexing)?;
+        let transaction_by_success = transaction_by_success
+            .into_bitmap_map()
+            .change_context(StoreError::Indexing)?;
 
         index
-            .add_index::<IndexTransactionByType>(transaction_range, transaction_by_type)
+            .add_index::<IndexTransactionByType>(transaction_range.clone(), transaction_by_type)
+            .change_context(StoreError::Indexing)?;
+        index
+            .add_index::<IndexTransactionBySuccess>(transaction_range, transaction_by_success)
             .change_context(StoreError::Indexing)?;
 
         Ok(())

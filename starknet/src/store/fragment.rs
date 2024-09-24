@@ -410,22 +410,30 @@ impl std::fmt::Debug for FieldElement {
 }
 
 impl Transaction {
+    pub fn is_reverted(&self) -> bool {
+        self.meta().transaction_reverted
+    }
+
     pub fn transaction_index(&self) -> u32 {
+        self.meta().transaction_index
+    }
+
+    pub fn meta(&self) -> &TransactionMeta {
         match self {
-            Transaction::InvokeTransactionV0(tx) => tx.meta.transaction_index,
-            Transaction::InvokeTransactionV1(tx) => tx.meta.transaction_index,
-            Transaction::InvokeTransactionV3(tx) => tx.meta.transaction_index,
+            Transaction::InvokeTransactionV0(tx) => &tx.meta,
+            Transaction::InvokeTransactionV1(tx) => &tx.meta,
+            Transaction::InvokeTransactionV3(tx) => &tx.meta,
 
-            Transaction::L1HandlerTransaction(tx) => tx.meta.transaction_index,
-            Transaction::DeployTransaction(tx) => tx.meta.transaction_index,
+            Transaction::L1HandlerTransaction(tx) => &tx.meta,
+            Transaction::DeployTransaction(tx) => &tx.meta,
 
-            Transaction::DeclareTransactionV0(tx) => tx.meta.transaction_index,
-            Transaction::DeclareTransactionV1(tx) => tx.meta.transaction_index,
-            Transaction::DeclareTransactionV2(tx) => tx.meta.transaction_index,
-            Transaction::DeclareTransactionV3(tx) => tx.meta.transaction_index,
+            Transaction::DeclareTransactionV0(tx) => &tx.meta,
+            Transaction::DeclareTransactionV1(tx) => &tx.meta,
+            Transaction::DeclareTransactionV2(tx) => &tx.meta,
+            Transaction::DeclareTransactionV3(tx) => &tx.meta,
 
-            Transaction::DeployAccountTransactionV1(tx) => tx.meta.transaction_index,
-            Transaction::DeployAccountTransactionV3(tx) => tx.meta.transaction_index,
+            Transaction::DeployAccountTransactionV1(tx) => &tx.meta,
+            Transaction::DeployAccountTransactionV3(tx) => &tx.meta,
         }
     }
 }

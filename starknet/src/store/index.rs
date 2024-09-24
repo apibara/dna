@@ -263,3 +263,66 @@ impl TaggedIndex for IndexMessageByToAddress {
         "message_by_to_address"
     }
 }
+
+/// () -> EventIndex
+///
+/// Used by: EventFilter.include_reverted
+pub struct IndexEventBySuccess;
+
+impl TaggedIndex for IndexEventBySuccess {
+    type Key = ();
+
+    fn tag() -> u8 {
+        13
+    }
+
+    fn key_size() -> usize {
+        0
+    }
+
+    fn name() -> &'static str {
+        "event_by_success"
+    }
+}
+
+/// () -> TransactionIndex
+///
+/// Used by: TransactionFilter.include_reverted
+pub struct IndexTransactionBySuccess;
+
+impl TaggedIndex for IndexTransactionBySuccess {
+    type Key = ();
+
+    fn tag() -> u8 {
+        14
+    }
+
+    fn key_size() -> usize {
+        0
+    }
+
+    fn name() -> &'static str {
+        "transaction_by_success"
+    }
+}
+
+/// () -> MessageIndex
+///
+/// Used by: MessageFilter.include_reverted
+pub struct IndexMessageBySuccess;
+
+impl TaggedIndex for IndexMessageBySuccess {
+    type Key = ();
+
+    fn tag() -> u8 {
+        15
+    }
+
+    fn key_size() -> usize {
+        0
+    }
+
+    fn name() -> &'static str {
+        "message_by_success"
+    }
+}
