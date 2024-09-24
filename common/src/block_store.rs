@@ -3,9 +3,8 @@ use error_stack::{Result, ResultExt};
 
 use crate::{
     file_cache::{FileCache, Mmap},
+    fragment,
     object_store::{GetOptions, ObjectETag, ObjectStore, PutOptions},
-    rkyv::Serializable,
-    store::{group::SegmentGroup, segment::SerializedSegment},
     Cursor,
 };
 
@@ -152,15 +151,12 @@ impl BlockStoreWriter {
         Self { client }
     }
 
-    pub async fn put_block<B>(
+    pub async fn put_block(
         &self,
         cursor: &Cursor,
-        block: &B,
-    ) -> Result<ObjectETag, BlockStoreError>
-    where
-        B: for<'a> Serializable<'a>,
-    {
-        let serialized = rkyv::to_bytes(block)
+        block: &fragment::Block,
+    ) -> Result<ObjectETag, BlockStoreError> {
+        let serialized = rkyv::to_bytes::<rkyv::rancor::Error>(block)
             .change_context(BlockStoreError)
             .attach_printable("failed to serialize block")?;
 
@@ -177,6 +173,7 @@ impl BlockStoreWriter {
         Ok(response.etag)
     }
 
+    /*
     pub async fn put_segment(
         &self,
         first_cursor: &Cursor,
@@ -225,6 +222,7 @@ impl BlockStoreWriter {
 
         Ok(response.etag)
     }
+    */
 }
 
 fn format_block_key(cursor: &Cursor) -> String {

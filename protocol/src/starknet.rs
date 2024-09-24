@@ -10,6 +10,10 @@ impl_scalar_traits!(FieldElement);
 impl_from_to_bytes!(FieldElement, 32);
 impl_scalar_helpers!(FieldElement, 32);
 
+impl_scalar_traits!(Uint128);
+impl_from_to_bytes!(Uint128, 16);
+impl_scalar_helpers!(Uint128, 16);
+
 #[cfg(test)]
 mod tests {
     use super::*;

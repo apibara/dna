@@ -1,16 +1,21 @@
 use apibara_dna_common::{
     chain::BlockInfo,
+    fragment::{Block, BodyFragment, HeaderFragment, IndexFragment},
     ingestion::{BlockIngestion, IngestionError},
-    store::Block,
     Cursor, Hash,
 };
+use apibara_dna_protocol::starknet;
 use error_stack::{Result, ResultExt};
+use prost::Message;
 use tokio::sync::Mutex;
 use tracing::trace;
 
 use crate::{
+    fragment::{
+        EVENT_FRAGMENT_ID, MESSAGE_FRAGMENT_ID, RECEIPT_FRAGMENT_ID, TRANSACTION_FRAGMENT_ID,
+    },
+    proto::{convert_block_header, ModelExt},
     provider::{models, BlockExt, BlockId, StarknetProvider},
-    store::{fragment, BlockBuilder},
 };
 
 pub struct StarknetBlockIngestion {
@@ -134,7 +139,7 @@ impl BlockIngestion for StarknetBlockIngestion {
             .attach_printable("failed to get block by number")
             .attach_printable_lazy(|| format!("block number: {}", block_number))?;
 
-        let models::MaybePendingBlockWithReceipts::Block(mut block) = block else {
+        let models::MaybePendingBlockWithReceipts::Block(block) = block else {
             return Err(IngestionError::RpcRequest)
                 .attach_printable("unexpected pending block")
                 .attach_printable_lazy(|| format!("block number: {}", block_number));
@@ -167,25 +172,19 @@ impl BlockIngestion for StarknetBlockIngestion {
             parent: Hash(parent),
         };
 
-        let transactions_with_receipts = std::mem::take(&mut block.transactions);
+        let header_fragment = {
+            let header = convert_block_header(&block);
+            HeaderFragment {
+                data: header.encode_to_vec(),
+            }
+        };
 
-        let header = fragment::BlockHeader::from(&block);
-        let (transactions, receipts, events, messages) =
-            decompose_block(&transactions_with_receipts);
+        let (index_fragment, body_fragments) = collect_block_body_and_index(&block.transactions);
 
-        let block = {
-            let block_builder = BlockBuilder {
-                header,
-                transactions,
-                receipts,
-                events,
-                messages,
-            };
-
-            block_builder
-                .build()
-                .change_context(IngestionError::Model)
-                .attach_printable("failed to build block")?
+        let block = Block {
+            header: header_fragment,
+            index: index_fragment,
+            body: body_fragments,
         };
 
         Ok((block_info, block))
@@ -201,14 +200,9 @@ impl Clone for StarknetBlockIngestion {
     }
 }
 
-fn decompose_block(
+fn collect_block_body_and_index(
     transactions: &[models::TransactionWithReceipt],
-) -> (
-    Vec<fragment::Transaction>,
-    Vec<fragment::TransactionReceipt>,
-    Vec<fragment::Event>,
-    Vec<fragment::MessageToL1>,
-) {
+) -> (IndexFragment, Vec<BodyFragment>) {
     let mut block_transactions = Vec::new();
     let mut block_receipts = Vec::new();
     let mut block_events = Vec::new();
@@ -216,12 +210,15 @@ fn decompose_block(
 
     for (transaction_index, transaction_with_receipt) in transactions.iter().enumerate() {
         let transaction_index = transaction_index as u32;
-        let transaction_hash =
-            fragment::FieldElement::from(transaction_with_receipt.transaction.transaction_hash());
-        let transaction_reverted = matches!(
-            transaction_with_receipt.receipt.execution_result(),
-            models::ExecutionResult::Reverted { .. }
-        );
+        let transaction_hash = transaction_with_receipt
+            .transaction
+            .transaction_hash()
+            .to_proto();
+
+        let transaction_status = match transaction_with_receipt.receipt.execution_result() {
+            models::ExecutionResult::Succeeded => starknet::TransactionStatus::Succeeded,
+            models::ExecutionResult::Reverted { .. } => starknet::TransactionStatus::Reverted,
+        };
 
         let events = match &transaction_with_receipt.receipt {
             models::TransactionReceipt::Invoke(rx) => &rx.events,
@@ -232,12 +229,12 @@ fn decompose_block(
         };
 
         for event in events.iter() {
-            let mut event = fragment::Event::from(event);
+            let mut event = event.to_proto();
 
             event.event_index = block_events.len() as u32;
             event.transaction_index = transaction_index;
-            event.transaction_hash = transaction_hash;
-            event.transaction_reverted = transaction_reverted;
+            event.transaction_hash = transaction_hash.into();
+            event.transaction_status = transaction_status as i32;
 
             block_events.push(event);
         }
@@ -251,70 +248,98 @@ fn decompose_block(
         };
 
         for message in messages.iter() {
-            let mut message = fragment::MessageToL1::from(message);
+            let mut message = message.to_proto();
 
             message.message_index = block_messages.len() as u32;
             message.transaction_index = transaction_index;
-            message.transaction_hash = transaction_hash;
-            message.transaction_reverted = transaction_reverted;
+            message.transaction_hash = transaction_hash.into();
+            message.transaction_status = transaction_status as i32;
 
             block_messages.push(message);
         }
 
-        let mut transaction = fragment::Transaction::from(&transaction_with_receipt.transaction);
-        set_transaction_index_and_reverted(
-            &mut transaction,
-            transaction_index,
-            transaction_reverted,
-        );
+        let mut transaction = transaction_with_receipt.transaction.to_proto();
+        set_transaction_index_and_status(&mut transaction, transaction_index, transaction_status);
 
-        let mut receipt = fragment::TransactionReceipt::from(&transaction_with_receipt.receipt);
+        let mut receipt = transaction_with_receipt.receipt.to_proto();
         set_receipt_transaction_index(&mut receipt, transaction_index);
 
         block_transactions.push(transaction);
         block_receipts.push(receipt);
     }
 
+    block_events.sort_by_key(|event| event.event_index);
+    block_transactions.sort_by_key(|tx| {
+        tx.meta
+            .as_ref()
+            .map(|m| m.transaction_index)
+            .unwrap_or_default()
+    });
+    block_receipts.sort_by_key(|rx| {
+        rx.meta
+            .as_ref()
+            .map(|m| m.transaction_index)
+            .unwrap_or_default()
+    });
+    block_messages.sort_by_key(|msg| msg.message_index);
+
+    // TODO: index
+
+    let index_fragment = IndexFragment {};
+
+    let transaction_fragment = BodyFragment {
+        id: TRANSACTION_FRAGMENT_ID,
+        data: block_transactions
+            .iter()
+            .map(Message::encode_to_vec)
+            .collect(),
+    };
+
+    let receipt_fragment = BodyFragment {
+        id: RECEIPT_FRAGMENT_ID,
+        data: block_receipts.iter().map(Message::encode_to_vec).collect(),
+    };
+
+    let event_fragment = BodyFragment {
+        id: EVENT_FRAGMENT_ID,
+        data: block_events.iter().map(Message::encode_to_vec).collect(),
+    };
+
+    let message_fragment = BodyFragment {
+        id: MESSAGE_FRAGMENT_ID,
+        data: block_messages.iter().map(Message::encode_to_vec).collect(),
+    };
+
     (
-        block_transactions,
-        block_receipts,
-        block_events,
-        block_messages,
+        index_fragment,
+        vec![
+            transaction_fragment,
+            receipt_fragment,
+            event_fragment,
+            message_fragment,
+        ],
     )
 }
 
-fn set_transaction_index_and_reverted(
-    transaction: &mut fragment::Transaction,
+fn set_transaction_index_and_status(
+    transaction: &mut starknet::Transaction,
     index: u32,
-    reverted: bool,
+    status: starknet::TransactionStatus,
 ) {
-    use fragment::Transaction::*;
-    let meta = match transaction {
-        InvokeTransactionV0(tx) => &mut tx.meta,
-        InvokeTransactionV1(tx) => &mut tx.meta,
-        InvokeTransactionV3(tx) => &mut tx.meta,
-        L1HandlerTransaction(tx) => &mut tx.meta,
-        DeployTransaction(tx) => &mut tx.meta,
-        DeclareTransactionV0(tx) => &mut tx.meta,
-        DeclareTransactionV1(tx) => &mut tx.meta,
-        DeclareTransactionV2(tx) => &mut tx.meta,
-        DeclareTransactionV3(tx) => &mut tx.meta,
-        DeployAccountTransactionV1(tx) => &mut tx.meta,
-        DeployAccountTransactionV3(tx) => &mut tx.meta,
+    let Some(meta) = transaction.meta.as_mut() else {
+        return;
     };
+
     meta.transaction_index = index;
-    meta.transaction_reverted = reverted;
+    meta.transaction_status = status as i32;
 }
 
-fn set_receipt_transaction_index(receipt: &mut fragment::TransactionReceipt, index: u32) {
-    use fragment::TransactionReceipt::*;
-    match receipt {
-        Invoke(rx) => rx.meta.transaction_index = index,
-        L1Handler(rx) => rx.meta.transaction_index = index,
-        Deploy(rx) => rx.meta.transaction_index = index,
-        Declare(rx) => rx.meta.transaction_index = index,
-        DeployAccount(rx) => rx.meta.transaction_index = index,
-    }
+fn set_receipt_transaction_index(receipt: &mut starknet::TransactionReceipt, index: u32) {
+    let Some(meta) = receipt.meta.as_mut() else {
+        return;
+    };
+
+    meta.transaction_index = index;
 }
 
 async fn binary_search_finalized_block(

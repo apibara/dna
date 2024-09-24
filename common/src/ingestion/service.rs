@@ -12,8 +12,8 @@ use crate::{
     chain::{BlockInfo, CanonicalChainBuilder},
     chain_store::ChainStore,
     file_cache::FileCache,
+    fragment::Block,
     object_store::ObjectStore,
-    store::Block,
     Cursor,
 };
 

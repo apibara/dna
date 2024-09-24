@@ -46,31 +46,32 @@ message BlockHeader {
 
 // A transaction.
 message Transaction {
+  repeated uint32 filter_ids = 1;
   // Common transaction metadata.
-  TransactionMeta meta = 1;
+  TransactionMeta meta = 2;
   oneof transaction {
     // Transaction invoking a smart contract, V0.
-    InvokeTransactionV0 invoke_v0 = 2;
+    InvokeTransactionV0 invoke_v0 = 3;
     // Transaction invoking a smart contract, V1.
-    InvokeTransactionV1 invoke_v1 = 3;
+    InvokeTransactionV1 invoke_v1 = 4;
     // Transaction invoking a smart contract, V3.
-    InvokeTransactionV3 invoke_v3 = 4;
+    InvokeTransactionV3 invoke_v3 = 5;
     // Transaction handling a message from L1.
-    L1HandlerTransaction l1_handler = 5;
+    L1HandlerTransaction l1_handler = 6;
     // Transaction deploying a new smart contract, V1.
-    DeployTransaction deploy = 6;
+    DeployTransaction deploy = 7;
     // Transaction declaring a smart contract, V0.
-    DeclareTransactionV0 declare_v0 = 7;
+    DeclareTransactionV0 declare_v0 = 8;
     // Transaction declaring a smart contract, V0.
-    DeclareTransactionV1 declare_v1 = 8;
+    DeclareTransactionV1 declare_v1 = 9;
     // Transaction declaring a smart contract, V2.
-    DeclareTransactionV2 declare_v2 = 9;
+    DeclareTransactionV2 declare_v2 = 10;
     // Transaction declaring a smart contract, V3.
-    DeclareTransactionV3 declare_v3 = 10;
+    DeclareTransactionV3 declare_v3 = 11;
     // Deploy a new account, V1.
-    DeployAccountTransactionV1 deploy_account_v1 = 11;
+    DeployAccountTransactionV1 deploy_account_v1 = 12;
     // Deploy a new account, V3.
-    DeployAccountTransactionV3 deploy_account_v3 = 12;
+    DeployAccountTransactionV3 deploy_account_v3 = 13;
   }
 }
 
@@ -79,8 +80,8 @@ message TransactionMeta {
   uint32 transaction_index = 1;
   // Transaction hash.
   FieldElement transaction_hash = 2;
-  // Transaction reverted flag.
-  bool transaction_reverted = 3;
+  // Transaction status.
+  TransactionStatus transaction_status = 3;
 }
 
 message InvokeTransactionV0 {
@@ -186,20 +187,27 @@ message DeployAccountTransactionV3 {
 }
 
 message TransactionReceipt {
+  repeated uint32 filter_ids = 1;
   // Common transaction receipt metadata.
-  TransactionReceiptMeta meta = 1;
+  TransactionReceiptMeta meta = 2;
   oneof receipt {
     // Transaction invoking a smart contract.
-    InvokeTransactionReceipt invoke = 2;
+    InvokeTransactionReceipt invoke = 3;
     // Transaction handling a message from L1.
-    L1HandlerTransactionReceipt l1_handler = 3;
+    L1HandlerTransactionReceipt l1_handler = 4;
     // Transaction declaring a smart contract.
-    DeclareTransactionReceipt declare = 4;
+    DeclareTransactionReceipt declare = 5;
     // Transaction deploying a new smart contract.
-    DeployTransactionReceipt deploy = 5;
+    DeployTransactionReceipt deploy = 6;
     // Deploy a new account.
-    DeployAccountTransactionReceipt deploy_account = 6;
+    DeployAccountTransactionReceipt deploy_account = 7;
   }
+}
+
+enum TransactionStatus {
+  TRANSACTION_STATUS_UNSPECIFIED = 0;
+  TRANSACTION_STATUS_SUCCEEDED = 1;
+  TRANSACTION_STATUS_REVERTED = 2;
 }
 
 message TransactionReceiptMeta {
@@ -228,37 +236,39 @@ message DeployAccountTransactionReceipt { FieldElement contract_address = 1; }
 
 // Transaction events.
 message Event {
+  repeated uint32 filter_ids = 1;
   // The contract that emitted the event.
-  FieldElement from_address = 1;
+  FieldElement from_address = 2;
   // The event keys.
-  repeated FieldElement keys = 2;
+  repeated FieldElement keys = 3;
   // The event data.
-  repeated FieldElement data = 3;
+  repeated FieldElement data = 4;
   // The event index.
-  uint32 event_index = 4;
+  uint32 event_index = 5;
   // Transaction index.
-  uint32 transaction_index = 5;
+  uint32 transaction_index = 6;
   // Transaction hash.
-  FieldElement transaction_hash = 6;
-  // Transaction reverted flag.
-  bool transaction_reverted = 7;
+  FieldElement transaction_hash = 7;
+  // Transaction status.
+  TransactionStatus transaction_status = 8;
 }
 
 message MessageToL1 {
+  repeated uint32 filter_ids = 1;
   // The contract sending the message.
-  FieldElement from_address = 1;
+  FieldElement from_address = 2;
   // Target address.
-  FieldElement to_address = 2;
+  FieldElement to_address = 3;
   // Message payload.
-  repeated FieldElement payload = 3;
+  repeated FieldElement payload = 4;
   // Message index.
-  uint32 message_index = 4;
+  uint32 message_index = 5;
   // Transaction index.
-  uint32 transaction_index = 5;
+  uint32 transaction_index = 6;
   // Transaction hash.
-  FieldElement transaction_hash = 6;
-  // Transaction reverted flag.
-  bool transaction_reverted = 7;
+  FieldElement transaction_hash = 7;
+  // Transaction status.
+  TransactionStatus transaction_status = 8;
 }
 
 enum L1DataAvailabilityMode {
@@ -360,10 +370,8 @@ message ResourceBounds {
 }
 
 message Uint128 {
-  // The low 64 bits of the number.
-  uint64 low = 1;
-  // The high 64 bits of the number.
-  uint64 high = 2;
+  uint64 x0 = 1;
+  uint64 x1 = 2;
 }
 
 // DA mode.

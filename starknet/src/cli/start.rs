@@ -1,20 +1,18 @@
 use apibara_dna_common::{
-    block_store::BlockStoreReader,
-    chain_view::chain_view_sync_loop,
+    // block_store::BlockStoreReader,
+    // chain_view::chain_view_sync_loop,
     cli::{EtcdArgs, ObjectStoreArgs},
-    compaction::{compaction_service_loop, CompactionArgs},
-    file_cache::FileCache,
+    // compaction::{compaction_service_loop, CompactionArgs},
+    // file_cache::FileCache,
     ingestion::{ingestion_service_loop, IngestionArgs},
-    server::{server_loop, ServerArgs},
+    // server::{server_loop, ServerArgs},
 };
 use clap::Args;
 use error_stack::{Result, ResultExt};
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
-use crate::{
-    error::StarknetError, ingestion::StarknetBlockIngestion, scanner::StarknetScannerFactory,
-};
+use crate::{error::StarknetError, ingestion::StarknetBlockIngestion};
 
 use super::rpc::RpcArgs;
 
@@ -28,10 +26,10 @@ pub struct StartCommand {
     etcd: EtcdArgs,
     #[clap(flatten)]
     ingestion: IngestionArgs,
-    #[clap(flatten)]
-    compaction: CompactionArgs,
-    #[clap(flatten)]
-    server: ServerArgs,
+    // #[clap(flatten)]
+    // compaction: CompactionArgs,
+    // #[clap(flatten)]
+    // server: ServerArgs,
 }
 
 impl StartCommand {
@@ -72,6 +70,7 @@ impl StartCommand {
             })
         };
 
+        /*
         let file_cache_options = self
             .server
             .to_file_cache_options()
@@ -139,24 +138,25 @@ impl StartCommand {
                 }
             })
         };
+        */
 
         tokio::select! {
             ingestion = ingestion_handle => {
                 info!("ingestion loop terminated");
                 ingestion.change_context(StarknetError)?.change_context(StarknetError)?;
             }
-            compaction = compaction_handle => {
-                info!("compaction loop terminated");
-                compaction.change_context(StarknetError)?.change_context(StarknetError)?;
-            }
-            sync = sync_handle => {
-                info!("sync loop terminated");
-                sync.change_context(StarknetError)?.change_context(StarknetError)?;
-            }
-            server = server_handle => {
-                info!("server terminated");
-                server.change_context(StarknetError)?.change_context(StarknetError)?;
-            }
+            // compaction = compaction_handle => {
+            //     info!("compaction loop terminated");
+            //     compaction.change_context(StarknetError)?.change_context(StarknetError)?;
+            // }
+            // sync = sync_handle => {
+            //     info!("sync loop terminated");
+            //     sync.change_context(StarknetError)?.change_context(StarknetError)?;
+            // }
+            // server = server_handle => {
+            //     info!("server terminated");
+            //     server.change_context(StarknetError)?.change_context(StarknetError)?;
+            // }
         }
 
         Ok(())
