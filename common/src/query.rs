@@ -64,7 +64,9 @@ pub struct FilterError;
 
 impl Filter {
     pub fn filter(&self, indexes: &IndexFragment) -> Result<RoaringBitmap, FilterError> {
-        let mut result = RoaringBitmap::from_iter(0..indexes.range_len);
+        let mut result = RoaringBitmap::from_iter(
+            indexes.range_start..(indexes.range_start + indexes.range_len),
+        );
         trace!(starting = ?result, "starting bitmap");
 
         for cond in self.conditions.iter() {

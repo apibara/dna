@@ -7,7 +7,7 @@ use crate::{
         Block, BodyFragment, FragmentId, HeaderFragment, IndexFragment, IndexGroupFragment,
         HEADER_FRAGMENT_NAME, INDEX_FRAGMENT_NAME,
     },
-    segment::{FragmentData, Segment},
+    segment::Segment,
 };
 
 #[derive(Debug)]
@@ -112,7 +112,7 @@ impl InnerAccess {
                     .change_context(FragmentAccessError)?;
 
                 let segment = rkyv::access::<
-                    rkyv::Archived<Segment<FragmentData<IndexGroupFragment>>>,
+                    rkyv::Archived<Segment<IndexGroupFragment>>,
                     rkyv::rancor::Error,
                 >(&segment)
                 .change_context(FragmentAccessError)?;
@@ -187,7 +187,7 @@ impl InnerAccess {
                     .change_context(FragmentAccessError)?;
 
                 let segment = rkyv::access::<
-                    rkyv::Archived<Segment<FragmentData<BodyFragment>>>,
+                    rkyv::Archived<Segment<BodyFragment>>,
                     rkyv::rancor::Error,
                 >(&segment)
                 .change_context(FragmentAccessError)?;
@@ -230,7 +230,7 @@ impl InnerAccess {
                     .change_context(FragmentAccessError)?;
 
                 let segment = rkyv::access::<
-                    rkyv::Archived<Segment<FragmentData<HeaderFragment>>>,
+                    rkyv::Archived<Segment<HeaderFragment>>,
                     rkyv::rancor::Error,
                 >(&segment)
                 .change_context(FragmentAccessError)?;

@@ -370,6 +370,7 @@ fn collect_block_body_and_index(
 
         IndexFragment {
             fragment_id: TRANSACTION_FRAGMENT_ID,
+            range_start: 0,
             range_len: block_transactions.len() as u32,
             indexes: vec![index_transaction_by_status],
         }
@@ -387,6 +388,7 @@ fn collect_block_body_and_index(
     // Empty since no receipt filter.
     let receipt_index = IndexFragment {
         fragment_id: RECEIPT_FRAGMENT_ID,
+        range_start: 0,
         range_len: block_receipts.len() as u32,
         indexes: Vec::default(),
     };
@@ -450,6 +452,7 @@ fn collect_block_body_and_index(
 
         IndexFragment {
             fragment_id: EVENT_FRAGMENT_ID,
+            range_start: 0,
             range_len: block_events.len() as u32,
             indexes: vec![
                 index_event_by_address,
@@ -494,6 +497,7 @@ fn collect_block_body_and_index(
 
         IndexFragment {
             fragment_id: MESSAGE_FRAGMENT_ID,
+            range_start: 0,
             range_len: block_messages.len() as u32,
             indexes: vec![
                 index_message_by_from_address,

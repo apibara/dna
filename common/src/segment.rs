@@ -2,7 +2,7 @@
 
 use rkyv::{util::AlignedVec, Archive, Deserialize, Serialize};
 
-use crate::Cursor;
+use crate::{fragment::IndexGroupFragment, Cursor};
 
 #[derive(Archive, Serialize, Deserialize, Debug)]
 pub struct FragmentData<T> {
@@ -15,7 +15,15 @@ pub struct Segment<T> {
     /// The first block in the segment.
     pub first_block: Cursor,
     /// The segment body.
-    pub data: Vec<T>,
+    pub data: Vec<FragmentData<T>>,
+}
+
+#[derive(Archive, Serialize, Deserialize, Debug)]
+pub struct SegmentGroup {
+    /// The first block in the segment.
+    pub first_block: Cursor,
+    /// The segment body.
+    pub index: IndexGroupFragment,
 }
 
 #[derive(Debug)]

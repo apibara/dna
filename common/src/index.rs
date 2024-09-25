@@ -67,6 +67,10 @@ impl BitmapIndexBuilder {
 }
 
 impl BitmapIndex {
+    pub fn keys(&self) -> impl Iterator<Item = &ScalarValue> {
+        self.0.keys()
+    }
+
     pub fn get(&self, key: &ScalarValue) -> Option<RoaringBitmap> {
         let bytes = self.0.get(key)?;
         RoaringBitmap::deserialize_from(bytes.as_slice())

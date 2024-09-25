@@ -6,6 +6,7 @@ use apibara_dna_protocol::dna::stream::{
 };
 use bytes::BufMut;
 use error_stack::{Result, ResultExt};
+use roaring::RoaringBitmap;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, warn};
@@ -16,6 +17,7 @@ use crate::{
     data_stream::{FilterMatch, FragmentAccess},
     fragment::HEADER_FRAGMENT_ID,
     query::BlockFilter,
+    segment::SegmentGroup,
     Cursor,
 };
 
@@ -210,13 +212,11 @@ impl DataStream {
     ) -> Result<(), DataStreamError> {
         debug!("tick: group");
 
-        /*
         let group_start = self.chain_view.get_group_start_block(cursor.number).await;
         let group_end = self.chain_view.get_group_end_block(cursor.number).await;
 
         let group_start_cursor = Cursor::new_finalized(group_start);
         let mut data_bitmap = RoaringBitmap::default();
-        let block_range = (cursor.number as u32)..=(group_end as u32);
 
         {
             let group_bytes = self
@@ -230,11 +230,32 @@ impl DataStream {
                     .change_context(DataStreamError)
                     .attach_printable("failed to access group")?;
 
-            self.scanner
-                .fill_block_bitmap(group, &mut data_bitmap, block_range)
-                .await
-                .change_context(DataStreamError)?;
+            for block_filter in self.block_filter.iter() {
+                for (fragment_id, filters) in block_filter.iter() {
+                    let Some(pos) = group
+                        .index
+                        .indexes
+                        .iter()
+                        .position(|f| f.fragment_id == *fragment_id)
+                    else {
+                        return Err(DataStreamError)
+                            .attach_printable("missing index")
+                            .attach_printable_lazy(|| format!("fragment id: {}", fragment_id));
+                    };
+
+                    let indexes =
+                        rkyv::deserialize::<_, rkyv::rancor::Error>(&group.index.indexes[pos])
+                            .change_context(DataStreamError)
+                            .attach_printable("failed to deserialize index")?;
+
+                    for filter in filters {
+                        let rows = filter.filter(&indexes).change_context(DataStreamError)?;
+                        data_bitmap |= &rows;
+                    }
+                }
+            }
         }
+        println!("blocks {:?}", data_bitmap);
 
         debug!(blocks = ?data_bitmap, "group bitmap");
 
@@ -323,29 +344,23 @@ impl DataStream {
                 let proto_cursor: Option<ProtoCursor> = block.cursor.map(Into::into);
                 let proto_end_cursor: Option<ProtoCursor> = Some(block.end_cursor.clone().into());
 
-                let Some(Ok(permit)) = ct.run_until_cancelled(tx.reserve()).await else {
-                    return Ok(());
-                };
+                let mut blocks = Vec::new();
+                if self.filter_fragment(&fragment_access, &mut blocks).await? {
+                    let data = Message::Data(Data {
+                        cursor: proto_cursor.clone(),
+                        end_cursor: proto_end_cursor.clone(),
+                        data: blocks,
+                        finality: DataFinality::Finalized as i32,
+                    });
 
-                self.scanner
-                    .scan_single(&block.end_cursor, &fragment_access, |data| {
-                        let data = Message::Data(Data {
-                            cursor: proto_cursor.clone(),
-                            end_cursor: proto_end_cursor.clone(),
-                            data,
-                            finality: DataFinality::Finalized as i32,
-                        });
+                    let Some(Ok(permit)) = ct.run_until_cancelled(tx.reserve()).await else {
+                        return Ok(());
+                    };
 
-                        permit.send(Ok(StreamDataResponse {
-                            message: Some(data),
-                        }));
-                    })
-                    .await
-                    .change_context(DataStreamError)
-                    .attach_printable("failed to scan segment block in group")
-                    .attach_printable_lazy(|| format!("block: {}", block.end_cursor))
-                    .attach_printable_lazy(|| format!("segment: {}", segment_cursor))
-                    .attach_printable_lazy(|| format!("group: {}", group_start_cursor))?;
+                    permit.send(Ok(StreamDataResponse {
+                        message: Some(data),
+                    }));
+                }
             }
         }
 
@@ -362,8 +377,6 @@ impl DataStream {
         self.current = group_end_cursor.into();
 
         Ok(())
-        */
-        todo!();
     }
 
     async fn tick_segment(

@@ -1,6 +1,7 @@
 mod cli;
 mod error;
 mod group;
+mod group_builder;
 mod segment;
 mod segment_builder;
 mod service;

@@ -5,7 +5,10 @@ use tracing::info;
 use crate::{
     block_store::{BlockStoreReader, BlockStoreWriter},
     chain_view::{ChainView, NextCursor},
+    compaction::group_builder::SegmentGroupBuilder,
+    fragment::IndexGroupFragment,
     ingestion::IngestionStateClient,
+    segment::Segment,
     Cursor,
 };
 
@@ -51,7 +54,6 @@ impl SegmentGroupService {
 
             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 
-            /*
             let first_block_in_group = if let Some(cursor) = chain_view
                 .get_grouped_cursor()
                 .await
@@ -95,8 +97,6 @@ impl SegmentGroupService {
             if first_block_in_group.number + blocks_in_group <= segmented.number {
                 info!(starting_cursor = %first_block_in_group, "creating new group");
 
-                /*
-
                 let mut builder = SegmentGroupBuilder::default();
 
                 for i in 0..self.group_size {
@@ -109,8 +109,11 @@ impl SegmentGroupService {
                         .await
                         .change_context(CompactionError)?;
 
-                    let segment = rkyv::from_bytes::<Segment, rkyv::rancor::Error>(&segment)
-                        .change_context(CompactionError)?;
+                    let segment = rkyv::from_bytes::<
+                        Segment<IndexGroupFragment>,
+                        rkyv::rancor::Error,
+                    >(&segment)
+                    .change_context(CompactionError)?;
 
                     builder
                         .add_segment(&segment)
@@ -136,14 +139,12 @@ impl SegmentGroupService {
                     .put_grouped(last_block_in_group)
                     .await
                     .change_context(CompactionError)?;
-                */
             } else {
                 info!("compaction waiting for segmented change");
                 let Some(_) = ct.run_until_cancelled(chain_view.segmented_changed()).await else {
                     return Ok(());
                 };
             }
-            */
         }
     }
 }

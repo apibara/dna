@@ -37,6 +37,7 @@ pub struct HeaderFragment {
 #[derive(Archive, Serialize, Deserialize, Debug)]
 pub struct IndexFragment {
     pub fragment_id: FragmentId,
+    pub range_start: u32,
     pub range_len: u32,
     pub indexes: Vec<Index>,
     // #[rkyv(with = AsVec)]

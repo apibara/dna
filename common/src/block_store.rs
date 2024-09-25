@@ -5,7 +5,7 @@ use crate::{
     file_cache::{FileCache, Mmap},
     fragment,
     object_store::{GetOptions, ObjectETag, ObjectStore, PutOptions},
-    segment::SerializedSegment,
+    segment::{SegmentGroup, SerializedSegment},
     Cursor,
 };
 
@@ -197,7 +197,6 @@ impl BlockStoreWriter {
         Ok(response.etag)
     }
 
-    /*
     pub async fn put_group(
         &self,
         first_cursor: &Cursor,
@@ -223,7 +222,6 @@ impl BlockStoreWriter {
 
         Ok(response.etag)
     }
-    */
 }
 
 fn format_block_key(cursor: &Cursor) -> String {
