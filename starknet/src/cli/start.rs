@@ -1,18 +1,22 @@
 use apibara_dna_common::{
     // block_store::BlockStoreReader,
     // chain_view::chain_view_sync_loop,
+    block_store::BlockStoreReader,
+    chain_view::chain_view_sync_loop,
     cli::{EtcdArgs, ObjectStoreArgs},
-    // compaction::{compaction_service_loop, CompactionArgs},
-    // file_cache::FileCache,
+    data_stream::BlockFilterFactory,
+    file_cache::FileCache,
     ingestion::{ingestion_service_loop, IngestionArgs},
-    // server::{server_loop, ServerArgs},
+    server::{server_loop, ServerArgs}, // server::{server_loop, ServerArgs},
 };
 use clap::Args;
 use error_stack::{Result, ResultExt};
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
-use crate::{error::StarknetError, ingestion::StarknetBlockIngestion};
+use crate::{
+    error::StarknetError, filter::StarknetFilterFactory, ingestion::StarknetBlockIngestion,
+};
 
 use super::rpc::RpcArgs;
 
@@ -28,8 +32,8 @@ pub struct StartCommand {
     ingestion: IngestionArgs,
     // #[clap(flatten)]
     // compaction: CompactionArgs,
-    // #[clap(flatten)]
-    // server: ServerArgs,
+    #[clap(flatten)]
+    server: ServerArgs,
 }
 
 impl StartCommand {
@@ -70,7 +74,6 @@ impl StartCommand {
             })
         };
 
-        /*
         let file_cache_options = self
             .server
             .to_file_cache_options()
@@ -92,6 +95,7 @@ impl StartCommand {
 
         let sync_handle = tokio::spawn(chain_view_sync.start(ct.clone()));
 
+        /*
         let compaction_handle = if self.compaction.compaction_enabled {
             let options = self.compaction.to_compaction_options();
 
@@ -111,8 +115,9 @@ impl StartCommand {
                 }
             })
         };
+        */
 
-        let scanner_factory = StarknetScannerFactory;
+        let block_filter_factory = StarknetFilterFactory;
 
         let block_store = BlockStoreReader::new(object_store.clone(), file_cache.clone());
 
@@ -123,7 +128,7 @@ impl StartCommand {
                 .change_context(StarknetError)?;
 
             tokio::spawn(server_loop(
-                scanner_factory,
+                block_filter_factory,
                 chain_view,
                 block_store,
                 options,
@@ -138,7 +143,6 @@ impl StartCommand {
                 }
             })
         };
-        */
 
         tokio::select! {
             ingestion = ingestion_handle => {
@@ -149,14 +153,14 @@ impl StartCommand {
             //     info!("compaction loop terminated");
             //     compaction.change_context(StarknetError)?.change_context(StarknetError)?;
             // }
-            // sync = sync_handle => {
-            //     info!("sync loop terminated");
-            //     sync.change_context(StarknetError)?.change_context(StarknetError)?;
-            // }
-            // server = server_handle => {
-            //     info!("server terminated");
-            //     server.change_context(StarknetError)?.change_context(StarknetError)?;
-            // }
+            sync = sync_handle => {
+                info!("sync loop terminated");
+                sync.change_context(StarknetError)?.change_context(StarknetError)?;
+            }
+            server = server_handle => {
+                info!("server terminated");
+                server.change_context(StarknetError)?.change_context(StarknetError)?;
+            }
         }
 
         Ok(())

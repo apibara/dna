@@ -1,5 +1,6 @@
 pub mod cli;
 pub mod error;
+pub mod filter;
 pub mod fragment;
 pub mod ingestion;
 pub mod proto;

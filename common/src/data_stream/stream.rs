@@ -1,33 +1,29 @@
-use std::time::Duration;
+use std::{collections::BTreeMap, time::Duration};
 
 use apibara_dna_protocol::dna::stream::{
     stream_data_response::Message, Data, DataFinality, Finalize, Heartbeat, Invalidate,
     StreamDataResponse,
 };
+use bytes::BufMut;
 use error_stack::{Result, ResultExt};
-use roaring::RoaringBitmap;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, warn};
 
 use crate::{
     block_store::BlockStoreReader,
-    chain_view::{CanonicalCursor, ChainView, NextCursor},
-    data_stream::{FragmentAccess, SegmentBlock},
-    store::group::SegmentGroup,
+    chain_view::{ChainView, NextCursor},
+    data_stream::{FilterMatch, FragmentAccess},
+    fragment::HEADER_FRAGMENT_ID,
+    query::BlockFilter,
     Cursor,
 };
-
-use super::scanner::Scanner;
 
 #[derive(Debug)]
 pub struct DataStreamError;
 
-pub struct DataStream<S>
-where
-    S: Scanner + Send,
-{
-    scanner: S,
+pub struct DataStream {
+    block_filter: Vec<BlockFilter>,
     current: Option<Cursor>,
     finalized: Cursor,
     _finality: DataFinality,
@@ -39,13 +35,10 @@ where
 
 type DataStreamMessage = tonic::Result<StreamDataResponse, tonic::Status>;
 
-impl<S> DataStream<S>
-where
-    S: Scanner + Send,
-{
+impl DataStream {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        scanner: S,
+        block_filter: Vec<BlockFilter>,
         starting: Option<Cursor>,
         finalized: Cursor,
         finality: DataFinality,
@@ -56,7 +49,7 @@ where
     ) -> Self {
         let heartbeat_interval = tokio::time::interval(heartbeat_interval);
         Self {
-            scanner,
+            block_filter,
             current: starting,
             finalized,
             _finality: finality,
@@ -206,6 +199,7 @@ where
     ) -> Result<(), DataStreamError> {
         debug!("tick: group");
 
+        /*
         let group_start = self.chain_view.get_group_start_block(cursor.number).await;
         let group_end = self.chain_view.get_group_end_block(cursor.number).await;
 
@@ -357,6 +351,8 @@ where
         self.current = group_end_cursor.into();
 
         Ok(())
+        */
+        todo!();
     }
 
     async fn tick_segment(
@@ -365,6 +361,7 @@ where
         tx: &mpsc::Sender<DataStreamMessage>,
         ct: &CancellationToken,
     ) -> Result<(), DataStreamError> {
+        /*
         let mut current = cursor.clone();
 
         let segment_size = self.chain_view.get_segment_size().await;
@@ -449,6 +446,8 @@ where
         self.current = current.into();
 
         Ok(())
+        */
+        todo!();
     }
 
     async fn tick_single(
@@ -460,9 +459,6 @@ where
         use apibara_dna_protocol::dna::stream::Cursor as ProtoCursor;
 
         debug!("tick: single block");
-        let Some(Ok(permit)) = ct.run_until_cancelled(tx.reserve()).await else {
-            return Ok(());
-        };
 
         debug!(cursor = ?self.current, end_cursor = %cursor, "sending data");
 
@@ -483,25 +479,119 @@ where
 
         let fragment_access = FragmentAccess::new_in_block(self.store.clone(), cursor.clone());
 
-        self.scanner
-            .scan_single(&cursor, &fragment_access, |blocks| {
-                let data = Message::Data(Data {
-                    cursor: proto_cursor.clone(),
-                    end_cursor: proto_end_cursor.clone(),
-                    data: blocks,
-                    finality: finality.into(),
-                });
+        let mut blocks = Vec::new();
+        self.filter_fragment(&fragment_access, &mut blocks).await?;
 
-                permit.send(Ok(StreamDataResponse {
-                    message: Some(data),
-                }));
-            })
-            .await
-            .change_context(DataStreamError)
-            .attach_printable("failed to scan single block")?;
+        if !blocks.is_empty() {
+            let data = Message::Data(Data {
+                cursor: proto_cursor.clone(),
+                end_cursor: proto_end_cursor.clone(),
+                data: blocks,
+                finality: finality.into(),
+            });
+
+            let Some(Ok(permit)) = ct.run_until_cancelled(tx.reserve()).await else {
+                return Ok(());
+            };
+
+            permit.send(Ok(StreamDataResponse {
+                message: Some(data),
+            }));
+        }
 
         self.heartbeat_interval.reset();
         self.current = Some(cursor);
+
+        Ok(())
+    }
+
+    async fn filter_fragment(
+        &self,
+        fragment_access: &FragmentAccess,
+        output: &mut Vec<Vec<u8>>,
+    ) -> Result<(), DataStreamError> {
+        let mut block_buffer = Vec::new();
+
+        for block_filter in self.block_filter.iter() {
+            let mut fragment_matches = BTreeMap::default();
+            block_buffer.clear();
+
+            for (fragment_id, filters) in block_filter.iter() {
+                let mut filter_match = FilterMatch::default();
+
+                let indexes = fragment_access
+                    .get_fragment_indexes(*fragment_id)
+                    .await
+                    .change_context(DataStreamError)
+                    .attach_printable("failed to get fragment indexes")?;
+
+                for filter in filters {
+                    let rows = filter.filter(&indexes).change_context(DataStreamError)?;
+                    filter_match.add_match(filter.filter_id, &rows);
+                }
+
+                if filter_match.is_empty() {
+                    continue;
+                }
+
+                fragment_matches.insert(*fragment_id, filter_match);
+            }
+
+            if block_filter.always_include_header || !fragment_matches.is_empty() {
+                let header = fragment_access
+                    .get_header_fragment()
+                    .await
+                    .change_context(DataStreamError)
+                    .attach_printable("failed to get header fragment")?;
+
+                prost::encoding::encode_key(
+                    HEADER_FRAGMENT_ID as u32,
+                    prost::encoding::WireType::LengthDelimited,
+                    &mut block_buffer,
+                );
+                prost::encoding::encode_varint(header.data.len() as u64, &mut block_buffer);
+                block_buffer.put(header.data.as_slice());
+            }
+
+            for (fragment_id, filter_match) in fragment_matches.into_iter() {
+                let body = fragment_access
+                    .get_body_fragment(fragment_id)
+                    .await
+                    .change_context(DataStreamError)
+                    .attach_printable("failed to get body fragment")?;
+
+                for match_ in filter_match.iter() {
+                    const FILTER_IDS_TAG: u32 = 1;
+
+                    let message_bytes = &body.data[match_.index as usize];
+                    let filter_ids_len = prost::encoding::uint32::encoded_len_repeated(
+                        FILTER_IDS_TAG,
+                        &match_.filter_ids,
+                    );
+
+                    prost::encoding::encode_key(
+                        fragment_id as u32,
+                        prost::encoding::WireType::LengthDelimited,
+                        &mut block_buffer,
+                    );
+
+                    prost::encoding::encode_varint(
+                        (filter_ids_len + message_bytes.len()) as u64,
+                        &mut block_buffer,
+                    );
+
+                    prost::encoding::uint32::encode_repeated(
+                        FILTER_IDS_TAG,
+                        &match_.filter_ids,
+                        &mut block_buffer,
+                    );
+                    block_buffer.put(message_bytes.as_slice());
+                }
+            }
+
+            // TODO: we can avoid this copy by using the low level protobuf API.
+            output.push(block_buffer.clone());
+        }
 
         Ok(())
     }

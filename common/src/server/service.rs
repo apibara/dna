@@ -14,7 +14,7 @@ use tracing::{error, info};
 use crate::{
     block_store::BlockStoreReader,
     chain_view::{CanonicalCursor, ChainView, ChainViewError},
-    data_stream::{DataStream, ScannerFactory},
+    data_stream::{BlockFilterFactory, DataStream},
     Cursor,
 };
 
@@ -28,23 +28,23 @@ pub struct StreamServiceOptions {
     pub max_concurrent_streams: usize,
 }
 
-pub struct StreamService<SF>
+pub struct StreamService<BFF>
 where
-    SF: ScannerFactory,
+    BFF: BlockFilterFactory,
 {
-    scanner_factory: SF,
+    filter_factory: BFF,
     stream_semaphore: Arc<Semaphore>,
     chain_view: tokio::sync::watch::Receiver<Option<ChainView>>,
     block_store: BlockStoreReader,
     ct: CancellationToken,
 }
 
-impl<SF> StreamService<SF>
+impl<BFF> StreamService<BFF>
 where
-    SF: ScannerFactory,
+    BFF: BlockFilterFactory,
 {
     pub fn new(
-        scanner_factory: SF,
+        filter_factory: BFF,
         chain_view: tokio::sync::watch::Receiver<Option<ChainView>>,
         block_store: BlockStoreReader,
         options: StreamServiceOptions,
@@ -52,7 +52,7 @@ where
     ) -> Self {
         let stream_semaphore = Arc::new(Semaphore::new(options.max_concurrent_streams));
         Self {
-            scanner_factory,
+            filter_factory,
             stream_semaphore,
             chain_view,
             block_store,
@@ -66,9 +66,9 @@ where
 }
 
 #[tonic::async_trait]
-impl<SF> DnaStream for StreamService<SF>
+impl<BFF> DnaStream for StreamService<BFF>
 where
-    SF: ScannerFactory + Send + Sync + 'static,
+    BFF: BlockFilterFactory + Send + Sync + 'static,
 {
     type StreamDataStream = Pin<
         Box<dyn Stream<Item = tonic::Result<StreamDataResponse, tonic::Status>> + Send + 'static>,
@@ -145,10 +145,10 @@ where
             .and_then(validate_heartbeat_interval)?;
 
         // Parse and validate filter.
-        let scanner = self.scanner_factory.create_scanner(&request.filter)?;
+        let filter = self.filter_factory.create_block_filter(&request.filter)?;
 
         let ds = DataStream::new(
-            scanner,
+            filter,
             starting_cursor,
             finalized,
             finality,

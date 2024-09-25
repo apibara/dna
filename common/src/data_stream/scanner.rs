@@ -4,10 +4,18 @@ use error_stack::Result;
 use futures::Future;
 use roaring::RoaringBitmap;
 
-use crate::{store::group::ArchivedSegmentGroup, Cursor};
+use crate::query::BlockFilter;
 
 use super::fragment_access::FragmentAccess;
 
+pub trait BlockFilterFactory {
+    fn create_block_filter(
+        &self,
+        filters: &[Vec<u8>],
+    ) -> tonic::Result<Vec<BlockFilter>, tonic::Status>;
+}
+
+/*
 #[derive(Debug)]
 pub struct ScannerError;
 
@@ -71,3 +79,5 @@ impl std::fmt::Display for ScannerError {
         write!(f, "scanner error")
     }
 }
+
+*/

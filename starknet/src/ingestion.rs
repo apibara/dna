@@ -366,12 +366,13 @@ fn collect_block_body_and_index(
 
         FragmentIndexes {
             fragment_id: TRANSACTION_FRAGMENT_ID,
+            range_len: block_transactions.len() as u32,
             indexes: vec![index_transaction_by_status],
         }
     };
 
     let transaction_fragment = BodyFragment {
-        id: TRANSACTION_FRAGMENT_ID,
+        fragment_id: TRANSACTION_FRAGMENT_ID,
         data: block_transactions
             .iter()
             .map(Message::encode_to_vec)
@@ -381,11 +382,12 @@ fn collect_block_body_and_index(
     // Empty since no receipt filter.
     let receipt_index = FragmentIndexes {
         fragment_id: RECEIPT_FRAGMENT_ID,
+        range_len: block_receipts.len() as u32,
         indexes: Vec::default(),
     };
 
     let receipt_fragment = BodyFragment {
-        id: RECEIPT_FRAGMENT_ID,
+        fragment_id: RECEIPT_FRAGMENT_ID,
         data: block_receipts.iter().map(Message::encode_to_vec).collect(),
     };
 
@@ -442,6 +444,7 @@ fn collect_block_body_and_index(
 
         FragmentIndexes {
             fragment_id: EVENT_FRAGMENT_ID,
+            range_len: block_events.len() as u32,
             indexes: vec![
                 index_event_by_address,
                 index_event_by_key0,
@@ -455,7 +458,7 @@ fn collect_block_body_and_index(
     };
 
     let event_fragment = BodyFragment {
-        id: EVENT_FRAGMENT_ID,
+        fragment_id: EVENT_FRAGMENT_ID,
         data: block_events.iter().map(Message::encode_to_vec).collect(),
     };
 
@@ -484,6 +487,7 @@ fn collect_block_body_and_index(
 
         FragmentIndexes {
             fragment_id: MESSAGE_FRAGMENT_ID,
+            range_len: block_messages.len() as u32,
             indexes: vec![
                 index_message_by_from_address,
                 index_message_by_to_address,
@@ -493,7 +497,7 @@ fn collect_block_body_and_index(
     };
 
     let message_fragment = BodyFragment {
-        id: MESSAGE_FRAGMENT_ID,
+        fragment_id: MESSAGE_FRAGMENT_ID,
         data: block_messages.iter().map(Message::encode_to_vec).collect(),
     };
 

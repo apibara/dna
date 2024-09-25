@@ -11,14 +11,14 @@ use rkyv::{
 };
 
 pub trait Serializable<'a>:
-    rkyv::Serialize<HighSerializer<'a, AlignedVec, ArenaHandle<'a>, rkyv::rancor::Error>>
+    rkyv::Serialize<HighSerializer<AlignedVec, ArenaHandle<'a>, rkyv::rancor::Error>>
 {
 }
 
 pub trait Checked<'a>: rkyv::bytecheck::CheckBytes<HighValidator<'a, rkyv::rancor::Error>> {}
 
 impl<'a, T> Serializable<'a> for T where
-    T: rkyv::Serialize<HighSerializer<'a, AlignedVec, ArenaHandle<'a>, rkyv::rancor::Error>>
+    T: rkyv::Serialize<HighSerializer<AlignedVec, ArenaHandle<'a>, rkyv::rancor::Error>>
 {
 }
 

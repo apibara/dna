@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use roaring::RoaringBitmap;
 
-pub type FilterId = u32;
+use crate::query::{BlockFilter, FilterId};
 
 #[derive(Debug, Default)]
 pub struct FilterMatch(HashMap<u32, HashSet<FilterId>>);
@@ -14,6 +14,10 @@ pub struct Match {
 }
 
 impl FilterMatch {
+    pub fn clear(&mut self) {
+        self.0.clear();
+    }
+
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
@@ -30,4 +34,11 @@ impl FilterMatch {
             filter_ids: filter_ids.iter().copied().collect(),
         })
     }
+}
+
+pub trait BlockFilterFactory {
+    fn create_block_filter(
+        &self,
+        filters: &[Vec<u8>],
+    ) -> tonic::Result<Vec<BlockFilter>, tonic::Status>;
 }

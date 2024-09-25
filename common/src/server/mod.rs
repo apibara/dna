@@ -12,7 +12,9 @@ use tokio_util::sync::CancellationToken;
 use tonic::transport::Server as TonicServer;
 use tracing::info;
 
-use crate::{block_store::BlockStoreReader, chain_view::ChainView, data_stream::ScannerFactory};
+use crate::{
+    block_store::BlockStoreReader, chain_view::ChainView, data_stream::BlockFilterFactory,
+};
 
 pub use self::cli::ServerArgs;
 pub use self::service::StreamServiceOptions;
@@ -25,15 +27,15 @@ pub struct ServerOptions {
     pub stream_service_options: StreamServiceOptions,
 }
 
-pub async fn server_loop<SF>(
-    scanner_factory: SF,
+pub async fn server_loop<BFF>(
+    filter_factory: BFF,
     chain_view: tokio::sync::watch::Receiver<Option<ChainView>>,
     block_store: BlockStoreReader,
     options: ServerOptions,
     ct: CancellationToken,
 ) -> Result<(), ServerError>
 where
-    SF: ScannerFactory + Send + Sync + 'static,
+    BFF: BlockFilterFactory + Send + Sync + 'static,
 {
     let (_health_reporter, health_service) = tonic_health::server::health_reporter();
 
@@ -45,7 +47,7 @@ where
         .attach_printable("failed to create gRPC reflection service")?;
 
     let stream_service = StreamService::new(
-        scanner_factory,
+        filter_factory,
         chain_view,
         block_store,
         options.stream_service_options,

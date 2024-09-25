@@ -1,10 +1,10 @@
 //! Block fragments contain pieces of block data.
 
-use std::collections::BTreeMap;
-
-use rkyv::{with::AsVec, Archive, Deserialize, Serialize};
+use rkyv::{Archive, Deserialize, Serialize};
 
 use crate::index;
+
+pub const HEADER_FRAGMENT_ID: FragmentId = 1;
 
 pub type FragmentId = u8;
 
@@ -12,11 +12,6 @@ pub type IndexId = u8;
 
 /// A pre-serialized protobuf message without the `filter_ids` field.
 pub type SerializedProto = Vec<u8>;
-
-pub trait Fragment {
-    /// Returns the fragment's unique ID.
-    fn id(&self) -> FragmentId;
-}
 
 #[derive(Archive, Serialize, Deserialize, Debug)]
 pub struct Block {
@@ -46,6 +41,7 @@ pub struct Index {
 #[derive(Archive, Serialize, Deserialize, Debug)]
 pub struct FragmentIndexes {
     pub fragment_id: FragmentId,
+    pub range_len: u32,
     pub indexes: Vec<Index>,
     // #[rkyv(with = AsVec)]
     // pub joins: BTreeMap<FragmentId, JoinIndex>,
@@ -54,19 +50,7 @@ pub struct FragmentIndexes {
 #[derive(Archive, Serialize, Deserialize, Debug)]
 pub struct BodyFragment {
     /// The fragment's unique ID.
-    pub id: FragmentId,
+    pub fragment_id: FragmentId,
     /// The fragment's data.
     pub data: Vec<SerializedProto>,
-}
-
-impl Fragment for HeaderFragment {
-    fn id(&self) -> FragmentId {
-        1
-    }
-}
-
-impl Fragment for BodyFragment {
-    fn id(&self) -> FragmentId {
-        self.id
-    }
 }

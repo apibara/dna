@@ -66,6 +66,15 @@ impl BitmapIndexBuilder {
     }
 }
 
+impl BitmapIndex {
+    pub fn get(&self, key: &ScalarValue) -> Option<RoaringBitmap> {
+        let bytes = self.0.get(key)?;
+        RoaringBitmap::deserialize_from(bytes.as_slice())
+            .expect("failed to deserialize bitmap")
+            .into()
+    }
+}
+
 /// Data index.
 #[derive(Debug, Archive, Serialize, Deserialize)]
 pub enum Index {
@@ -84,7 +93,7 @@ impl std::fmt::Debug for ScalarValue {
             ScalarValue::Uint32(v) => write!(f, "Uint32({})", v),
             ScalarValue::Uint64(v) => write!(f, "Uint64({})", v),
             ScalarValue::B160(v) => write!(f, "B160(0x{})", hex::encode(v)),
-            ScalarValue::B256(v) => write!(f, "B256(0x{}", hex::encode(v)),
+            ScalarValue::B256(v) => write!(f, "B256(0x{})", hex::encode(v)),
             ScalarValue::B384(v) => write!(f, "B384({})", hex::encode(v)),
         }
     }
