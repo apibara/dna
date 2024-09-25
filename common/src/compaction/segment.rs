@@ -38,7 +38,6 @@ impl SegmentService {
 
     pub async fn start(mut self, ct: CancellationToken) -> Result<(), CompactionError> {
         let mut builder = SegmentBuilder::default();
-
         let chain_view = self.chain_view;
 
         loop {

@@ -6,7 +6,6 @@ use crate::{
     block_store::{BlockStoreReader, BlockStoreWriter},
     chain_view::{ChainView, NextCursor},
     ingestion::IngestionStateClient,
-    store::{group::SegmentGroupBuilder, segment::Segment},
     Cursor,
 };
 
@@ -50,6 +49,9 @@ impl SegmentGroupService {
                 return Ok(());
             }
 
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
+            /*
             let first_block_in_group = if let Some(cursor) = chain_view
                 .get_grouped_cursor()
                 .await
@@ -93,6 +95,8 @@ impl SegmentGroupService {
             if first_block_in_group.number + blocks_in_group <= segmented.number {
                 info!(starting_cursor = %first_block_in_group, "creating new group");
 
+                /*
+
                 let mut builder = SegmentGroupBuilder::default();
 
                 for i in 0..self.group_size {
@@ -132,12 +136,14 @@ impl SegmentGroupService {
                     .put_grouped(last_block_in_group)
                     .await
                     .change_context(CompactionError)?;
+                */
             } else {
                 info!("compaction waiting for segmented change");
                 let Some(_) = ct.run_until_cancelled(chain_view.segmented_changed()).await else {
                     return Ok(());
                 };
             }
+            */
         }
     }
 }

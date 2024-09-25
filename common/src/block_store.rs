@@ -5,6 +5,7 @@ use crate::{
     file_cache::{FileCache, Mmap},
     fragment,
     object_store::{GetOptions, ObjectETag, ObjectStore, PutOptions},
+    segment::SerializedSegment,
     Cursor,
 };
 
@@ -173,7 +174,6 @@ impl BlockStoreWriter {
         Ok(response.etag)
     }
 
-    /*
     pub async fn put_segment(
         &self,
         first_cursor: &Cursor,
@@ -197,6 +197,7 @@ impl BlockStoreWriter {
         Ok(response.etag)
     }
 
+    /*
     pub async fn put_group(
         &self,
         first_cursor: &Cursor,

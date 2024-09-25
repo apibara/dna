@@ -1,9 +1,7 @@
-use std::collections::BTreeMap;
-
 use apibara_dna_common::{
     chain::BlockInfo,
-    fragment::{Block, BodyFragment, FragmentIndexes, HeaderFragment, Index},
-    index::{self, BitmapIndexBuilder, ScalarValue},
+    fragment::{Block, BodyFragment, HeaderFragment, Index, IndexFragment, IndexGroupFragment},
+    index::{BitmapIndexBuilder, ScalarValue},
     ingestion::{BlockIngestion, IngestionError},
     Cursor, Hash,
 };
@@ -15,12 +13,13 @@ use tracing::trace;
 
 use crate::{
     fragment::{
-        EVENT_FRAGMENT_ID, INDEX_EVENT_BY_ADDRESS, INDEX_EVENT_BY_KEY0, INDEX_EVENT_BY_KEY1,
-        INDEX_EVENT_BY_KEY2, INDEX_EVENT_BY_KEY3, INDEX_EVENT_BY_KEY_LENGTH,
+        EVENT_FRAGMENT_ID, EVENT_FRAGMENT_NAME, INDEX_EVENT_BY_ADDRESS, INDEX_EVENT_BY_KEY0,
+        INDEX_EVENT_BY_KEY1, INDEX_EVENT_BY_KEY2, INDEX_EVENT_BY_KEY3, INDEX_EVENT_BY_KEY_LENGTH,
         INDEX_EVENT_BY_TRANSACTION_STATUS, INDEX_MESSAGE_BY_FROM_ADDRESS,
         INDEX_MESSAGE_BY_TO_ADDRESS, INDEX_MESSAGE_BY_TRANSACTION_STATUS,
-        INDEX_TRANSACTION_BY_STATUS, MESSAGE_FRAGMENT_ID, RECEIPT_FRAGMENT_ID,
-        TRANSACTION_FRAGMENT_ID,
+        INDEX_TRANSACTION_BY_STATUS, MESSAGE_FRAGMENT_ID, MESSAGE_FRAGMENT_NAME,
+        RECEIPT_FRAGMENT_ID, RECEIPT_FRAGMENT_NAME, TRANSACTION_FRAGMENT_ID,
+        TRANSACTION_FRAGMENT_NAME,
     },
     proto::{convert_block_header, ModelExt},
     provider::{models, BlockExt, BlockId, StarknetProvider},
@@ -83,13 +82,14 @@ impl BlockIngestion for StarknetBlockIngestion {
                     break cursor;
                 }
 
+                let step_size = 200;
                 if number == 0 {
                     return Err(IngestionError::RpcRequest)
                         .attach_printable("failed to find finalized block");
-                } else if number < 100 {
+                } else if number < step_size {
                     number = 0;
                 } else {
-                    number -= 100;
+                    number -= step_size;
                 }
             }
         };
@@ -189,9 +189,13 @@ impl BlockIngestion for StarknetBlockIngestion {
 
         let (index_fragments, body_fragments) = collect_block_body_and_index(&block.transactions)?;
 
+        let index = IndexGroupFragment {
+            indexes: index_fragments,
+        };
+
         let block = Block {
             header: header_fragment,
-            indexes: index_fragments,
+            index,
             body: body_fragments,
         };
 
@@ -210,7 +214,7 @@ impl Clone for StarknetBlockIngestion {
 
 fn collect_block_body_and_index(
     transactions: &[models::TransactionWithReceipt],
-) -> Result<(Vec<FragmentIndexes>, Vec<BodyFragment>), IngestionError> {
+) -> Result<(Vec<IndexFragment>, Vec<BodyFragment>), IngestionError> {
     let mut block_transactions = Vec::new();
     let mut block_receipts = Vec::new();
     let mut block_events = Vec::new();
@@ -364,7 +368,7 @@ fn collect_block_body_and_index(
                 .into(),
         };
 
-        FragmentIndexes {
+        IndexFragment {
             fragment_id: TRANSACTION_FRAGMENT_ID,
             range_len: block_transactions.len() as u32,
             indexes: vec![index_transaction_by_status],
@@ -373,6 +377,7 @@ fn collect_block_body_and_index(
 
     let transaction_fragment = BodyFragment {
         fragment_id: TRANSACTION_FRAGMENT_ID,
+        name: TRANSACTION_FRAGMENT_NAME.to_string(),
         data: block_transactions
             .iter()
             .map(Message::encode_to_vec)
@@ -380,7 +385,7 @@ fn collect_block_body_and_index(
     };
 
     // Empty since no receipt filter.
-    let receipt_index = FragmentIndexes {
+    let receipt_index = IndexFragment {
         fragment_id: RECEIPT_FRAGMENT_ID,
         range_len: block_receipts.len() as u32,
         indexes: Vec::default(),
@@ -388,6 +393,7 @@ fn collect_block_body_and_index(
 
     let receipt_fragment = BodyFragment {
         fragment_id: RECEIPT_FRAGMENT_ID,
+        name: RECEIPT_FRAGMENT_NAME.to_string(),
         data: block_receipts.iter().map(Message::encode_to_vec).collect(),
     };
 
@@ -442,7 +448,7 @@ fn collect_block_body_and_index(
                 .into(),
         };
 
-        FragmentIndexes {
+        IndexFragment {
             fragment_id: EVENT_FRAGMENT_ID,
             range_len: block_events.len() as u32,
             indexes: vec![
@@ -459,6 +465,7 @@ fn collect_block_body_and_index(
 
     let event_fragment = BodyFragment {
         fragment_id: EVENT_FRAGMENT_ID,
+        name: EVENT_FRAGMENT_NAME.to_string(),
         data: block_events.iter().map(Message::encode_to_vec).collect(),
     };
 
@@ -485,7 +492,7 @@ fn collect_block_body_and_index(
                 .into(),
         };
 
-        FragmentIndexes {
+        IndexFragment {
             fragment_id: MESSAGE_FRAGMENT_ID,
             range_len: block_messages.len() as u32,
             indexes: vec![
@@ -498,6 +505,7 @@ fn collect_block_body_and_index(
 
     let message_fragment = BodyFragment {
         fragment_id: MESSAGE_FRAGMENT_ID,
+        name: MESSAGE_FRAGMENT_NAME.to_string(),
         data: block_messages.iter().map(Message::encode_to_vec).collect(),
     };
 

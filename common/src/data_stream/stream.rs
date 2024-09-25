@@ -12,7 +12,7 @@ use tracing::{debug, warn};
 
 use crate::{
     block_store::BlockStoreReader,
-    chain_view::{ChainView, NextCursor},
+    chain_view::{CanonicalCursor, ChainView, NextCursor},
     data_stream::{FilterMatch, FragmentAccess},
     fragment::HEADER_FRAGMENT_ID,
     query::BlockFilter,
@@ -34,6 +34,17 @@ pub struct DataStream {
 }
 
 type DataStreamMessage = tonic::Result<StreamDataResponse, tonic::Status>;
+
+/// Information about a block in a segment.
+#[derive(Debug, Clone)]
+struct SegmentBlock {
+    /// The block's cursor.
+    pub cursor: Option<Cursor>,
+    /// The block's end cursor.
+    pub end_cursor: Cursor,
+    /// Offset of the block in the segment.
+    pub offset: usize,
+}
 
 impl DataStream {
     #[allow(clippy::too_many_arguments)]
@@ -361,7 +372,6 @@ impl DataStream {
         tx: &mpsc::Sender<DataStreamMessage>,
         ct: &CancellationToken,
     ) -> Result<(), DataStreamError> {
-        /*
         let mut current = cursor.clone();
 
         let segment_size = self.chain_view.get_segment_size().await;
@@ -414,40 +424,32 @@ impl DataStream {
                 segment_cursor.clone(),
                 block.offset,
             );
-
             let proto_cursor: Option<ProtoCursor> = block.cursor.map(Into::into);
             let proto_end_cursor: Option<ProtoCursor> = Some(block.end_cursor.clone().into());
 
-            let Some(Ok(permit)) = ct.run_until_cancelled(tx.reserve()).await else {
-                return Ok(());
-            };
+            let mut blocks = Vec::new();
+            if self.filter_fragment(&fragment_access, &mut blocks).await? {
+                let data = Message::Data(Data {
+                    cursor: proto_cursor.clone(),
+                    end_cursor: proto_end_cursor.clone(),
+                    data: blocks,
+                    finality: DataFinality::Finalized as i32,
+                });
 
-            self.scanner
-                .scan_single(&block.end_cursor, &fragment_access, |data| {
-                    let data = Message::Data(Data {
-                        cursor: proto_cursor.clone(),
-                        end_cursor: proto_end_cursor.clone(),
-                        data,
-                        finality: DataFinality::Finalized as i32,
-                    });
+                let Some(Ok(permit)) = ct.run_until_cancelled(tx.reserve()).await else {
+                    return Ok(());
+                };
 
-                    permit.send(Ok(StreamDataResponse {
-                        message: Some(data),
-                    }));
-                })
-                .await
-                .change_context(DataStreamError)
-                .attach_printable("failed to scan segment block")
-                .attach_printable_lazy(|| format!("block: {}", block.end_cursor))
-                .attach_printable_lazy(|| format!("segment: {}", segment_cursor))?;
+                permit.send(Ok(StreamDataResponse {
+                    message: Some(data),
+                }));
+            }
         }
 
         self.heartbeat_interval.reset();
         self.current = current.into();
 
         Ok(())
-        */
-        todo!();
     }
 
     async fn tick_single(
@@ -480,9 +482,7 @@ impl DataStream {
         let fragment_access = FragmentAccess::new_in_block(self.store.clone(), cursor.clone());
 
         let mut blocks = Vec::new();
-        self.filter_fragment(&fragment_access, &mut blocks).await?;
-
-        if !blocks.is_empty() {
+        if self.filter_fragment(&fragment_access, &mut blocks).await? {
             let data = Message::Data(Data {
                 cursor: proto_cursor.clone(),
                 end_cursor: proto_end_cursor.clone(),
@@ -509,8 +509,9 @@ impl DataStream {
         &self,
         fragment_access: &FragmentAccess,
         output: &mut Vec<Vec<u8>>,
-    ) -> Result<(), DataStreamError> {
+    ) -> Result<bool, DataStreamError> {
         let mut block_buffer = Vec::new();
+        let mut has_data = false;
 
         for block_filter in self.block_filter.iter() {
             let mut fragment_matches = BTreeMap::default();
@@ -564,7 +565,7 @@ impl DataStream {
                     const FILTER_IDS_TAG: u32 = 1;
 
                     let message_bytes = &body.data[match_.index as usize];
-                    let filter_ids_len = prost::encoding::uint32::encoded_len_repeated(
+                    let filter_ids_len = prost::encoding::uint32::encoded_len_packed(
                         FILTER_IDS_TAG,
                         &match_.filter_ids,
                     );
@@ -580,7 +581,7 @@ impl DataStream {
                         &mut block_buffer,
                     );
 
-                    prost::encoding::uint32::encode_repeated(
+                    prost::encoding::uint32::encode_packed(
                         FILTER_IDS_TAG,
                         &match_.filter_ids,
                         &mut block_buffer,
@@ -590,10 +591,14 @@ impl DataStream {
             }
 
             // TODO: we can avoid this copy by using the low level protobuf API.
+            if !block_buffer.is_empty() {
+                has_data = true;
+            }
+
             output.push(block_buffer.clone());
         }
 
-        Ok(())
+        Ok(has_data)
     }
 }
 

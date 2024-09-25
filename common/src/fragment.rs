@@ -4,7 +4,11 @@ use rkyv::{Archive, Deserialize, Serialize};
 
 use crate::index;
 
+pub const INDEX_FRAGMENT_ID: FragmentId = 0;
+pub const INDEX_FRAGMENT_NAME: &str = "index";
+
 pub const HEADER_FRAGMENT_ID: FragmentId = 1;
+pub const HEADER_FRAGMENT_NAME: &str = "header";
 
 pub type FragmentId = u8;
 
@@ -16,13 +20,37 @@ pub type SerializedProto = Vec<u8>;
 #[derive(Archive, Serialize, Deserialize, Debug)]
 pub struct Block {
     pub header: HeaderFragment,
-    pub indexes: Vec<FragmentIndexes>,
+    pub index: IndexGroupFragment,
     pub body: Vec<BodyFragment>,
+}
+
+#[derive(Archive, Serialize, Deserialize, Debug)]
+pub struct IndexGroupFragment {
+    pub indexes: Vec<IndexFragment>,
 }
 
 #[derive(Archive, Serialize, Deserialize, Debug)]
 pub struct HeaderFragment {
     pub data: SerializedProto,
+}
+
+#[derive(Archive, Serialize, Deserialize, Debug)]
+pub struct IndexFragment {
+    pub fragment_id: FragmentId,
+    pub range_len: u32,
+    pub indexes: Vec<Index>,
+    // #[rkyv(with = AsVec)]
+    // pub joins: BTreeMap<FragmentId, JoinIndex>,
+}
+
+#[derive(Archive, Serialize, Deserialize, Debug)]
+pub struct BodyFragment {
+    /// The fragment's unique ID.
+    pub fragment_id: FragmentId,
+    /// The fragment's name.
+    pub name: String,
+    /// The fragment's data.
+    pub data: Vec<SerializedProto>,
 }
 
 /// Information needed to join the fragment with another fragment.
@@ -38,19 +66,8 @@ pub struct Index {
     pub index: index::Index,
 }
 
-#[derive(Archive, Serialize, Deserialize, Debug)]
-pub struct FragmentIndexes {
-    pub fragment_id: FragmentId,
-    pub range_len: u32,
-    pub indexes: Vec<Index>,
-    // #[rkyv(with = AsVec)]
-    // pub joins: BTreeMap<FragmentId, JoinIndex>,
-}
-
-#[derive(Archive, Serialize, Deserialize, Debug)]
-pub struct BodyFragment {
-    /// The fragment's unique ID.
-    pub fragment_id: FragmentId,
-    /// The fragment's data.
-    pub data: Vec<SerializedProto>,
+impl IndexGroupFragment {
+    pub fn len(&self) -> usize {
+        self.indexes.len()
+    }
 }

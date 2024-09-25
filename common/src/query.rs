@@ -1,11 +1,11 @@
 use std::collections::BTreeMap;
 
-use error_stack::{Result, ResultExt};
-use rkyv::Deserialize;
+use error_stack::Result;
 use roaring::RoaringBitmap;
+use tracing::trace;
 
 use crate::{
-    fragment::{ArchivedFragmentIndexes, FragmentId, FragmentIndexes, IndexId},
+    fragment::{FragmentId, IndexFragment, IndexId},
     index::{self, ScalarValue},
 };
 
@@ -63,13 +63,11 @@ impl BlockFilter {
 pub struct FilterError;
 
 impl Filter {
-    pub fn filter(&self, indexes: &FragmentIndexes) -> Result<RoaringBitmap, FilterError> {
+    pub fn filter(&self, indexes: &IndexFragment) -> Result<RoaringBitmap, FilterError> {
         let mut result = RoaringBitmap::from_iter(0..indexes.range_len);
-        println!("STARTING {:?}", result);
+        trace!(starting = ?result, "starting bitmap");
 
         for cond in self.conditions.iter() {
-            println!("APPLY COND {:?}", cond);
-
             let cond_index = indexes
                 .indexes
                 .get(cond.index_id as usize)
@@ -79,14 +77,14 @@ impl Filter {
                 index::Index::Bitmap(bitmap) => {
                     if let Some(bitmap) = bitmap.get(&cond.key) {
                         result &= bitmap;
+                        trace!(result = ?result, "bitmap match");
                     } else {
+                        trace!("no match");
                         result.clear();
                         break;
                     }
                 }
             }
-
-            println!("AFTER APPLY COND {:?}", result);
         }
 
         Ok(result)

@@ -4,10 +4,11 @@ use error_stack::{Result, ResultExt};
 
 use crate::{
     file_cache::Mmap,
-    store::{
-        segment::{FragmentData, Segment, SerializedSegment},
-        Block,
+    fragment::{
+        Block, BodyFragment, HeaderFragment, IndexGroupFragment, HEADER_FRAGMENT_NAME,
+        INDEX_FRAGMENT_NAME,
     },
+    segment::{FragmentData, Segment, SerializedSegment},
     Cursor,
 };
 
@@ -17,7 +18,9 @@ use super::CompactionError;
 pub struct SegmentBuilder {
     expected_fragment_count: Option<usize>,
     first_block: Option<Cursor>,
-    segments: HashMap<u8, (String, Vec<FragmentData>)>,
+    headers: Vec<FragmentData<HeaderFragment>>,
+    indexes: Vec<FragmentData<IndexGroupFragment>>,
+    body: HashMap<u8, (String, Vec<FragmentData<BodyFragment>>)>,
 }
 
 impl SegmentBuilder {
@@ -33,34 +36,57 @@ impl SegmentBuilder {
     }
 
     pub fn add_block(&mut self, cursor: &Cursor, bytes: Mmap) -> Result<(), CompactionError> {
-        let block = rkyv::access::<rkyv::Archived<Block>, rkyv::rancor::Error>(&bytes)
+        let block = rkyv::from_bytes::<Block, rkyv::rancor::Error>(&bytes)
             .change_context(CompactionError)
             .attach_printable("failed to access block")?;
 
         if let Some(expected_count) = self.expected_fragment_count {
-            if block.fragments.len() != expected_count {
+            if block.body.len() != expected_count {
                 return Err(CompactionError)
                     .attach_printable("block does not have the expected number of fragments")
                     .attach_printable("this is a bug in the network-specific ingestion code")
                     .attach_printable_lazy(|| format!("expected: {}", expected_count))
-                    .attach_printable_lazy(|| format!("actual: {}", block.fragments.len()));
+                    .attach_printable_lazy(|| format!("actual: {}", block.body.len()));
             }
         } else {
-            self.expected_fragment_count = Some(block.fragments.len());
+            self.expected_fragment_count = Some(block.body.len());
         }
 
-        for fragment in block.fragments.iter() {
-            let tag = fragment.tag;
-            let name = fragment.name.to_string();
-            let data = FragmentData {
+        {
+            let index = block.index;
+
+            let fragment_data = FragmentData {
                 cursor: cursor.clone(),
-                data: fragment.data.to_vec(),
+                data: index,
             };
 
-            if let Some(existing) = self.segments.get_mut(&tag) {
+            self.indexes.push(fragment_data);
+        }
+
+        {
+            let header = block.header;
+
+            let fragment_data = FragmentData {
+                cursor: cursor.clone(),
+                data: header,
+            };
+
+            self.headers.push(fragment_data);
+        }
+
+        for fragment in block.body.into_iter() {
+            let fragment_id = fragment.fragment_id;
+            let name = fragment.name.to_string();
+
+            let data = FragmentData {
+                cursor: cursor.clone(),
+                data: fragment,
+            };
+
+            if let Some(existing) = self.body.get_mut(&fragment_id) {
                 existing.1.push(data);
             } else {
-                self.segments.insert(tag, (name, vec![data]));
+                self.body.insert(fragment_id, (name, vec![data]));
             }
         }
 
@@ -72,14 +98,65 @@ impl SegmentBuilder {
             return Err(CompactionError).attach_printable("no segment started");
         };
 
-        let segments = std::mem::take(&mut self.segments);
+        let indexes = std::mem::take(&mut self.indexes);
+        let headers = std::mem::take(&mut self.headers);
+        let segments = std::mem::take(&mut self.body);
+        let expected_fragment_count = headers.len();
+
         let mut serialized = Vec::with_capacity(segments.len());
 
+        if indexes.len() != headers.len() {
+            return Err(CompactionError)
+                .attach_printable("index, header, and body fragments do not match")
+                .attach_printable_lazy(|| format!("indexes len: {}", indexes.len()))
+                .attach_printable_lazy(|| format!("headers len: {}", headers.len()));
+        }
+
+        {
+            let segment = Segment {
+                first_block: first_block.clone(),
+                data: indexes,
+            };
+
+            let data = rkyv::to_bytes::<rkyv::rancor::Error>(&segment)
+                .change_context(CompactionError)
+                .attach_printable("failed to serialize index segment")?;
+
+            serialized.push(SerializedSegment {
+                name: INDEX_FRAGMENT_NAME.to_string(),
+                data,
+            });
+        }
+
+        {
+            let segment = Segment {
+                first_block: first_block.clone(),
+                data: headers,
+            };
+
+            let data = rkyv::to_bytes::<rkyv::rancor::Error>(&segment)
+                .change_context(CompactionError)
+                .attach_printable("failed to serialize header segment")?;
+
+            serialized.push(SerializedSegment {
+                name: HEADER_FRAGMENT_NAME.to_string(),
+                data,
+            });
+        }
+
         for (name, data) in segments.into_values() {
+            if data.len() != expected_fragment_count {
+                return Err(CompactionError)
+                    .attach_printable("body fragments do not match")
+                    .attach_printable_lazy(|| format!("expected: {}", expected_fragment_count))
+                    .attach_printable_lazy(|| format!("actual: {}", data.len()));
+            }
+
             let segment = Segment {
                 first_block: first_block.clone(),
                 data,
             };
+
             let data = rkyv::to_bytes::<rkyv::rancor::Error>(&segment)
                 .change_context(CompactionError)
                 .attach_printable("failed to serialize segment")?;

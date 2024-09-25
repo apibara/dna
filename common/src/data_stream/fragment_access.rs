@@ -3,7 +3,11 @@ use error_stack::{Result, ResultExt};
 use crate::{
     block_store::BlockStoreReader,
     core::Cursor,
-    fragment::{Block, BodyFragment, FragmentId, FragmentIndexes, HeaderFragment},
+    fragment::{
+        Block, BodyFragment, FragmentId, HeaderFragment, IndexFragment, IndexGroupFragment,
+        HEADER_FRAGMENT_NAME, INDEX_FRAGMENT_NAME,
+    },
+    segment::{FragmentData, Segment},
 };
 
 #[derive(Debug)]
@@ -48,7 +52,7 @@ impl FragmentAccess {
     pub async fn get_fragment_indexes(
         &self,
         fragment_id: FragmentId,
-    ) -> Result<FragmentIndexes, FragmentAccessError> {
+    ) -> Result<IndexFragment, FragmentAccessError> {
         self.inner.get_fragment_indexes(fragment_id).await
     }
 
@@ -68,7 +72,7 @@ impl InnerAccess {
     async fn get_fragment_indexes(
         &self,
         fragment_id: FragmentId,
-    ) -> Result<FragmentIndexes, FragmentAccessError> {
+    ) -> Result<IndexFragment, FragmentAccessError> {
         match self {
             InnerAccess::Block {
                 store,
@@ -83,6 +87,7 @@ impl InnerAccess {
                     .change_context(FragmentAccessError)?;
 
                 let Some(pos) = block
+                    .index
                     .indexes
                     .iter()
                     .position(|f| f.fragment_id == fragment_id)
@@ -92,7 +97,7 @@ impl InnerAccess {
                         .attach_printable_lazy(|| format!("fragment id: {}", fragment_id));
                 };
 
-                rkyv::deserialize::<_, rkyv::rancor::Error>(&block.indexes[pos])
+                rkyv::deserialize::<_, rkyv::rancor::Error>(&block.index.indexes[pos])
                     .change_context(FragmentAccessError)
                     .attach_printable("failed to deserialize index")
             }
@@ -101,19 +106,33 @@ impl InnerAccess {
                 segment_cursor,
                 offset,
             } => {
-                /*
                 let segment = store
-                    .get_segment(segment_cursor, F::name())
+                    .get_segment(segment_cursor, INDEX_FRAGMENT_NAME)
                     .await
                     .change_context(FragmentAccessError)?;
 
-                Ok(FragmentReference {
-                    data: segment,
-                    offset: Some(*offset),
-                    _phantom: std::marker::PhantomData,
-                })
-                */
-                todo!();
+                let segment = rkyv::access::<
+                    rkyv::Archived<Segment<FragmentData<IndexGroupFragment>>>,
+                    rkyv::rancor::Error,
+                >(&segment)
+                .change_context(FragmentAccessError)?;
+
+                let block_index = &segment.data[*offset as usize];
+
+                let Some(pos) = block_index
+                    .data
+                    .indexes
+                    .iter()
+                    .position(|f| f.fragment_id == fragment_id)
+                else {
+                    return Err(FragmentAccessError)
+                        .attach_printable("index for fragment not found")
+                        .attach_printable_lazy(|| format!("fragment id: {}", fragment_id));
+                };
+
+                rkyv::deserialize::<_, rkyv::rancor::Error>(&block_index.data.indexes[pos])
+                    .change_context(FragmentAccessError)
+                    .attach_printable("failed to deserialize index")
             }
         }
     }
@@ -137,7 +156,7 @@ impl InnerAccess {
 
                 let Some(pos) = block.body.iter().position(|f| f.fragment_id == fragment_id) else {
                     return Err(FragmentAccessError)
-                        .attach_printable("index for fragment not found")
+                        .attach_printable("body for fragment not found")
                         .attach_printable_lazy(|| format!("fragment id: {}", fragment_id));
                 };
 
@@ -150,19 +169,34 @@ impl InnerAccess {
                 segment_cursor,
                 offset,
             } => {
-                /*
+                let name = if fragment_id == 2 {
+                    "transaction"
+                } else if fragment_id == 3 {
+                    "receipt"
+                } else if fragment_id == 4 {
+                    "event"
+                } else if fragment_id == 5 {
+                    "message"
+                } else {
+                    todo!();
+                };
+
                 let segment = store
-                    .get_segment(segment_cursor, F::name())
+                    .get_segment(segment_cursor, name)
                     .await
                     .change_context(FragmentAccessError)?;
 
-                Ok(FragmentReference {
-                    data: segment,
-                    offset: Some(*offset),
-                    _phantom: std::marker::PhantomData,
-                })
-                */
-                todo!();
+                let segment = rkyv::access::<
+                    rkyv::Archived<Segment<FragmentData<BodyFragment>>>,
+                    rkyv::rancor::Error,
+                >(&segment)
+                .change_context(FragmentAccessError)?;
+
+                let block = &segment.data[*offset as usize];
+
+                rkyv::deserialize::<_, rkyv::rancor::Error>(&block.data)
+                    .change_context(FragmentAccessError)
+                    .attach_printable("failed to deserialize body")
             }
         }
     }
@@ -190,19 +224,22 @@ impl InnerAccess {
                 segment_cursor,
                 offset,
             } => {
-                /*
                 let segment = store
-                    .get_segment(segment_cursor, F::name())
+                    .get_segment(segment_cursor, HEADER_FRAGMENT_NAME)
                     .await
                     .change_context(FragmentAccessError)?;
 
-                Ok(FragmentReference {
-                    data: segment,
-                    offset: Some(*offset),
-                    _phantom: std::marker::PhantomData,
-                })
-                */
-                todo!();
+                let segment = rkyv::access::<
+                    rkyv::Archived<Segment<FragmentData<HeaderFragment>>>,
+                    rkyv::rancor::Error,
+                >(&segment)
+                .change_context(FragmentAccessError)?;
+
+                let block = &segment.data[*offset as usize];
+
+                rkyv::deserialize::<_, rkyv::rancor::Error>(&block.data)
+                    .change_context(FragmentAccessError)
+                    .attach_printable("failed to deserialize header")
             }
         }
     }

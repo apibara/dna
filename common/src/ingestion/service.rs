@@ -449,11 +449,11 @@ where
             .attach_printable("failed to ingest block")
             .attach_printable_lazy(|| format!("block number: {}", block_number))?;
 
-        if block.indexes.len() != block.body.len() {
+        if block.index.len() != block.body.len() {
             return Err(IngestionError::Model)
                 .attach_printable("block indexes and body fragments do not match")
                 .attach_printable_lazy(|| format!("block number: {}", block_number))
-                .attach_printable_lazy(|| format!("indexes len: {}", block.indexes.len()))
+                .attach_printable_lazy(|| format!("indexes len: {}", block.index.len()))
                 .attach_printable_lazy(|| format!("body len: {}", block.body.len()));
         }
 

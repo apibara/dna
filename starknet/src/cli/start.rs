@@ -1,13 +1,11 @@
 use apibara_dna_common::{
-    // block_store::BlockStoreReader,
-    // chain_view::chain_view_sync_loop,
     block_store::BlockStoreReader,
     chain_view::chain_view_sync_loop,
     cli::{EtcdArgs, ObjectStoreArgs},
-    data_stream::BlockFilterFactory,
+    compaction::{compaction_service_loop, CompactionArgs},
     file_cache::FileCache,
     ingestion::{ingestion_service_loop, IngestionArgs},
-    server::{server_loop, ServerArgs}, // server::{server_loop, ServerArgs},
+    server::{server_loop, ServerArgs},
 };
 use clap::Args;
 use error_stack::{Result, ResultExt};
@@ -30,8 +28,8 @@ pub struct StartCommand {
     etcd: EtcdArgs,
     #[clap(flatten)]
     ingestion: IngestionArgs,
-    // #[clap(flatten)]
-    // compaction: CompactionArgs,
+    #[clap(flatten)]
+    compaction: CompactionArgs,
     #[clap(flatten)]
     server: ServerArgs,
 }
@@ -95,7 +93,6 @@ impl StartCommand {
 
         let sync_handle = tokio::spawn(chain_view_sync.start(ct.clone()));
 
-        /*
         let compaction_handle = if self.compaction.compaction_enabled {
             let options = self.compaction.to_compaction_options();
 
@@ -115,7 +112,6 @@ impl StartCommand {
                 }
             })
         };
-        */
 
         let block_filter_factory = StarknetFilterFactory;
 
@@ -149,10 +145,10 @@ impl StartCommand {
                 info!("ingestion loop terminated");
                 ingestion.change_context(StarknetError)?.change_context(StarknetError)?;
             }
-            // compaction = compaction_handle => {
-            //     info!("compaction loop terminated");
-            //     compaction.change_context(StarknetError)?.change_context(StarknetError)?;
-            // }
+            compaction = compaction_handle => {
+                info!("compaction loop terminated");
+                compaction.change_context(StarknetError)?.change_context(StarknetError)?;
+            }
             sync = sync_handle => {
                 info!("sync loop terminated");
                 sync.change_context(StarknetError)?.change_context(StarknetError)?;
