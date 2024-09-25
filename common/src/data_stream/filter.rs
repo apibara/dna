@@ -1,11 +1,18 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashSet};
 
 use roaring::RoaringBitmap;
 
 use crate::query::{BlockFilter, FilterId};
 
+pub trait BlockFilterFactory {
+    fn create_block_filter(
+        &self,
+        filters: &[Vec<u8>],
+    ) -> tonic::Result<Vec<BlockFilter>, tonic::Status>;
+}
+
 #[derive(Debug, Default)]
-pub struct FilterMatch(HashMap<u32, HashSet<FilterId>>);
+pub struct FilterMatch(BTreeMap<u32, HashSet<FilterId>>);
 
 #[derive(Debug)]
 pub struct Match {
@@ -34,11 +41,4 @@ impl FilterMatch {
             filter_ids: filter_ids.iter().copied().collect(),
         })
     }
-}
-
-pub trait BlockFilterFactory {
-    fn create_block_filter(
-        &self,
-        filters: &[Vec<u8>],
-    ) -> tonic::Result<Vec<BlockFilter>, tonic::Status>;
 }
