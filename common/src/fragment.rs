@@ -14,6 +14,15 @@ pub type FragmentId = u8;
 
 pub type IndexId = u8;
 
+/// Information about a fragment.
+#[derive(Debug, Clone)]
+pub struct FragmentInfo {
+    /// The fragment's unique ID.
+    pub fragment_id: FragmentId,
+    /// The fragment's name.
+    pub name: String,
+}
+
 /// A pre-serialized protobuf message without the `filter_ids` field.
 pub type SerializedProto = Vec<u8>;
 
@@ -68,6 +77,10 @@ pub struct Index {
 }
 
 impl IndexGroupFragment {
+    pub fn is_empty(&self) -> bool {
+        self.indexes.is_empty()
+    }
+
     pub fn len(&self) -> usize {
         self.indexes.len()
     }

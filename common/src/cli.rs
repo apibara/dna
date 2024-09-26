@@ -3,7 +3,26 @@ use aws_config::{meta::region::RegionProviderChain, Region};
 use clap::Args;
 use error_stack::Result;
 
-use crate::object_store::{ObjectStore, ObjectStoreOptions};
+use crate::{
+    compaction::CompactionArgs,
+    ingestion::IngestionArgs,
+    object_store::{ObjectStore, ObjectStoreOptions},
+    server::ServerArgs,
+};
+
+#[derive(Args, Debug)]
+pub struct StartArgs {
+    #[clap(flatten)]
+    pub object_store: ObjectStoreArgs,
+    #[clap(flatten)]
+    pub etcd: EtcdArgs,
+    #[clap(flatten)]
+    pub ingestion: IngestionArgs,
+    #[clap(flatten)]
+    pub compaction: CompactionArgs,
+    #[clap(flatten)]
+    pub server: ServerArgs,
+}
 
 #[derive(Args, Clone, Debug)]
 pub struct ObjectStoreArgs {

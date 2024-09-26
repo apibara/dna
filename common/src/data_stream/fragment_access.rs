@@ -63,8 +63,11 @@ impl FragmentAccess {
     pub async fn get_body_fragment(
         &self,
         fragment_id: FragmentId,
+        fragment_name: String,
     ) -> Result<BodyFragment, FragmentAccessError> {
-        self.inner.get_body_fragment(fragment_id).await
+        self.inner
+            .get_body_fragment(fragment_id, fragment_name)
+            .await
     }
 }
 
@@ -117,7 +120,7 @@ impl InnerAccess {
                 >(&segment)
                 .change_context(FragmentAccessError)?;
 
-                let block_index = &segment.data[*offset as usize];
+                let block_index = &segment.data[*offset];
 
                 let Some(pos) = block_index
                     .data
@@ -140,6 +143,7 @@ impl InnerAccess {
     async fn get_body_fragment(
         &self,
         fragment_id: FragmentId,
+        fragment_name: String,
     ) -> Result<BodyFragment, FragmentAccessError> {
         match self {
             InnerAccess::Block {
@@ -169,20 +173,8 @@ impl InnerAccess {
                 segment_cursor,
                 offset,
             } => {
-                let name = if fragment_id == 2 {
-                    "transaction"
-                } else if fragment_id == 3 {
-                    "receipt"
-                } else if fragment_id == 4 {
-                    "event"
-                } else if fragment_id == 5 {
-                    "message"
-                } else {
-                    todo!();
-                };
-
                 let segment = store
-                    .get_segment(segment_cursor, name)
+                    .get_segment(segment_cursor, fragment_name)
                     .await
                     .change_context(FragmentAccessError)?;
 
@@ -192,7 +184,7 @@ impl InnerAccess {
                 >(&segment)
                 .change_context(FragmentAccessError)?;
 
-                let block = &segment.data[*offset as usize];
+                let block = &segment.data[*offset];
 
                 rkyv::deserialize::<_, rkyv::rancor::Error>(&block.data)
                     .change_context(FragmentAccessError)
@@ -235,7 +227,7 @@ impl InnerAccess {
                 >(&segment)
                 .change_context(FragmentAccessError)?;
 
-                let block = &segment.data[*offset as usize];
+                let block = &segment.data[*offset];
 
                 rkyv::deserialize::<_, rkyv::rancor::Error>(&block.data)
                     .change_context(FragmentAccessError)

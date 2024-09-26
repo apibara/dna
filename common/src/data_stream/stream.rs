@@ -1,4 +1,7 @@
-use std::{collections::BTreeMap, time::Duration};
+use std::{
+    collections::{BTreeMap, HashMap},
+    time::Duration,
+};
 
 use apibara_dna_protocol::dna::stream::{
     stream_data_response::Message, Data, DataFinality, Finalize, Heartbeat, Invalidate,
@@ -15,7 +18,7 @@ use crate::{
     block_store::BlockStoreReader,
     chain_view::{CanonicalCursor, ChainView, NextCursor},
     data_stream::{FilterMatch, FragmentAccess},
-    fragment::HEADER_FRAGMENT_ID,
+    fragment::{FragmentId, HEADER_FRAGMENT_ID},
     query::BlockFilter,
     segment::SegmentGroup,
     Cursor,
@@ -31,6 +34,7 @@ pub struct DataStream {
     _finality: DataFinality,
     chain_view: ChainView,
     store: BlockStoreReader,
+    fragment_id_to_name: HashMap<FragmentId, String>,
     heartbeat_interval: tokio::time::Interval,
     _permit: tokio::sync::OwnedSemaphorePermit,
 }
@@ -57,6 +61,7 @@ impl DataStream {
         finality: DataFinality,
         heartbeat_interval: Duration,
         chain_view: ChainView,
+        fragment_id_to_name: HashMap<FragmentId, String>,
         store: BlockStoreReader,
         permit: tokio::sync::OwnedSemaphorePermit,
     ) -> Self {
@@ -68,6 +73,7 @@ impl DataStream {
             _finality: finality,
             heartbeat_interval,
             chain_view,
+            fragment_id_to_name,
             store,
             _permit: permit,
         }
@@ -255,7 +261,6 @@ impl DataStream {
                 }
             }
         }
-        println!("blocks {:?}", data_bitmap);
 
         debug!(blocks = ?data_bitmap, "group bitmap");
 
@@ -568,8 +573,15 @@ impl DataStream {
             }
 
             for (fragment_id, filter_match) in fragment_matches.into_iter() {
+                let Some(fragment_name) = self.fragment_id_to_name.get(&fragment_id).cloned()
+                else {
+                    return Err(DataStreamError)
+                        .attach_printable("unknown fragment id")
+                        .attach_printable_lazy(|| format!("fragment id: {}", fragment_id));
+                };
+
                 let body = fragment_access
-                    .get_body_fragment(fragment_id)
+                    .get_body_fragment(fragment_id, fragment_name)
                     .await
                     .change_context(DataStreamError)
                     .attach_printable("failed to get body fragment")?;

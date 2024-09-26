@@ -2,6 +2,7 @@ mod cli;
 mod error;
 mod service;
 
+use std::collections::HashMap;
 use std::net::SocketAddr;
 
 use apibara_dna_protocol::dna::stream::dna_stream_file_descriptor_set;
@@ -14,6 +15,7 @@ use tracing::info;
 
 use crate::{
     block_store::BlockStoreReader, chain_view::ChainView, data_stream::BlockFilterFactory,
+    fragment::FragmentId,
 };
 
 pub use self::cli::ServerArgs;
@@ -30,6 +32,7 @@ pub struct ServerOptions {
 pub async fn server_loop<BFF>(
     filter_factory: BFF,
     chain_view: tokio::sync::watch::Receiver<Option<ChainView>>,
+    fragment_id_to_name: HashMap<FragmentId, String>,
     block_store: BlockStoreReader,
     options: ServerOptions,
     ct: CancellationToken,
@@ -49,6 +52,7 @@ where
     let stream_service = StreamService::new(
         filter_factory,
         chain_view,
+        fragment_id_to_name,
         block_store,
         options.stream_service_options,
         ct.clone(),

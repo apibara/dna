@@ -1,4 +1,4 @@
-use std::{pin::Pin, sync::Arc, time::Duration};
+use std::{collections::HashMap, pin::Pin, sync::Arc, time::Duration};
 
 use apibara_dna_protocol::dna::stream::{
     dna_stream_server::{self, DnaStream},
@@ -15,6 +15,7 @@ use crate::{
     block_store::BlockStoreReader,
     chain_view::{CanonicalCursor, ChainView, ChainViewError},
     data_stream::{BlockFilterFactory, DataStream},
+    fragment::FragmentId,
     Cursor,
 };
 
@@ -35,6 +36,7 @@ where
     filter_factory: BFF,
     stream_semaphore: Arc<Semaphore>,
     chain_view: tokio::sync::watch::Receiver<Option<ChainView>>,
+    fragment_id_to_name: HashMap<FragmentId, String>,
     block_store: BlockStoreReader,
     ct: CancellationToken,
 }
@@ -46,6 +48,7 @@ where
     pub fn new(
         filter_factory: BFF,
         chain_view: tokio::sync::watch::Receiver<Option<ChainView>>,
+        fragment_id_to_name: HashMap<FragmentId, String>,
         block_store: BlockStoreReader,
         options: StreamServiceOptions,
         ct: CancellationToken,
@@ -55,6 +58,7 @@ where
             filter_factory,
             stream_semaphore,
             chain_view,
+            fragment_id_to_name,
             block_store,
             ct,
         }
@@ -154,6 +158,7 @@ where
             finality,
             heartbeat_interval,
             chain_view,
+            self.fragment_id_to_name.clone(),
             self.block_store.clone(),
             permit,
         );
