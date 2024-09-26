@@ -12,9 +12,10 @@ members = [
     "etcd-dbg",
     "protocol",
     "common",
+    # Chains
     # "evm",
+    "beaconchain",
     "starknet",
-    # "beaconchain",
 ]
 
 [workspace.dependencies]

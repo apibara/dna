@@ -27,7 +27,7 @@ message TransactionFilter {
   Address from = 2;
   // Filter based on the transaction's recipient address.
   Address to = 3;
-  // Only return `creat` transactions. Defaults to `false`.
+  // Only return `create` transactions. Defaults to `false`.
   optional bool create = 4;
   // Include the transaction's blob. Defaults to `false`.
   optional bool include_blob = 5;

@@ -3,19 +3,27 @@
 use alloy_eips::eip2718::Decodable2718;
 use apibara_dna_common::{
     chain::BlockInfo,
+    fragment::{Block, BodyFragment, HeaderFragment, Index, IndexFragment, IndexGroupFragment},
+    index::{BitmapIndexBuilder, ScalarValue},
     ingestion::{BlockIngestion, IngestionError},
-    store::Block,
     Cursor, Hash,
 };
 use error_stack::{FutureExt, Result, ResultExt};
+use prost::Message;
 use tracing::Instrument;
 
 use crate::{
+    fragment::{
+        BLOB_FRAGMENT_ID, BLOB_FRAGMENT_NAME, INDEX_TRANSACTION_BY_CREATE,
+        INDEX_TRANSACTION_BY_FROM_ADDRESS, INDEX_TRANSACTION_BY_TO_ADDRESS,
+        INDEX_VALIDATOR_BY_INDEX, INDEX_VALIDATOR_BY_STATUS, TRANSACTION_FRAGMENT_ID,
+        TRANSACTION_FRAGMENT_NAME, VALIDATOR_FRAGMENT_ID, VALIDATOR_FRAGMENT_NAME,
+    },
+    proto::{FallibleModelExt, ModelExt},
     provider::{
         http::{BeaconApiErrorExt, BeaconApiProvider, BlockId},
         models::{self, BeaconCursorExt},
     },
-    store::{block_builder::BlockBuilder, fragment},
 };
 
 #[derive(Clone)]
@@ -41,7 +49,6 @@ impl BeaconChainBlockIngestion {
             }
         };
 
-        let block_hash = fragment::B256::from(block_root.data.root);
         let block_id = BlockId::BlockRoot(block_root.data.root);
 
         let block = tokio::spawn({
@@ -89,14 +96,22 @@ impl BeaconChainBlockIngestion {
         .instrument(tracing::info_span!("beaconchain_get_validators"));
 
         let block = block.await.change_context(IngestionError::RpcRequest)??;
-        let blob_sidecar = blob_sidecar
+
+        let mut blobs = blob_sidecar
             .await
-            .change_context(IngestionError::RpcRequest)??;
-        let validators = validators
+            .change_context(IngestionError::RpcRequest)??
+            .data;
+        let mut validators = validators
             .await
             .change_context(IngestionError::RpcRequest)??;
 
         let mut block = block.data.message;
+
+        let block_info = BlockInfo {
+            number: block.slot,
+            hash: Hash(block_root.data.root.to_vec()),
+            parent: Hash(block.parent_root.to_vec()),
+        };
 
         let transactions = if let Some(ref mut execution_payload) = block.body.execution_payload {
             std::mem::take(&mut execution_payload.transactions)
@@ -104,46 +119,27 @@ impl BeaconChainBlockIngestion {
             Vec::new()
         };
 
-        let header = fragment::BlockHeader::from(block);
+        validators.sort_by_key(|v| v.index);
+        blobs.sort_by_key(|b| b.index);
 
-        let block_info = BlockInfo {
-            number: header.slot,
-            hash: block_hash.into(),
-            parent: header.parent_root.into(),
+        let header_fragment = {
+            let header = block.to_proto();
+            HeaderFragment {
+                data: header.encode_to_vec(),
+            }
         };
 
-        let transactions = transactions
-            .into_iter()
-            .enumerate()
-            .map(|(tx_index, bytes)| decode_transaction(tx_index, &bytes))
-            .collect::<Result<Vec<_>, _>>()
-            .change_context(IngestionError::Model)
-            .attach_printable("failed to decode transactions")?;
+        let (index_fragments, body_fragments) =
+            collect_block_body_and_index(&transactions, &validators, &blobs)?;
 
-        let mut blobs = blob_sidecar
-            .data
-            .into_iter()
-            .map(fragment::Blob::from)
-            .collect::<Vec<_>>();
+        let index = IndexGroupFragment {
+            indexes: index_fragments,
+        };
 
-        add_transaction_to_blobs(&mut blobs, &transactions)
-            .change_context(IngestionError::Model)
-            .attach_printable("failed to add transactions to blobs")?;
-
-        let validators = validators
-            .into_iter()
-            .map(fragment::Validator::from)
-            .collect::<Vec<_>>();
-
-        let block = {
-            let mut block_builder = BlockBuilder::new(header);
-            block_builder.add_transactions(transactions);
-            block_builder.add_validators(validators);
-            block_builder.add_blobs(blobs);
-            block_builder
-                .build()
-                .change_context(IngestionError::Model)
-                .attach_printable("failed to build block")?
+        let block = Block {
+            header: header_fragment,
+            index,
+            body: body_fragments,
         };
 
         Ok((block_info, block).into())
@@ -165,13 +161,13 @@ impl BeaconChainBlockIngestion {
             }
         };
 
-        let hash = fragment::B256::default();
-        let parent_hash = fragment::B256::from(parent_hash);
+        let hash = Hash([0; 32].to_vec());
+        let parent = Hash(parent_hash.to_vec());
 
         let block_info = BlockInfo {
             number: block_number,
-            hash: hash.into(),
-            parent: parent_hash.into(),
+            hash,
+            parent,
         };
 
         Ok(block_info)
@@ -253,52 +249,242 @@ impl BlockIngestion for BeaconChainBlockIngestion {
         }
 
         let block_info = self.get_block_info_for_missed_slot(block_number).await?;
-        let block =
-            BlockBuilder::missed_block(block_number).change_context(IngestionError::Model)?;
+
+        // Missed slots have no data and no indices.
+        let header_fragment = HeaderFragment { data: Vec::new() };
+
+        let index_fragment = IndexGroupFragment {
+            indexes: vec![
+                IndexFragment {
+                    fragment_id: TRANSACTION_FRAGMENT_ID,
+                    range_start: 0,
+                    range_len: 0,
+                    indexes: Vec::default(),
+                },
+                IndexFragment {
+                    fragment_id: VALIDATOR_FRAGMENT_ID,
+                    range_start: 0,
+                    range_len: 0,
+                    indexes: Vec::default(),
+                },
+                IndexFragment {
+                    fragment_id: BLOB_FRAGMENT_ID,
+                    range_start: 0,
+                    range_len: 0,
+                    indexes: Vec::default(),
+                },
+            ],
+        };
+
+        let body_fragments = vec![
+            BodyFragment {
+                fragment_id: TRANSACTION_FRAGMENT_ID,
+                name: TRANSACTION_FRAGMENT_NAME.to_string(),
+                data: Vec::default(),
+            },
+            BodyFragment {
+                fragment_id: VALIDATOR_FRAGMENT_ID,
+                name: VALIDATOR_FRAGMENT_NAME.to_string(),
+                data: Vec::default(),
+            },
+            BodyFragment {
+                fragment_id: BLOB_FRAGMENT_ID,
+                name: BLOB_FRAGMENT_NAME.to_string(),
+                data: Vec::default(),
+            },
+        ];
+
+        let block = Block {
+            header: header_fragment,
+            index: index_fragment,
+            body: body_fragments,
+        };
 
         Ok((block_info, block))
     }
 }
 
-pub fn decode_transaction(
-    transaction_index: usize,
-    mut bytes: &[u8],
-) -> Result<fragment::Transaction, IngestionError> {
-    let tx = models::TxEnvelope::network_decode(&mut bytes)
-        .change_context(IngestionError::Model)
-        .attach_printable("failed to decode EIP 2718 transaction")?;
-    let mut tx = fragment::Transaction::try_from(tx).change_context(IngestionError::Model)?;
+pub fn collect_block_body_and_index(
+    transactions: &[models::Bytes],
+    validators: &[models::Validator],
+    blobs: &[models::BlobSidecar],
+) -> Result<(Vec<IndexFragment>, Vec<BodyFragment>), IngestionError> {
+    let transactions = transactions
+        .iter()
+        .map(|bytes| decode_transaction(bytes))
+        .collect::<Result<Vec<_>, _>>()?;
 
-    tx.transaction_index = transaction_index as u32;
+    let mut block_transactions = Vec::new();
+    let mut block_validators = Vec::new();
+    let mut block_blobs = Vec::new();
 
-    Ok(tx)
-}
+    let mut index_transaction_by_from_address = BitmapIndexBuilder::default();
+    let mut index_transaction_by_to_address = BitmapIndexBuilder::default();
+    let mut index_transaction_by_create = BitmapIndexBuilder::default();
 
-pub fn add_transaction_to_blobs(
-    blobs: &mut [fragment::Blob],
-    transactions: &[fragment::Transaction],
-) -> Result<(), IngestionError> {
-    let mut blobs_updated = 0;
-    for transaction in transactions {
-        for blob_hash in transaction.blob_versioned_hashes.iter() {
-            let blob = blobs
-                .iter_mut()
-                .find(|blob| &blob.blob_hash == blob_hash)
-                .ok_or(IngestionError::Model)
-                .attach_printable("expected blob to exist")
-                .attach_printable_lazy(|| {
-                    format!(
-                        "blob_hash: {:?}, transaction_hash: {:?}",
-                        blob_hash, transaction.transaction_hash
-                    )
-                })?;
-            blob.transaction_index = transaction.transaction_index;
-            blob.transaction_hash = transaction.transaction_hash;
+    let mut index_validator_by_index = BitmapIndexBuilder::default();
+    let mut index_validator_by_status = BitmapIndexBuilder::default();
 
-            blobs_updated += 1;
+    for (transaction_index, transaction) in transactions.into_iter().enumerate() {
+        let transaction_index = transaction_index as u32;
+
+        let mut transaction = transaction.to_proto()?;
+        transaction.transaction_index = transaction_index;
+
+        if let Some(from) = transaction.from {
+            index_transaction_by_from_address
+                .insert(ScalarValue::B160(from.to_bytes()), transaction_index);
         }
+
+        match transaction.to {
+            Some(to) => {
+                index_transaction_by_to_address
+                    .insert(ScalarValue::B160(to.to_bytes()), transaction_index);
+                index_transaction_by_create.insert(ScalarValue::Bool(false), transaction_index);
+            }
+            None => {
+                index_transaction_by_create.insert(ScalarValue::Bool(true), transaction_index);
+            }
+        }
+
+        block_transactions.push(transaction);
     }
 
-    assert!(blobs_updated == blobs.len());
-    Ok(())
+    for (validator_offset, validator) in validators.iter().enumerate() {
+        let validator_offset = validator_offset as u32;
+        let validator = validator.to_proto();
+
+        index_validator_by_index.insert(
+            ScalarValue::Uint32(validator.validator_index),
+            validator_offset,
+        );
+
+        index_validator_by_status.insert(ScalarValue::Int32(validator.status), validator_offset);
+
+        block_validators.push(validator);
+    }
+
+    for blob in blobs.iter() {
+        let mut blob = blob.to_proto();
+
+        let Some(tx) = block_transactions.iter().find(|tx| {
+            tx.blob_versioned_hashes
+                .contains(&blob.blob_hash.unwrap_or_default())
+        }) else {
+            return Err(IngestionError::Model)
+                .attach_printable("no transaction found for blob")
+                .attach_printable_lazy(|| {
+                    format!("blob hash: {}", blob.blob_hash.unwrap_or_default())
+                });
+        };
+
+        blob.transaction_index = tx.transaction_index;
+        blob.transaction_hash = tx.transaction_hash;
+
+        block_blobs.push(blob);
+    }
+
+    let transaction_index = {
+        let index_transaction_by_from_address = Index {
+            index_id: INDEX_TRANSACTION_BY_FROM_ADDRESS,
+            index: index_transaction_by_from_address
+                .build()
+                .change_context(IngestionError::Indexing)?
+                .into(),
+        };
+
+        let index_transaction_by_to_address = Index {
+            index_id: INDEX_TRANSACTION_BY_TO_ADDRESS,
+            index: index_transaction_by_to_address
+                .build()
+                .change_context(IngestionError::Indexing)?
+                .into(),
+        };
+
+        let index_transaction_by_create = Index {
+            index_id: INDEX_TRANSACTION_BY_CREATE,
+            index: index_transaction_by_create
+                .build()
+                .change_context(IngestionError::Indexing)?
+                .into(),
+        };
+
+        IndexFragment {
+            fragment_id: TRANSACTION_FRAGMENT_ID,
+            range_start: 0,
+            range_len: block_transactions.len() as u32,
+            indexes: vec![
+                index_transaction_by_from_address,
+                index_transaction_by_to_address,
+                index_transaction_by_create,
+            ],
+        }
+    };
+
+    let transaction_fragment = BodyFragment {
+        fragment_id: TRANSACTION_FRAGMENT_ID,
+        name: TRANSACTION_FRAGMENT_NAME.to_string(),
+        data: block_transactions
+            .iter()
+            .map(Message::encode_to_vec)
+            .collect(),
+    };
+
+    let validator_index = {
+        let index_validator_by_index = Index {
+            index_id: INDEX_VALIDATOR_BY_INDEX,
+            index: index_validator_by_index
+                .build()
+                .change_context(IngestionError::Indexing)?
+                .into(),
+        };
+
+        let index_validator_by_status = Index {
+            index_id: INDEX_VALIDATOR_BY_STATUS,
+            index: index_validator_by_status
+                .build()
+                .change_context(IngestionError::Indexing)?
+                .into(),
+        };
+
+        IndexFragment {
+            fragment_id: VALIDATOR_FRAGMENT_ID,
+            range_start: 0,
+            range_len: block_validators.len() as u32,
+            indexes: vec![index_validator_by_index, index_validator_by_status],
+        }
+    };
+
+    let validator_fragment = BodyFragment {
+        fragment_id: VALIDATOR_FRAGMENT_ID,
+        name: VALIDATOR_FRAGMENT_NAME.to_string(),
+        data: block_validators
+            .iter()
+            .map(Message::encode_to_vec)
+            .collect(),
+    };
+
+    let blob_index = IndexFragment {
+        fragment_id: BLOB_FRAGMENT_ID,
+        range_start: 0,
+        range_len: block_blobs.len() as u32,
+        indexes: Vec::new(),
+    };
+
+    let blob_fragment = BodyFragment {
+        fragment_id: BLOB_FRAGMENT_ID,
+        name: BLOB_FRAGMENT_NAME.to_string(),
+        data: block_blobs.iter().map(Message::encode_to_vec).collect(),
+    };
+
+    Ok((
+        vec![transaction_index, validator_index, blob_index],
+        vec![transaction_fragment, validator_fragment, blob_fragment],
+    ))
+}
+
+pub fn decode_transaction(mut bytes: &[u8]) -> Result<models::TxEnvelope, IngestionError> {
+    models::TxEnvelope::network_decode(&mut bytes)
+        .change_context(IngestionError::Model)
+        .attach_printable("failed to decode EIP 2718 transaction")
 }

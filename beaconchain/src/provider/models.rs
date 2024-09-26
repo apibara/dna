@@ -4,7 +4,7 @@ use serde_with::{serde_as, DefaultOnNull, DisplayFromStr};
 
 pub use alloy_consensus::{
     Signed, TxEip1559, TxEip2930, TxEip4844, TxEip4844Variant, TxEip4844WithSidecar, TxEnvelope,
-    TxLegacy,
+    TxLegacy, TxType,
 };
 pub use alloy_eips::eip2930::AccessListItem;
 pub use alloy_primitives::{ruint::aliases::B384, Address, Bytes, Signature, TxKind, B256, U256};
@@ -144,32 +144,18 @@ pub struct Validator {
     pub status: ValidatorStatus,
 }
 
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Serialize,
-    Deserialize,
-    Hash,
-    rkyv::Serialize,
-    rkyv::Deserialize,
-    rkyv::Archive,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Hash)]
 #[serde(rename_all = "snake_case")]
 pub enum ValidatorStatus {
-    PendingInitialized,
-    PendingQueued,
-    ActiveOngoing,
-    ActiveExiting,
-    ActiveSlashed,
-    ExitedUnslashed,
-    ExitedSlashed,
-    WithdrawalPossible,
-    WithdrawalDone,
+    PendingInitialized = 0,
+    PendingQueued = 1,
+    ActiveOngoing = 2,
+    ActiveExiting = 3,
+    ActiveSlashed = 4,
+    ExitedUnslashed = 5,
+    ExitedSlashed = 6,
+    WithdrawalPossible = 7,
+    WithdrawalDone = 8,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
