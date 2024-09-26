@@ -57,6 +57,14 @@ impl BlockFilter {
     pub fn iter(&self) -> impl Iterator<Item = (&FragmentId, &Vec<Filter>)> {
         self.filters.iter()
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.filters.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.filters.len()
+    }
 }
 
 #[derive(Debug)]
