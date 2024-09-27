@@ -23,11 +23,11 @@ message Block {
 // Block header.
 message BlockHeader {
   // Block number.
-  uint64 number = 1;
+  uint64 block_number = 1;
   // Hash of the block.
-  B256 hash = 2;
+  B256 block_hash = 2;
   // Hash of the parent block.
-  B256 parent_hash = 3;
+  B256 parent_block_hash = 3;
   // Hash of the uncles.
   B256 uncles_hash = 4;
   // Author of the block.
@@ -80,97 +80,107 @@ message BlockHeader {
 
 // A validator's withdrawal from the consensus layer.
 message Withdrawal {
-  // Increasing index of the withdrawal.
-  uint64 index = 1;
-  // Index of the validator.
-  uint64 validator_index = 2;
+  repeated uint32 filter_ids = 1;
   // Withdrawal index in the block.
-  uint64 withdrawal_index = 3;
+  uint64 withdrawal_index = 2;
+  // Increasing index of the withdrawal.
+  uint64 index = 3;
+  // Index of the validator.
+  uint64 validator_index = 4;
   // Target address of the withdrawal.
-  Address address = 4;
+  Address address = 5;
   // Value of the withdrawal, in gwei.
-  U256 amount = 5;
+  U256 amount = 6;
 }
 
 message Transaction {
-  // Transaction hash.
-  B256 hash = 1;
-  // Nonce.
-  uint64 nonce = 2;
+  repeated uint32 filter_ids = 1;
   // Transaction index in the block.
-  uint64 transaction_index = 3;
+  uint64 transaction_index = 2;
+  // Transaction hash.
+  B256 transaction_hash = 3;
+  // Nonce.
+  uint64 nonce = 4;
   // Sender.
-  Address from = 4;
+  Address from = 5;
   // Recipient.
-  Address to = 5;
+  Address to = 6;
   // Amount of wei transferred.
-  U256 value = 6;
+  U256 value = 7;
   // Gas price.
-  U128 gas_price = 7;
+  U128 gas_price = 8;
   // Gas amount.
-  U256 gas = 8;
+  U256 gas = 9;
   // Max base fee per gas the sender is willing to pay.
-  U128 max_fee_per_gas = 9;
+  U128 max_fee_per_gas = 10;
   // Miner's tip.
-  U128 max_priority_fee_per_gas = 10;
+  U128 max_priority_fee_per_gas = 11;
   // Data.
-  bytes input = 11;
+  bytes input = 12;
   // The signature's r,s,v,yParity values.
-  Signature signature = 12;
+  Signature signature = 13;
   // Chain ID.
-  uint64 chain_id = 13;
+  uint64 chain_id = 14;
   // EIP-2930 access list.
-  repeated AccessListItem access_list = 14;
+  repeated AccessListItem access_list = 15;
   // EIP-2718 transaction type.
-  uint64 transaction_type = 15;
+  uint64 transaction_type = 16;
   // EIP-4844 max gas fee per blob.
-  U128 max_fee_per_blob_gas = 16;
+  U128 max_fee_per_blob_gas = 17;
   // EIP-4844 blob hashes.
-  repeated B256 blob_versioned_hashes = 17;
+  repeated B256 blob_versioned_hashes = 18;
+  // The transaction status.
+  TransactionStatus transaction_status = 19;
 }
 
 message TransactionReceipt {
-  // Transaction hash.
-  B256 transaction_hash = 1;
+  repeated uint32 filter_ids = 1;
   // Index of the transaction in the block.
   uint64 transaction_index = 2;
+  // Transaction hash.
+  B256 transaction_hash = 3;
   // Cumulative gas used in the block after this transaction has been executed.
-  U256 cumulative_gas_used = 3;
+  U256 cumulative_gas_used = 4;
   // Gas used by this transaction.
-  U256 gas_used = 4;
+  U256 gas_used = 5;
   // The price paid by the transaction.
-  U128 effective_gas_price = 5;
+  U128 effective_gas_price = 6;
   // Sender.
-  Address from = 6;
+  Address from = 7;
   // Recipient, if any.
-  Address to = 7;
+  Address to = 8;
   // Contract address created, if any.
-  Address contract_address = 8;
+  Address contract_address = 9;
   // Logs bloom.
-  Bloom logs_bloom = 9;
+  Bloom logs_bloom = 10;
   // Either 1 (success) or 0 (failure).
-  uint64 status_code = 10;
+  uint64 status_code = 11;
   // EIP-2718 transaction type.
-  uint64 transaction_type = 11;
+  uint64 transaction_type = 12;
   // EIP-4844 blob gas used.
-  U128 blob_gas_used = 12;
+  U128 blob_gas_used = 13;
   // EIP-4844 blob gas paid by the transaction.
-  U128 blob_gas_price = 13;
+  U128 blob_gas_price = 14;
+  // The transaction status.
+  TransactionStatus transaction_status = 15;
 }
 
 message Log {
-  // Address of the contract that emitted the log.
-  Address address = 1;
-  // Log topics.
-  repeated B256 topics = 2;
-  // Additional data.
-  bytes data = 3;
+  repeated uint32 filter_ids = 1;
   // Index of the log in the block.
-  uint64 log_index = 4;
+  uint64 log_index = 2;
+  // Address of the contract that emitted the log.
+  Address address = 3;
+  // Log topics.
+  repeated B256 topics = 4;
+  // Additional data.
+  bytes data = 5;
   // Index of the transaction that emitted the log.
-  uint64 transaction_index = 5;
+  uint64 transaction_index = 6;
   // Hash of the transaction that emitted the log.
-  B256 transaction_hash = 6;
+  B256 transaction_hash = 7;
+  // The transaction status.
+  TransactionStatus transaction_status = 8;
 }
 
 message Signature {
@@ -189,4 +199,10 @@ message AccessListItem {
   Address address = 1;
   // Storage keys to be loaded at the start of the transaction.
   repeated B256 storage_keys = 2;
+}
+
+enum TransactionStatus {
+  TRANSACTION_STATUS_UNSPECIFIED = 0;
+  TRANSACTION_STATUS_SUCCEEDED = 1;
+  TRANSACTION_STATUS_REVERTED = 2;
 }

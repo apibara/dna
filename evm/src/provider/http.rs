@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use alloy_provider::{network::Ethereum, Provider, ProviderBuilder};
 use alloy_rpc_client::ClientBuilder;
@@ -27,8 +27,9 @@ pub struct JsonRpcProviderOptions {
     pub headers: HeaderMap<HeaderValue>,
 }
 
+#[derive(Clone)]
 pub struct JsonRpcProvider {
-    provider: Box<dyn Provider<BoxTransport, Ethereum>>,
+    provider: Arc<dyn Provider<BoxTransport, Ethereum>>,
     options: JsonRpcProviderOptions,
 }
 
@@ -43,7 +44,7 @@ impl JsonRpcProvider {
         let provider = ProviderBuilder::default().on_client(client).boxed();
 
         Ok(Self {
-            provider: Box::new(provider),
+            provider: Arc::new(provider),
             options,
         })
     }

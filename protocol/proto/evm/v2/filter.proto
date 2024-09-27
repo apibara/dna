@@ -22,40 +22,64 @@ message HeaderFilter {
 }
 
 message WithdrawalFilter {
+  uint32 id = 1;
   // Filter based on the validator index.
-  optional uint64 validator_index = 1;
+  optional uint64 validator_index = 2;
   // Filter based on the withdrawal's target address.
-  Address address = 2;
+  Address address = 3;
 }
 
 message TransactionFilter {
+  uint32 id = 1;
   // Filter based on the transaction's sender address.
-  Address from = 1;
+  Address from = 2;
   // Filter based on the transaction's recipient address.
-  Address to = 2;
+  Address to = 3;
+  /// Only return `create` transactions. Defaults to `false`.
+  bool create = 4;
+  // Filter based on the transaction status.
+  //
+  // Defaults to `Succeeded`.
+  optional TransactionStatusFilter transaction_status = 5;
   // Flag to request the transaction's receipt. Defaults to `false`.
-  optional bool include_receipt = 3;
+  optional bool include_receipt = 6;
   // Flag to request the transaction's logs. Defaults to `false`.
-  optional bool include_logs = 4;
+  optional bool include_logs = 7;
 }
 
 message LogFilter {
+  uint32 id = 1;
   // Filter based on the log's contract address.
-  Address address = 1;
+  Address address = 2;
   // Filter based on the log's topics.
-  repeated Topic topics = 2;
+  repeated Topic topics = 3;
   // Only returns logs with topics of exactly the same length as the filter.
   //
   // Defaults to `false`.
-  optional bool strict = 3;
+  optional bool strict = 4;
+  // Filter based on the transaction status.
+  //
+  // Defaults to `Succeeded`.
+  optional TransactionStatusFilter transaction_status = 5;
   // Flag to request the log's transaction. Defaults to `false`.
-  optional bool include_transaction = 4;
+  optional bool include_transaction = 6;
   // Flag to request the log's receipt. Defaults to `false`.
-  optional bool include_receipt = 5;
+  optional bool include_receipt = 7;
+  // Include sibling logs, that is logs emitted by the same transaction.
+  //
+  // Defaults to false.
+  optional bool include_siblings = 8;
 }
 
 // Topic filter.
 message Topic {
   // Topic value. Leave empty to match any topic.
   B256 value = 1;
+}
+
+enum TransactionStatusFilter {
+  TRANSACTION_STATUS_FILTER_UNSPECIFIED = 0;
+  TRANSACTION_STATUS_FILTER_SUCCEEDED = 1;
+  TRANSACTION_STATUS_FILTER_REVERTED = 2;
+  TRANSACTION_STATUS_FILTER_ALL = 3;
 }
