@@ -1,16 +1,10 @@
 #[derive(Debug)]
-pub enum DnaEvmError {
-    Configuration,
-    Fatal,
-}
+pub struct EvmError;
 
-impl error_stack::Context for DnaEvmError {}
+impl error_stack::Context for EvmError {}
 
-impl std::fmt::Display for DnaEvmError {
+impl std::fmt::Display for EvmError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            DnaEvmError::Configuration => write!(f, "DNA EVM: configuration error"),
-            DnaEvmError::Fatal => write!(f, "DNA EVM: fatal error"),
-        }
+        write!(f, "EVM DNA error")
     }
 }

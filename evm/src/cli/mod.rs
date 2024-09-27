@@ -1,41 +1,39 @@
-mod common;
-mod debug;
-// mod ingestion;
-// mod inspect;
-// mod server;
+mod dbg;
+mod rpc;
+mod start;
 
 use clap::{Parser, Subcommand};
 use error_stack::Result;
+use tokio_util::sync::CancellationToken;
 
-use crate::error::DnaEvmError;
+use crate::error::EvmError;
 
-use self::debug::{run_debug_chain_tracker, DebugChainTrackerArgs};
-
-// use self::{
-//     ingestion::{run_ingestion, StartIngestionArgs},
-//     inspect::{run_inspect, InspectArgs},
-//     server::{run_server, StartServerArgs},
-// };
+use self::{dbg::DebugRpcCommand, start::StartCommand};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 pub struct Cli {
     #[command(subcommand)]
-    subcommand: Command,
+    command: Command,
 }
 
 #[derive(Subcommand, Debug)]
-enum Command {
-    DebugChainTracker(DebugChainTrackerArgs),
-    // StartIngestion(StartIngestionArgs),
-    // StartServer(StartServerArgs),
-    // Inspect(InspectArgs),
+pub enum Command {
+    /// Start the EVM DNA server.
+    Start(Box<StartCommand>),
+    /// Debug EVM RPC calls.
+    #[command(name = "dbg-rpc")]
+    DebugRpc {
+        #[clap(subcommand)]
+        command: DebugRpcCommand,
+    },
 }
 
 impl Cli {
-    pub async fn run(self) -> Result<(), DnaEvmError> {
-        match self.subcommand {
-            Command::DebugChainTracker(args) => run_debug_chain_tracker(args).await,
+    pub async fn run(self, ct: CancellationToken) -> Result<(), EvmError> {
+        match self.command {
+            Command::Start(command) => command.run(ct).await,
+            Command::DebugRpc { command } => command.run().await,
         }
     }
 }

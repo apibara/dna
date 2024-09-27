@@ -14,46 +14,31 @@ path = "src/lib.rs"
 name = "apibara-dna-evm"
 path = "src/bin.rs"
 
-[features]
-default = []
-tokio_console = ["apibara-observability/tokio_console"]
-
 [dependencies]
-alloy-rpc-client = { version = "0.1.3", default-features = true, features = [
-    "hyper",
-] }
-# alloy-providers = { git = "http://github.com/alloy-rs/alloy", rev = "347fb50e" }
-alloy-provider = "0.1.3"
+alloy-rpc-client = "0.3.6"
+alloy-provider = "0.3.6"
 alloy-primitives.workspace = true
-alloy-rpc-types = "0.1.3"
-alloy-transport = "0.1.3"
+alloy-rpc-types = "0.3.6"
+alloy-transport = "0.3.6"
 apibara-observability = { path = "../observability" }
 apibara-dna-common = { path = "../common" }
 apibara-dna-protocol = { path = "../protocol" }
-async-channel.workspace = true
-async-trait.workspace = true
-async-stream.workspace = true
-bytes.workspace = true
+byte-unit.workspace = true
 clap.workspace = true
+ctrlc.workspace = true
 error-stack.workspace = true
-flatbuffers.workspace = true
-governor.workspace = true
+futures.workspace = true
 hex.workspace = true
-futures-util.workspace = true
 prost.workspace = true
 prost-types.workspace = true
+reqwest.workspace = true
 roaring.workspace = true
-tonic.workspace = true
-tonic-reflection.workspace = true
-tokio.workspace = true
-tokio-util.workspace = true
-tokio-stream.workspace = true
-tracing.workspace = true
-url.workspace = true
-
-[target.'cfg(not(windows))'.dependencies]
-jemallocator.workspace = true
-
-[dev-dependencies]
+rkyv.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+serde_with.workspace = true
+tonic.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+tracing.workspace = true
+url.workspace = true

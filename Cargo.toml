@@ -13,14 +13,14 @@ members = [
     "protocol",
     "common",
     # Chains
-    # "evm",
     "beaconchain",
+    "evm",
     "starknet",
 ]
 
 [workspace.dependencies]
-alloy-primitives = "0.7"
-alloy-eips = "0.2.1"
+alloy-primitives = "0.8"
+alloy-eips = "0.3.6"
 bytes = "1.7.1"
 byte-unit = "5.1.4"
 clap = { version = "4.5.13", features = [
