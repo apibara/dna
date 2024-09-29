@@ -1,5 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
+use alloy_primitives::BlockHash;
 use alloy_provider::{network::Ethereum, Provider, ProviderBuilder};
 use alloy_rpc_client::ClientBuilder;
 use alloy_transport::BoxTransport;
@@ -47,6 +48,42 @@ impl JsonRpcProvider {
             provider: Arc::new(provider),
             options,
         })
+    }
+
+    pub async fn get_block_header(
+        &self,
+        block_id: BlockId,
+    ) -> Result<models::BlockWithTxHashes, JsonRpcProviderError> {
+        let request = match block_id {
+            BlockId::Number(number) => self
+                .provider
+                .client()
+                .request::<_, Option<models::BlockWithTxHashes>>(
+                    "eth_getBlockByNumber",
+                    (number, false),
+                )
+                .boxed(),
+            BlockId::Hash(hash) => {
+                let hash = BlockHash::from(hash);
+                self.provider
+                    .client()
+                    .request::<_, Option<models::BlockWithTxHashes>>(
+                        "eth_getBlockByHash",
+                        (hash, false),
+                    )
+                    .boxed()
+            }
+        };
+
+        let Ok(response) = tokio::time::timeout(self.options.timeout, request).await else {
+            return Err(JsonRpcProviderError::Timeout)
+                .attach_printable("failed to get block header")
+                .attach_printable_lazy(|| format!("block id: {block_id:?}"));
+        };
+
+        response
+            .change_context(JsonRpcProviderError::Request)?
+            .ok_or(JsonRpcProviderError::NotFound.into())
     }
 
     pub async fn get_block_with_transactions(

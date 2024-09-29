@@ -3,6 +3,7 @@ pub mod error;
 pub mod filter;
 pub mod fragment;
 pub mod ingestion;
+pub mod proto;
 pub mod provider;
 
 use apibara_dna_common::{fragment::FragmentInfo, ChainSupport};
