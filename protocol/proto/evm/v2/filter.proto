@@ -24,7 +24,7 @@ message HeaderFilter {
 message WithdrawalFilter {
   uint32 id = 1;
   // Filter based on the validator index.
-  optional uint64 validator_index = 2;
+  optional uint32 validator_index = 2;
   // Filter based on the withdrawal's target address.
   Address address = 3;
 }
@@ -36,7 +36,7 @@ message TransactionFilter {
   // Filter based on the transaction's recipient address.
   Address to = 3;
   /// Only return `create` transactions. Defaults to `false`.
-  bool create = 4;
+  optional bool create = 4;
   // Filter based on the transaction status.
   //
   // Defaults to `Succeeded`.
