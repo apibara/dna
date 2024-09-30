@@ -1,0 +1,31 @@
+[package]
+name = "apibara-benchmark"
+version = "0.0.0"
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[lib]
+name = "apibara_benchmark"
+path = "src/lib.rs"
+
+[[bin]]
+name = "apibara-benchmark"
+path = "src/bin.rs"
+
+[dependencies]
+apibara-observability = { path = "../observability" }
+apibara-dna-common = { path = "../common" }
+apibara-dna-protocol = { path = "../protocol" }
+clap.workspace = true
+ctrlc.workspace = true
+futures.workspace = true
+error-stack.workspace = true
+hex.workspace = true
+prost.workspace = true
+tonic.workspace = true
+tokio.workspace = true
+tokio-stream = { version = "0.1.15", features = ["sync", "net"] }
+tokio-util.workspace = true
+tracing.workspace = true

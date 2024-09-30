@@ -12,6 +12,7 @@ members = [
     "etcd-dbg",
     "protocol",
     "common",
+    "benchmark",
     # Chains
     "beaconchain",
     "evm",
