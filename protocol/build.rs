@@ -11,6 +11,7 @@ fn main() -> Result<()> {
     tonic_build::configure()
         .build_client(true)
         .build_server(true)
+        .bytes([".dna.v2.stream.Data.data"])
         .file_descriptor_set_path(out_dir.join(DNA_STREAM_DESCRIPTOR_FILE))
         .compile(&["proto/dna/v2/stream.proto"], &["proto/dna/"])?;
 

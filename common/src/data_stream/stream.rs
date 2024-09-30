@@ -7,7 +7,7 @@ use apibara_dna_protocol::dna::stream::{
     stream_data_response::Message, Data, DataFinality, Finalize, Heartbeat, Invalidate,
     StreamDataResponse,
 };
-use bytes::BufMut;
+use bytes::{BufMut, Bytes, BytesMut};
 use error_stack::{Result, ResultExt};
 use roaring::RoaringBitmap;
 use tokio::sync::mpsc;
@@ -31,7 +31,6 @@ pub struct DataStream {
     block_filter: Vec<BlockFilter>,
     current: Option<Cursor>,
     finalized: Cursor,
-    data_buffer: Vec<u8>,
     _finality: DataFinality,
     chain_view: ChainView,
     store: BlockStoreReader,
@@ -69,12 +68,10 @@ impl DataStream {
         permit: tokio::sync::OwnedSemaphorePermit,
     ) -> Self {
         let heartbeat_interval = tokio::time::interval(heartbeat_interval);
-        let data_buffer = Vec::with_capacity(DEFAULT_BLOCKS_BUFFER_SIZE);
         Self {
             block_filter,
             current: starting,
             finalized,
-            data_buffer,
             _finality: finality,
             heartbeat_interval,
             chain_view,
@@ -531,14 +528,13 @@ impl DataStream {
     async fn filter_fragment(
         &mut self,
         fragment_access: &FragmentAccess,
-        output: &mut Vec<Vec<u8>>,
+        output: &mut Vec<Bytes>,
     ) -> Result<bool, DataStreamError> {
         let mut has_data = false;
 
         for block_filter in self.block_filter.iter() {
+            let mut data_buffer = BytesMut::with_capacity(DEFAULT_BLOCKS_BUFFER_SIZE);
             let mut fragment_matches = BTreeMap::default();
-
-            self.data_buffer.clear();
 
             for (fragment_id, filters) in block_filter.iter() {
                 let mut filter_match = FilterMatch::default();
@@ -571,10 +567,10 @@ impl DataStream {
                 prost::encoding::encode_key(
                     HEADER_FRAGMENT_ID as u32,
                     prost::encoding::WireType::LengthDelimited,
-                    &mut self.data_buffer,
+                    &mut data_buffer,
                 );
-                prost::encoding::encode_varint(header.data.len() as u64, &mut self.data_buffer);
-                self.data_buffer.put(header.data.as_slice());
+                prost::encoding::encode_varint(header.data.len() as u64, &mut data_buffer);
+                data_buffer.put(header.data.as_slice());
             }
 
             for (fragment_id, filter_match) in fragment_matches.into_iter() {
@@ -603,28 +599,28 @@ impl DataStream {
                     prost::encoding::encode_key(
                         fragment_id as u32,
                         prost::encoding::WireType::LengthDelimited,
-                        &mut self.data_buffer,
+                        &mut data_buffer,
                     );
 
                     prost::encoding::encode_varint(
                         (filter_ids_len + message_bytes.len()) as u64,
-                        &mut self.data_buffer,
+                        &mut data_buffer,
                     );
 
                     prost::encoding::uint32::encode_packed(
                         FILTER_IDS_TAG,
                         &match_.filter_ids,
-                        &mut self.data_buffer,
+                        &mut data_buffer,
                     );
-                    self.data_buffer.put(message_bytes.as_slice());
+                    data_buffer.put(message_bytes.as_slice());
                 }
             }
 
-            if !self.data_buffer.is_empty() {
+            if !data_buffer.is_empty() {
                 has_data = true;
             }
 
-            output.push(self.data_buffer.clone());
+            output.push(data_buffer.freeze());
         }
 
         Ok(has_data)

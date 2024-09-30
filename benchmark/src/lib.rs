@@ -101,7 +101,7 @@ where
                 .unwrap_or_default();
 
             if let Some(block_data) = data_message.data.first() {
-                let block = S::Block::decode(block_data.as_slice())
+                let block = S::Block::decode(block_data.as_ref())
                     .change_context(BenchmarkError)
                     .attach_printable("failed to decode block")?;
                 stats.record(block);
