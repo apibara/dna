@@ -24,6 +24,7 @@ let
       cargo-flamegraph
       cargo-llvm-cov
       cargo-edit
+      cargo-udeps
       samply
       clang
       cmake
