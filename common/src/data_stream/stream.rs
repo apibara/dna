@@ -31,6 +31,7 @@ pub struct DataStream {
     block_filter: Vec<BlockFilter>,
     current: Option<Cursor>,
     finalized: Cursor,
+    data_buffer: Vec<u8>,
     _finality: DataFinality,
     chain_view: ChainView,
     store: BlockStoreReader,
@@ -40,6 +41,8 @@ pub struct DataStream {
 }
 
 type DataStreamMessage = tonic::Result<StreamDataResponse, tonic::Status>;
+
+const DEFAULT_BLOCKS_BUFFER_SIZE: usize = 1024 * 1024;
 
 /// Information about a block in a segment.
 #[derive(Debug, Clone)]
@@ -66,10 +69,12 @@ impl DataStream {
         permit: tokio::sync::OwnedSemaphorePermit,
     ) -> Self {
         let heartbeat_interval = tokio::time::interval(heartbeat_interval);
+        let data_buffer = Vec::with_capacity(DEFAULT_BLOCKS_BUFFER_SIZE);
         Self {
             block_filter,
             current: starting,
             finalized,
+            data_buffer,
             _finality: finality,
             heartbeat_interval,
             chain_view,
@@ -524,16 +529,16 @@ impl DataStream {
     }
 
     async fn filter_fragment(
-        &self,
+        &mut self,
         fragment_access: &FragmentAccess,
         output: &mut Vec<Vec<u8>>,
     ) -> Result<bool, DataStreamError> {
-        let mut block_buffer = Vec::new();
         let mut has_data = false;
 
         for block_filter in self.block_filter.iter() {
             let mut fragment_matches = BTreeMap::default();
-            block_buffer.clear();
+
+            self.data_buffer.clear();
 
             for (fragment_id, filters) in block_filter.iter() {
                 let mut filter_match = FilterMatch::default();
@@ -566,10 +571,10 @@ impl DataStream {
                 prost::encoding::encode_key(
                     HEADER_FRAGMENT_ID as u32,
                     prost::encoding::WireType::LengthDelimited,
-                    &mut block_buffer,
+                    &mut self.data_buffer,
                 );
-                prost::encoding::encode_varint(header.data.len() as u64, &mut block_buffer);
-                block_buffer.put(header.data.as_slice());
+                prost::encoding::encode_varint(header.data.len() as u64, &mut self.data_buffer);
+                self.data_buffer.put(header.data.as_slice());
             }
 
             for (fragment_id, filter_match) in fragment_matches.into_iter() {
@@ -598,29 +603,28 @@ impl DataStream {
                     prost::encoding::encode_key(
                         fragment_id as u32,
                         prost::encoding::WireType::LengthDelimited,
-                        &mut block_buffer,
+                        &mut self.data_buffer,
                     );
 
                     prost::encoding::encode_varint(
                         (filter_ids_len + message_bytes.len()) as u64,
-                        &mut block_buffer,
+                        &mut self.data_buffer,
                     );
 
                     prost::encoding::uint32::encode_packed(
                         FILTER_IDS_TAG,
                         &match_.filter_ids,
-                        &mut block_buffer,
+                        &mut self.data_buffer,
                     );
-                    block_buffer.put(message_bytes.as_slice());
+                    self.data_buffer.put(message_bytes.as_slice());
                 }
             }
 
-            // TODO: we can avoid this copy by using the low level protobuf API.
-            if !block_buffer.is_empty() {
+            if !self.data_buffer.is_empty() {
                 has_data = true;
             }
 
-            output.push(block_buffer.clone());
+            output.push(self.data_buffer.clone());
         }
 
         Ok(has_data)
