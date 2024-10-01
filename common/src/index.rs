@@ -71,6 +71,10 @@ impl BitmapIndex {
         self.0.keys()
     }
 
+    pub fn iter(&self) -> impl Iterator<Item = (&ScalarValue, &Vec<u8>)> {
+        self.0.iter()
+    }
+
     pub fn get(&self, key: &ScalarValue) -> Option<RoaringBitmap> {
         let bytes = self.0.get(key)?;
         RoaringBitmap::deserialize_unchecked_from(bytes.as_slice())

@@ -6,6 +6,7 @@ pub mod cli;
 pub mod compaction;
 mod core;
 pub mod data_stream;
+pub mod dbg;
 pub mod file_cache;
 pub mod fragment;
 pub mod index;

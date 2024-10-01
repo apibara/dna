@@ -2,8 +2,9 @@ mod dbg;
 mod rpc;
 mod start;
 
+use apibara_dna_common::dbg::DebugIndexCommand;
 use clap::{Parser, Subcommand};
-use error_stack::Result;
+use error_stack::{Result, ResultExt};
 use tokio_util::sync::CancellationToken;
 
 use crate::error::EvmError;
@@ -27,6 +28,12 @@ pub enum Command {
         #[clap(subcommand)]
         command: DebugRpcCommand,
     },
+    /// Debug the index file.
+    #[command(name = "dbg-index")]
+    DebugIndex {
+        #[clap(subcommand)]
+        command: DebugIndexCommand,
+    },
 }
 
 impl Cli {
@@ -34,6 +41,7 @@ impl Cli {
         match self.command {
             Command::Start(command) => command.run(ct).await,
             Command::DebugRpc { command } => command.run().await,
+            Command::DebugIndex { command } => command.run().await.change_context(EvmError),
         }
     }
 }
