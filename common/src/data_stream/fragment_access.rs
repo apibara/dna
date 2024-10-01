@@ -86,8 +86,7 @@ impl InnerAccess {
                     .await
                     .change_context(FragmentAccessError)?;
 
-                let block = rkyv::access::<rkyv::Archived<Block>, rkyv::rancor::Error>(&block)
-                    .change_context(FragmentAccessError)?;
+                let block = unsafe { rkyv::access_unchecked::<rkyv::Archived<Block>>(&block) };
 
                 let Some(pos) = block
                     .index
@@ -114,11 +113,9 @@ impl InnerAccess {
                     .await
                     .change_context(FragmentAccessError)?;
 
-                let segment = rkyv::access::<
-                    rkyv::Archived<Segment<IndexGroupFragment>>,
-                    rkyv::rancor::Error,
-                >(&segment)
-                .change_context(FragmentAccessError)?;
+                let segment = unsafe {
+                    rkyv::access_unchecked::<rkyv::Archived<Segment<IndexGroupFragment>>>(&segment)
+                };
 
                 let block_index = &segment.data[*offset];
 
@@ -155,8 +152,7 @@ impl InnerAccess {
                     .await
                     .change_context(FragmentAccessError)?;
 
-                let block = rkyv::access::<rkyv::Archived<Block>, rkyv::rancor::Error>(&block)
-                    .change_context(FragmentAccessError)?;
+                let block = unsafe { rkyv::access_unchecked::<rkyv::Archived<Block>>(&block) };
 
                 let Some(pos) = block.body.iter().position(|f| f.fragment_id == fragment_id) else {
                     return Err(FragmentAccessError)
@@ -178,11 +174,9 @@ impl InnerAccess {
                     .await
                     .change_context(FragmentAccessError)?;
 
-                let segment = rkyv::access::<
-                    rkyv::Archived<Segment<BodyFragment>>,
-                    rkyv::rancor::Error,
-                >(&segment)
-                .change_context(FragmentAccessError)?;
+                let segment = unsafe {
+                    rkyv::access_unchecked::<rkyv::Archived<Segment<BodyFragment>>>(&segment)
+                };
 
                 let block = &segment.data[*offset];
 
@@ -204,8 +198,7 @@ impl InnerAccess {
                     .await
                     .change_context(FragmentAccessError)?;
 
-                let block = rkyv::access::<rkyv::Archived<Block>, rkyv::rancor::Error>(&block)
-                    .change_context(FragmentAccessError)?;
+                let block = unsafe { rkyv::access_unchecked::<rkyv::Archived<Block>>(&block) };
 
                 rkyv::deserialize::<_, rkyv::rancor::Error>(&block.header)
                     .change_context(FragmentAccessError)
@@ -221,11 +214,9 @@ impl InnerAccess {
                     .await
                     .change_context(FragmentAccessError)?;
 
-                let segment = rkyv::access::<
-                    rkyv::Archived<Segment<HeaderFragment>>,
-                    rkyv::rancor::Error,
-                >(&segment)
-                .change_context(FragmentAccessError)?;
+                let segment = unsafe {
+                    rkyv::access_unchecked::<rkyv::Archived<Segment<HeaderFragment>>>(&segment)
+                };
 
                 let block = &segment.data[*offset];
 

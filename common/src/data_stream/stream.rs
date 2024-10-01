@@ -234,9 +234,7 @@ impl DataStream {
                 .change_context(DataStreamError)
                 .attach_printable("failed to get group")?;
             let group =
-                rkyv::access::<rkyv::Archived<SegmentGroup>, rkyv::rancor::Error>(&group_bytes)
-                    .change_context(DataStreamError)
-                    .attach_printable("failed to access group")?;
+                unsafe { rkyv::access_unchecked::<rkyv::Archived<SegmentGroup>>(&group_bytes) };
 
             for block_filter in self.block_filter.iter() {
                 for (fragment_id, filters) in block_filter.iter() {
