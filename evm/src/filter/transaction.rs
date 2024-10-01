@@ -36,32 +36,33 @@ impl FragmentFilterExt for evm::TransactionFilter {
             });
         }
 
-        if let Some(transaction_status) = self.transaction_status {
-            let transaction_status = evm::TransactionStatusFilter::try_from(transaction_status)
-                .map_err(|_| {
-                    tonic::Status::invalid_argument(format!(
-                        "invalid transaction status in transaction filter with id {}",
-                        self.id
-                    ))
-                })?;
+        let transaction_status = if let Some(transaction_status) = self.transaction_status {
+            evm::TransactionStatusFilter::try_from(transaction_status).map_err(|_| {
+                tonic::Status::invalid_argument(format!(
+                    "invalid transaction status in transaction filter with id {}",
+                    self.id
+                ))
+            })?
+        } else {
+            evm::TransactionStatusFilter::Succeeded
+        };
 
-            match transaction_status {
-                evm::TransactionStatusFilter::Unspecified => {}
-                evm::TransactionStatusFilter::All => {}
-                evm::TransactionStatusFilter::Succeeded => {
-                    conditions.push(Condition {
-                        index_id: INDEX_TRANSACTION_BY_STATUS,
-                        key: ScalarValue::Int32(evm::TransactionStatus::Succeeded as i32),
-                    });
-                }
-                evm::TransactionStatusFilter::Reverted => {
-                    conditions.push(Condition {
-                        index_id: INDEX_TRANSACTION_BY_STATUS,
-                        key: ScalarValue::Int32(evm::TransactionStatus::Reverted as i32),
-                    });
-                }
-            };
-        }
+        match transaction_status {
+            evm::TransactionStatusFilter::Unspecified => {}
+            evm::TransactionStatusFilter::All => {}
+            evm::TransactionStatusFilter::Succeeded => {
+                conditions.push(Condition {
+                    index_id: INDEX_TRANSACTION_BY_STATUS,
+                    key: ScalarValue::Int32(evm::TransactionStatus::Succeeded as i32),
+                });
+            }
+            evm::TransactionStatusFilter::Reverted => {
+                conditions.push(Condition {
+                    index_id: INDEX_TRANSACTION_BY_STATUS,
+                    key: ScalarValue::Int32(evm::TransactionStatus::Reverted as i32),
+                });
+            }
+        };
 
         Ok(Filter {
             filter_id: self.id,

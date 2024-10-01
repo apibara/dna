@@ -12,32 +12,33 @@ impl FragmentFilterExt for starknet::TransactionFilter {
     fn compile_to_filter(&self) -> tonic::Result<Filter, tonic::Status> {
         let mut conditions = Vec::new();
 
-        if let Some(transaction_status) = self.transaction_status {
-            let transaction_status =
-                starknet::TransactionStatusFilter::try_from(transaction_status).map_err(|_| {
-                    tonic::Status::invalid_argument(format!(
-                        "invalid transaction status in transaction filter with id {}",
-                        self.id
-                    ))
-                })?;
+        let transaction_status = if let Some(transaction_status) = self.transaction_status {
+            starknet::TransactionStatusFilter::try_from(transaction_status).map_err(|_| {
+                tonic::Status::invalid_argument(format!(
+                    "invalid transaction status in transaction filter with id {}",
+                    self.id
+                ))
+            })?
+        } else {
+            starknet::TransactionStatusFilter::Succeeded
+        };
 
-            match transaction_status {
-                starknet::TransactionStatusFilter::Unspecified => {}
-                starknet::TransactionStatusFilter::All => {}
-                starknet::TransactionStatusFilter::Succeeded => {
-                    conditions.push(Condition {
-                        index_id: INDEX_TRANSACTION_BY_STATUS,
-                        key: ScalarValue::Int32(starknet::TransactionStatus::Succeeded as i32),
-                    });
-                }
-                starknet::TransactionStatusFilter::Reverted => {
-                    conditions.push(Condition {
-                        index_id: INDEX_TRANSACTION_BY_STATUS,
-                        key: ScalarValue::Int32(starknet::TransactionStatus::Reverted as i32),
-                    });
-                }
-            };
-        }
+        match transaction_status {
+            starknet::TransactionStatusFilter::Unspecified => {}
+            starknet::TransactionStatusFilter::All => {}
+            starknet::TransactionStatusFilter::Succeeded => {
+                conditions.push(Condition {
+                    index_id: INDEX_TRANSACTION_BY_STATUS,
+                    key: ScalarValue::Int32(starknet::TransactionStatus::Succeeded as i32),
+                });
+            }
+            starknet::TransactionStatusFilter::Reverted => {
+                conditions.push(Condition {
+                    index_id: INDEX_TRANSACTION_BY_STATUS,
+                    key: ScalarValue::Int32(starknet::TransactionStatus::Reverted as i32),
+                });
+            }
+        };
 
         if let Some(_inner) = self.inner.as_ref() {
             return Err(tonic::Status::unimplemented(
