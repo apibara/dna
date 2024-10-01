@@ -40,6 +40,7 @@ etcd-client = { version = "0.14.0", features = ["tls", "tls-roots"] }
 futures = "0.3.30"
 hex = { version = "0.4.3", features = ["serde"] }
 memmap2 = "0.9.4"
+mimalloc = "0.1.43"
 moka = { version = "0.12.8", features = ["future"] }
 opentelemetry = { version = "0.24.0", features = ["trace", "metrics"] }
 opentelemetry_sdk = { version = "0.24.1", features = [
