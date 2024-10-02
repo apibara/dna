@@ -9,6 +9,7 @@ use clap::{Args, Parser, Subcommand};
 use error_stack::{Result, ResultExt};
 use futures::{StreamExt, TryStreamExt};
 use prost::Message;
+use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
@@ -30,7 +31,7 @@ pub enum Command {
     Starknet(CommonArgs),
 }
 
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Clone)]
 pub struct CommonArgs {
     /// Hex-encoded filter.
     #[clap(long, default_value = "0x")]
@@ -44,6 +45,8 @@ pub struct CommonArgs {
     /// Stop streaming at this block.
     #[clap(long)]
     pub ending_block: Option<u64>,
+    #[clap(long, default_value = "1")]
+    pub concurrency: usize,
 }
 
 impl Cli {
@@ -59,8 +62,8 @@ impl Cli {
 
 async fn run_benchmark<F, S>(args: CommonArgs, ct: CancellationToken) -> Result<(), BenchmarkError>
 where
-    F: Message + Default,
-    S: Stats,
+    F: Message + Clone + Default + Send + 'static,
+    S: Stats + Send + 'static,
 {
     let bytes = hex::decode(&args.filter)
         .change_context(BenchmarkError)
@@ -70,6 +73,33 @@ where
         .change_context(BenchmarkError)
         .attach_printable("failed to decode filter")?;
 
+    let mut tasks = JoinSet::new();
+    for i in 0..args.concurrency {
+        tasks.spawn(run_benchmark_single::<F, S>(
+            i,
+            args.clone(),
+            filter.clone(),
+            ct.clone(),
+        ));
+    }
+
+    while let Some(result) = tasks.join_next().await {
+        result.change_context(BenchmarkError)??;
+    }
+
+    Ok(())
+}
+
+async fn run_benchmark_single<F, S>(
+    index: usize,
+    args: CommonArgs,
+    filter: F,
+    ct: CancellationToken,
+) -> Result<(), BenchmarkError>
+where
+    F: Message + Default + Send,
+    S: Stats + Send,
+{
     let mut client = DnaStreamClient::connect(args.stream_url.clone())
         .await
         .change_context(BenchmarkError)?;
@@ -92,7 +122,7 @@ where
 
     tokio::pin!(stream);
 
-    let mut stats = S::new();
+    let mut stats = S::new(index);
 
     let mut last_print = Instant::now();
     let print_interval = Duration::from_secs(10);
@@ -134,12 +164,13 @@ where
 
 trait Stats {
     type Block: Message + Default;
-    fn new() -> Self;
+    fn new(index: usize) -> Self;
     fn record(&mut self, item: Self::Block);
     fn print_summary(&self);
 }
 
 struct EvmStats {
+    pub index: usize,
     pub start: Instant,
     pub bytes: u64,
     pub blocks: u64,
@@ -152,8 +183,9 @@ struct EvmStats {
 impl Stats for EvmStats {
     type Block = evm::Block;
 
-    fn new() -> Self {
+    fn new(index: usize) -> Self {
         Self {
+            index,
             start: Instant::now(),
             blocks: 0,
             bytes: 0,
@@ -188,7 +220,8 @@ impl Stats for EvmStats {
             logs = %self.logs,
             withdrawals = %self.withdrawals,
             elapsed = ?elapsed,
-            "evm stats (count)"
+            "[{}] evm stats (count)",
+            self.index,
         );
 
         let block_rate = self.blocks as f64 / elapsed_sec;
@@ -206,12 +239,14 @@ impl Stats for EvmStats {
             logs = %log_rate,
             withdrawals = %withdrawal_rate,
             elapsed = ?elapsed,
-            "evm stats (rate)"
+            "[{}] evm stats (rate)",
+            self.index,
         );
     }
 }
 
 struct StarknetStats {
+    pub index: usize,
     pub start: Instant,
     pub blocks: u64,
     pub bytes: u64,
@@ -224,8 +259,9 @@ struct StarknetStats {
 impl Stats for StarknetStats {
     type Block = starknet::Block;
 
-    fn new() -> Self {
+    fn new(index: usize) -> Self {
         Self {
+            index,
             start: Instant::now(),
             blocks: 0,
             bytes: 0,
@@ -260,7 +296,8 @@ impl Stats for StarknetStats {
             logs = %self.events,
             withdrawals = %self.messages,
             elapsed = ?elapsed,
-            "starknet stats (count)"
+            "[{}] starknet stats (count)",
+            self.index
         );
 
         let block_rate = self.blocks as f64 / elapsed_sec;
@@ -271,6 +308,7 @@ impl Stats for StarknetStats {
         let message_rate = self.messages as f64 / elapsed_sec;
 
         info!(
+            index = self.index,
             blocks = %block_rate,
             bytes = format!("{:#.6}/s", byte_rate),
             transactions = %transaction_rate,
@@ -278,7 +316,8 @@ impl Stats for StarknetStats {
             events = %event_rate,
             messages = %message_rate,
             elapsed = ?elapsed,
-            "starknet stats (rate)"
+            "[{}] starknet stats (rate)",
+            self.index
         );
     }
 }
