@@ -249,13 +249,10 @@ impl DataStream {
                             .attach_printable_lazy(|| format!("fragment id: {}", fragment_id));
                     };
 
-                    let indexes =
-                        rkyv::deserialize::<_, rkyv::rancor::Error>(&group.index.indexes[pos])
-                            .change_context(DataStreamError)
-                            .attach_printable("failed to deserialize index")?;
+                    let indexes = &group.index.indexes[pos];
 
                     for filter in filters {
-                        let rows = filter.filter(&indexes).change_context(DataStreamError)?;
+                        let rows = filter.filter(indexes).change_context(DataStreamError)?;
                         data_bitmap |= &rows;
                     }
                 }
@@ -542,9 +539,10 @@ impl DataStream {
                     .await
                     .change_context(DataStreamError)
                     .attach_printable("failed to get fragment indexes")?;
+                let indexes = indexes.access().change_context(DataStreamError)?;
 
                 for filter in filters {
-                    let rows = filter.filter(&indexes).change_context(DataStreamError)?;
+                    let rows = filter.filter(indexes).change_context(DataStreamError)?;
                     filter_match.add_match(filter.filter_id, &rows);
                 }
 
@@ -561,6 +559,7 @@ impl DataStream {
                     .await
                     .change_context(DataStreamError)
                     .attach_printable("failed to get header fragment")?;
+                let header = header.access().change_context(DataStreamError)?;
 
                 prost::encoding::encode_key(
                     HEADER_FRAGMENT_ID as u32,
@@ -584,6 +583,7 @@ impl DataStream {
                     .await
                     .change_context(DataStreamError)
                     .attach_printable("failed to get body fragment")?;
+                let body = body.access().change_context(DataStreamError)?;
 
                 for match_ in filter_match.iter() {
                     const FILTER_IDS_TAG: u32 = 1;

@@ -3,9 +3,10 @@ use error_stack::{Result, ResultExt};
 use crate::{
     block_store::BlockStoreReader,
     core::Cursor,
+    file_cache::Mmap,
     fragment::{
         Block, BodyFragment, FragmentId, HeaderFragment, IndexFragment, IndexGroupFragment,
-        HEADER_FRAGMENT_NAME, INDEX_FRAGMENT_NAME,
+        HEADER_FRAGMENT_ID, HEADER_FRAGMENT_NAME, INDEX_FRAGMENT_NAME,
     },
     segment::Segment,
 };
@@ -52,11 +53,11 @@ impl FragmentAccess {
     pub async fn get_fragment_indexes(
         &self,
         fragment_id: FragmentId,
-    ) -> Result<IndexFragment, FragmentAccessError> {
+    ) -> Result<Access<IndexFragment>, FragmentAccessError> {
         self.inner.get_fragment_indexes(fragment_id).await
     }
 
-    pub async fn get_header_fragment(&self) -> Result<HeaderFragment, FragmentAccessError> {
+    pub async fn get_header_fragment(&self) -> Result<Access<HeaderFragment>, FragmentAccessError> {
         self.inner.get_header_fragment().await
     }
 
@@ -64,7 +65,7 @@ impl FragmentAccess {
         &self,
         fragment_id: FragmentId,
         fragment_name: String,
-    ) -> Result<BodyFragment, FragmentAccessError> {
+    ) -> Result<Access<BodyFragment>, FragmentAccessError> {
         self.inner
             .get_body_fragment(fragment_id, fragment_name)
             .await
@@ -75,64 +76,39 @@ impl InnerAccess {
     async fn get_fragment_indexes(
         &self,
         fragment_id: FragmentId,
-    ) -> Result<IndexFragment, FragmentAccessError> {
+    ) -> Result<Access<IndexFragment>, FragmentAccessError> {
         match self {
             InnerAccess::Block {
                 store,
                 block_cursor,
             } => {
-                let block = store
+                let inner = store
                     .get_block(block_cursor)
                     .await
                     .change_context(FragmentAccessError)?;
 
-                let block = unsafe { rkyv::access_unchecked::<rkyv::Archived<Block>>(&block) };
-
-                let Some(pos) = block
-                    .index
-                    .indexes
-                    .iter()
-                    .position(|f| f.fragment_id == fragment_id)
-                else {
-                    return Err(FragmentAccessError)
-                        .attach_printable("index for fragment not found")
-                        .attach_printable_lazy(|| format!("fragment id: {}", fragment_id));
-                };
-
-                rkyv::deserialize::<_, rkyv::rancor::Error>(&block.index.indexes[pos])
-                    .change_context(FragmentAccessError)
-                    .attach_printable("failed to deserialize index")
+                Ok(Access::Block {
+                    inner,
+                    fragment_id,
+                    _phantom: Default::default(),
+                })
             }
             InnerAccess::Segment {
                 store,
                 segment_cursor,
                 offset,
             } => {
-                let segment = store
+                let inner = store
                     .get_segment(segment_cursor, INDEX_FRAGMENT_NAME)
                     .await
                     .change_context(FragmentAccessError)?;
 
-                let segment = unsafe {
-                    rkyv::access_unchecked::<rkyv::Archived<Segment<IndexGroupFragment>>>(&segment)
-                };
-
-                let block_index = &segment.data[*offset];
-
-                let Some(pos) = block_index
-                    .data
-                    .indexes
-                    .iter()
-                    .position(|f| f.fragment_id == fragment_id)
-                else {
-                    return Err(FragmentAccessError)
-                        .attach_printable("index for fragment not found")
-                        .attach_printable_lazy(|| format!("fragment id: {}", fragment_id));
-                };
-
-                rkyv::deserialize::<_, rkyv::rancor::Error>(&block_index.data.indexes[pos])
-                    .change_context(FragmentAccessError)
-                    .attach_printable("failed to deserialize index")
+                Ok(Access::Segment {
+                    inner,
+                    fragment_id,
+                    offset: *offset,
+                    _phantom: Default::default(),
+                })
             }
         }
     }
@@ -141,88 +117,189 @@ impl InnerAccess {
         &self,
         fragment_id: FragmentId,
         fragment_name: String,
-    ) -> Result<BodyFragment, FragmentAccessError> {
+    ) -> Result<Access<BodyFragment>, FragmentAccessError> {
         match self {
             InnerAccess::Block {
                 store,
                 block_cursor,
             } => {
-                let block = store
+                let inner = store
                     .get_block(block_cursor)
                     .await
                     .change_context(FragmentAccessError)?;
 
-                let block = unsafe { rkyv::access_unchecked::<rkyv::Archived<Block>>(&block) };
+                Ok(Access::Block {
+                    inner,
+                    fragment_id,
+                    _phantom: Default::default(),
+                })
+            }
+            InnerAccess::Segment {
+                store,
+                segment_cursor,
+                offset,
+            } => {
+                let inner = store
+                    .get_segment(segment_cursor, fragment_name)
+                    .await
+                    .change_context(FragmentAccessError)?;
 
-                let Some(pos) = block.body.iter().position(|f| f.fragment_id == fragment_id) else {
+                Ok(Access::Segment {
+                    inner,
+                    fragment_id: HEADER_FRAGMENT_ID,
+                    offset: *offset,
+                    _phantom: Default::default(),
+                })
+            }
+        }
+    }
+
+    async fn get_header_fragment(&self) -> Result<Access<HeaderFragment>, FragmentAccessError> {
+        match self {
+            InnerAccess::Block {
+                store,
+                block_cursor,
+            } => {
+                let inner = store
+                    .get_block(block_cursor)
+                    .await
+                    .change_context(FragmentAccessError)?;
+
+                Ok(Access::Block {
+                    inner,
+                    fragment_id: HEADER_FRAGMENT_ID,
+                    _phantom: Default::default(),
+                })
+            }
+            InnerAccess::Segment {
+                store,
+                segment_cursor,
+                offset,
+            } => {
+                let inner = store
+                    .get_segment(segment_cursor, HEADER_FRAGMENT_NAME)
+                    .await
+                    .change_context(FragmentAccessError)?;
+
+                Ok(Access::Segment {
+                    inner,
+                    fragment_id: HEADER_FRAGMENT_ID,
+                    offset: *offset,
+                    _phantom: Default::default(),
+                })
+            }
+        }
+    }
+}
+
+pub enum Access<T: rkyv::Archive> {
+    Block {
+        inner: Mmap,
+        fragment_id: FragmentId,
+        _phantom: std::marker::PhantomData<T>,
+    },
+    Segment {
+        inner: Mmap,
+        offset: usize,
+        fragment_id: FragmentId,
+        _phantom: std::marker::PhantomData<T>,
+    },
+}
+
+impl Access<IndexFragment> {
+    pub fn access(&self) -> Result<&rkyv::Archived<IndexFragment>, FragmentAccessError> {
+        match self {
+            Access::Block {
+                inner, fragment_id, ..
+            } => {
+                let block = unsafe { rkyv::access_unchecked::<rkyv::Archived<Block>>(inner) };
+
+                let Some(pos) = block
+                    .index
+                    .indexes
+                    .iter()
+                    .position(|f| f.fragment_id == *fragment_id)
+                else {
+                    return Err(FragmentAccessError)
+                        .attach_printable("index for fragment not found")
+                        .attach_printable_lazy(|| format!("fragment id: {}", fragment_id));
+                };
+
+                Ok(&block.index.indexes[pos])
+            }
+            Access::Segment {
+                inner,
+                offset,
+                fragment_id,
+                ..
+            } => {
+                let segment = unsafe {
+                    rkyv::access_unchecked::<rkyv::Archived<Segment<IndexGroupFragment>>>(inner)
+                };
+
+                let block_index = &segment.data[*offset];
+
+                let Some(pos) = block_index
+                    .data
+                    .indexes
+                    .iter()
+                    .position(|f| f.fragment_id == *fragment_id)
+                else {
+                    return Err(FragmentAccessError)
+                        .attach_printable("index for fragment not found")
+                        .attach_printable_lazy(|| format!("fragment id: {}", fragment_id));
+                };
+
+                Ok(&block_index.data.indexes[pos])
+            }
+        }
+    }
+}
+
+impl Access<HeaderFragment> {
+    pub fn access(&self) -> Result<&rkyv::Archived<HeaderFragment>, FragmentAccessError> {
+        match self {
+            Access::Block { inner, .. } => {
+                let block = unsafe { rkyv::access_unchecked::<rkyv::Archived<Block>>(inner) };
+                Ok(&block.header)
+            }
+            Access::Segment { inner, offset, .. } => {
+                let segment = unsafe {
+                    rkyv::access_unchecked::<rkyv::Archived<Segment<HeaderFragment>>>(inner)
+                };
+
+                Ok(&segment.data[*offset].data)
+            }
+        }
+    }
+}
+
+impl Access<BodyFragment> {
+    pub fn access(&self) -> Result<&rkyv::Archived<BodyFragment>, FragmentAccessError> {
+        match self {
+            Access::Block {
+                inner, fragment_id, ..
+            } => {
+                let block = unsafe { rkyv::access_unchecked::<rkyv::Archived<Block>>(inner) };
+
+                let Some(pos) = block
+                    .body
+                    .iter()
+                    .position(|f| f.fragment_id == *fragment_id)
+                else {
                     return Err(FragmentAccessError)
                         .attach_printable("body for fragment not found")
                         .attach_printable_lazy(|| format!("fragment id: {}", fragment_id));
                 };
 
-                rkyv::deserialize::<_, rkyv::rancor::Error>(&block.body[pos])
-                    .change_context(FragmentAccessError)
-                    .attach_printable("failed to deserialize body")
+                Ok(&block.body[pos])
             }
-            InnerAccess::Segment {
-                store,
-                segment_cursor,
-                offset,
-            } => {
-                let segment = store
-                    .get_segment(segment_cursor, fragment_name)
-                    .await
-                    .change_context(FragmentAccessError)?;
-
+            Access::Segment { inner, offset, .. } => {
                 let segment = unsafe {
-                    rkyv::access_unchecked::<rkyv::Archived<Segment<BodyFragment>>>(&segment)
+                    rkyv::access_unchecked::<rkyv::Archived<Segment<BodyFragment>>>(inner)
                 };
 
-                let block = &segment.data[*offset];
-
-                rkyv::deserialize::<_, rkyv::rancor::Error>(&block.data)
-                    .change_context(FragmentAccessError)
-                    .attach_printable("failed to deserialize body")
-            }
-        }
-    }
-
-    async fn get_header_fragment(&self) -> Result<HeaderFragment, FragmentAccessError> {
-        match self {
-            InnerAccess::Block {
-                store,
-                block_cursor,
-            } => {
-                let block = store
-                    .get_block(block_cursor)
-                    .await
-                    .change_context(FragmentAccessError)?;
-
-                let block = unsafe { rkyv::access_unchecked::<rkyv::Archived<Block>>(&block) };
-
-                rkyv::deserialize::<_, rkyv::rancor::Error>(&block.header)
-                    .change_context(FragmentAccessError)
-                    .attach_printable("failed to deserialize header")
-            }
-            InnerAccess::Segment {
-                store,
-                segment_cursor,
-                offset,
-            } => {
-                let segment = store
-                    .get_segment(segment_cursor, HEADER_FRAGMENT_NAME)
-                    .await
-                    .change_context(FragmentAccessError)?;
-
-                let segment = unsafe {
-                    rkyv::access_unchecked::<rkyv::Archived<Segment<HeaderFragment>>>(&segment)
-                };
-
-                let block = &segment.data[*offset];
-
-                rkyv::deserialize::<_, rkyv::rancor::Error>(&block.data)
-                    .change_context(FragmentAccessError)
-                    .attach_printable("failed to deserialize header")
+                Ok(&segment.data[*offset].data)
             }
         }
     }

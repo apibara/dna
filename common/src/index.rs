@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, ops::RangeBounds};
 
-use rkyv::{with::AsVec, Archive, Deserialize, Serialize};
+use rkyv::{Archive, Deserialize, Serialize};
 use roaring::RoaringBitmap;
 
 /// Fixed-size scalar values.
@@ -30,7 +30,10 @@ pub enum ScalarValue {
 
 /// Map scalar values to bitmaps.
 #[derive(Archive, Serialize, Deserialize, Debug, Clone, Default)]
-pub struct BitmapIndex(#[rkyv(with = AsVec)] BTreeMap<ScalarValue, Vec<u8>>);
+pub struct BitmapIndex {
+    keys: Vec<ScalarValue>,
+    values: Vec<Vec<u8>>,
+}
 
 #[derive(Debug, Default)]
 pub struct BitmapIndexBuilder(BTreeMap<ScalarValue, RoaringBitmap>);
@@ -50,36 +53,56 @@ impl BitmapIndexBuilder {
     }
 
     pub fn build(&self) -> std::io::Result<BitmapIndex> {
-        let key_values = self
-            .0
+        self.0
             .iter()
-            .map(|(k, v)| {
+            .try_fold(BitmapIndex::default(), |mut index, (key, bitmap)| {
+                index.keys.push(key.clone());
                 let mut out = Vec::new();
-                v.serialize_into(&mut out)?;
-                Ok((k.clone(), out))
+                bitmap.serialize_into(&mut out)?;
+                index.values.push(out);
+
+                Ok(index)
             })
-            .collect::<std::io::Result<Vec<_>>>()?;
-
-        let inner = BTreeMap::from_iter(key_values);
-
-        Ok(BitmapIndex(inner))
     }
 }
 
 impl BitmapIndex {
     pub fn keys(&self) -> impl Iterator<Item = &ScalarValue> {
-        self.0.keys()
+        self.keys.iter()
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (&ScalarValue, &Vec<u8>)> {
-        self.0.iter()
+        self.keys.iter().zip(self.values.iter())
     }
+}
 
+impl ArchivedBitmapIndex {
     pub fn get(&self, key: &ScalarValue) -> Option<RoaringBitmap> {
-        let bytes = self.0.get(key)?;
-        RoaringBitmap::deserialize_unchecked_from(bytes.as_slice())
+        let pos = self
+            .keys
+            .binary_search_by(|entry| cmp_scalar_value(entry, key))
+            .ok()?;
+
+        let value = &self.values[pos];
+        RoaringBitmap::deserialize_unchecked_from(value.as_slice())
             .expect("failed to deserialize bitmap")
             .into()
+    }
+}
+
+fn cmp_scalar_value(a: &ArchivedScalarValue, b: &ScalarValue) -> std::cmp::Ordering {
+    match (a, b) {
+        (ArchivedScalarValue::Null, ScalarValue::Null) => std::cmp::Ordering::Equal,
+        (ArchivedScalarValue::Bool(a), ScalarValue::Bool(b)) => a.cmp(b),
+        (ArchivedScalarValue::Int32(a), ScalarValue::Int32(b)) => a.to_native().cmp(b),
+        (ArchivedScalarValue::Uint8(a), ScalarValue::Uint8(b)) => a.cmp(b),
+        (ArchivedScalarValue::Uint16(a), ScalarValue::Uint16(b)) => a.to_native().cmp(b),
+        (ArchivedScalarValue::Uint32(a), ScalarValue::Uint32(b)) => a.to_native().cmp(b),
+        (ArchivedScalarValue::Uint64(a), ScalarValue::Uint64(b)) => a.to_native().cmp(b),
+        (ArchivedScalarValue::B160(a), ScalarValue::B160(b)) => a.cmp(b),
+        (ArchivedScalarValue::B256(a), ScalarValue::B256(b)) => a.cmp(b),
+        (ArchivedScalarValue::B384(a), ScalarValue::B384(b)) => a.cmp(b),
+        _ => std::cmp::Ordering::Greater,
     }
 }
 
@@ -103,6 +126,23 @@ impl std::fmt::Debug for ScalarValue {
             ScalarValue::B160(v) => write!(f, "B160(0x{})", hex::encode(v)),
             ScalarValue::B256(v) => write!(f, "B256(0x{})", hex::encode(v)),
             ScalarValue::B384(v) => write!(f, "B384({})", hex::encode(v)),
+        }
+    }
+}
+
+impl std::fmt::Debug for ArchivedScalarValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ArchivedScalarValue::Null => write!(f, "ArchivedNull"),
+            ArchivedScalarValue::Bool(v) => write!(f, "ArchivedBool({})", v),
+            ArchivedScalarValue::Int32(v) => write!(f, "ArchivedInt32({})", v),
+            ArchivedScalarValue::Uint8(v) => write!(f, "ArchivedUint8({})", v),
+            ArchivedScalarValue::Uint16(v) => write!(f, "ArchivedUint16({})", v),
+            ArchivedScalarValue::Uint32(v) => write!(f, "ArchivedUint32({})", v),
+            ArchivedScalarValue::Uint64(v) => write!(f, "ArchivedUint64({})", v),
+            ArchivedScalarValue::B160(v) => write!(f, "ArchivedB160(0x{})", hex::encode(v)),
+            ArchivedScalarValue::B256(v) => write!(f, "ArchivedB256(0x{})", hex::encode(v)),
+            ArchivedScalarValue::B384(v) => write!(f, "ArchivedB384({})", hex::encode(v)),
         }
     }
 }

@@ -5,7 +5,7 @@ use roaring::RoaringBitmap;
 use tracing::trace;
 
 use crate::{
-    fragment::{FragmentId, IndexFragment, IndexId},
+    fragment::{ArchivedIndexFragment, FragmentId, IndexId},
     index::{self, ScalarValue},
 };
 
@@ -71,10 +71,10 @@ impl BlockFilter {
 pub struct FilterError;
 
 impl Filter {
-    pub fn filter(&self, indexes: &IndexFragment) -> Result<RoaringBitmap, FilterError> {
-        let mut result = RoaringBitmap::from_iter(
-            indexes.range_start..(indexes.range_start + indexes.range_len),
-        );
+    pub fn filter(&self, indexes: &ArchivedIndexFragment) -> Result<RoaringBitmap, FilterError> {
+        let range_start = indexes.range_start.to_native();
+        let range_len = indexes.range_len.to_native();
+        let mut result = RoaringBitmap::from_iter(range_start..(range_start + range_len));
         trace!(starting = ?result, "starting bitmap");
 
         for cond in self.conditions.iter() {
@@ -84,7 +84,7 @@ impl Filter {
                 .ok_or(FilterError)?;
 
             match &cond_index.index {
-                index::Index::Bitmap(bitmap) => {
+                index::ArchivedIndex::Bitmap(bitmap) => {
                     if let Some(bitmap) = bitmap.get(&cond.key) {
                         result &= bitmap;
                         trace!(result = ?result, "bitmap match");
