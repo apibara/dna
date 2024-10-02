@@ -540,6 +540,7 @@ dependencies = [
  "apibara-dna-common",
  "apibara-dna-protocol",
  "apibara-observability",
+ "byte-unit",
  "clap",
  "ctrlc",
  "error-stack",

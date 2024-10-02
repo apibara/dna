@@ -2,8 +2,9 @@ use std::time::{Duration, Instant};
 
 use apibara_dna_protocol::{
     dna::stream::{dna_stream_client::DnaStreamClient, Cursor, StreamDataRequest},
-    evm,
+    evm, starknet,
 };
+use byte_unit::Byte;
 use clap::{Args, Parser, Subcommand};
 use error_stack::{Result, ResultExt};
 use futures::{StreamExt, TryStreamExt};
@@ -25,6 +26,8 @@ pub struct Cli {
 pub enum Command {
     /// Benchmark the EVM DNA stream.
     Evm(CommonArgs),
+    /// Benchmark the Starknet DNA stream.
+    Starknet(CommonArgs),
 }
 
 #[derive(Args, Debug)]
@@ -47,6 +50,9 @@ impl Cli {
     pub async fn run(self, ct: CancellationToken) -> Result<(), BenchmarkError> {
         match self.command {
             Command::Evm(args) => run_benchmark::<evm::Filter, EvmStats>(args, ct).await,
+            Command::Starknet(args) => {
+                run_benchmark::<starknet::Filter, StarknetStats>(args, ct).await
+            }
         }
     }
 }
@@ -135,6 +141,7 @@ trait Stats {
 
 struct EvmStats {
     pub start: Instant,
+    pub bytes: u64,
     pub blocks: u64,
     pub transactions: u64,
     pub receipts: u64,
@@ -149,6 +156,7 @@ impl Stats for EvmStats {
         Self {
             start: Instant::now(),
             blocks: 0,
+            bytes: 0,
             transactions: 0,
             receipts: 0,
             logs: 0,
@@ -158,6 +166,7 @@ impl Stats for EvmStats {
 
     fn record(&mut self, block: evm::Block) {
         self.blocks += 1;
+        self.bytes += block.encoded_len() as u64;
 
         self.transactions += block.transactions.len() as u64;
         self.receipts += block.receipts.len() as u64;
@@ -169,9 +178,11 @@ impl Stats for EvmStats {
         let elapsed = self.start.elapsed();
 
         let elapsed_sec = elapsed.as_secs_f64();
+        let bytes = Byte::from_u64(self.bytes);
 
         info!(
             blocks = %self.blocks,
+            bytes = format!("{:#.6}", bytes),
             transactions = %self.transactions,
             receipts = %self.receipts,
             logs = %self.logs,
@@ -181,6 +192,7 @@ impl Stats for EvmStats {
         );
 
         let block_rate = self.blocks as f64 / elapsed_sec;
+        let byte_rate = Byte::from_f64(self.bytes as f64 / elapsed_sec).unwrap_or_default();
         let transaction_rate = self.transactions as f64 / elapsed_sec;
         let receipt_rate = self.receipts as f64 / elapsed_sec;
         let log_rate = self.logs as f64 / elapsed_sec;
@@ -188,12 +200,85 @@ impl Stats for EvmStats {
 
         info!(
             blocks = %block_rate,
+            bytes = format!("{:#.6}/s", byte_rate),
             transactions = %transaction_rate,
             receipts = %receipt_rate,
             logs = %log_rate,
             withdrawals = %withdrawal_rate,
             elapsed = ?elapsed,
             "evm stats (rate)"
+        );
+    }
+}
+
+struct StarknetStats {
+    pub start: Instant,
+    pub blocks: u64,
+    pub bytes: u64,
+    pub transactions: u64,
+    pub receipts: u64,
+    pub events: u64,
+    pub messages: u64,
+}
+
+impl Stats for StarknetStats {
+    type Block = starknet::Block;
+
+    fn new() -> Self {
+        Self {
+            start: Instant::now(),
+            blocks: 0,
+            bytes: 0,
+            transactions: 0,
+            receipts: 0,
+            events: 0,
+            messages: 0,
+        }
+    }
+
+    fn record(&mut self, block: starknet::Block) {
+        self.blocks += 1;
+        self.bytes += block.encoded_len() as u64;
+
+        self.transactions += block.transactions.len() as u64;
+        self.receipts += block.receipts.len() as u64;
+        self.events += block.events.len() as u64;
+        self.messages += block.messages.len() as u64;
+    }
+
+    fn print_summary(&self) {
+        let elapsed = self.start.elapsed();
+
+        let elapsed_sec = elapsed.as_secs_f64();
+        let bytes = Byte::from_u64(self.bytes);
+
+        info!(
+            blocks = %self.blocks,
+            bytes = format!("{:#.6}", bytes),
+            transactions = %self.transactions,
+            receipts = %self.receipts,
+            logs = %self.events,
+            withdrawals = %self.messages,
+            elapsed = ?elapsed,
+            "starknet stats (count)"
+        );
+
+        let block_rate = self.blocks as f64 / elapsed_sec;
+        let byte_rate = Byte::from_f64(self.bytes as f64 / elapsed_sec).unwrap_or_default();
+        let transaction_rate = self.transactions as f64 / elapsed_sec;
+        let receipt_rate = self.receipts as f64 / elapsed_sec;
+        let event_rate = self.events as f64 / elapsed_sec;
+        let message_rate = self.messages as f64 / elapsed_sec;
+
+        info!(
+            blocks = %block_rate,
+            bytes = format!("{:#.6}/s", byte_rate),
+            transactions = %transaction_rate,
+            receipts = %receipt_rate,
+            events = %event_rate,
+            messages = %message_rate,
+            elapsed = ?elapsed,
+            "starknet stats (rate)"
         );
     }
 }
