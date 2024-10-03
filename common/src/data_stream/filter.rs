@@ -35,6 +35,10 @@ impl FilterMatch {
         }
     }
 
+    pub fn add_single_match(&mut self, filter_id: FilterId, index: u32) {
+        self.0.entry(index).or_default().insert(filter_id);
+    }
+
     pub fn iter(&self) -> impl Iterator<Item = Match> + '_ {
         self.0.iter().map(|(index, filter_ids)| Match {
             index: *index,

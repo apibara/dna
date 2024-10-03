@@ -4,7 +4,10 @@ use apibara_dna_common::{
 };
 use apibara_dna_protocol::starknet;
 
-use crate::fragment::{INDEX_TRANSACTION_BY_STATUS, TRANSACTION_FRAGMENT_ID};
+use crate::fragment::{
+    EVENT_FRAGMENT_ID, INDEX_TRANSACTION_BY_STATUS, MESSAGE_FRAGMENT_ID, RECEIPT_FRAGMENT_ID,
+    TRANSACTION_FRAGMENT_ID,
+};
 
 use super::helpers::FragmentFilterExt;
 
@@ -46,10 +49,25 @@ impl FragmentFilterExt for starknet::TransactionFilter {
             ));
         }
 
+        let mut joins = Vec::new();
+
+        if let Some(true) = self.include_receipt {
+            joins.push(RECEIPT_FRAGMENT_ID);
+        }
+
+        if let Some(true) = self.include_events {
+            joins.push(EVENT_FRAGMENT_ID);
+        }
+
+        if let Some(true) = self.include_messages {
+            joins.push(MESSAGE_FRAGMENT_ID);
+        }
+
         Ok(Filter {
             filter_id: self.id,
             fragment_id: TRANSACTION_FRAGMENT_ID,
             conditions,
+            joins,
         })
     }
 }

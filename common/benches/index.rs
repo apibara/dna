@@ -36,8 +36,7 @@ mod bitmap_index {
         let mmap = mmap_bitmap_index(builder);
 
         bencher.bench_local(move || {
-            let index = rkyv::from_bytes::<BitmapIndex, rkyv::rancor::Error>(&mmap)
-                .expect("failed to deserialize bitmap index");
+            let index = unsafe { rkyv::access_unchecked::<rkyv::Archived<BitmapIndex>>(&mmap) };
             black_box(index.get(&ScalarValue::Bool(true)));
         })
     }
@@ -61,8 +60,7 @@ mod bitmap_index {
         let mmap = mmap_bitmap_index(builder);
 
         bencher.bench_local(move || {
-            let index = rkyv::from_bytes::<BitmapIndex, rkyv::rancor::Error>(&mmap)
-                .expect("failed to deserialize bitmap index");
+            let index = unsafe { rkyv::access_unchecked::<rkyv::Archived<BitmapIndex>>(&mmap) };
             black_box(index.get(&ScalarValue::B160([0; 20])));
         })
     }
@@ -86,8 +84,7 @@ mod bitmap_index {
         let mmap = mmap_bitmap_index(builder);
 
         bencher.bench_local(move || {
-            let index = rkyv::from_bytes::<BitmapIndex, rkyv::rancor::Error>(&mmap)
-                .expect("failed to deserialize bitmap index");
+            let index = unsafe { rkyv::access_unchecked::<rkyv::Archived<BitmapIndex>>(&mmap) };
             black_box(index.get(&ScalarValue::B256([0; 32])));
         })
     }

@@ -5,8 +5,9 @@ use apibara_dna_common::{
 use apibara_dna_protocol::starknet;
 
 use crate::fragment::{
-    INDEX_MESSAGE_BY_FROM_ADDRESS, INDEX_MESSAGE_BY_TO_ADDRESS,
-    INDEX_MESSAGE_BY_TRANSACTION_STATUS, MESSAGE_FRAGMENT_ID,
+    EVENT_FRAGMENT_ID, INDEX_MESSAGE_BY_FROM_ADDRESS, INDEX_MESSAGE_BY_TO_ADDRESS,
+    INDEX_MESSAGE_BY_TRANSACTION_STATUS, MESSAGE_FRAGMENT_ID, RECEIPT_FRAGMENT_ID,
+    TRANSACTION_FRAGMENT_ID,
 };
 
 use super::helpers::FragmentFilterExt;
@@ -57,10 +58,29 @@ impl FragmentFilterExt for starknet::MessageToL1Filter {
             }
         };
 
+        let mut joins = Vec::new();
+
+        if let Some(true) = self.include_transaction {
+            joins.push(TRANSACTION_FRAGMENT_ID);
+        }
+
+        if let Some(true) = self.include_receipt {
+            joins.push(RECEIPT_FRAGMENT_ID);
+        }
+
+        if let Some(true) = self.include_events {
+            joins.push(EVENT_FRAGMENT_ID);
+        }
+
+        if let Some(true) = self.include_siblings {
+            joins.push(MESSAGE_FRAGMENT_ID);
+        }
+
         Ok(Filter {
             filter_id: self.id,
             fragment_id: MESSAGE_FRAGMENT_ID,
             conditions,
+            joins,
         })
     }
 }

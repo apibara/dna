@@ -2,10 +2,13 @@
 
 use rkyv::{Archive, Deserialize, Serialize};
 
-use crate::index;
+use crate::{index, join};
 
 pub const INDEX_FRAGMENT_ID: FragmentId = 0;
 pub const INDEX_FRAGMENT_NAME: &str = "index";
+
+pub const JOIN_FRAGMENT_ID: FragmentId = u8::MAX;
+pub const JOIN_FRAGMENT_NAME: &str = "join";
 
 pub const HEADER_FRAGMENT_ID: FragmentId = 1;
 pub const HEADER_FRAGMENT_NAME: &str = "header";
@@ -30,12 +33,18 @@ pub type SerializedProto = Vec<u8>;
 pub struct Block {
     pub header: HeaderFragment,
     pub index: IndexGroupFragment,
+    pub join: JoinGroupFragment,
     pub body: Vec<BodyFragment>,
 }
 
 #[derive(Archive, Serialize, Deserialize, Debug)]
 pub struct IndexGroupFragment {
     pub indexes: Vec<IndexFragment>,
+}
+
+#[derive(Archive, Serialize, Deserialize, Debug)]
+pub struct JoinGroupFragment {
+    pub joins: Vec<JoinFragment>,
 }
 
 #[derive(Archive, Serialize, Deserialize, Debug)]
@@ -49,8 +58,12 @@ pub struct IndexFragment {
     pub range_start: u32,
     pub range_len: u32,
     pub indexes: Vec<Index>,
-    // #[rkyv(with = AsVec)]
-    // pub joins: BTreeMap<FragmentId, JoinIndex>,
+}
+
+#[derive(Archive, Serialize, Deserialize, Debug)]
+pub struct JoinFragment {
+    pub fragment_id: FragmentId,
+    pub joins: Vec<Join>,
 }
 
 #[derive(Archive, Serialize, Deserialize, Debug)]
@@ -63,17 +76,16 @@ pub struct BodyFragment {
     pub data: Vec<SerializedProto>,
 }
 
-/// Information needed to join the fragment with another fragment.
-#[derive(Archive, Serialize, Deserialize, Debug)]
-pub struct JoinIndex {
-    /// Map the source index to the index in the destination index.
-    pub indexes: Vec<u32>,
-}
-
 #[derive(Archive, Serialize, Deserialize, Debug)]
 pub struct Index {
     pub index_id: IndexId,
     pub index: index::Index,
+}
+
+#[derive(Archive, Serialize, Deserialize, Debug)]
+pub struct Join {
+    pub to_fragment_id: FragmentId,
+    pub index: join::JoinTo,
 }
 
 impl IndexGroupFragment {

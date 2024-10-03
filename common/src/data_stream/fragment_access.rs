@@ -6,7 +6,8 @@ use crate::{
     file_cache::Mmap,
     fragment::{
         Block, BodyFragment, FragmentId, HeaderFragment, IndexFragment, IndexGroupFragment,
-        HEADER_FRAGMENT_ID, HEADER_FRAGMENT_NAME, INDEX_FRAGMENT_NAME,
+        JoinFragment, JoinGroupFragment, HEADER_FRAGMENT_ID, HEADER_FRAGMENT_NAME,
+        INDEX_FRAGMENT_NAME, JOIN_FRAGMENT_NAME,
     },
     segment::Segment,
 };
@@ -57,6 +58,13 @@ impl FragmentAccess {
         self.inner.get_fragment_indexes(fragment_id).await
     }
 
+    pub async fn get_fragment_joins(
+        &self,
+        fragment_id: FragmentId,
+    ) -> Result<Access<JoinFragment>, FragmentAccessError> {
+        self.inner.get_fragment_joins(fragment_id).await
+    }
+
     pub async fn get_header_fragment(&self) -> Result<Access<HeaderFragment>, FragmentAccessError> {
         self.inner.get_header_fragment().await
     }
@@ -100,6 +108,46 @@ impl InnerAccess {
             } => {
                 let inner = store
                     .get_segment(segment_cursor, INDEX_FRAGMENT_NAME)
+                    .await
+                    .change_context(FragmentAccessError)?;
+
+                Ok(Access::Segment {
+                    inner,
+                    fragment_id,
+                    offset: *offset,
+                    _phantom: Default::default(),
+                })
+            }
+        }
+    }
+
+    async fn get_fragment_joins(
+        &self,
+        fragment_id: FragmentId,
+    ) -> Result<Access<JoinFragment>, FragmentAccessError> {
+        match self {
+            InnerAccess::Block {
+                store,
+                block_cursor,
+            } => {
+                let inner = store
+                    .get_block(block_cursor)
+                    .await
+                    .change_context(FragmentAccessError)?;
+
+                Ok(Access::Block {
+                    inner,
+                    fragment_id,
+                    _phantom: Default::default(),
+                })
+            }
+            InnerAccess::Segment {
+                store,
+                segment_cursor,
+                offset,
+            } => {
+                let inner = store
+                    .get_segment(segment_cursor, JOIN_FRAGMENT_NAME)
                     .await
                     .change_context(FragmentAccessError)?;
 
@@ -251,6 +299,56 @@ impl Access<IndexFragment> {
                 };
 
                 Ok(&block_index.data.indexes[pos])
+            }
+        }
+    }
+}
+
+impl Access<JoinFragment> {
+    pub fn access(&self) -> Result<&rkyv::Archived<JoinFragment>, FragmentAccessError> {
+        match self {
+            Access::Block {
+                inner, fragment_id, ..
+            } => {
+                let block = unsafe { rkyv::access_unchecked::<rkyv::Archived<Block>>(inner) };
+
+                let Some(pos) = block
+                    .join
+                    .joins
+                    .iter()
+                    .position(|f| f.fragment_id == *fragment_id)
+                else {
+                    return Err(FragmentAccessError)
+                        .attach_printable("joins for fragment not found")
+                        .attach_printable_lazy(|| format!("fragment id: {}", fragment_id));
+                };
+
+                Ok(&block.join.joins[pos])
+            }
+            Access::Segment {
+                inner,
+                offset,
+                fragment_id,
+                ..
+            } => {
+                let segment = unsafe {
+                    rkyv::access_unchecked::<rkyv::Archived<Segment<JoinGroupFragment>>>(inner)
+                };
+
+                let block_index = &segment.data[*offset];
+
+                let Some(pos) = block_index
+                    .data
+                    .joins
+                    .iter()
+                    .position(|f| f.fragment_id == *fragment_id)
+                else {
+                    return Err(FragmentAccessError)
+                        .attach_printable("joins for fragment not found")
+                        .attach_printable_lazy(|| format!("fragment id: {}", fragment_id));
+                };
+
+                Ok(&block_index.data.joins[pos])
             }
         }
     }

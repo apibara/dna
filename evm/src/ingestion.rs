@@ -1,9 +1,13 @@
 use alloy_rpc_types::BlockId;
 use apibara_dna_common::{
     chain::BlockInfo,
-    fragment::{Block, BodyFragment, HeaderFragment, Index, IndexFragment, IndexGroupFragment},
+    fragment::{
+        Block, BodyFragment, HeaderFragment, Index, IndexFragment, IndexGroupFragment, Join,
+        JoinFragment, JoinGroupFragment,
+    },
     index::{BitmapIndexBuilder, ScalarValue},
     ingestion::{BlockIngestion, IngestionError},
+    join::{JoinToManyIndexBuilder, JoinToOneIndexBuilder},
     Cursor,
 };
 use apibara_dna_protocol::evm;
@@ -116,17 +120,14 @@ impl BlockIngestion for EvmBlockIngestion {
             }
         };
 
-        let (index_fragments, body_fragments) =
+        let (body, index, join) =
             collect_block_body_and_index(block_transactions, &block_withdrawals, &block_receipts)?;
-
-        let index = IndexGroupFragment {
-            indexes: index_fragments,
-        };
 
         let block = Block {
             header: header_fragment,
             index,
-            body: body_fragments,
+            body,
+            join,
         };
 
         Ok((block_info, block))
@@ -137,7 +138,7 @@ fn collect_block_body_and_index(
     transactions: &[models::Transaction],
     withdrawals: &[models::Withdrawal],
     receipts: &[models::TransactionReceipt],
-) -> Result<(Vec<IndexFragment>, Vec<BodyFragment>), IngestionError> {
+) -> Result<(Vec<BodyFragment>, IndexGroupFragment, JoinGroupFragment), IngestionError> {
     let mut block_withdrawals = Vec::new();
     let mut block_transactions = Vec::new();
     let mut block_receipts = Vec::new();
@@ -150,6 +151,8 @@ fn collect_block_body_and_index(
     let mut index_transaction_by_to_address = BitmapIndexBuilder::default();
     let mut index_transaction_by_create = BitmapIndexBuilder::default();
     let mut index_transaction_by_status = BitmapIndexBuilder::default();
+    let mut join_transaction_to_receipt = JoinToOneIndexBuilder::default();
+    let mut join_transaction_to_logs = JoinToManyIndexBuilder::default();
 
     let mut index_log_by_address = BitmapIndexBuilder::default();
     let mut index_log_by_topic0 = BitmapIndexBuilder::default();
@@ -158,6 +161,9 @@ fn collect_block_body_and_index(
     let mut index_log_by_topic3 = BitmapIndexBuilder::default();
     let mut index_log_by_topic_length = BitmapIndexBuilder::default();
     let mut index_log_by_transaction_status = BitmapIndexBuilder::default();
+    let mut join_log_to_transaction = JoinToOneIndexBuilder::default();
+    let mut join_log_to_receipt = JoinToOneIndexBuilder::default();
+    let mut join_log_to_siblings = JoinToManyIndexBuilder::default();
 
     for (withdrawal_index, withdrawal) in withdrawals.iter().enumerate() {
         let withdrawal_index = withdrawal_index as u32;
@@ -219,6 +225,8 @@ fn collect_block_body_and_index(
         transaction.transaction_hash = transaction_hash.into();
         transaction.transaction_status = transaction_status;
 
+        join_transaction_to_receipt.insert(transaction_index, transaction_index);
+
         if let Some(from) = transaction.from {
             index_transaction_by_from_address
                 .insert(ScalarValue::B160(from.to_bytes()), transaction_index);
@@ -239,6 +247,8 @@ fn collect_block_body_and_index(
             .insert(ScalarValue::Int32(transaction_status), transaction_index);
 
         block_transactions.push(transaction);
+
+        let mut transaction_logs_id = Vec::new();
 
         for log in receipt.inner.logs() {
             let log_index = block_logs.len() as u32;
@@ -272,6 +282,12 @@ fn collect_block_body_and_index(
             log.transaction_hash = transaction_hash.into();
             log.transaction_status = transaction_status;
 
+            join_log_to_transaction.insert(log_index, transaction_index);
+            join_log_to_receipt.insert(log_index, transaction_index);
+            join_transaction_to_logs.insert(transaction_index, log_index);
+
+            transaction_logs_id.push(log_index);
+
             if let Some(address) = log.address {
                 index_log_by_address.insert(ScalarValue::B160(address.to_bytes()), log_index);
             }
@@ -298,6 +314,14 @@ fn collect_block_body_and_index(
                 .insert(ScalarValue::Int32(transaction_status), log_index);
 
             block_logs.push(log);
+        }
+
+        for log_id in transaction_logs_id.iter() {
+            for sibling_id in transaction_logs_id.iter() {
+                if sibling_id != log_id {
+                    join_log_to_siblings.insert(*log_id, *sibling_id);
+                }
+            }
         }
 
         let mut receipt = receipt.to_proto();
@@ -335,6 +359,11 @@ fn collect_block_body_and_index(
                 index_withdrawal_by_address,
             ],
         }
+    };
+
+    let withdrawal_join = JoinFragment {
+        fragment_id: WITHDRAWAL_FRAGMENT_ID,
+        joins: Vec::default(),
     };
 
     let withdrawal_fragment = BodyFragment {
@@ -392,6 +421,26 @@ fn collect_block_body_and_index(
         }
     };
 
+    let transaction_join = {
+        let join_transaction_to_receipt = Join {
+            to_fragment_id: RECEIPT_FRAGMENT_ID,
+            index: join_transaction_to_receipt.build().into(),
+        };
+
+        let join_transaction_to_logs = Join {
+            to_fragment_id: LOG_FRAGMENT_ID,
+            index: join_transaction_to_logs
+                .build()
+                .change_context(IngestionError::Indexing)?
+                .into(),
+        };
+
+        JoinFragment {
+            fragment_id: TRANSACTION_FRAGMENT_ID,
+            joins: vec![join_transaction_to_receipt, join_transaction_to_logs],
+        }
+    };
+
     let transaction_fragment = BodyFragment {
         fragment_id: TRANSACTION_FRAGMENT_ID,
         name: TRANSACTION_FRAGMENT_NAME.to_string(),
@@ -407,6 +456,11 @@ fn collect_block_body_and_index(
         range_start: 0,
         range_len: block_receipts.len() as u32,
         indexes: Vec::default(),
+    };
+
+    let receipt_join = JoinFragment {
+        fragment_id: RECEIPT_FRAGMENT_ID,
+        joins: Vec::default(),
     };
 
     let receipt_fragment = BodyFragment {
@@ -488,24 +542,62 @@ fn collect_block_body_and_index(
         }
     };
 
+    let log_join = {
+        let join_log_to_transaction = Join {
+            to_fragment_id: TRANSACTION_FRAGMENT_ID,
+            index: join_log_to_transaction.build().into(),
+        };
+
+        let join_log_to_receipt = Join {
+            to_fragment_id: RECEIPT_FRAGMENT_ID,
+            index: join_log_to_receipt.build().into(),
+        };
+
+        let join_log_to_siblings = Join {
+            to_fragment_id: LOG_FRAGMENT_ID,
+            index: join_log_to_siblings
+                .build()
+                .change_context(IngestionError::Indexing)?
+                .into(),
+        };
+
+        JoinFragment {
+            fragment_id: LOG_FRAGMENT_ID,
+            joins: vec![
+                join_log_to_transaction,
+                join_log_to_receipt,
+                join_log_to_siblings,
+            ],
+        }
+    };
+
     let log_fragment = BodyFragment {
         fragment_id: LOG_FRAGMENT_ID,
         name: LOG_FRAGMENT_NAME.to_string(),
         data: block_logs.iter().map(Message::encode_to_vec).collect(),
     };
 
-    Ok((
-        vec![
+    let index_group = IndexGroupFragment {
+        indexes: vec![
             withdrawal_index,
             transaction_index,
             receipt_index,
             log_index,
         ],
+    };
+
+    let join_group = JoinGroupFragment {
+        joins: vec![withdrawal_join, transaction_join, receipt_join, log_join],
+    };
+
+    Ok((
         vec![
             withdrawal_fragment,
             transaction_fragment,
             receipt_fragment,
             log_fragment,
         ],
+        index_group,
+        join_group,
     ))
 }

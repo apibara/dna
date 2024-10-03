@@ -5,7 +5,7 @@ use apibara_dna_common::{
 use apibara_dna_protocol::beaconchain;
 
 use crate::fragment::{
-    INDEX_TRANSACTION_BY_CREATE, INDEX_TRANSACTION_BY_FROM_ADDRESS,
+    BLOB_FRAGMENT_ID, INDEX_TRANSACTION_BY_CREATE, INDEX_TRANSACTION_BY_FROM_ADDRESS,
     INDEX_TRANSACTION_BY_TO_ADDRESS, TRANSACTION_FRAGMENT_ID,
 };
 
@@ -36,10 +36,17 @@ impl FragmentFilterExt for beaconchain::TransactionFilter {
             });
         }
 
+        let mut joins = Vec::new();
+
+        if let Some(true) = self.include_blob {
+            joins.push(BLOB_FRAGMENT_ID);
+        }
+
         Ok(Filter {
             filter_id: self.id,
             fragment_id: TRANSACTION_FRAGMENT_ID,
             conditions,
+            joins,
         })
     }
 }

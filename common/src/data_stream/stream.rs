@@ -19,6 +19,7 @@ use crate::{
     chain_view::{CanonicalCursor, ChainView, NextCursor},
     data_stream::{FilterMatch, FragmentAccess},
     fragment::{FragmentId, HEADER_FRAGMENT_ID},
+    join::ArchivedJoinTo,
     query::BlockFilter,
     segment::SegmentGroup,
     Cursor,
@@ -531,6 +532,8 @@ impl DataStream {
             let mut data_buffer = BytesMut::with_capacity(DEFAULT_BLOCKS_BUFFER_SIZE);
             let mut fragment_matches = BTreeMap::default();
 
+            let mut joins = BTreeMap::<(FragmentId, FragmentId), FilterMatch>::default();
+
             for (fragment_id, filters) in block_filter.iter() {
                 let mut filter_match = FilterMatch::default();
 
@@ -544,6 +547,13 @@ impl DataStream {
                 for filter in filters {
                     let rows = filter.filter(indexes).change_context(DataStreamError)?;
                     filter_match.add_match(filter.filter_id, &rows);
+
+                    for join_with_fragment_id in filter.joins.iter() {
+                        joins
+                            .entry((*fragment_id, *join_with_fragment_id))
+                            .or_default()
+                            .add_match(filter.filter_id, &rows);
+                    }
                 }
 
                 if filter_match.is_empty() {
@@ -551,6 +561,57 @@ impl DataStream {
                 }
 
                 fragment_matches.insert(*fragment_id, filter_match);
+            }
+
+            for ((source_fragment_id, target_fragment_id), filter_match) in joins.into_iter() {
+                // Data is cached so it's fine to read it multiple times.
+                // We could group by `source_fragment_id` to cleanup the code.
+                let join_fragment = fragment_access
+                    .get_fragment_joins(source_fragment_id)
+                    .await
+                    .change_context(DataStreamError)
+                    .attach_printable("failed to get join fragment")?;
+                let join_fragment = join_fragment.access().change_context(DataStreamError)?;
+
+                let Some(target_pos) = join_fragment
+                    .joins
+                    .iter()
+                    .position(|f| f.to_fragment_id == target_fragment_id)
+                else {
+                    return Err(DataStreamError)
+                        .attach_printable("join fragment not found")
+                        .attach_printable_lazy(|| {
+                            format!("source fragment id: {}", source_fragment_id)
+                        })
+                        .attach_printable_lazy(|| {
+                            format!("target fragment id: {}", target_fragment_id)
+                        });
+                };
+                let join = &join_fragment.joins[target_pos];
+
+                let target_fragment_matches =
+                    fragment_matches.entry(target_fragment_id).or_default();
+
+                match &join.index {
+                    ArchivedJoinTo::One(inner) => {
+                        for match_ in filter_match.iter() {
+                            if let Some(index) = inner.get(&match_.index) {
+                                for filter_id in match_.filter_ids.iter() {
+                                    target_fragment_matches.add_single_match(*filter_id, index);
+                                }
+                            }
+                        }
+                    }
+                    ArchivedJoinTo::Many(inner) => {
+                        for match_ in filter_match.iter() {
+                            if let Some(bitmap) = inner.get(&match_.index) {
+                                for filter_id in match_.filter_ids.iter() {
+                                    target_fragment_matches.add_match(*filter_id, &bitmap);
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
             if block_filter.always_include_header || !fragment_matches.is_empty() {

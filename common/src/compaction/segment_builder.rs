@@ -5,8 +5,8 @@ use error_stack::{Result, ResultExt};
 use crate::{
     file_cache::Mmap,
     fragment::{
-        Block, BodyFragment, HeaderFragment, IndexGroupFragment, HEADER_FRAGMENT_NAME,
-        INDEX_FRAGMENT_NAME,
+        Block, BodyFragment, HeaderFragment, IndexGroupFragment, JoinGroupFragment,
+        HEADER_FRAGMENT_NAME, INDEX_FRAGMENT_NAME, JOIN_FRAGMENT_NAME,
     },
     segment::{FragmentData, Segment, SerializedSegment},
     Cursor,
@@ -20,6 +20,7 @@ pub struct SegmentBuilder {
     first_block: Option<Cursor>,
     headers: Vec<FragmentData<HeaderFragment>>,
     indexes: Vec<FragmentData<IndexGroupFragment>>,
+    joins: Vec<FragmentData<JoinGroupFragment>>,
     body: HashMap<u8, (String, Vec<FragmentData<BodyFragment>>)>,
 }
 
@@ -64,6 +65,17 @@ impl SegmentBuilder {
         }
 
         {
+            let join = block.join;
+
+            let fragment_data = FragmentData {
+                cursor: cursor.clone(),
+                data: join,
+            };
+
+            self.joins.push(fragment_data);
+        }
+
+        {
             let header = block.header;
 
             let fragment_data = FragmentData {
@@ -99,6 +111,7 @@ impl SegmentBuilder {
         };
 
         let indexes = std::mem::take(&mut self.indexes);
+        let joins = std::mem::take(&mut self.joins);
         let headers = std::mem::take(&mut self.headers);
         let segments = std::mem::take(&mut self.body);
         let expected_fragment_count = headers.len();
@@ -109,6 +122,13 @@ impl SegmentBuilder {
             return Err(CompactionError)
                 .attach_printable("index, header, and body fragments do not match")
                 .attach_printable_lazy(|| format!("indexes len: {}", indexes.len()))
+                .attach_printable_lazy(|| format!("headers len: {}", headers.len()));
+        }
+
+        if joins.len() != headers.len() {
+            return Err(CompactionError)
+                .attach_printable("join, header, and body fragments do not match")
+                .attach_printable_lazy(|| format!("joins len: {}", joins.len()))
                 .attach_printable_lazy(|| format!("headers len: {}", headers.len()));
         }
 
@@ -124,6 +144,22 @@ impl SegmentBuilder {
 
             serialized.push(SerializedSegment {
                 name: INDEX_FRAGMENT_NAME.to_string(),
+                data,
+            });
+        }
+
+        {
+            let segment = Segment {
+                first_block: first_block.clone(),
+                data: joins,
+            };
+
+            let data = rkyv::to_bytes::<rkyv::rancor::Error>(&segment)
+                .change_context(CompactionError)
+                .attach_printable("failed to serialize join segment")?;
+
+            serialized.push(SerializedSegment {
+                name: JOIN_FRAGMENT_NAME.to_string(),
                 data,
             });
         }

@@ -32,6 +32,7 @@ impl FragmentFilterExt for evm::WithdrawalFilter {
             filter_id: self.id,
             fragment_id: WITHDRAWAL_FRAGMENT_ID,
             conditions,
+            joins: Vec::default(),
         })
     }
 }

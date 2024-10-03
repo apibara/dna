@@ -6,7 +6,7 @@ use apibara_dna_protocol::evm;
 
 use crate::fragment::{
     INDEX_TRANSACTION_BY_CREATE, INDEX_TRANSACTION_BY_FROM_ADDRESS, INDEX_TRANSACTION_BY_STATUS,
-    INDEX_TRANSACTION_BY_TO_ADDRESS, TRANSACTION_FRAGMENT_ID,
+    INDEX_TRANSACTION_BY_TO_ADDRESS, LOG_FRAGMENT_ID, RECEIPT_FRAGMENT_ID, TRANSACTION_FRAGMENT_ID,
 };
 
 use super::helpers::FragmentFilterExt;
@@ -64,10 +64,21 @@ impl FragmentFilterExt for evm::TransactionFilter {
             }
         };
 
+        let mut joins = Vec::new();
+
+        if let Some(true) = self.include_receipt {
+            joins.push(RECEIPT_FRAGMENT_ID);
+        }
+
+        if let Some(true) = self.include_logs {
+            joins.push(LOG_FRAGMENT_ID);
+        }
+
         Ok(Filter {
             filter_id: self.id,
             fragment_id: TRANSACTION_FRAGMENT_ID,
             conditions,
+            joins,
         })
     }
 }

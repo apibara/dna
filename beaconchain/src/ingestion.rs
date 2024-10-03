@@ -3,9 +3,13 @@
 use alloy_eips::eip2718::Decodable2718;
 use apibara_dna_common::{
     chain::BlockInfo,
-    fragment::{Block, BodyFragment, HeaderFragment, Index, IndexFragment, IndexGroupFragment},
+    fragment::{
+        Block, BodyFragment, HeaderFragment, Index, IndexFragment, IndexGroupFragment, Join,
+        JoinFragment, JoinGroupFragment,
+    },
     index::{BitmapIndexBuilder, ScalarValue},
     ingestion::{BlockIngestion, IngestionError},
+    join::{JoinToManyIndex, JoinToManyIndexBuilder, JoinToOneIndex, JoinToOneIndexBuilder},
     Cursor, Hash,
 };
 use error_stack::{FutureExt, Result, ResultExt};
@@ -129,17 +133,13 @@ impl BeaconChainBlockIngestion {
             }
         };
 
-        let (index_fragments, body_fragments) =
-            collect_block_body_and_index(&transactions, &validators, &blobs)?;
-
-        let index = IndexGroupFragment {
-            indexes: index_fragments,
-        };
+        let (body, index, join) = collect_block_body_and_index(&transactions, &validators, &blobs)?;
 
         let block = Block {
             header: header_fragment,
             index,
-            body: body_fragments,
+            join,
+            body,
         };
 
         Ok((block_info, block).into())
@@ -276,6 +276,29 @@ impl BlockIngestion for BeaconChainBlockIngestion {
             ],
         };
 
+        let join_fragment = JoinGroupFragment {
+            joins: vec![
+                JoinFragment {
+                    fragment_id: TRANSACTION_FRAGMENT_ID,
+                    joins: vec![Join {
+                        to_fragment_id: BLOB_FRAGMENT_ID,
+                        index: JoinToManyIndex::default().into(),
+                    }],
+                },
+                JoinFragment {
+                    fragment_id: VALIDATOR_FRAGMENT_ID,
+                    joins: Vec::default(),
+                },
+                JoinFragment {
+                    fragment_id: BLOB_FRAGMENT_ID,
+                    joins: vec![Join {
+                        to_fragment_id: TRANSACTION_FRAGMENT_ID,
+                        index: JoinToOneIndex::default().into(),
+                    }],
+                },
+            ],
+        };
+
         let body_fragments = vec![
             BodyFragment {
                 fragment_id: TRANSACTION_FRAGMENT_ID,
@@ -298,6 +321,7 @@ impl BlockIngestion for BeaconChainBlockIngestion {
             header: header_fragment,
             index: index_fragment,
             body: body_fragments,
+            join: join_fragment,
         };
 
         Ok((block_info, block))
@@ -308,7 +332,7 @@ pub fn collect_block_body_and_index(
     transactions: &[models::Bytes],
     validators: &[models::Validator],
     blobs: &[models::BlobSidecar],
-) -> Result<(Vec<IndexFragment>, Vec<BodyFragment>), IngestionError> {
+) -> Result<(Vec<BodyFragment>, IndexGroupFragment, JoinGroupFragment), IngestionError> {
     let transactions = transactions
         .iter()
         .map(|bytes| decode_transaction(bytes))
@@ -321,9 +345,12 @@ pub fn collect_block_body_and_index(
     let mut index_transaction_by_from_address = BitmapIndexBuilder::default();
     let mut index_transaction_by_to_address = BitmapIndexBuilder::default();
     let mut index_transaction_by_create = BitmapIndexBuilder::default();
+    let mut join_transaction_to_blobs = JoinToManyIndexBuilder::default();
 
     let mut index_validator_by_index = BitmapIndexBuilder::default();
     let mut index_validator_by_status = BitmapIndexBuilder::default();
+
+    let mut join_blob_to_transaction = JoinToOneIndexBuilder::default();
 
     for (transaction_index, transaction) in transactions.into_iter().enumerate() {
         let transaction_index = transaction_index as u32;
@@ -381,6 +408,9 @@ pub fn collect_block_body_and_index(
         blob.transaction_index = tx.transaction_index;
         blob.transaction_hash = tx.transaction_hash;
 
+        join_blob_to_transaction.insert(blob.blob_index, tx.transaction_index);
+        join_transaction_to_blobs.insert(tx.transaction_index, blob.blob_index);
+
         block_blobs.push(blob);
     }
 
@@ -421,6 +451,21 @@ pub fn collect_block_body_and_index(
         }
     };
 
+    let transaction_join = {
+        let join_transaction_to_blobs = Join {
+            to_fragment_id: BLOB_FRAGMENT_ID,
+            index: join_transaction_to_blobs
+                .build()
+                .change_context(IngestionError::Indexing)?
+                .into(),
+        };
+
+        JoinFragment {
+            fragment_id: TRANSACTION_FRAGMENT_ID,
+            joins: vec![join_transaction_to_blobs],
+        }
+    };
+
     let transaction_fragment = BodyFragment {
         fragment_id: TRANSACTION_FRAGMENT_ID,
         name: TRANSACTION_FRAGMENT_NAME.to_string(),
@@ -455,6 +500,11 @@ pub fn collect_block_body_and_index(
         }
     };
 
+    let validator_join = JoinFragment {
+        fragment_id: VALIDATOR_FRAGMENT_ID,
+        joins: Vec::default(),
+    };
+
     let validator_fragment = BodyFragment {
         fragment_id: VALIDATOR_FRAGMENT_ID,
         name: VALIDATOR_FRAGMENT_NAME.to_string(),
@@ -471,15 +521,36 @@ pub fn collect_block_body_and_index(
         indexes: Vec::new(),
     };
 
+    let blob_join = {
+        let join_blob_to_transaction = Join {
+            to_fragment_id: TRANSACTION_FRAGMENT_ID,
+            index: join_blob_to_transaction.build().into(),
+        };
+
+        JoinFragment {
+            fragment_id: BLOB_FRAGMENT_ID,
+            joins: vec![join_blob_to_transaction],
+        }
+    };
+
     let blob_fragment = BodyFragment {
         fragment_id: BLOB_FRAGMENT_ID,
         name: BLOB_FRAGMENT_NAME.to_string(),
         data: block_blobs.iter().map(Message::encode_to_vec).collect(),
     };
 
+    let index_group = IndexGroupFragment {
+        indexes: vec![transaction_index, validator_index, blob_index],
+    };
+
+    let join_group = JoinGroupFragment {
+        joins: vec![transaction_join, validator_join, blob_join],
+    };
+
     Ok((
-        vec![transaction_index, validator_index, blob_index],
         vec![transaction_fragment, validator_fragment, blob_fragment],
+        index_group,
+        join_group,
     ))
 }
 

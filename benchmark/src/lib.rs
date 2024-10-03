@@ -171,6 +171,7 @@ trait Stats {
 
 struct EvmStats {
     pub index: usize,
+    pub block_number: u64,
     pub start: Instant,
     pub bytes: u64,
     pub blocks: u64,
@@ -187,6 +188,7 @@ impl Stats for EvmStats {
         Self {
             index,
             start: Instant::now(),
+            block_number: 0,
             blocks: 0,
             bytes: 0,
             transactions: 0,
@@ -197,6 +199,11 @@ impl Stats for EvmStats {
     }
 
     fn record(&mut self, block: evm::Block) {
+        self.block_number = block
+            .header
+            .as_ref()
+            .map(|h| h.block_number)
+            .unwrap_or_default();
         self.blocks += 1;
         self.bytes += block.encoded_len() as u64;
 
@@ -213,6 +220,7 @@ impl Stats for EvmStats {
         let bytes = Byte::from_u64(self.bytes);
 
         info!(
+            latest_block = %self.block_number,
             blocks = %self.blocks,
             bytes = format!("{:#.6}", bytes),
             transactions = %self.transactions,
@@ -248,6 +256,7 @@ impl Stats for EvmStats {
 struct StarknetStats {
     pub index: usize,
     pub start: Instant,
+    pub block_number: u64,
     pub blocks: u64,
     pub bytes: u64,
     pub transactions: u64,
@@ -263,6 +272,7 @@ impl Stats for StarknetStats {
         Self {
             index,
             start: Instant::now(),
+            block_number: 0,
             blocks: 0,
             bytes: 0,
             transactions: 0,
@@ -273,6 +283,11 @@ impl Stats for StarknetStats {
     }
 
     fn record(&mut self, block: starknet::Block) {
+        self.block_number = block
+            .header
+            .as_ref()
+            .map(|h| h.block_number)
+            .unwrap_or_default();
         self.blocks += 1;
         self.bytes += block.encoded_len() as u64;
 
@@ -289,6 +304,7 @@ impl Stats for StarknetStats {
         let bytes = Byte::from_u64(self.bytes);
 
         info!(
+            latest_block = %self.block_number,
             blocks = %self.blocks,
             bytes = format!("{:#.6}", bytes),
             transactions = %self.transactions,

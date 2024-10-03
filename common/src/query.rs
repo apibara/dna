@@ -31,6 +31,8 @@ pub struct Filter {
     ///
     /// These conditions are logically ANDed together.
     pub conditions: Vec<Condition>,
+    /// Join results from this filter with the given fragments.
+    pub joins: Vec<FragmentId>,
 }
 
 /// A collection of filters.

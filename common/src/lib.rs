@@ -11,6 +11,7 @@ pub mod file_cache;
 pub mod fragment;
 pub mod index;
 pub mod ingestion;
+pub mod join;
 pub mod object_store;
 pub mod options_store;
 pub mod query;
@@ -152,6 +153,10 @@ mod server_impl {
                 (
                     fragment::INDEX_FRAGMENT_ID,
                     fragment::INDEX_FRAGMENT_NAME.to_string(),
+                ),
+                (
+                    fragment::JOIN_FRAGMENT_ID,
+                    fragment::JOIN_FRAGMENT_NAME.to_string(),
                 ),
             ]);
 

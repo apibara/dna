@@ -1,8 +1,12 @@
 use apibara_dna_common::{
     chain::BlockInfo,
-    fragment::{Block, BodyFragment, HeaderFragment, Index, IndexFragment, IndexGroupFragment},
+    fragment::{
+        Block, BodyFragment, HeaderFragment, Index, IndexFragment, IndexGroupFragment, Join,
+        JoinFragment, JoinGroupFragment,
+    },
     index::{BitmapIndexBuilder, ScalarValue},
     ingestion::{BlockIngestion, IngestionError},
+    join::{JoinToManyIndexBuilder, JoinToOneIndexBuilder},
     Cursor, Hash,
 };
 use apibara_dna_protocol::starknet;
@@ -187,16 +191,14 @@ impl BlockIngestion for StarknetBlockIngestion {
             }
         };
 
-        let (index_fragments, body_fragments) = collect_block_body_and_index(&block.transactions)?;
-
-        let index = IndexGroupFragment {
-            indexes: index_fragments,
-        };
+        let (body_fragments, index_group, join_group) =
+            collect_block_body_and_index(&block.transactions)?;
 
         let block = Block {
             header: header_fragment,
-            index,
+            index: index_group,
             body: body_fragments,
+            join: join_group,
         };
 
         Ok((block_info, block))
@@ -214,13 +216,16 @@ impl Clone for StarknetBlockIngestion {
 
 fn collect_block_body_and_index(
     transactions: &[models::TransactionWithReceipt],
-) -> Result<(Vec<IndexFragment>, Vec<BodyFragment>), IngestionError> {
+) -> Result<(Vec<BodyFragment>, IndexGroupFragment, JoinGroupFragment), IngestionError> {
     let mut block_transactions = Vec::new();
     let mut block_receipts = Vec::new();
     let mut block_events = Vec::new();
     let mut block_messages = Vec::new();
 
     let mut index_transaction_by_status = BitmapIndexBuilder::default();
+    let mut join_transaction_to_receipt = JoinToOneIndexBuilder::default();
+    let mut join_transaction_to_events = JoinToManyIndexBuilder::default();
+    let mut join_transaction_to_messages = JoinToManyIndexBuilder::default();
 
     let mut index_event_by_address = BitmapIndexBuilder::default();
     let mut index_event_by_key0 = BitmapIndexBuilder::default();
@@ -229,10 +234,18 @@ fn collect_block_body_and_index(
     let mut index_event_by_key3 = BitmapIndexBuilder::default();
     let mut index_event_by_key_length = BitmapIndexBuilder::default();
     let mut index_event_by_transaction_status = BitmapIndexBuilder::default();
+    let mut join_event_to_transaction = JoinToOneIndexBuilder::default();
+    let mut join_event_to_receipt = JoinToOneIndexBuilder::default();
+    let mut join_event_to_siblings = JoinToManyIndexBuilder::default();
+    let mut join_event_to_messages = JoinToManyIndexBuilder::default();
 
     let mut index_message_by_from_address = BitmapIndexBuilder::default();
     let mut index_message_by_to_address = BitmapIndexBuilder::default();
     let mut index_message_by_transaction_status = BitmapIndexBuilder::default();
+    let mut join_message_to_transaction = JoinToOneIndexBuilder::default();
+    let mut join_message_to_receipt = JoinToOneIndexBuilder::default();
+    let mut join_message_to_events = JoinToManyIndexBuilder::default();
+    let mut join_message_to_siblings = JoinToManyIndexBuilder::default();
 
     for (transaction_index, transaction_with_receipt) in transactions.iter().enumerate() {
         let transaction_index = transaction_index as u32;
@@ -254,6 +267,9 @@ fn collect_block_body_and_index(
             models::TransactionReceipt::DeployAccount(rx) => &rx.events,
         };
 
+        let mut transaction_events_id = Vec::new();
+        let mut transaction_messages_id = Vec::new();
+
         for event in events.iter() {
             let mut event = event.to_proto();
 
@@ -261,6 +277,12 @@ fn collect_block_body_and_index(
             event.transaction_index = transaction_index;
             event.transaction_hash = transaction_hash.into();
             event.transaction_status = transaction_status as i32;
+
+            join_transaction_to_events.insert(transaction_index, event.event_index);
+            join_event_to_transaction.insert(event.event_index, transaction_index);
+            join_event_to_receipt.insert(event.event_index, transaction_index);
+
+            transaction_events_id.push(event.event_index);
 
             if let Some(address) = event.from_address {
                 index_event_by_address
@@ -311,6 +333,12 @@ fn collect_block_body_and_index(
             message.transaction_hash = transaction_hash.into();
             message.transaction_status = transaction_status as i32;
 
+            join_transaction_to_messages.insert(transaction_index, message.message_index);
+            join_message_to_transaction.insert(message.message_index, transaction_index);
+            join_message_to_receipt.insert(message.message_index, transaction_index);
+
+            transaction_messages_id.push(message.message_index);
+
             if let Some(address) = message.from_address {
                 index_message_by_from_address
                     .insert(ScalarValue::B256(address.to_bytes()), message.message_index);
@@ -329,6 +357,29 @@ fn collect_block_body_and_index(
             block_messages.push(message);
         }
 
+        for event_id in transaction_events_id.iter() {
+            for sibling_id in transaction_events_id.iter() {
+                if event_id != sibling_id {
+                    join_event_to_siblings.insert(*event_id, *sibling_id);
+                    join_event_to_siblings.insert(*sibling_id, *event_id);
+                }
+            }
+
+            for message_id in transaction_messages_id.iter() {
+                join_event_to_messages.insert(*event_id, *message_id);
+                join_message_to_events.insert(*message_id, *event_id);
+            }
+        }
+
+        for message_id in transaction_messages_id.iter() {
+            for sibling_id in transaction_messages_id.iter() {
+                if message_id != sibling_id {
+                    join_message_to_siblings.insert(*message_id, *sibling_id);
+                    join_message_to_siblings.insert(*sibling_id, *message_id);
+                }
+            }
+        }
+
         let mut transaction = transaction_with_receipt.transaction.to_proto();
         set_transaction_index_and_status(&mut transaction, transaction_index, transaction_status);
 
@@ -339,6 +390,8 @@ fn collect_block_body_and_index(
 
         let mut receipt = transaction_with_receipt.receipt.to_proto();
         set_receipt_transaction_index(&mut receipt, transaction_index);
+
+        join_transaction_to_receipt.insert(transaction_index, transaction_index);
 
         block_transactions.push(transaction);
         block_receipts.push(receipt);
@@ -376,6 +429,38 @@ fn collect_block_body_and_index(
         }
     };
 
+    let transaction_join = {
+        let join_transaction_to_receipt = Join {
+            to_fragment_id: RECEIPT_FRAGMENT_ID,
+            index: join_transaction_to_receipt.build().into(),
+        };
+
+        let join_transaction_to_events = Join {
+            to_fragment_id: EVENT_FRAGMENT_ID,
+            index: join_transaction_to_events
+                .build()
+                .change_context(IngestionError::Indexing)?
+                .into(),
+        };
+
+        let join_transaction_to_messages = Join {
+            to_fragment_id: MESSAGE_FRAGMENT_ID,
+            index: join_transaction_to_messages
+                .build()
+                .change_context(IngestionError::Indexing)?
+                .into(),
+        };
+
+        JoinFragment {
+            fragment_id: TRANSACTION_FRAGMENT_ID,
+            joins: vec![
+                join_transaction_to_receipt,
+                join_transaction_to_events,
+                join_transaction_to_messages,
+            ],
+        }
+    };
+
     let transaction_fragment = BodyFragment {
         fragment_id: TRANSACTION_FRAGMENT_ID,
         name: TRANSACTION_FRAGMENT_NAME.to_string(),
@@ -391,6 +476,11 @@ fn collect_block_body_and_index(
         range_start: 0,
         range_len: block_receipts.len() as u32,
         indexes: Vec::default(),
+    };
+
+    let receipt_join = JoinFragment {
+        fragment_id: RECEIPT_FRAGMENT_ID,
+        joins: Vec::default(),
     };
 
     let receipt_fragment = BodyFragment {
@@ -466,6 +556,44 @@ fn collect_block_body_and_index(
         }
     };
 
+    let event_join = {
+        let join_event_to_transaction = Join {
+            to_fragment_id: TRANSACTION_FRAGMENT_ID,
+            index: join_event_to_transaction.build().into(),
+        };
+
+        let join_event_to_receipt = Join {
+            to_fragment_id: RECEIPT_FRAGMENT_ID,
+            index: join_event_to_receipt.build().into(),
+        };
+
+        let join_event_to_siblings = Join {
+            to_fragment_id: EVENT_FRAGMENT_ID,
+            index: join_event_to_siblings
+                .build()
+                .change_context(IngestionError::Indexing)?
+                .into(),
+        };
+
+        let join_event_to_messages = Join {
+            to_fragment_id: MESSAGE_FRAGMENT_ID,
+            index: join_event_to_messages
+                .build()
+                .change_context(IngestionError::Indexing)?
+                .into(),
+        };
+
+        JoinFragment {
+            fragment_id: EVENT_FRAGMENT_ID,
+            joins: vec![
+                join_event_to_transaction,
+                join_event_to_receipt,
+                join_event_to_siblings,
+                join_event_to_messages,
+            ],
+        }
+    };
+
     let event_fragment = BodyFragment {
         fragment_id: EVENT_FRAGMENT_ID,
         name: EVENT_FRAGMENT_NAME.to_string(),
@@ -507,20 +635,67 @@ fn collect_block_body_and_index(
         }
     };
 
+    let message_join = {
+        let join_message_to_transaction = Join {
+            to_fragment_id: TRANSACTION_FRAGMENT_ID,
+            index: join_message_to_transaction.build().into(),
+        };
+
+        let join_message_to_receipt = Join {
+            to_fragment_id: RECEIPT_FRAGMENT_ID,
+            index: join_message_to_receipt.build().into(),
+        };
+
+        let join_message_to_events = Join {
+            to_fragment_id: EVENT_FRAGMENT_ID,
+            index: join_message_to_events
+                .build()
+                .change_context(IngestionError::Indexing)?
+                .into(),
+        };
+
+        let join_message_to_siblings = Join {
+            to_fragment_id: MESSAGE_FRAGMENT_ID,
+            index: join_message_to_siblings
+                .build()
+                .change_context(IngestionError::Indexing)?
+                .into(),
+        };
+
+        JoinFragment {
+            fragment_id: MESSAGE_FRAGMENT_ID,
+            joins: vec![
+                join_message_to_transaction,
+                join_message_to_receipt,
+                join_message_to_events,
+                join_message_to_siblings,
+            ],
+        }
+    };
+
     let message_fragment = BodyFragment {
         fragment_id: MESSAGE_FRAGMENT_ID,
         name: MESSAGE_FRAGMENT_NAME.to_string(),
         data: block_messages.iter().map(Message::encode_to_vec).collect(),
     };
 
+    let index_group = IndexGroupFragment {
+        indexes: vec![transaction_index, receipt_index, event_index, message_index],
+    };
+
+    let join_group = JoinGroupFragment {
+        joins: vec![transaction_join, receipt_join, event_join, message_join],
+    };
+
     Ok((
-        vec![transaction_index, receipt_index, event_index, message_index],
         vec![
             transaction_fragment,
             receipt_fragment,
             event_fragment,
             message_fragment,
         ],
+        index_group,
+        join_group,
     ))
 }
 

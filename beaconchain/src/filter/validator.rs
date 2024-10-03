@@ -30,6 +30,7 @@ impl FragmentFilterExt for beaconchain::ValidatorFilter {
             filter_id: self.id,
             fragment_id: VALIDATOR_FRAGMENT_ID,
             conditions,
+            joins: Vec::default(),
         })
     }
 }
