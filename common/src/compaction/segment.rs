@@ -6,6 +6,7 @@ use tracing::info;
 use crate::{
     block_store::{BlockStoreReader, BlockStoreWriter},
     chain_view::{ChainView, NextCursor},
+    file_cache::FileCacheError,
     ingestion::IngestionStateClient,
 };
 
@@ -99,16 +100,17 @@ impl SegmentService {
                     .change_context(CompactionError)?;
 
                 for _ in 0..self.segment_size {
-                    let bytes = self
+                    let entry = self
                         .block_store_reader
                         .get_block(&current)
                         .await
+                        .map_err(FileCacheError::Foyer)
                         .change_context(CompactionError)
                         .attach_printable("failed to get block")
                         .attach_printable_lazy(|| format!("cursor: {current}"))?;
 
                     builder
-                        .add_block(&current, bytes)
+                        .add_block(&current, entry.value())
                         .change_context(CompactionError)
                         .attach_printable("failed to add block to segment")
                         .attach_printable_lazy(|| format!("cursor: {current}"))?;

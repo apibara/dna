@@ -4,9 +4,9 @@ use bytes::Bytes;
 use clap::Args;
 use error_stack::{Result, ResultExt};
 use foyer::{
-    AdmissionPicker, AdmitAllPicker, Compression, DirectFsDeviceOptions, Engine, HybridCache,
-    HybridCacheBuilder, LargeEngineOptions, RateLimitPicker, RecoverMode, RuntimeConfig,
-    TokioRuntimeConfig,
+    AdmissionPicker, AdmitAllPicker, CacheEntry, Compression, DirectFsDeviceOptions, Engine,
+    HybridCache, HybridCacheBuilder, HybridFetch, LargeEngineOptions, RateLimitPicker, RecoverMode,
+    RuntimeConfig, TokioRuntimeConfig,
 };
 
 #[derive(Debug)]
@@ -17,6 +17,10 @@ pub enum FileCacheError {
 
 /// A cache with the content of remote files.
 pub type FileCache = HybridCache<String, Bytes>;
+
+pub type FileFetch = HybridFetch<String, Bytes>;
+
+pub type CachedFile = CacheEntry<String, Bytes>;
 
 #[derive(Args, Debug)]
 pub struct FileCacheArgs {

@@ -6,6 +6,7 @@ use crate::{
     block_store::{BlockStoreReader, BlockStoreWriter},
     chain_view::{ChainView, NextCursor},
     compaction::group_builder::SegmentGroupBuilder,
+    file_cache::FileCacheError,
     fragment::IndexGroupFragment,
     ingestion::IngestionStateClient,
     segment::Segment,
@@ -107,12 +108,13 @@ impl SegmentGroupService {
                         .block_store_reader
                         .get_index_segment(&current_cursor)
                         .await
+                        .map_err(FileCacheError::Foyer)
                         .change_context(CompactionError)?;
 
                     let segment = rkyv::from_bytes::<
                         Segment<IndexGroupFragment>,
                         rkyv::rancor::Error,
-                    >(&segment)
+                    >(segment.value())
                     .change_context(CompactionError)?;
 
                     builder

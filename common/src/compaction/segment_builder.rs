@@ -36,8 +36,8 @@ impl SegmentBuilder {
         Ok(())
     }
 
-    pub fn add_block(&mut self, cursor: &Cursor, bytes: Bytes) -> Result<(), CompactionError> {
-        let block = rkyv::from_bytes::<Block, rkyv::rancor::Error>(&bytes)
+    pub fn add_block(&mut self, cursor: &Cursor, bytes: &Bytes) -> Result<(), CompactionError> {
+        let block = rkyv::from_bytes::<Block, rkyv::rancor::Error>(bytes)
             .change_context(CompactionError)
             .attach_printable("failed to access block")?;
 

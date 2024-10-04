@@ -18,6 +18,7 @@ use crate::{
     block_store::BlockStoreReader,
     chain_view::{CanonicalCursor, ChainView, NextCursor},
     data_stream::{FilterMatch, FragmentAccess},
+    file_cache::FileCacheError,
     fragment::{FragmentId, HEADER_FRAGMENT_ID},
     join::ArchivedJoinTo,
     query::BlockFilter,
@@ -232,6 +233,7 @@ impl DataStream {
                 .store
                 .get_group(&group_start_cursor)
                 .await
+                .map_err(FileCacheError::Foyer)
                 .change_context(DataStreamError)
                 .attach_printable("failed to get group")?;
             let group =

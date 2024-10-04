@@ -4,7 +4,7 @@ use error_stack::{Result, ResultExt};
 use foyer::FetchState;
 
 use crate::{
-    file_cache::{FileCache, FileCacheError},
+    file_cache::{FileCache, FileFetch},
     fragment,
     object_store::{GetOptions, ObjectETag, ObjectStore, PutOptions},
     segment::{SegmentGroup, SerializedSegment},
@@ -36,13 +36,8 @@ impl BlockStoreReader {
         Self { client, file_cache }
     }
 
-    #[tracing::instrument(
-        name = "block_store_get_block",
-        skip_all,
-        err(Debug),
-        fields(cache_hit)
-    )]
-    pub async fn get_block(&self, cursor: &Cursor) -> Result<Bytes, BlockStoreError> {
+    #[tracing::instrument(name = "block_store_get_block", skip_all, fields(cache_hit))]
+    pub fn get_block(&self, cursor: &Cursor) -> FileFetch {
         let current_span = tracing::Span::current();
         let key = format_block_key(cursor);
 
@@ -65,29 +60,15 @@ impl BlockStoreReader {
             _ => current_span.record("cache_hit", 1),
         };
 
-        let entry = entry
-            .await
-            .map_err(FileCacheError::Foyer)
-            .change_context(BlockStoreError)?;
-
-        Ok(entry.value().clone())
+        entry
     }
 
-    pub async fn get_index_segment(&self, first_cursor: &Cursor) -> Result<Bytes, BlockStoreError> {
-        self.get_segment(first_cursor, "index").await
+    pub fn get_index_segment(&self, first_cursor: &Cursor) -> FileFetch {
+        self.get_segment(first_cursor, "index")
     }
 
-    #[tracing::instrument(
-        name = "block_store_get_segment",
-        skip_all,
-        err(Debug),
-        fields(name, cache_hit)
-    )]
-    pub async fn get_segment(
-        &self,
-        first_cursor: &Cursor,
-        name: impl Into<String>,
-    ) -> Result<Bytes, BlockStoreError> {
+    #[tracing::instrument(name = "block_store_get_segment", skip_all, fields(name, cache_hit))]
+    pub fn get_segment(&self, first_cursor: &Cursor, name: impl Into<String>) -> FileFetch {
         let current_span = tracing::Span::current();
         let name = name.into();
         let key = format_segment_key(first_cursor, &name);
@@ -106,6 +87,7 @@ impl BlockStoreReader {
                 }
             }
         };
+
         let entry = self.file_cache.fetch(key, fetch_segment);
 
         match entry.state() {
@@ -113,21 +95,11 @@ impl BlockStoreReader {
             _ => current_span.record("cache_hit", 1),
         };
 
-        let entry = entry
-            .await
-            .map_err(FileCacheError::Foyer)
-            .change_context(BlockStoreError)?;
-
-        Ok(entry.value().clone())
+        entry
     }
 
-    #[tracing::instrument(
-        name = "block_store_get_group",
-        skip_all,
-        err(Debug),
-        fields(cache_hit)
-    )]
-    pub async fn get_group(&self, cursor: &Cursor) -> Result<Bytes, BlockStoreError> {
+    #[tracing::instrument(name = "block_store_get_group", skip_all, fields(cache_hit))]
+    pub fn get_group(&self, cursor: &Cursor) -> FileFetch {
         let current_span = tracing::Span::current();
         let key = format_group_key(cursor);
 
@@ -150,12 +122,7 @@ impl BlockStoreReader {
             _ => current_span.record("cache_hit", 1),
         };
 
-        let entry = entry
-            .await
-            .map_err(FileCacheError::Foyer)
-            .change_context(BlockStoreError)?;
-
-        Ok(entry.value().clone())
+        entry
     }
 }
 

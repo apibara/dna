@@ -1,9 +1,9 @@
-use bytes::Bytes;
 use error_stack::{Result, ResultExt};
 
 use crate::{
     block_store::BlockStoreReader,
     core::Cursor,
+    file_cache::{CachedFile, FileCacheError},
     fragment::{
         Block, BodyFragment, FragmentId, HeaderFragment, IndexFragment, IndexGroupFragment,
         JoinFragment, JoinGroupFragment, HEADER_FRAGMENT_ID, HEADER_FRAGMENT_NAME,
@@ -93,6 +93,7 @@ impl InnerAccess {
                 let inner = store
                     .get_block(block_cursor)
                     .await
+                    .map_err(FileCacheError::Foyer)
                     .change_context(FragmentAccessError)?;
 
                 Ok(Access::Block {
@@ -109,6 +110,7 @@ impl InnerAccess {
                 let inner = store
                     .get_segment(segment_cursor, INDEX_FRAGMENT_NAME)
                     .await
+                    .map_err(FileCacheError::Foyer)
                     .change_context(FragmentAccessError)?;
 
                 Ok(Access::Segment {
@@ -133,6 +135,7 @@ impl InnerAccess {
                 let inner = store
                     .get_block(block_cursor)
                     .await
+                    .map_err(FileCacheError::Foyer)
                     .change_context(FragmentAccessError)?;
 
                 Ok(Access::Block {
@@ -149,6 +152,7 @@ impl InnerAccess {
                 let inner = store
                     .get_segment(segment_cursor, JOIN_FRAGMENT_NAME)
                     .await
+                    .map_err(FileCacheError::Foyer)
                     .change_context(FragmentAccessError)?;
 
                 Ok(Access::Segment {
@@ -174,6 +178,7 @@ impl InnerAccess {
                 let inner = store
                     .get_block(block_cursor)
                     .await
+                    .map_err(FileCacheError::Foyer)
                     .change_context(FragmentAccessError)?;
 
                 Ok(Access::Block {
@@ -190,6 +195,7 @@ impl InnerAccess {
                 let inner = store
                     .get_segment(segment_cursor, fragment_name)
                     .await
+                    .map_err(FileCacheError::Foyer)
                     .change_context(FragmentAccessError)?;
 
                 Ok(Access::Segment {
@@ -211,6 +217,7 @@ impl InnerAccess {
                 let inner = store
                     .get_block(block_cursor)
                     .await
+                    .map_err(FileCacheError::Foyer)
                     .change_context(FragmentAccessError)?;
 
                 Ok(Access::Block {
@@ -227,6 +234,7 @@ impl InnerAccess {
                 let inner = store
                     .get_segment(segment_cursor, HEADER_FRAGMENT_NAME)
                     .await
+                    .map_err(FileCacheError::Foyer)
                     .change_context(FragmentAccessError)?;
 
                 Ok(Access::Segment {
@@ -242,12 +250,12 @@ impl InnerAccess {
 
 pub enum Access<T: rkyv::Archive> {
     Block {
-        inner: Bytes,
+        inner: CachedFile,
         fragment_id: FragmentId,
         _phantom: std::marker::PhantomData<T>,
     },
     Segment {
-        inner: Bytes,
+        inner: CachedFile,
         offset: usize,
         fragment_id: FragmentId,
         _phantom: std::marker::PhantomData<T>,
@@ -260,7 +268,8 @@ impl Access<IndexFragment> {
             Access::Block {
                 inner, fragment_id, ..
             } => {
-                let block = unsafe { rkyv::access_unchecked::<rkyv::Archived<Block>>(inner) };
+                let block =
+                    unsafe { rkyv::access_unchecked::<rkyv::Archived<Block>>(inner.value()) };
 
                 let Some(pos) = block
                     .index
@@ -282,7 +291,9 @@ impl Access<IndexFragment> {
                 ..
             } => {
                 let segment = unsafe {
-                    rkyv::access_unchecked::<rkyv::Archived<Segment<IndexGroupFragment>>>(inner)
+                    rkyv::access_unchecked::<rkyv::Archived<Segment<IndexGroupFragment>>>(
+                        inner.value(),
+                    )
                 };
 
                 let block_index = &segment.data[*offset];
@@ -310,7 +321,8 @@ impl Access<JoinFragment> {
             Access::Block {
                 inner, fragment_id, ..
             } => {
-                let block = unsafe { rkyv::access_unchecked::<rkyv::Archived<Block>>(inner) };
+                let block =
+                    unsafe { rkyv::access_unchecked::<rkyv::Archived<Block>>(inner.value()) };
 
                 let Some(pos) = block
                     .join
@@ -332,7 +344,9 @@ impl Access<JoinFragment> {
                 ..
             } => {
                 let segment = unsafe {
-                    rkyv::access_unchecked::<rkyv::Archived<Segment<JoinGroupFragment>>>(inner)
+                    rkyv::access_unchecked::<rkyv::Archived<Segment<JoinGroupFragment>>>(
+                        inner.value(),
+                    )
                 };
 
                 let block_index = &segment.data[*offset];
@@ -358,7 +372,8 @@ impl Access<HeaderFragment> {
     pub fn access(&self) -> Result<&rkyv::Archived<HeaderFragment>, FragmentAccessError> {
         match self {
             Access::Block { inner, .. } => {
-                let block = unsafe { rkyv::access_unchecked::<rkyv::Archived<Block>>(inner) };
+                let block =
+                    unsafe { rkyv::access_unchecked::<rkyv::Archived<Block>>(inner.value()) };
                 Ok(&block.header)
             }
             Access::Segment { inner, offset, .. } => {
@@ -378,7 +393,8 @@ impl Access<BodyFragment> {
             Access::Block {
                 inner, fragment_id, ..
             } => {
-                let block = unsafe { rkyv::access_unchecked::<rkyv::Archived<Block>>(inner) };
+                let block =
+                    unsafe { rkyv::access_unchecked::<rkyv::Archived<Block>>(inner.value()) };
 
                 let Some(pos) = block
                     .body
