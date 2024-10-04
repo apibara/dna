@@ -19,6 +19,12 @@ members = [
     "starknet",
 ]
 
+[profile.maxperf]
+inherits = "release"
+codegen-units = 1
+lto = "fat"
+incremental = false
+
 [workspace.dependencies]
 alloy-primitives = "0.8"
 alloy-eips = "0.3.6"
