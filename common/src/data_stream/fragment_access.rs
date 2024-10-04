@@ -1,9 +1,9 @@
+use bytes::Bytes;
 use error_stack::{Result, ResultExt};
 
 use crate::{
     block_store::BlockStoreReader,
     core::Cursor,
-    file_cache::Mmap,
     fragment::{
         Block, BodyFragment, FragmentId, HeaderFragment, IndexFragment, IndexGroupFragment,
         JoinFragment, JoinGroupFragment, HEADER_FRAGMENT_ID, HEADER_FRAGMENT_NAME,
@@ -242,12 +242,12 @@ impl InnerAccess {
 
 pub enum Access<T: rkyv::Archive> {
     Block {
-        inner: Mmap,
+        inner: Bytes,
         fragment_id: FragmentId,
         _phantom: std::marker::PhantomData<T>,
     },
     Segment {
-        inner: Mmap,
+        inner: Bytes,
         offset: usize,
         fragment_id: FragmentId,
         _phantom: std::marker::PhantomData<T>,

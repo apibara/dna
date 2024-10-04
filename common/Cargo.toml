@@ -15,6 +15,7 @@ name = "index"
 harness = false
 
 [dependencies]
+anyhow = "1.0.89"
 apibara-etcd = { path = "../etcd" }
 apibara-observability = { path = "../observability" }
 apibara-dna-protocol = { path = "../protocol" }
@@ -27,6 +28,7 @@ crc32fast = "1.4.2"
 dirs.workspace = true
 error-stack.workspace = true
 etcd-client.workspace = true
+foyer.workspace = true
 futures.workspace = true
 hex.workspace = true
 memmap2.workspace = true

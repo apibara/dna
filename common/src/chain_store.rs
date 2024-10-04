@@ -1,10 +1,9 @@
 use bytes::Bytes;
 use error_stack::{Result, ResultExt};
-use rkyv::util::AlignedVec;
 
 use crate::{
     chain::CanonicalChainSegment,
-    file_cache::FileCache,
+    file_cache::{FileCache, FileCacheError},
     object_store::{GetOptions, ObjectETag, ObjectStore, ObjectStoreResultExt, PutOptions},
 };
 
@@ -98,34 +97,40 @@ impl ChainStore {
             return Ok(Some(segment));
         }
 
-        let mmap = if let Some(existing) = self.cache.get(&key).await {
-            existing
+        if let Some(existing) = self
+            .cache
+            .get(&key)
+            .await
+            .map_err(FileCacheError::Foyer)
+            .change_context(ChainStoreError)?
+        {
+            let segment = rkyv::from_bytes::<_, rkyv::rancor::Error>(existing.value())
+                .change_context(ChainStoreError)
+                .attach_printable("failed to deserialize chain segment")
+                .attach_printable_lazy(|| format!("name: {}", name))?;
+
+            Ok(Some(segment))
         } else {
             let Some(bytes) = self.get_as_bytes(&key, etag).await? else {
                 return Ok(None);
             };
 
-            self.cache
-                .insert(&key, bytes)
-                .await
+            let entry = self.cache.insert(key, bytes);
+
+            let segment = rkyv::from_bytes::<_, rkyv::rancor::Error>(entry.value())
                 .change_context(ChainStoreError)
-                .attach_printable("failed to insert chain segment into cache")
-                .attach_printable_lazy(|| format!("name: {}", name))?
-        };
+                .attach_printable("failed to deserialize chain segment")
+                .attach_printable_lazy(|| format!("name: {}", name))?;
 
-        let segment = rkyv::from_bytes::<_, rkyv::rancor::Error>(&mmap)
-            .change_context(ChainStoreError)
-            .attach_printable("failed to deserialize chain segment")
-            .attach_printable_lazy(|| format!("name: {}", name))?;
-
-        Ok(Some(segment))
+            Ok(Some(segment))
+        }
     }
 
     async fn get_as_bytes(
         &self,
         key: &str,
         etag: Option<ObjectETag>,
-    ) -> Result<Option<AlignedVec>, ChainStoreError> {
+    ) -> Result<Option<Bytes>, ChainStoreError> {
         match self.client.get(key, GetOptions { etag }).await {
             Ok(response) => Ok(Some(response.body)),
             Err(err) if err.is_not_found() => Ok(None),

@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
+use bytes::Bytes;
 use error_stack::{Result, ResultExt};
 
 use crate::{
-    file_cache::Mmap,
     fragment::{
         Block, BodyFragment, HeaderFragment, IndexGroupFragment, JoinGroupFragment,
         HEADER_FRAGMENT_NAME, INDEX_FRAGMENT_NAME, JOIN_FRAGMENT_NAME,
@@ -36,7 +36,7 @@ impl SegmentBuilder {
         Ok(())
     }
 
-    pub fn add_block(&mut self, cursor: &Cursor, bytes: Mmap) -> Result<(), CompactionError> {
+    pub fn add_block(&mut self, cursor: &Cursor, bytes: Bytes) -> Result<(), CompactionError> {
         let block = rkyv::from_bytes::<Block, rkyv::rancor::Error>(&bytes)
             .change_context(CompactionError)
             .attach_printable("failed to access block")?;
@@ -141,6 +141,7 @@ impl SegmentBuilder {
             let data = rkyv::to_bytes::<rkyv::rancor::Error>(&segment)
                 .change_context(CompactionError)
                 .attach_printable("failed to serialize index segment")?;
+            let data = Bytes::copy_from_slice(data.as_slice());
 
             serialized.push(SerializedSegment {
                 name: INDEX_FRAGMENT_NAME.to_string(),
@@ -157,6 +158,7 @@ impl SegmentBuilder {
             let data = rkyv::to_bytes::<rkyv::rancor::Error>(&segment)
                 .change_context(CompactionError)
                 .attach_printable("failed to serialize join segment")?;
+            let data = Bytes::copy_from_slice(data.as_slice());
 
             serialized.push(SerializedSegment {
                 name: JOIN_FRAGMENT_NAME.to_string(),
@@ -173,6 +175,7 @@ impl SegmentBuilder {
             let data = rkyv::to_bytes::<rkyv::rancor::Error>(&segment)
                 .change_context(CompactionError)
                 .attach_printable("failed to serialize header segment")?;
+            let data = Bytes::copy_from_slice(data.as_slice());
 
             serialized.push(SerializedSegment {
                 name: HEADER_FRAGMENT_NAME.to_string(),
@@ -196,6 +199,7 @@ impl SegmentBuilder {
             let data = rkyv::to_bytes::<rkyv::rancor::Error>(&segment)
                 .change_context(CompactionError)
                 .attach_printable("failed to serialize segment")?;
+            let data = Bytes::copy_from_slice(data.as_slice());
 
             serialized.push(SerializedSegment { name, data });
         }

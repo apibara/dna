@@ -1,288 +1,205 @@
-use std::{fs, io::Write, ops::Deref, path::PathBuf, sync::Arc};
+use std::{path::PathBuf, str::FromStr, sync::Arc};
 
-use moka::future::Cache;
-use rkyv::util::AlignedVec;
-use tracing::{debug, warn};
-use walkdir::WalkDir;
+use bytes::Bytes;
+use clap::Args;
+use error_stack::{Result, ResultExt};
+use foyer::{
+    AdmissionPicker, AdmitAllPicker, Compression, DirectFsDeviceOptions, Engine, HybridCache,
+    HybridCacheBuilder, LargeEngineOptions, RateLimitPicker, RecoverMode, RuntimeConfig,
+    TokioRuntimeConfig,
+};
 
-/// A `mmap` that can be cloned.
-#[derive(Clone)]
-pub struct Mmap(Arc<memmap2::Mmap>);
-
-#[derive(Debug, Clone)]
-pub struct FileCacheOptions {
-    pub base_dir: PathBuf,
-    pub max_size_bytes: u64,
+#[derive(Debug)]
+pub enum FileCacheError {
+    Config,
+    Foyer(anyhow::Error),
 }
 
-#[derive(Clone)]
-pub struct FileCache {
-    options: FileCacheOptions,
-    cache: Cache<String, Mmap>,
-}
+/// A cache with the content of remote files.
+pub type FileCache = HybridCache<String, Bytes>;
 
-impl FileCache {
-    pub fn disabled() -> Self {
-        let options = FileCacheOptions::default();
-        let cache = Cache::<String, Mmap>::builder().max_capacity(0).build();
-        Self { options, cache }
-    }
-
-    pub fn new(options: FileCacheOptions) -> Self {
-        let cache = Cache::<String, Mmap>::builder()
-            .max_capacity(options.max_size_bytes)
-            .weigher(|_, mmap| mmap.len() as u32)
-            .eviction_listener({
-                let base_dir = options.base_dir.clone();
-                move |relative_path, _, _| {
-                    debug!(path = ?relative_path, "evicting file from cache");
-                    let _ =
-                        fs::remove_file(base_dir.join(relative_path.as_ref())).inspect_err(|err| {
-                            warn!(error = ?err, "failed to evict file from cache");
-                        });
-                }
-            })
-            .build();
-
-        Self { options, cache }
-    }
-
-    pub async fn restore_from_disk(&self) -> std::io::Result<()> {
-        for entry in WalkDir::new(&self.options.base_dir)
-            .into_iter()
-            .filter_map(|e| e.ok())
-        {
-            let path = entry.path();
-            if path.is_file() {
-                let relative_path = path
-                    .strip_prefix(&self.options.base_dir)
-                    .map_err(std::io::Error::other)?;
-                let key = relative_path
-                    .to_str()
-                    .ok_or_else(|| std::io::Error::other("failed to convert path to string"))?
-                    .to_string();
-                let file = fs::File::open(path)?;
-                let mmap = Mmap::mmap(&file)?;
-                self.cache.insert(key, mmap).await;
-            }
-        }
-
-        Ok(())
-    }
-
-    pub async fn get(&self, path: impl AsRef<str>) -> Option<Mmap> {
-        self.cache.get(path.as_ref()).await
-    }
-
-    pub async fn contains_key(&self, path: impl AsRef<str>) -> bool {
-        self.cache.contains_key(path.as_ref())
-    }
-
-    #[tracing::instrument(
-        level = "info",
-        name = "file_cache_insert",
-        skip_all,
-        fields(path, data_size, cache_size)
+#[derive(Args, Debug)]
+pub struct FileCacheArgs {
+    /// Where to store cached data.
+    #[clap(long = "cache.dir", env = "DNA_CACHE_DIR")]
+    pub cache_dir: Option<String>,
+    /// Maximum size of the cache on disk.
+    #[clap(
+        long = "cache.size-disk",
+        env = "DNA_CACHE_SIZE_DISK",
+        default_value = "10Gi"
     )]
-    pub async fn insert(&self, path: impl Into<String>, data: AlignedVec) -> std::io::Result<Mmap> {
-        let current_span = tracing::Span::current();
-        let path = path.into();
+    pub cache_size_disk: String,
+    /// Size of the direct fs files.
+    #[clap(
+        long = "cache.file-size",
+        env = "DNA_CACHE_FILE_SIZE",
+        default_value = "1Gi"
+    )]
+    pub cache_file_size: String,
+    /// Maximum size of the cache in memory.
+    #[clap(
+        long = "cache.size-memory",
+        env = "DNA_CACHE_SIZE_MEMORY",
+        default_value = "2Gi"
+    )]
+    pub cache_size_memory: String,
+    /// Cache worker threads for reading.
+    #[clap(
+        long = "cache.runtime-read-threads",
+        env = "DNA_CACHE_RUNTIME_READ_THREADS",
+        default_value = "4"
+    )]
+    pub cache_runtime_read_threads: usize,
+    /// Cache worker threads for writing.
+    #[clap(
+        long = "cache.runtime-write-threads",
+        env = "DNA_CACHE_RUNTIME_WRITE_THREADS",
+        default_value = "4"
+    )]
+    pub cache_runtime_write_threads: usize,
+    /// Set how fast items can be inserted into the cache.
+    #[clap(
+        long = "cache.admission-rate-limit",
+        env = "DNA_CACHE_ADMISSION_RATE_LIMIT"
+    )]
+    pub cache_admission_rate_limit: Option<String>,
+    /// Set the compression algorithm.
+    ///
+    /// One of: none, lz4, zstd.
+    #[clap(
+        long = "cache.compression",
+        env = "DNA_CACHE_COMPRESSION",
+        default_value = "none"
+    )]
+    pub cache_compression: String,
+    /// Enable `sync` after writes.
+    #[clap(long = "cache.flush", env = "DNA_CACHE_FLUSH")]
+    pub cache_flush: bool,
+    /// Set the flusher count.
+    #[clap(
+        long = "cache.flusher-count",
+        env = "DNA_CACHE_FLUSHER_COUNT",
+        default_value = "2"
+    )]
+    pub cache_flusher_count: usize,
+    /// Set the flush buffer pool size.
+    #[clap(
+        long = "cache.flush-buffer-pool-size",
+        env = "DNA_CACHE_FLUSH_BUFFER_POOL_SIZE",
+        default_value = "1Gi"
+    )]
+    pub cache_flush_buffer_pool_size: String,
+}
 
-        current_span.record("path", &path);
-        current_span.record("data_size", data.len());
-        current_span.record("cache_size", self.weighted_size());
+impl FileCacheArgs {
+    pub async fn to_file_cache(&self) -> Result<FileCache, FileCacheError> {
+        let cache_dir = if let Some(cache_dir) = &self.cache_dir {
+            cache_dir
+                .parse::<PathBuf>()
+                .change_context(FileCacheError::Config)
+                .attach_printable("failed to parse cache dir")
+                .attach_printable_lazy(|| format!("cache dir: {}", cache_dir))?
+        } else {
+            dirs::data_local_dir()
+                .ok_or(FileCacheError::Config)
+                .attach_printable("failed to get data dir")?
+                .join("dna")
+        };
 
-        let file_path = self.options.base_dir.join(&path);
-        {
-            if let Some(root_dir) = file_path.parent() {
-                fs::create_dir_all(root_dir)?;
-            }
-            let mut file = fs::File::options()
-                .write(true)
-                .truncate(true)
-                .create(true)
-                .open(&file_path)?;
-            file.write_all(&data)?;
-            file.flush()?;
-        }
+        let max_size_memory_bytes = byte_unit::Byte::from_str(&self.cache_size_memory)
+            .change_context(FileCacheError::Config)
+            .attach_printable("failed to parse in memory cache size")
+            .attach_printable_lazy(|| format!("cache size: {}", self.cache_size_memory))?
+            .as_u64();
 
-        // Reopen the file.
-        let file = fs::File::open(&file_path)?;
-        let mmap = Mmap::mmap(&file)?;
+        let max_size_disk_bytes = byte_unit::Byte::from_str(&self.cache_size_disk)
+            .change_context(FileCacheError::Config)
+            .attach_printable("failed to parse on disk cache size")
+            .attach_printable_lazy(|| format!("cache size: {}", self.cache_size_disk))?
+            .as_u64();
 
-        self.cache.insert(path, mmap.clone()).await;
+        let file_size = byte_unit::Byte::from_str(&self.cache_file_size)
+            .change_context(FileCacheError::Config)
+            .attach_printable("failed to parse cache file size")
+            .attach_printable_lazy(|| format!("file size: {}", self.cache_file_size))?
+            .as_u64();
 
-        Ok(mmap)
-    }
+        let admission_picker: Arc<dyn AdmissionPicker<Key = String>> =
+            if let Some(rate_limit) = self.cache_admission_rate_limit.as_ref() {
+                let rate_limit = byte_unit::Byte::from_str(rate_limit)
+                    .change_context(FileCacheError::Config)
+                    .attach_printable("failed to parse admission rate limit")
+                    .attach_printable_lazy(|| format!("rate limit: {}", rate_limit))?
+                    .as_u64();
+                Arc::new(RateLimitPicker::new(rate_limit as usize))
+            } else {
+                Arc::new(AdmitAllPicker::default())
+            };
 
-    pub async fn remove(&self, path: impl AsRef<str>) {
-        self.cache.remove(path.as_ref()).await;
-    }
+        let compression = match self.cache_compression.as_str() {
+            "none" => Compression::None,
+            "lz4" => Compression::Lz4,
+            "zstd" => Compression::Zstd,
+            _ => Err(FileCacheError::Config)
+                .attach_printable("failed to parse compression")
+                .attach_printable_lazy(|| format!("compression: {}", self.cache_compression))?,
+        };
 
-    pub fn weighted_size(&self) -> u64 {
-        self.cache.weighted_size()
-    }
+        let flush_buffer_pool_size = byte_unit::Byte::from_str(&self.cache_flush_buffer_pool_size)
+            .change_context(FileCacheError::Config)
+            .attach_printable("failed to parse flush buffer pool size")
+            .attach_printable_lazy(|| {
+                format!(
+                    "flush buffer pool size: {}",
+                    self.cache_flush_buffer_pool_size
+                )
+            })?
+            .as_u64();
 
-    pub async fn run_pending_tasks(&self) {
-        self.cache.run_pending_tasks().await;
-    }
+        let builder = HybridCacheBuilder::new()
+            .with_name("dna.cache")
+            .memory(max_size_memory_bytes as usize)
+            .with_weighter(|_: &String, bytes: &Bytes| bytes.len())
+            .storage(Engine::Large)
+            .with_compression(compression)
+            .with_admission_picker(admission_picker)
+            .with_runtime_config(RuntimeConfig::Separated {
+                read_runtime_config: TokioRuntimeConfig {
+                    worker_threads: self.cache_runtime_read_threads,
+                    max_blocking_threads: self.cache_runtime_read_threads * 2,
+                },
+                write_runtime_config: TokioRuntimeConfig {
+                    worker_threads: self.cache_runtime_write_threads,
+                    max_blocking_threads: self.cache_runtime_write_threads * 2,
+                },
+            })
+            .with_large_object_disk_cache_options(
+                LargeEngineOptions::new()
+                    .with_flushers(self.cache_flusher_count)
+                    .with_buffer_pool_size(flush_buffer_pool_size as usize),
+            )
+            .with_flush(self.cache_flush)
+            .with_device_options(
+                DirectFsDeviceOptions::new(cache_dir)
+                    .with_capacity(max_size_disk_bytes as usize)
+                    .with_file_size(file_size as usize),
+            )
+            .with_recover_mode(RecoverMode::Quiet);
 
-    pub fn entry_count(&self) -> u64 {
-        self.cache.entry_count()
+        let cache = builder.build().await.map_err(FileCacheError::Foyer)?;
+
+        Ok(cache)
     }
 }
 
-impl Mmap {
-    #[allow(clippy::self_named_constructors)]
-    pub fn mmap<T>(file: T) -> Result<Self, std::io::Error>
-    where
-        T: memmap2::MmapAsRawDesc,
-    {
-        let inner = unsafe { memmap2::Mmap::map(file) }.map_err(std::io::Error::other)?;
-        Ok(Self(Arc::new(inner)))
-    }
+impl error_stack::Context for FileCacheError {}
 
-    pub fn len(&self) -> usize {
-        self.0.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-}
-
-impl Deref for Mmap {
-    type Target = [u8];
-
-    fn deref(&self) -> &Self::Target {
-        self.0.deref()
-    }
-}
-
-impl AsRef<[u8]> for Mmap {
-    fn as_ref(&self) -> &[u8] {
-        self.0.as_ref()
-    }
-}
-
-impl std::fmt::Debug for Mmap {
+impl std::fmt::Display for FileCacheError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Mmap")
-            .field("len", &self.0.len())
-            .field("ptr", &self.0.as_ptr())
-            .finish()
-    }
-}
-
-impl Default for FileCacheOptions {
-    fn default() -> Self {
-        Self {
-            base_dir: dirs::cache_dir()
-                .expect("failed to get cache dir")
-                .join("dna"),
-            max_size_bytes: 1024 * 1024 * 1024,
+        match self {
+            FileCacheError::Config => write!(f, "file cache builder error: config error"),
+            FileCacheError::Foyer(err) => write!(f, "file cache builder error: {}", err),
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::fs::{self, DirEntry};
-
-    use rkyv::util::AlignedVec;
-    use tempdir::TempDir;
-
-    use super::{FileCache, FileCacheOptions};
-
-    #[tokio::test]
-    async fn test_file_cache() {
-        let cache_dir = TempDir::new("file_cache_test").unwrap();
-
-        let options = FileCacheOptions {
-            base_dir: cache_dir.path().to_path_buf(),
-            max_size_bytes: 64,
-            ..Default::default()
-        };
-
-        let cache = FileCache::new(options);
-
-        for i in 0..12 {
-            let mut data = AlignedVec::with_capacity(5);
-            data.extend_from_slice(b"hello");
-            cache.insert(format!("test-{i}"), data).await.unwrap();
-            cache.run_pending_tasks().await;
-            assert_eq!(cache.entry_count(), i + 1);
-            assert_eq!(cache.weighted_size(), (i + 1) * 5);
-        }
-
-        cache.run_pending_tasks().await;
-
-        for i in 0..12 {
-            let in_cache = cache.contains_key(format!("test-{i}")).await;
-            assert!(in_cache);
-        }
-
-        let mut data = AlignedVec::with_capacity(50);
-        data.extend_from_slice(b"Chancellor on the brink of second bailout for banks.");
-        cache.insert(format!("large"), data).await.unwrap();
-
-        // Make large the most used file.
-        for _ in 0..5 {
-            cache.get(format!("large")).await.unwrap();
-        }
-
-        cache.run_pending_tasks().await;
-        assert_eq!(cache.weighted_size(), 57);
-
-        for i in 0..11 {
-            assert!(!cache.contains_key(format!("test-{i}")).await);
-        }
-
-        assert!(cache.contains_key("test-11").await);
-
-        let files = fs::read_dir(cache_dir.path())
-            .unwrap()
-            .collect::<Vec<std::io::Result<DirEntry>>>();
-        assert_eq!(files.len(), 2);
-    }
-
-    #[tokio::test]
-    async fn test_file_cache_restore_from_disk() {
-        let cache_dir = TempDir::new("file_cache_test").unwrap();
-
-        let options = FileCacheOptions {
-            base_dir: cache_dir.path().to_path_buf(),
-            max_size_bytes: 64,
-            ..Default::default()
-        };
-
-        {
-            let cache = FileCache::new(options.clone());
-
-            for i in 0..12 {
-                let mut data = AlignedVec::with_capacity(5);
-                data.extend_from_slice(b"hello");
-                cache
-                    .insert(format!("test/folder/test-{i}"), data)
-                    .await
-                    .unwrap();
-            }
-
-            cache.run_pending_tasks().await;
-            assert_eq!(cache.weighted_size(), 60);
-            assert_eq!(cache.entry_count(), 12);
-        }
-
-        let cache = FileCache::new(options);
-        assert_eq!(cache.weighted_size(), 0);
-        assert_eq!(cache.entry_count(), 0);
-
-        cache.restore_from_disk().await.unwrap();
-        cache.run_pending_tasks().await;
-
-        assert_eq!(cache.weighted_size(), 60);
-        assert_eq!(cache.entry_count(), 12);
-
-        assert!(cache.contains_key("test/folder/test-0").await);
     }
 }

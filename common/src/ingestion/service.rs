@@ -102,12 +102,13 @@ where
         ingestion: I,
         etcd_client: EtcdClient,
         object_store: ObjectStore,
+        file_cache: FileCache,
         options: IngestionServiceOptions,
     ) -> Self {
-        let file_cache = FileCache::disabled();
-        let chain_store = ChainStore::new(object_store.clone(), file_cache.clone());
+        let chain_store = ChainStore::new(object_store.clone(), file_cache);
         let block_store = BlockStoreWriter::new(object_store);
         let state_client = IngestionStateClient::new(&etcd_client);
+
         Self {
             options,
             ingestion: IngestionInner {

@@ -137,7 +137,7 @@ impl SegmentService {
 
                 for segment in segment_data {
                     self.block_store_writer
-                        .put_segment(&first_block_in_segment, &segment)
+                        .put_segment(&first_block_in_segment, segment)
                         .await
                         .change_context(CompactionError)
                         .attach_printable("failed to put segment")?;

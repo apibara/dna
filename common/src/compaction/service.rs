@@ -34,11 +34,11 @@ impl CompactionService {
     pub fn new(
         etcd_client: EtcdClient,
         object_store: ObjectStore,
+        file_cache: FileCache,
         chain_view: tokio::sync::watch::Receiver<Option<ChainView>>,
         options: CompactionServiceOptions,
     ) -> Self {
-        let file_cache = FileCache::disabled();
-        let block_store_reader = BlockStoreReader::new(object_store.clone(), file_cache.clone());
+        let block_store_reader = BlockStoreReader::new(object_store.clone(), file_cache);
         let block_store_writer = BlockStoreWriter::new(object_store);
         let state_client = IngestionStateClient::new(&etcd_client);
 

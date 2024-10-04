@@ -1,6 +1,7 @@
 //! A segment is a collection of fragments from different blocks.
 
-use rkyv::{util::AlignedVec, Archive, Deserialize, Serialize};
+use bytes::Bytes;
+use rkyv::{Archive, Deserialize, Serialize};
 
 use crate::{fragment::IndexGroupFragment, Cursor};
 
@@ -30,5 +31,5 @@ pub struct SegmentGroup {
 /// A segment ready to be written to the storage.
 pub struct SerializedSegment {
     pub name: String,
-    pub data: AlignedVec,
+    pub data: Bytes,
 }

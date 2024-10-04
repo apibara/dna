@@ -11,6 +11,7 @@ use error_stack::{Result, ResultExt};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
+use crate::file_cache::FileCache;
 use crate::{chain_view::ChainView, object_store::ObjectStore, options_store::OptionsStore};
 
 pub use self::cli::CompactionArgs;
@@ -21,6 +22,7 @@ pub async fn compaction_service_loop(
     etcd_client: EtcdClient,
     object_store: ObjectStore,
     chain_view: tokio::sync::watch::Receiver<Option<ChainView>>,
+    file_cache: FileCache,
     options: CompactionServiceOptions,
     ct: CancellationToken,
 ) -> Result<(), CompactionError> {
@@ -87,6 +89,7 @@ pub async fn compaction_service_loop(
         let compaction_service = CompactionService::new(
             etcd_client.clone(),
             object_store.clone(),
+            file_cache.clone(),
             chain_view.clone(),
             options.clone(),
         );

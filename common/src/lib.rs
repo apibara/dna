@@ -49,8 +49,8 @@ mod server_impl {
 
     use crate::{
         block_store::BlockStoreReader, chain_view::chain_view_sync_loop,
-        compaction::compaction_service_loop, file_cache::FileCache, fragment,
-        ingestion::ingestion_service_loop, server::server_loop, ChainSupport, StartArgs,
+        compaction::compaction_service_loop, fragment, ingestion::ingestion_service_loop,
+        server::server_loop, ChainSupport, StartArgs,
     };
     use error_stack::ResultExt;
     use tokio_util::sync::CancellationToken;
@@ -81,6 +81,12 @@ mod server_impl {
             "connected to etcd cluster"
         );
 
+        let file_cache = args
+            .cache
+            .to_file_cache()
+            .await
+            .change_context(ServerError)?;
+
         let ingestion_options = args.ingestion.to_ingestion_service_options();
 
         let ingestion_handle = if args.ingestion.ingestion_enabled {
@@ -89,6 +95,7 @@ mod server_impl {
                 ingestion,
                 etcd_client.clone(),
                 object_store.clone(),
+                file_cache.clone(),
                 ingestion_options,
                 ct.clone(),
             ))
@@ -101,16 +108,6 @@ mod server_impl {
                 }
             })
         };
-
-        let file_cache_options = args
-            .server
-            .to_file_cache_options()
-            .change_context(ServerError)?;
-        let file_cache = FileCache::new(file_cache_options);
-        file_cache
-            .restore_from_disk()
-            .await
-            .change_context(ServerError)?;
 
         let (chain_view, chain_view_sync) = chain_view_sync_loop(
             file_cache.clone(),
@@ -130,6 +127,7 @@ mod server_impl {
                 etcd_client.clone(),
                 object_store.clone(),
                 chain_view.clone(),
+                file_cache.clone(),
                 options,
                 ct.clone(),
             ))

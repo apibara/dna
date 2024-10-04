@@ -5,6 +5,7 @@ use error_stack::Result;
 
 use crate::{
     compaction::CompactionArgs,
+    file_cache::FileCacheArgs,
     ingestion::IngestionArgs,
     object_store::{ObjectStore, ObjectStoreOptions},
     server::ServerArgs,
@@ -22,6 +23,8 @@ pub struct StartArgs {
     pub compaction: CompactionArgs,
     #[clap(flatten)]
     pub server: ServerArgs,
+    #[clap(flatten)]
+    pub cache: FileCacheArgs,
 }
 
 #[derive(Args, Clone, Debug)]

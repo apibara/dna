@@ -8,6 +8,7 @@ use error_stack::{Result, ResultExt};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
+use crate::file_cache::FileCache;
 use crate::object_store::ObjectStore;
 use crate::options_store::OptionsStore;
 
@@ -23,6 +24,7 @@ pub async fn ingestion_service_loop<I>(
     ingestion: I,
     etcd_client: EtcdClient,
     object_store: ObjectStore,
+    file_cache: FileCache,
     options: IngestionServiceOptions,
     ct: CancellationToken,
 ) -> Result<(), IngestionError>
@@ -76,6 +78,7 @@ where
             ingestion.clone(),
             etcd_client.clone(),
             object_store.clone(),
+            file_cache.clone(),
             options.clone(),
         );
 
