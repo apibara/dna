@@ -32,7 +32,6 @@ foyer.workspace = true
 futures.workspace = true
 hex.workspace = true
 memmap2.workspace = true
-moka.workspace = true
 prost.workspace = true
 rkyv.workspace = true
 roaring.workspace = true
@@ -44,7 +43,6 @@ tonic.workspace = true
 tonic-health.workspace = true
 tonic-reflection.workspace = true
 tracing.workspace = true
-walkdir.workspace = true
 zstd.workspace = true
 
 [dev-dependencies]
