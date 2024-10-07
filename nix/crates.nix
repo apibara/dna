@@ -22,9 +22,9 @@ let
     nativeBuildInputs = with pkgs; [
       cargo-nextest
       cargo-flamegraph
-      cargo-llvm-cov
+      # cargo-llvm-cov
       cargo-edit
-      cargo-udeps
+      # cargo-udeps
       samply
       clang
       cmake
@@ -44,8 +44,8 @@ let
       SystemConfiguration
     ]);
 
-    LLVM_COV = "${pkgs.libllvm}/bin/llvm-cov";
-    LLVM_PROFDATA = "${pkgs.libllvm}/bin/llvm-profdata";
+    # LLVM_COV = "${pkgs.libllvm}/bin/llvm-cov";
+    # LLVM_PROFDATA = "${pkgs.libllvm}/bin/llvm-profdata";
 
     # used by bindgen
     LIBCLANG_PATH = pkgs.lib.makeLibraryPath [
