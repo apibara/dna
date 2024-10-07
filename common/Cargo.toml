@@ -10,10 +10,6 @@ license.workspace = true
 name = "apibara_dna_common"
 path = "src/lib.rs"
 
-[[bench]]
-name = "index"
-harness = false
-
 [dependencies]
 anyhow = "1.0.89"
 apibara-etcd = { path = "../etcd" }
@@ -46,7 +42,6 @@ tracing.workspace = true
 zstd.workspace = true
 
 [dev-dependencies]
-divan.workspace = true
 rand.workspace = true
 tempfile.workspace = true
 tempdir.workspace = true
