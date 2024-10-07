@@ -28,7 +28,7 @@ incremental = false
 [workspace.dependencies]
 alloy-primitives = "0.8"
 alloy-eips = "0.3.6"
-bytes = "1.7.1"
+bytes = { version = "1.7.1", features = ["serde"] }
 byte-unit = "5.1.4"
 clap = { version = "4.5.13", features = [
     "derive",
