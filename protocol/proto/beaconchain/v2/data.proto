@@ -1,0 +1,154 @@
+// Beacon Chain DNA definitions (data).
+syntax = "proto3";
+
+package beaconchain.v2;
+
+import "google/protobuf/timestamp.proto";
+import "v2/common.proto";
+
+// Requested data, grouped by block.
+message Block {
+  // The header.
+  BlockHeader header = 1;
+  // List of transactions.
+  repeated Transaction transactions = 2;
+  // List of validators.
+  repeated Validator validators = 3;
+  // List of blobs.
+  repeated Blob blobs = 4;
+}
+
+message BlockHeader {
+  // Block slot.
+  uint64 slot = 1;
+  // Proposer index.
+  uint32 proposer_index = 2;
+  // Parent root.
+  B256 parent_root = 3;
+  // State root.
+  B256 state_root = 4;
+  // Randao reveal.
+  bytes randao_reveal = 5;
+  // Deposit count.
+  uint64 deposit_count = 6;
+  // Deposit state root.
+  B256 deposit_root = 7;
+  // Block hash.
+  B256 block_hash = 8;
+  // Graffiti.
+  B256 graffiti = 9;
+  // Execution payload.
+  ExecutionPayload execution_payload = 10;
+  // Blob kzg commitments.
+  repeated B384 blob_kzg_commitments = 11;
+}
+
+message Transaction {
+  repeated uint32 filter_ids = 1;
+  // Transaction hash.
+  B256 transaction_hash = 2;
+  // Nonce.
+  uint64 nonce = 3;
+  // Transaction index in the block.
+  uint32 transaction_index = 4;
+  // Sender.
+  Address from = 5;
+  // Recipient.
+  Address to = 6;
+  // Amount of wei transferred.
+  U256 value = 7;
+  // Gas price.
+  U128 gas_price = 8;
+  // Gas amount.
+  U128 gas_limit = 9;
+  // Max base fee per gas the sender is willing to pay.
+  U128 max_fee_per_gas = 10;
+  // Miner's tip.
+  U128 max_priority_fee_per_gas = 11;
+  // Data.
+  bytes input = 12;
+  // The signature's r,s,v,yParity values.
+  Signature signature = 13;
+  // Chain ID.
+  optional uint64 chain_id = 14;
+  // EIP-2930 access list.
+  repeated AccessListItem access_list = 15;
+  // EIP-2718 transaction type.
+  uint64 transaction_type = 16;
+  // EIP-4844 max gas fee per blob.
+  U128 max_fee_per_blob_gas = 17;
+  // EIP-4844 blob hashes.
+  repeated B256 blob_versioned_hashes = 18;
+}
+
+message Validator {
+  repeated uint32 filter_ids = 1;
+  uint32 validator_index = 2;
+  uint64 balance = 3;
+  ValidatorStatus status = 4;
+  B384 pubkey = 5;
+  B256 withdrawal_credentials = 6;
+  uint64 effective_balance = 7;
+  bool slashed = 8;
+  uint64 activation_eligibility_epoch = 9;
+  uint64 activation_epoch = 10;
+  uint64 exit_epoch = 11;
+  uint64 withdrawable_epoch = 12;
+}
+
+message Blob {
+  repeated uint32 filter_ids = 1;
+  // Blob index in the block.
+  uint32 blob_index = 2;
+  // Blob data.
+  bytes blob = 3;
+  // KZG commitment.
+  B384 kzg_commitment = 4;
+  // KZG proof.
+  B384 kzg_proof = 5;
+  // KZG commitment inclusion proof.
+  repeated B256 kzg_commitment_inclusion_proof = 6;
+  // Blob hash.
+  B256 blob_hash = 7;
+  // Index of the transaction that posted the blob.
+  uint32 transaction_index = 8;
+  // Hash of the transaction that posted the blob.
+  B256 transaction_hash = 9;
+}
+
+message ExecutionPayload {
+  // Parent block hash.
+  B256 parent_hash = 1;
+  // Address of the fee recipient.
+  Address fee_recipient = 2;
+  // State root.
+  B256 state_root = 3;
+  // Receipts root.
+  B256 receipts_root = 4;
+  // Logs bloom.
+  bytes logs_bloom = 5;
+  // Previous RANDAO.
+  B256 prev_randao = 6;
+  // Block number.
+  uint64 block_number = 7;
+  // Block timestamp.
+  google.protobuf.Timestamp timestamp = 8;
+}
+
+message Signature {
+  // The signature's r value.
+  U256 r = 1;
+  // The signature's s value.
+  U256 s = 2;
+  // The signature's v value.
+  // U256 v = 3;
+  // The signature's parity byte.
+  // bool y_parity = 4;
+}
+
+message AccessListItem {
+  // Account address to be loaded at the start of the transaction.
+  Address address = 1;
+  // Storage keys to be loaded at the start of the transaction.
+  repeated B256 storage_keys = 2;
+}

@@ -1,0 +1,6 @@
+[target.'cfg(all())']
+rustflags = ["--cfg", "tokio_unstable"]
+
+[profile.profiling]
+inherits = "release"
+debug = true

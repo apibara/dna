@@ -1,0 +1,143 @@
+// Starknet DNA definitions (filter).
+syntax = "proto3";
+
+package starknet.v2;
+
+import "v2/common.proto";
+
+message Filter {
+  // Include header.
+  HeaderFilter header = 1;
+  // Filter transactions.
+  repeated TransactionFilter transactions = 2;
+  // Filter events.
+  repeated EventFilter events = 3;
+  // Filter messages to L1.
+  repeated MessageToL1Filter messages = 4;
+}
+
+message HeaderFilter {
+  // Always include header data. Defaults to `false`.
+  optional bool always = 1;
+}
+
+// Filter events.
+message EventFilter {
+  uint32 id = 1;
+  // Filter by contract emitting the event.
+  FieldElement address = 2;
+  // Filter keys that prefix-match the given data.
+  repeated Key keys = 3;
+  // Only returns events with keys of exactly the same length as the filter.
+  //
+  // Defaults to `false`.
+  optional bool strict = 4;
+  // Filter based on the transaction status.
+  //
+  // Defaults to `Succeeded`.
+  optional TransactionStatusFilter transaction_status = 5;
+  // Include the transaction that emitted the event.
+  //
+  // Defaults to false.
+  optional bool include_transaction = 6;
+  // Include the receipt of the transaction that emitted the event.
+  //
+  // Defaults to false.
+  optional bool include_receipt = 7;
+  // Include the messages to L1 sent by the transaction that emitted the event.
+  //
+  // Defaults to false.
+  optional bool include_messages = 8;
+  // Include sibling events, that is events emitted by the same transaction.
+  //
+  // Defaults to false.
+  optional bool include_siblings = 9;
+}
+
+message Key {
+  // The event key. If empty, matches any event key.
+  FieldElement value = 1;
+}
+
+// Filter messages to L1.
+message MessageToL1Filter {
+  uint32 id = 1;
+  // Filter by sender address.
+  FieldElement from_address = 2;
+  // Filter by destination address.
+  FieldElement to_address = 3;
+  // Filter based on the transaction status.
+  //
+  // Defaults to `Succeeded`.
+  optional TransactionStatusFilter transaction_status = 4;
+  // Include the transaction that sent the message.
+  //
+  // Defaults to false.
+  optional bool include_transaction = 5;
+  // Include the receipt of the transaction that sent the message.
+  //
+  // Defaults to false.
+  optional bool include_receipt = 6;
+  // Include the events of the transaction that sent the message.
+  //
+  // Defaults to false.
+  optional bool include_events = 7;
+  // Include the messages of the transaction that sent the message.
+  //
+  // Defaults to false.
+  optional bool include_siblings = 8;
+}
+
+// Filter transactions.
+message TransactionFilter {
+  uint32 id = 1;
+  // Filter based on the transaction status.
+  //
+  // Defaults to `Succeeded`.
+  optional TransactionStatusFilter transaction_status = 2;
+  // Flag to request the transaction's receipt.
+  //
+  // Defaults to `false`.
+  optional bool include_receipt = 3;
+  // Flag to request the transaction's events.
+  //
+  // Defaults to `false`.
+  optional bool include_events = 4;
+  // Flag to request the transaction's messages to L1.
+  //
+  // Defaults to `false`.
+  optional bool include_messages = 5;
+
+  oneof inner {
+    InvokeTransactionV0Filter invoke_v0 = 6;
+    InvokeTransactionV1Filter invoke_v1 = 7;
+    InvokeTransactionV3Filter invoke_v3 = 8;
+    DeployTransactionFilter deploy = 9;
+    DeclareV0TransactionFilter declare_v0 = 10;
+    DeclareV1TransactionFilter declare_v1 = 11;
+    DeclareV2TransactionFilter declare_v2 = 12;
+    DeclareV3TransactionFilter declare_v3 = 13;
+    L1HandlerTransactionFilter l1_handler = 14;
+    DeployAccountV1TransactionFilter deploy_account_v1 = 15;
+    DeployAccountV3TransactionFilter deploy_account_v3 = 16;
+  }
+}
+
+message InvokeTransactionV0Filter {}
+message InvokeTransactionV1Filter {}
+message InvokeTransactionV3Filter {}
+message DeployTransactionFilter {}
+message DeclareV0TransactionFilter {}
+message DeclareV1TransactionFilter {}
+message DeclareV2TransactionFilter {}
+message DeclareV3TransactionFilter {}
+message L1HandlerTransactionFilter {}
+message DeployAccountV1TransactionFilter {}
+message DeployAccountV3TransactionFilter {}
+
+enum TransactionStatusFilter {
+  TRANSACTION_STATUS_FILTER_UNSPECIFIED = 0;
+  TRANSACTION_STATUS_FILTER_SUCCEEDED = 1;
+  TRANSACTION_STATUS_FILTER_REVERTED = 2;
+  TRANSACTION_STATUS_FILTER_ALL = 3;
+}

@@ -5,12 +5,15 @@ let
     extensions = [ "rust-src" "rust-analyzer" ];
   };
 
+  nightlyRustToolchain = pkgs.rust-bin.selectLatestNightlyWith (toolchain: toolchain.default);
+
   craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
 
   src = pkgs.lib.cleanSourceWith {
     src = craneLib.path workspaceDir;
     filter = path: type:
       (builtins.match ".*proto$" path != null) # include protobufs
+      || (builtins.match ".*fbs$" path != null) # include flatbuffers
       || (builtins.match ".*js$" path != null) # include js (for deno runtime)
       || (craneLib.filterCargoSources path type); # include rust/cargo
   };
@@ -18,14 +21,22 @@ let
   buildArgs = ({
     nativeBuildInputs = with pkgs; [
       cargo-nextest
+      cargo-flamegraph
+      # cargo-llvm-cov
+      cargo-edit
+      # cargo-udeps
+      samply
       clang
       cmake
       llvmPackages.libclang.lib
+      libllvm
       pkg-config
       protobuf
+      flatbuffers
       rustToolchain
-      openssl
+      openssl.dev
       jq
+      sqlite
     ] ++ pkgs.lib.optional stdenv.isDarwin (with pkgs.darwin.apple_sdk.frameworks; [
       CoreFoundation
       CoreServices
@@ -33,11 +44,9 @@ let
       SystemConfiguration
     ]);
 
-    buildInputs = with pkgs; [
-      librusty_v8
-    ];
+    # LLVM_COV = "${pkgs.libllvm}/bin/llvm-cov";
+    # LLVM_PROFDATA = "${pkgs.libllvm}/bin/llvm-profdata";
 
-    RUSTY_V8_ARCHIVE = "${pkgs.librusty_v8}/lib/librusty_v8.a";
     # used by bindgen
     LIBCLANG_PATH = pkgs.lib.makeLibraryPath [
       pkgs.llvmPackages.libclang.lib
@@ -98,7 +107,7 @@ let
     '';
 
     checkPhaseCargoCommand = ''
-      cargo nextest archive --cargo-profile $CARGO_PROFILE --archive-format tar-zst --archive-file $out/archive.tar.zst
+      cargo nextest archive --cargo-profile $CARGO_PROFILE --workspace --archive-format tar-zst --archive-file $out/archive.tar.zst
     '';
   });
 
@@ -322,10 +331,29 @@ in
       inputsFrom = [
         allCrates
       ];
-
-      buildInputs = buildArgs.buildInputs ++ [
-        pkgs.kubernetes-helm
+      buildInputs = with pkgs; [
+        kubernetes-helm
+        tokio-console
       ];
+    });
+
+    nightly = pkgs.mkShell (buildArgs // {
+      nativeBuildInputs = with pkgs; [
+        nightlyRustToolchain
+        cargo-udeps
+        clang
+        cmake
+        llvmPackages.libclang.lib
+        pkg-config
+        protobuf
+        flatbuffers
+        openssl
+      ] ++ pkgs.lib.optional stdenv.isDarwin (with pkgs.darwin.apple_sdk.frameworks; [
+        CoreFoundation
+        CoreServices
+        Security
+        SystemConfiguration
+      ]);
     });
 
     # Integration tests require an internet connection, which is
