@@ -50,4 +50,3 @@ divan.workspace = true
 rand.workspace = true
 tempfile.workspace = true
 tempdir.workspace = true
-testcontainers.workspace = true

@@ -13,7 +13,7 @@ fn main() -> Result<()> {
         .build_server(true)
         .bytes([".dna.v2.stream.Data.data"])
         .file_descriptor_set_path(out_dir.join(DNA_STREAM_DESCRIPTOR_FILE))
-        .compile(&["proto/dna/v2/stream.proto"], &["proto/dna/"])?;
+        .compile_protos(&["proto/dna/v2/stream.proto"], &["proto/dna/"])?;
 
     /*
      * EVM
@@ -22,7 +22,7 @@ fn main() -> Result<()> {
         .build_client(true)
         .build_server(true)
         .file_descriptor_set_path(out_dir.join(EVM_DESCRIPTOR_FILE))
-        .compile(
+        .compile_protos(
             &["proto/evm/v2/data.proto", "proto/evm/v2/filter.proto"],
             &["proto/evm/"],
         )?;
@@ -34,7 +34,7 @@ fn main() -> Result<()> {
         .build_client(true)
         .build_server(true)
         .file_descriptor_set_path(out_dir.join(STARKNET_DESCRIPTOR_FILE))
-        .compile(
+        .compile_protos(
             &[
                 "proto/starknet/v2/data.proto",
                 "proto/starknet/v2/filter.proto",
@@ -49,7 +49,7 @@ fn main() -> Result<()> {
         .build_client(true)
         .build_server(true)
         .file_descriptor_set_path(out_dir.join(STARKNET_DESCRIPTOR_FILE))
-        .compile(
+        .compile_protos(
             &[
                 "proto/beaconchain/v2/data.proto",
                 "proto/beaconchain/v2/filter.proto",

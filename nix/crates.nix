@@ -107,7 +107,7 @@ let
     '';
 
     checkPhaseCargoCommand = ''
-      cargo nextest archive --cargo-profile $CARGO_PROFILE --archive-format tar-zst --archive-file $out/archive.tar.zst
+      cargo nextest archive --cargo-profile $CARGO_PROFILE --workspace --archive-format tar-zst --archive-file $out/archive.tar.zst
     '';
   });
 
