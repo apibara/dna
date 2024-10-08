@@ -1,0 +1,6 @@
+[target.'cfg(all())']
+rustflags = ["--cfg", "tracing_unstable"]
+
+[profile.profiling]
+inherits = "release"
+debug = true

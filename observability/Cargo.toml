@@ -8,9 +8,11 @@ license.workspace = true
 
 [dependencies]
 error-stack.workspace = true
+nu-ansi-term = "0.50.1"
 opentelemetry.workspace = true
 opentelemetry-otlp.workspace = true
+opentelemetry_sdk.workspace = true
+time.workspace = true
 tracing.workspace = true
 tracing-opentelemetry.workspace = true
 tracing-subscriber.workspace = true
-tracing-tree.workspace = true

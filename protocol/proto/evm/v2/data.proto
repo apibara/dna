@@ -1,0 +1,202 @@
+// EVM DNA definitions (data).
+syntax = "proto3";
+
+package evm.v2;
+
+import "google/protobuf/timestamp.proto";
+import "v2/common.proto";
+
+// Requested data, grouped by block.
+message Block {
+  // The header.
+  BlockHeader header = 1;
+  // List of withdrawals.
+  repeated Withdrawal withdrawals = 2;
+  // List of transactions.
+  repeated Transaction transactions = 3;
+  // List of receipts.
+  repeated TransactionReceipt receipts = 4;
+  // List of logs.
+  repeated Log logs = 5;
+}
+
+// Block header.
+message BlockHeader {
+  // Block number.
+  uint64 block_number = 1;
+  // Hash of the block.
+  B256 block_hash = 2;
+  // Hash of the parent block.
+  B256 parent_block_hash = 3;
+  // Hash of the uncles.
+  B256 uncles_hash = 4;
+  // Author of the block.
+  Address miner = 5;
+  // State root hash.
+  B256 state_root = 6;
+  // Transactions root hash.
+  B256 transactions_root = 7;
+  // Receipts root hash.
+  B256 receipts_root = 8;
+  // Logs bloom.
+  Bloom logs_bloom = 9;
+  // Difficulty.
+  U256 difficulty = 10;
+  // Gas limit.
+  U128 gas_limit = 11;
+  // Gas used.
+  U128 gas_used = 12;
+  // Timestamp.
+  google.protobuf.Timestamp timestamp = 13;
+  // Extra data.
+  bytes extra_data = 14;
+  // Mix hash.
+  B256 mix_hash = 15;
+  // Nonce.
+  optional uint64 nonce = 16;
+  // Base fee per unit of gas.
+  U128 base_fee_per_gas = 17;
+  // Withdrawals root hash.
+  B256 withdrawals_root = 18;
+
+  // Additional fields.
+
+  // Total difficulty.
+  U256 total_difficulty = 19;
+
+  // SKIPPED: withdrawals - included at top level.
+
+  // Blob gas used.
+  U128 blob_gas_used = 20;
+  // Excess blob gas.
+  U128 excess_blob_gas = 21;
+  // Parent beacon block root.
+  B256 parent_beacon_block_root = 22;
+}
+
+// A validator's withdrawal from the consensus layer.
+message Withdrawal {
+  repeated uint32 filter_ids = 1;
+  // Withdrawal index in the block.
+  uint32 withdrawal_index = 2;
+  // Increasing index of the withdrawal.
+  uint64 index = 3;
+  // Index of the validator.
+  uint32 validator_index = 4;
+  // Target address of the withdrawal.
+  Address address = 5;
+  // Value of the withdrawal, in gwei.
+  uint64 amount = 6;
+}
+
+message Transaction {
+  repeated uint32 filter_ids = 1;
+  // Transaction index in the block.
+  uint32 transaction_index = 2;
+  // Transaction hash.
+  B256 transaction_hash = 3;
+  // Nonce.
+  uint64 nonce = 4;
+  // Sender.
+  Address from = 5;
+  // Recipient.
+  Address to = 6;
+  // Amount of wei transferred.
+  U256 value = 7;
+  // Gas price.
+  U128 gas_price = 8;
+  // Gas amount.
+  U128 gas = 9;
+  // Max base fee per gas the sender is willing to pay.
+  U128 max_fee_per_gas = 10;
+  // Miner's tip.
+  U128 max_priority_fee_per_gas = 11;
+  // Data.
+  bytes input = 12;
+  // The signature's r,s,v,yParity values.
+  Signature signature = 13;
+  // Chain ID.
+  optional uint64 chain_id = 14;
+  // EIP-2930 access list.
+  repeated AccessListItem access_list = 15;
+  // EIP-2718 transaction type.
+  uint64 transaction_type = 16;
+  // EIP-4844 max gas fee per blob.
+  U128 max_fee_per_blob_gas = 17;
+  // EIP-4844 blob hashes.
+  repeated B256 blob_versioned_hashes = 18;
+  // The transaction status.
+  TransactionStatus transaction_status = 19;
+}
+
+message TransactionReceipt {
+  repeated uint32 filter_ids = 1;
+  // Index of the transaction in the block.
+  uint32 transaction_index = 2;
+  // Transaction hash.
+  B256 transaction_hash = 3;
+  // Cumulative gas used in the block after this transaction has been executed.
+  U128 cumulative_gas_used = 4;
+  // Gas used by this transaction.
+  U128 gas_used = 5;
+  // The price paid by the transaction.
+  U128 effective_gas_price = 6;
+  // Sender.
+  Address from = 7;
+  // Recipient, if any.
+  Address to = 8;
+  // Contract address created, if any.
+  Address contract_address = 9;
+  // Logs bloom.
+  Bloom logs_bloom = 10;
+  // EIP-2718 transaction type.
+  uint64 transaction_type = 11;
+  // EIP-4844 blob gas used.
+  U128 blob_gas_used = 12;
+  // EIP-4844 blob gas paid by the transaction.
+  U128 blob_gas_price = 13;
+  // The transaction status.
+  TransactionStatus transaction_status = 14;
+}
+
+message Log {
+  repeated uint32 filter_ids = 1;
+  // Index of the log in the block.
+  uint32 log_index = 2;
+  // Address of the contract that emitted the log.
+  Address address = 3;
+  // Log topics.
+  repeated B256 topics = 4;
+  // Additional data.
+  bytes data = 5;
+  // Index of the transaction that emitted the log.
+  uint32 transaction_index = 6;
+  // Hash of the transaction that emitted the log.
+  B256 transaction_hash = 7;
+  // The transaction status.
+  TransactionStatus transaction_status = 8;
+}
+
+message Signature {
+  // The signature's r value.
+  U256 r = 1;
+  // The signature's s value.
+  U256 s = 2;
+  // The signature's v value.
+  U256 v = 3;
+  // The signature's parity byte.
+  optional bool y_parity = 4;
+}
+
+message AccessListItem {
+  // Account address to be loaded at the start of the transaction.
+  Address address = 1;
+  // Storage keys to be loaded at the start of the transaction.
+  repeated B256 storage_keys = 2;
+}
+
+enum TransactionStatus {
+  TRANSACTION_STATUS_UNSPECIFIED = 0;
+  TRANSACTION_STATUS_SUCCEEDED = 1;
+  TRANSACTION_STATUS_REVERTED = 2;
+}

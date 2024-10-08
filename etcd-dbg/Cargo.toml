@@ -1,0 +1,17 @@
+[package]
+name = "apibara-etcd-dbg"
+version = "0.1.0"
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+apibara-etcd = { path = "../etcd" }
+apibara-observability = { path = "../observability" }
+clap.workspace = true
+error-stack.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true
+tokio-util.workspace = true
+tracing.workspace = true

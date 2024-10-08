@@ -1,0 +1,385 @@
+// Starknet DNA definitions (data).
+syntax = "proto3";
+
+package starknet.v2;
+
+import "google/protobuf/timestamp.proto";
+import "v2/common.proto";
+
+// Requested data, grouped by block.
+message Block {
+  // The header.
+  BlockHeader header = 1;
+  // List of transactions.
+  repeated Transaction transactions = 2;
+  // List of transactions receipts.
+  repeated TransactionReceipt receipts = 3;
+  // List of events.
+  repeated Event events = 4;
+  // List of messages.
+  repeated MessageToL1 messages = 5;
+}
+
+// Block header.
+message BlockHeader {
+  // Hash of the block.
+  FieldElement block_hash = 1;
+  // Hash of the block's parent.
+  FieldElement parent_block_hash = 2;
+  // Block height.
+  uint64 block_number = 3;
+  // Sequencer address.
+  FieldElement sequencer_address = 4;
+  // New state root after the block.
+  FieldElement new_root = 5;
+  // Timestamp when block  was produced.
+  google.protobuf.Timestamp timestamp = 6;
+  // Starknet version.
+  string starknet_version = 7;
+  // Price of L1 gas in the block.
+  ResourcePrice l1_gas_price = 8;
+  // Price of L1 data gas in the block.
+  ResourcePrice l1_data_gas_price = 9;
+  // L1 data availability mode.
+  L1DataAvailabilityMode l1_data_availability_mode = 10;
+}
+
+// A transaction.
+message Transaction {
+  repeated uint32 filter_ids = 1;
+  // Common transaction metadata.
+  TransactionMeta meta = 2;
+  oneof transaction {
+    // Transaction invoking a smart contract, V0.
+    InvokeTransactionV0 invoke_v0 = 3;
+    // Transaction invoking a smart contract, V1.
+    InvokeTransactionV1 invoke_v1 = 4;
+    // Transaction invoking a smart contract, V3.
+    InvokeTransactionV3 invoke_v3 = 5;
+    // Transaction handling a message from L1.
+    L1HandlerTransaction l1_handler = 6;
+    // Transaction deploying a new smart contract, V1.
+    DeployTransaction deploy = 7;
+    // Transaction declaring a smart contract, V0.
+    DeclareTransactionV0 declare_v0 = 8;
+    // Transaction declaring a smart contract, V0.
+    DeclareTransactionV1 declare_v1 = 9;
+    // Transaction declaring a smart contract, V2.
+    DeclareTransactionV2 declare_v2 = 10;
+    // Transaction declaring a smart contract, V3.
+    DeclareTransactionV3 declare_v3 = 11;
+    // Deploy a new account, V1.
+    DeployAccountTransactionV1 deploy_account_v1 = 12;
+    // Deploy a new account, V3.
+    DeployAccountTransactionV3 deploy_account_v3 = 13;
+  }
+}
+
+message TransactionMeta {
+  // Transaction index.
+  uint32 transaction_index = 1;
+  // Transaction hash.
+  FieldElement transaction_hash = 2;
+  // Transaction status.
+  TransactionStatus transaction_status = 3;
+}
+
+message InvokeTransactionV0 {
+  FieldElement max_fee = 1;
+  repeated FieldElement signature = 2;
+  FieldElement contract_address = 3;
+  FieldElement entry_point_selector = 4;
+  repeated FieldElement calldata = 6;
+}
+
+message InvokeTransactionV1 {
+  FieldElement sender_address = 1;
+  repeated FieldElement calldata = 2;
+  FieldElement max_fee = 3;
+  repeated FieldElement signature = 4;
+  FieldElement nonce = 5;
+}
+
+message InvokeTransactionV3 {
+  FieldElement sender_address = 1;
+  repeated FieldElement calldata = 2;
+  repeated FieldElement signature = 3;
+  FieldElement nonce = 4;
+  ResourceBoundsMapping resource_bounds = 5;
+  uint64 tip = 6;
+  repeated FieldElement paymaster_data = 7;
+  repeated FieldElement account_deployment_data = 8;
+  DataAvailabilityMode nonce_data_availability_mode = 9;
+  DataAvailabilityMode fee_data_availability_mode = 10;
+}
+
+message L1HandlerTransaction {
+  uint64 nonce = 1;
+  FieldElement contract_address = 2;
+  FieldElement entry_point_selector = 3;
+  repeated FieldElement calldata = 4;
+}
+
+message DeployTransaction {
+  FieldElement contract_address_salt = 1;
+  repeated FieldElement constructor_calldata = 2;
+  FieldElement class_hash = 3;
+}
+
+message DeclareTransactionV0 {
+  FieldElement sender_address = 1;
+  FieldElement max_fee = 2;
+  repeated FieldElement signature = 3;
+  FieldElement class_hash = 4;
+}
+
+message DeclareTransactionV1 {
+  FieldElement sender_address = 1;
+  FieldElement max_fee = 2;
+  repeated FieldElement signature = 3;
+  FieldElement nonce = 4;
+  FieldElement class_hash = 5;
+}
+
+message DeclareTransactionV2 {
+  FieldElement sender_address = 1;
+  FieldElement compiled_class_hash = 2;
+  FieldElement max_fee = 3;
+  repeated FieldElement signature = 4;
+  FieldElement nonce = 5;
+  FieldElement class_hash = 6;
+}
+
+message DeclareTransactionV3 {
+  FieldElement sender_address = 1;
+  FieldElement compiled_class_hash = 2;
+  repeated FieldElement signature = 3;
+  FieldElement nonce = 4;
+  FieldElement class_hash = 5;
+  ResourceBoundsMapping resource_bounds = 6;
+  uint64 tip = 7;
+  repeated FieldElement paymaster_data = 8;
+  repeated FieldElement account_deployment_data = 9;
+  DataAvailabilityMode nonce_data_availability_mode = 10;
+  DataAvailabilityMode fee_data_availability_mode = 11;
+}
+
+message DeployAccountTransactionV1 {
+  FieldElement max_fee = 1;
+  repeated FieldElement signature = 2;
+  FieldElement nonce = 3;
+  FieldElement contract_address_salt = 4;
+  repeated FieldElement constructor_calldata = 5;
+  FieldElement class_hash = 6;
+}
+
+message DeployAccountTransactionV3 {
+  repeated FieldElement signature = 1;
+  FieldElement nonce = 2;
+  FieldElement contract_address_salt = 3;
+  repeated FieldElement constructor_calldata = 4;
+  FieldElement class_hash = 5;
+  ResourceBoundsMapping resource_bounds = 6;
+  uint64 tip = 7;
+  repeated FieldElement paymaster_data = 8;
+  DataAvailabilityMode nonce_data_availability_mode = 9;
+  DataAvailabilityMode fee_data_availability_mode = 10;
+}
+
+message TransactionReceipt {
+  repeated uint32 filter_ids = 1;
+  // Common transaction receipt metadata.
+  TransactionReceiptMeta meta = 2;
+  oneof receipt {
+    // Transaction invoking a smart contract.
+    InvokeTransactionReceipt invoke = 3;
+    // Transaction handling a message from L1.
+    L1HandlerTransactionReceipt l1_handler = 4;
+    // Transaction declaring a smart contract.
+    DeclareTransactionReceipt declare = 5;
+    // Transaction deploying a new smart contract.
+    DeployTransactionReceipt deploy = 6;
+    // Deploy a new account.
+    DeployAccountTransactionReceipt deploy_account = 7;
+  }
+}
+
+enum TransactionStatus {
+  TRANSACTION_STATUS_UNSPECIFIED = 0;
+  TRANSACTION_STATUS_SUCCEEDED = 1;
+  TRANSACTION_STATUS_REVERTED = 2;
+}
+
+message TransactionReceiptMeta {
+  uint32 transaction_index = 1;
+  FieldElement transaction_hash = 2;
+  FeePayment actual_fee = 3;
+  ExecutionResources execution_resources = 4;
+  oneof execution_result {
+    ExecutionSucceeded succeeded = 5;
+    ExecutionReverted reverted = 6;
+  }
+}
+
+message ExecutionSucceeded {}
+message ExecutionReverted { string reason = 1; }
+
+message InvokeTransactionReceipt {}
+
+message L1HandlerTransactionReceipt { bytes message_hash = 1; }
+
+message DeclareTransactionReceipt {}
+
+message DeployTransactionReceipt { FieldElement contract_address = 1; }
+
+message DeployAccountTransactionReceipt { FieldElement contract_address = 1; }
+
+// Transaction events.
+message Event {
+  repeated uint32 filter_ids = 1;
+  // The contract that emitted the event.
+  FieldElement from_address = 2;
+  // The event keys.
+  repeated FieldElement keys = 3;
+  // The event data.
+  repeated FieldElement data = 4;
+  // The event index.
+  uint32 event_index = 5;
+  // Transaction index.
+  uint32 transaction_index = 6;
+  // Transaction hash.
+  FieldElement transaction_hash = 7;
+  // Transaction status.
+  TransactionStatus transaction_status = 8;
+}
+
+message MessageToL1 {
+  repeated uint32 filter_ids = 1;
+  // The contract sending the message.
+  FieldElement from_address = 2;
+  // Target address.
+  FieldElement to_address = 3;
+  // Message payload.
+  repeated FieldElement payload = 4;
+  // Message index.
+  uint32 message_index = 5;
+  // Transaction index.
+  uint32 transaction_index = 6;
+  // Transaction hash.
+  FieldElement transaction_hash = 7;
+  // Transaction status.
+  TransactionStatus transaction_status = 8;
+}
+
+enum L1DataAvailabilityMode {
+  // Unknown DA.
+  L1_DATA_AVAILABILITY_MODE_UNSPECIFIED = 0;
+  // Data published via blobs.
+  L1_DATA_AVAILABILITY_MODE_BLOB = 1;
+  // Data published via calldata.
+  L1_DATA_AVAILABILITY_MODE_CALLDATA = 2;
+}
+
+// Transaction execution status.
+enum ExecutionStatus {
+  // Unknown execution status.
+  EXECUTION_STATUS_UNSPECIFIED = 0;
+  // Transaction succeeded.
+  EXECUTION_STATUS_SUCCEEDED = 1;
+  // Transaction reverted.
+  EXECUTION_STATUS_REVERTED = 2;
+}
+
+// Price of a unit of a resource.
+message ResourcePrice {
+  // Price in fri (10^-18 strk).
+  FieldElement price_in_fri = 1;
+  // Price in wei (10^-18 eth).
+  FieldElement price_in_wei = 2;
+}
+
+// A Starknet fee payment.
+message FeePayment {
+  // Amount paid.
+  FieldElement amount = 1;
+  // Unit of the amount.
+  PriceUnit unit = 2;
+}
+
+// Price unit.
+enum PriceUnit {
+  // Unknown price unit.
+  PRICE_UNIT_UNSPECIFIED = 0;
+  // WEI.
+  PRICE_UNIT_WEI = 1;
+  // FRI.
+  PRICE_UNIT_FRI = 2;
+}
+
+// Execution resources.
+message ExecutionResources {
+  // Computation resources.
+  ComputationResources computation = 1;
+  // Data availability resources.
+  DataAvailabilityResources data_availability = 2;
+}
+
+// Computation resources.
+message ComputationResources {
+  // The number of Cairo steps used.
+  uint64 steps = 1;
+  // The number of unused memory cells.
+  optional uint64 memory_holes = 2;
+  // The number of RANGE_CHECK builtin instances.
+  optional uint64 range_check_builtin_applications = 3;
+  // The number of Pedersen builtin instances.
+  optional uint64 pedersen_builtin_applications = 4;
+  // The number of Poseidon builtin instances.
+  optional uint64 poseidon_builtin_applications = 5;
+  // The number of EC_OP builtin instances.
+  optional uint64 ec_op_builtin_applications = 6;
+  // The number of ECDSA builtin instances.
+  optional uint64 ecdsa_builtin_applications = 7;
+  // The number of BITWISE builtin instances.
+  optional uint64 bitwise_builtin_applications = 8;
+  // The number of KECCAK builtin instances.
+  optional uint64 keccak_builtin_applications = 9;
+  // The number of accesses to the segment arena.
+  optional uint64 segment_arena_builtin = 10;
+}
+
+message DataAvailabilityResources {
+  // The gas consumed by this transaction's data, 0 if it uses data gas for DA.
+  uint64 l1_gas = 1;
+  // The data gas consumed by this transaction's data, 0 if it uses gas for DA.
+  uint64 l1_data_gas = 2;
+}
+
+message ResourceBoundsMapping {
+  // Maximum amount and price of L1 gas.
+  ResourceBounds l1_gas = 1;
+  // Maximum amount and price of L2 gas.
+  ResourceBounds l2_gas = 2;
+}
+
+message ResourceBounds {
+  // The maximum amount of resources that can be consumed by a transaction.
+  uint64 max_amount = 1;
+  /// The max price per unit of resource.
+  Uint128 max_price_per_unit = 2;
+}
+
+message Uint128 {
+  uint64 x0 = 1;
+  uint64 x1 = 2;
+}
+
+// DA mode.
+enum DataAvailabilityMode {
+  // Unknown DA.
+  DATA_AVAILABILITY_MODE_UNSPECIFIED = 0;
+  // L1.
+  DATA_AVAILABILITY_MODE_L1 = 1;
+  // L2.
+  DATA_AVAILABILITY_MODE_L2 = 2;
+}
