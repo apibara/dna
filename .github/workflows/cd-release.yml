@@ -15,6 +15,9 @@ on:
       patch:
         required: true
         type: string
+      prerel:
+        required: false
+        type: string
     secrets:
       cachix-token:
         required: true
@@ -151,6 +154,7 @@ jobs:
           IMAGE_VERSION_MAJOR: ${{ inputs.major }}
           IMAGE_VERSION_MINOR: ${{ inputs.minor }}
           IMAGE_VERSION_PATCH: ${{ inputs.patch }}
+          IMAGE_VERSION_PREREL: ${{ inputs.prerel }}
           IMAGE_ARCHIVE_x86_64: /tmp/image/x86_64/${{ inputs.target }}.tar.gz
           IMAGE_ARCHIVE_aarch64: /tmp/image/aarch64/${{ inputs.target }}.tar.gz
 
