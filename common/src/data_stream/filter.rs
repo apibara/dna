@@ -29,6 +29,10 @@ impl FilterMatch {
         self.0.is_empty()
     }
 
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
     pub fn add_match(&mut self, filter_id: FilterId, bitmap: &RoaringBitmap) {
         for index in bitmap.iter() {
             self.0.entry(index).or_default().insert(filter_id);

@@ -1,5 +1,5 @@
 [package]
-name = "apibara-starknet"
+name = "apibara-dna-starknet"
 version = "1.6.2"
 edition.workspace = true
 authors.workspace = true
