@@ -193,6 +193,8 @@ impl FileCacheArgs {
 
         let cache = builder.build().await.map_err(FileCacheError::Foyer)?;
 
+        cache.enable_tracing();
+
         Ok(cache)
     }
 }
