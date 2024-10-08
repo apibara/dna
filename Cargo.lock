@@ -558,7 +558,7 @@ dependencies = [
 
 [[package]]
 name = "apibara-dna-beaconchain"
-version = "0.0.0"
+version = "2.0.0-beta.1"
 dependencies = [
  "alloy-consensus",
  "alloy-eips",
@@ -624,12 +624,13 @@ dependencies = [
  "tonic-health",
  "tonic-reflection",
  "tracing",
+ "valuable",
  "zstd",
 ]
 
 [[package]]
 name = "apibara-dna-evm"
-version = "0.0.0"
+version = "2.0.0-beta.1"
 dependencies = [
  "alloy-primitives",
  "alloy-provider",
@@ -678,6 +679,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "apibara-dna-starknet"
+version = "2.0.0-beta.1"
+dependencies = [
+ "apibara-dna-common",
+ "apibara-dna-protocol",
+ "apibara-observability",
+ "byte-unit",
+ "clap",
+ "ctrlc",
+ "error-stack",
+ "futures",
+ "hex",
+ "mimalloc",
+ "prost",
+ "prost-types",
+ "reqwest 0.12.8",
+ "rkyv 0.8.8",
+ "roaring",
+ "serde",
+ "serde_json",
+ "serde_with",
+ "starknet",
+ "tokio",
+ "tokio-util",
+ "tonic",
+ "tracing",
+ "url",
+]
+
+[[package]]
 name = "apibara-etcd"
 version = "0.1.0"
 dependencies = [
@@ -716,36 +747,6 @@ dependencies = [
  "tracing",
  "tracing-opentelemetry",
  "tracing-subscriber",
-]
-
-[[package]]
-name = "apibara-starknet"
-version = "1.6.2"
-dependencies = [
- "apibara-dna-common",
- "apibara-dna-protocol",
- "apibara-observability",
- "byte-unit",
- "clap",
- "ctrlc",
- "error-stack",
- "futures",
- "hex",
- "mimalloc",
- "prost",
- "prost-types",
- "reqwest 0.12.8",
- "rkyv 0.8.8",
- "roaring",
- "serde",
- "serde_json",
- "serde_with",
- "starknet",
- "tokio",
- "tokio-util",
- "tonic",
- "tracing",
- "url",
 ]
 
 [[package]]

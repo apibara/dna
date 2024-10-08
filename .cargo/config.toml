@@ -1,5 +1,5 @@
 [target.'cfg(all())']
-rustflags = ["--cfg", "tokio_unstable"]
+rustflags = ["--cfg", "tracing_unstable"]
 
 [profile.profiling]
 inherits = "release"

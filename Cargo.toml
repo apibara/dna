@@ -85,6 +85,7 @@ tonic-reflection = "0.12.2"
 tracing = { version = "0.1.40", features = [
     "max_level_trace",
     "release_max_level_debug",
+    "valuable",
 ] }
 tracing-opentelemetry = "0.25.0"
 tracing-subscriber = { version = "0.3.18", features = [
@@ -92,5 +93,6 @@ tracing-subscriber = { version = "0.3.18", features = [
     "env-filter",
     "json",
 ] }
+valuable = "0.1"
 url = "2.5"
 zstd = "0.13.2"

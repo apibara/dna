@@ -17,6 +17,7 @@ jobs:
       major: ${{ steps.extract.outputs.major }}
       minor: ${{ steps.extract.outputs.minor }}
       patch: ${{ steps.extract.outputs.patch }}
+      prerel: ${{ steps.extract.outputs.prerel }}
     steps:
       - name: Set $USER if needed
         run: |
@@ -44,6 +45,7 @@ jobs:
       major: ${{ needs.extract-version.outputs.major }}
       minor: ${{ needs.extract-version.outputs.minor }}
       patch: ${{ needs.extract-version.outputs.patch }}
+      prerel: ${{ needs.extract-version.outputs.prerel }}
     secrets:
       cachix-token: "${{ secrets.CACHIX_AUTH_TOKEN }}"
       quay-username: "${{ secrets.QUAY_USER }}"

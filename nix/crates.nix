@@ -408,11 +408,13 @@ in
           major=$(${pkgs.semver-tool}/bin/semver get major ''${version})
           minor=$(${pkgs.semver-tool}/bin/semver get minor ''${version})
           patch=$(${pkgs.semver-tool}/bin/semver get patch ''${version})
+          prerel=$(${pkgs.semver-tool}/bin/semver get prerel ''${version})
 
           echo "target=''${target}" >> "$GITHUB_OUTPUT"
           echo "major=''${major}" >> "$GITHUB_OUTPUT"
           echo "minor=''${minor}" >> "$GITHUB_OUTPUT"
           echo "patch=''${patch}" >> "$GITHUB_OUTPUT"
+          echo "prerel=''${patch}" >> "$GITHUB_OUTPUT"
         '';
 
         # Publish docker images to Quay.io
@@ -470,6 +472,9 @@ in
 
           base="quay.io/apibara/''${IMAGE_NAME}"
           version="''${IMAGE_VERSION_MAJOR}.''${IMAGE_VERSION_MINOR}.''${IMAGE_VERSION_PATCH}"
+          if ! [[ -z "''${IMAGE_VERSION_PREREL:-}" ]]; then
+            version="''${version}-''${IMAGE_VERSION_PREREL}"
+          fi
 
           echo "::group::Publishing image ''${IMAGE_NAME}:''${version}"
           dry_run skopeo copy "docker-archive:''${IMAGE_ARCHIVE_x86_64}" "docker://''${base}:''${version}-x86_64"
@@ -482,6 +487,13 @@ in
           manifest="''${base}:''${version}"
           dry_run buildah manifest create "''${manifest}" "''${images[@]}"
           echo "::endgroup::"
+
+          if ! [[ -z "''${IMAGE_VERSION_PREREL:-}" ]]; then
+            tag="''${IMAGE_VERSION_MAJOR}.''${IMAGE_VERSION_MINOR}.''${IMAGE_VERSION_PATCH}-''${IMAGE_VERSION_PREREL}"
+            echo "::group::Push manifest ''${base}:''${tag}"
+            dry_run buildah manifest push --all "''${manifest}" "docker://''${base}:''${tag}"
+            echo "::endgroup::"
+          fi
 
           tag="''${IMAGE_VERSION_MAJOR}.''${IMAGE_VERSION_MINOR}.''${IMAGE_VERSION_PATCH}"
           echo "::group::Push manifest ''${base}:''${tag}"

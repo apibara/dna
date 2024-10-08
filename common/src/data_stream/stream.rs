@@ -13,6 +13,7 @@ use roaring::RoaringBitmap;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, warn};
+use valuable::Valuable;
 
 use crate::{
     block_store::BlockStoreReader,
@@ -523,12 +524,22 @@ impl DataStream {
         Ok(())
     }
 
+    #[tracing::instrument(
+        name = "send_data",
+        skip_all,
+        fields(blocks_count, blocks_size_bytes, fragments_count, fragments_size_bytes)
+    )]
     async fn filter_fragment(
         &mut self,
         fragment_access: &FragmentAccess,
         output: &mut Vec<Bytes>,
     ) -> Result<bool, DataStreamError> {
+        let current_span = tracing::Span::current();
         let mut has_data = false;
+
+        let mut field_fragments_sent = HashMap::<String, usize>::new();
+        let mut field_fragments_size_bytes = HashMap::<String, usize>::new();
+        let mut field_blocks_size_bytes = 0;
 
         for block_filter in self.block_filter.iter() {
             let mut data_buffer = BytesMut::with_capacity(DEFAULT_BLOCKS_BUFFER_SIZE);
@@ -642,12 +653,17 @@ impl DataStream {
                 };
 
                 let body = fragment_access
-                    .get_body_fragment(fragment_id, fragment_name)
+                    .get_body_fragment(fragment_id, fragment_name.clone())
                     .await
                     .change_context(DataStreamError)
                     .attach_printable("failed to get body fragment")?;
                 let body = body.access().change_context(DataStreamError)?;
 
+                *field_fragments_sent
+                    .entry(fragment_name.clone())
+                    .or_default() += filter_match.len();
+
+                let starting_size = data_buffer.len();
                 for match_ in filter_match.iter() {
                     const FILTER_IDS_TAG: u32 = 1;
 
@@ -675,14 +691,26 @@ impl DataStream {
                     );
                     data_buffer.put(message_bytes.as_slice());
                 }
+
+                let fragment_size = data_buffer.len() - starting_size;
+                *field_fragments_size_bytes.entry(fragment_name).or_default() += fragment_size;
             }
 
             if !data_buffer.is_empty() {
                 has_data = true;
             }
 
+            field_blocks_size_bytes += data_buffer.len();
             output.push(data_buffer.freeze());
         }
+
+        current_span.record("blocks_count", output.len());
+        current_span.record("blocks_size_bytes", field_blocks_size_bytes);
+        current_span.record("fragments_count", field_fragments_sent.as_value());
+        current_span.record(
+            "fragments_size_bytes",
+            field_fragments_size_bytes.as_value(),
+        );
 
         Ok(has_data)
     }
