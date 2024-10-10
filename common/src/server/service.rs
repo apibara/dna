@@ -38,6 +38,7 @@ where
     chain_view: tokio::sync::watch::Receiver<Option<ChainView>>,
     fragment_id_to_name: HashMap<FragmentId, String>,
     block_store: BlockStoreReader,
+    options: StreamServiceOptions,
     ct: CancellationToken,
 }
 
@@ -60,12 +61,21 @@ where
             chain_view,
             fragment_id_to_name,
             block_store,
+            options,
             ct,
         }
     }
 
     pub fn into_service(self) -> dna_stream_server::DnaStreamServer<Self> {
         dna_stream_server::DnaStreamServer::new(self)
+    }
+
+    pub fn current_stream_count(&self) -> usize {
+        self.options.max_concurrent_streams - self.stream_semaphore.available_permits()
+    }
+
+    pub fn current_stream_available(&self) -> usize {
+        self.stream_semaphore.available_permits()
     }
 }
 
@@ -78,6 +88,7 @@ where
         Box<dyn Stream<Item = tonic::Result<StreamDataResponse, tonic::Status>> + Send + 'static>,
     >;
 
+    #[tracing::instrument(name = "stream::status", skip_all)]
     async fn status(
         &self,
         _request: tonic::Request<StatusRequest>,
@@ -94,10 +105,17 @@ where
         Ok(tonic::Response::new(response))
     }
 
+    #[tracing::instrument(
+        name = "stream::stream_data",
+        skip_all,
+        fields(stream_count, stream_available)
+    )]
     async fn stream_data(
         &self,
         request: tonic::Request<StreamDataRequest>,
     ) -> tonic::Result<tonic::Response<Self::StreamDataStream>, tonic::Status> {
+        let current_span = tracing::Span::current();
+
         let request = request.into_inner();
         info!(request = ?request, "stream data request");
 
@@ -117,6 +135,9 @@ where
             Ok(Err(_)) => return Err(tonic::Status::internal("internal server error")),
             Ok(Ok(permit)) => permit,
         };
+
+        current_span.record("stream_count", self.current_stream_count());
+        current_span.record("stream_available", self.current_stream_available());
 
         // Validate starting cursor by checking it's in range.
         // The block could be reorged but that's handled by the `DataStream`.

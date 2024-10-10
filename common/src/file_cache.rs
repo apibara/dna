@@ -6,7 +6,7 @@ use error_stack::{Result, ResultExt};
 use foyer::{
     AdmissionPicker, AdmitAllPicker, CacheEntry, Compression, DirectFsDeviceOptions, Engine,
     HybridCache, HybridCacheBuilder, HybridFetch, LargeEngineOptions, RateLimitPicker, RecoverMode,
-    RuntimeConfig, TokioRuntimeConfig,
+    RuntimeOptions, TokioRuntimeOptions,
 };
 
 #[derive(Debug)]
@@ -168,12 +168,12 @@ impl FileCacheArgs {
             .storage(Engine::Large)
             .with_compression(compression)
             .with_admission_picker(admission_picker)
-            .with_runtime_config(RuntimeConfig::Separated {
-                read_runtime_config: TokioRuntimeConfig {
+            .with_runtime_options(RuntimeOptions::Separated {
+                read_runtime_options: TokioRuntimeOptions {
                     worker_threads: self.cache_runtime_read_threads,
                     max_blocking_threads: self.cache_runtime_read_threads * 2,
                 },
-                write_runtime_config: TokioRuntimeConfig {
+                write_runtime_options: TokioRuntimeOptions {
                     worker_threads: self.cache_runtime_write_threads,
                     max_blocking_threads: self.cache_runtime_write_threads * 2,
                 },

@@ -42,18 +42,20 @@ ctrlc = { version = "3.4.5", features = ["termination"] }
 dirs = "5.0.1"
 error-stack = "0.5.0"
 etcd-client = { version = "0.14.0", features = ["tls", "tls-roots"] }
-foyer = { git = "https://github.com/foyer-rs/foyer.git", rev = "d49c480" } # 0.12-dev
+fastrace = "0.7"
+fastrace-opentelemetry = "0.7"
+foyer = { version = "0.12.1", features = ["tracing"] }
 futures = "0.3.30"
 hex = { version = "0.4.3", features = ["serde"] }
 memmap2 = "0.9.4"
 mimalloc = "0.1.43"
-opentelemetry = { version = "0.24.0", features = ["trace", "metrics"] }
-opentelemetry_sdk = { version = "0.24.1", features = [
+opentelemetry = { version = "0.25", features = ["trace", "metrics"] }
+opentelemetry_sdk = { version = "0.25", features = [
     "trace",
     "metrics",
     "rt-tokio",
 ] }
-opentelemetry-otlp = { version = "0.17.0", features = [
+opentelemetry-otlp = { version = "0.25", features = [
     "trace",
     "metrics",
     "grpc-tonic",
@@ -75,7 +77,7 @@ tempfile = "3.13.0"
 tempdir = "0.3.7"
 testcontainers = "0.22.0"
 time = { version = "0.3.36", features = ["formatting", "local-offset"] }
-tokio = { version = "1.39.2", features = ["full"] }
+tokio = { version = "1.38", features = ["full"] }
 tokio-stream = { version = "0.1.15", features = ["sync", "net"] }
 tokio-util = "0.7.11"
 tonic = { version = "0.12.1", features = ["tls", "tls-roots", "prost"] }
@@ -87,7 +89,7 @@ tracing = { version = "0.1.40", features = [
     "release_max_level_debug",
     "valuable",
 ] }
-tracing-opentelemetry = "0.25.0"
+tracing-opentelemetry = "0.26"
 tracing-subscriber = { version = "0.3.18", features = [
     "std",
     "env-filter",
