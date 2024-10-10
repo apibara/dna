@@ -3,10 +3,14 @@
 mod dna_fmt;
 
 use std::borrow::Cow;
+use std::time::Duration;
 
 use error_stack::{Result, ResultExt};
-use opentelemetry::global;
-use opentelemetry::trace::TracerProvider;
+use fastrace::collector::Config;
+use fastrace_opentelemetry::OpenTelemetryReporter;
+use opentelemetry::trace::{SpanKind, TracerProvider};
+use opentelemetry::{global, InstrumentationLibrary};
+use opentelemetry_sdk::resource::{ResourceDetector, SdkProvidedResourceDetector};
 use tracing::Subscriber;
 
 pub use opentelemetry::metrics::{ObservableCounter, ObservableGauge};
@@ -83,9 +87,29 @@ where
     S: Subscriber + Send + Sync,
     for<'a> S: LookupSpan<'a>,
 {
+    let package_name = package_name.into();
+    let version = version.into();
+
     // filter traces by crate/level
     let otel_env_filter =
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("INFO"));
+
+    let exporter = opentelemetry_otlp::new_exporter()
+        .tonic()
+        .build_span_exporter()
+        .change_context(OpenTelemetryInitError)
+        .attach_printable("failed to create span exporter")?;
+    let resource = SdkProvidedResourceDetector.detect(Duration::from_secs(1));
+    let instrumentation_lib = InstrumentationLibrary::builder(package_name.clone())
+        .with_version(version.clone())
+        .build();
+    let reporter = OpenTelemetryReporter::new(
+        exporter,
+        SpanKind::Server,
+        Cow::Owned(resource),
+        instrumentation_lib,
+    );
+    fastrace::set_reporter(reporter, Config::default());
 
     // Both tracer and meter are configured with environment variables.
     let meter = opentelemetry_otlp::new_pipeline()
