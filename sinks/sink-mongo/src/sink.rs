@@ -467,6 +467,10 @@ impl MongoSink {
                 })
                 .collect::<Result<Vec<_>, SinkError>>()?;
 
+            if entities_with_updates.is_empty() {
+                continue;
+            }
+
             let entities_filter = entities_with_updates
                 .iter()
                 .map(|(entity, _)| entity)
@@ -479,6 +483,12 @@ impl MongoSink {
                     doc! { "_cursor.to": Bson::Null },
                 ]
             };
+
+            debug!(
+                collection = %collection_name,
+                query = ?existing_docs_query,
+                "looking for existing docs"
+            );
 
             let mut existing_docs = self
                 .collection(&collection_name)?
@@ -497,6 +507,12 @@ impl MongoSink {
                         "_cursor.to": end_cursor.order_key as i64,
                     }
                 };
+
+                debug!(
+                    collection = %collection_name,
+                    query = ?clamp_cursor,
+                    "updating docs"
+                );
 
                 self.collection(&collection_name)?
                     .update_many_with_session(existing_docs_query, clamp_cursor, None, session)
