@@ -6,6 +6,15 @@ The format is based on [Common Changelog](https://common-changelog.org/), and
 this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.3] - 2024-10-13
+
+_Fix an issue caused by empty update operations._
+
+### Fixed
+
+-   Fix crashes when the transform function returns an empty list of updates.
+
+
 ## [0.9.2] - 2024-08-30
 
 _Improve observability on MongoDB operations._
