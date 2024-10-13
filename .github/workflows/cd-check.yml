@@ -7,6 +7,10 @@ concurrency:
 on:
   merge_group:
 
+  push:
+    branches:
+      - "backport/*"
+
   pull_request:
     branches:
       - "release"
