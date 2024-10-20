@@ -1,6 +1,9 @@
+mod contract_change;
 mod event;
 mod helpers;
 mod message;
+mod nonce_update;
+mod storage_diff;
 mod transaction;
 
 use apibara_dna_common::{
@@ -12,7 +15,7 @@ use prost::Message;
 
 use self::helpers::{BlockFilterExt, FragmentFilterExt};
 
-pub use self::transaction::TransactionType;
+pub use self::{contract_change::ContractChangeType, transaction::TransactionType};
 
 #[derive(Debug, Clone)]
 pub struct StarknetFilterFactory;
@@ -73,6 +76,21 @@ impl BlockFilterExt for starknet::Filter {
         }
 
         for filter in self.messages.iter() {
+            let filter = filter.compile_to_filter()?;
+            block_filter.add_filter(filter);
+        }
+
+        for filter in self.storage_diffs.iter() {
+            let filter = filter.compile_to_filter()?;
+            block_filter.add_filter(filter);
+        }
+
+        for filter in self.contract_changes.iter() {
+            let filter = filter.compile_to_filter()?;
+            block_filter.add_filter(filter);
+        }
+
+        for filter in self.nonce_updates.iter() {
             let filter = filter.compile_to_filter()?;
             block_filter.add_filter(filter);
         }

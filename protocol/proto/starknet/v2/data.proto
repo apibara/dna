@@ -18,6 +18,12 @@ message Block {
   repeated Event events = 4;
   // List of messages.
   repeated MessageToL1 messages = 5;
+  // List of storage changes by contract.
+  repeated StorageDiff storage_diffs = 6;
+  // List of contract/class changes.
+  repeated ContractChange contract_changes = 7;
+  // List of nonce updates.
+  repeated NonceUpdate nonce_updates = 8;
 }
 
 // Block header.
@@ -382,4 +388,66 @@ enum DataAvailabilityMode {
   DATA_AVAILABILITY_MODE_L1 = 1;
   // L2.
   DATA_AVAILABILITY_MODE_L2 = 2;
+}
+
+// Difference in storage values for a contract.
+message StorageDiff {
+  repeated uint32 filter_ids = 1;
+  // The contract address.
+  FieldElement contract_address = 2;
+  // Entries that changed.
+  repeated StorageEntry storage_entries = 3;
+}
+
+// Storage entry.
+message StorageEntry {
+  // Storage location.
+  FieldElement key = 1;
+  // Storage value.
+  FieldElement value = 2;
+}
+
+// A class/contract change.
+message ContractChange {
+  repeated uint32 filter_ids = 1;
+  oneof change {
+    DeclaredClass declared_class = 2;
+    ReplacedClass replaced_class = 3;
+    DeployedContract deployed_contract = 4;
+  }
+}
+
+// Class declared.
+message DeclaredClass {
+  // Class hash of the newly declared class.
+  FieldElement class_hash = 1;
+  // Hash of the cairo assembly resulting from the sierra compilation.
+  //
+  // If undefined, it's the result of a deprecated Cairo 0 declaration.
+  FieldElement compiled_class_hash = 2;
+}
+
+// Class replaced.
+message ReplacedClass {
+  // The address of the contract whose class was replaced.
+  FieldElement contract_address = 1;
+  // The new class hash.
+  FieldElement class_hash = 2;
+}
+
+// Contract deployed.
+message DeployedContract {
+  // Address of the newly deployed contract.
+  FieldElement contract_address = 1;
+  // Class hash of the deployed contract.
+  FieldElement class_hash = 2;
+}
+
+// Nonce update.
+message NonceUpdate {
+  repeated uint32 filter_ids = 1;
+  // Contract address.
+  FieldElement contract_address = 2;
+  // New nonce value.
+  FieldElement nonce = 3;
 }
