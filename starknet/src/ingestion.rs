@@ -16,13 +16,14 @@ use tokio::sync::Mutex;
 use tracing::trace;
 
 use crate::{
+    filter::TransactionType,
     fragment::{
         EVENT_FRAGMENT_ID, EVENT_FRAGMENT_NAME, INDEX_EVENT_BY_ADDRESS, INDEX_EVENT_BY_KEY0,
         INDEX_EVENT_BY_KEY1, INDEX_EVENT_BY_KEY2, INDEX_EVENT_BY_KEY3, INDEX_EVENT_BY_KEY_LENGTH,
         INDEX_EVENT_BY_TRANSACTION_STATUS, INDEX_MESSAGE_BY_FROM_ADDRESS,
         INDEX_MESSAGE_BY_TO_ADDRESS, INDEX_MESSAGE_BY_TRANSACTION_STATUS,
-        INDEX_TRANSACTION_BY_STATUS, MESSAGE_FRAGMENT_ID, MESSAGE_FRAGMENT_NAME,
-        RECEIPT_FRAGMENT_ID, RECEIPT_FRAGMENT_NAME, TRANSACTION_FRAGMENT_ID,
+        INDEX_TRANSACTION_BY_STATUS, INDEX_TRANSACTION_BY_TYPE, MESSAGE_FRAGMENT_ID,
+        MESSAGE_FRAGMENT_NAME, RECEIPT_FRAGMENT_ID, RECEIPT_FRAGMENT_NAME, TRANSACTION_FRAGMENT_ID,
         TRANSACTION_FRAGMENT_NAME,
     },
     proto::{convert_block_header, ModelExt},
@@ -223,6 +224,7 @@ fn collect_block_body_and_index(
     let mut block_messages = Vec::new();
 
     let mut index_transaction_by_status = BitmapIndexBuilder::default();
+    let mut index_transaction_by_type = BitmapIndexBuilder::default();
     let mut join_transaction_to_receipt = JoinToOneIndexBuilder::default();
     let mut join_transaction_to_events = JoinToManyIndexBuilder::default();
     let mut join_transaction_to_messages = JoinToManyIndexBuilder::default();
@@ -383,6 +385,26 @@ fn collect_block_body_and_index(
         let mut transaction = transaction_with_receipt.transaction.to_proto();
         set_transaction_index_and_status(&mut transaction, transaction_index, transaction_status);
 
+        use starknet::transaction::Transaction;
+        let transaction_type = match transaction.transaction {
+            Some(Transaction::InvokeV0(_)) => Some(TransactionType::InvokeV0),
+            Some(Transaction::InvokeV1(_)) => Some(TransactionType::InvokeV1),
+            Some(Transaction::InvokeV3(_)) => Some(TransactionType::InvokeV3),
+            Some(Transaction::Deploy(_)) => Some(TransactionType::Deploy),
+            Some(Transaction::DeclareV0(_)) => Some(TransactionType::DeclareV0),
+            Some(Transaction::DeclareV1(_)) => Some(TransactionType::DeclareV1),
+            Some(Transaction::DeclareV2(_)) => Some(TransactionType::DeclareV2),
+            Some(Transaction::DeclareV3(_)) => Some(TransactionType::DeclareV3),
+            Some(Transaction::L1Handler(_)) => Some(TransactionType::L1Handler),
+            Some(Transaction::DeployAccountV1(_)) => Some(TransactionType::DeployAccountV1),
+            Some(Transaction::DeployAccountV3(_)) => Some(TransactionType::DeployAccountV3),
+            None => None,
+        };
+
+        if let Some(transaction_type) = transaction_type {
+            index_transaction_by_type.insert(transaction_type.to_scalar_value(), transaction_index);
+        }
+
         index_transaction_by_status.insert(
             ScalarValue::Int32(transaction_status as i32),
             transaction_index,
@@ -421,11 +443,19 @@ fn collect_block_body_and_index(
                 .into(),
         };
 
+        let index_transaction_by_type = Index {
+            index_id: INDEX_TRANSACTION_BY_TYPE,
+            index: index_transaction_by_type
+                .build()
+                .change_context(IngestionError::Indexing)?
+                .into(),
+        };
+
         IndexFragment {
             fragment_id: TRANSACTION_FRAGMENT_ID,
             range_start: 0,
             range_len: block_transactions.len() as u32,
-            indexes: vec![index_transaction_by_status],
+            indexes: vec![index_transaction_by_status, index_transaction_by_type],
         }
     };
 

@@ -12,6 +12,8 @@ use prost::Message;
 
 use self::helpers::{BlockFilterExt, FragmentFilterExt};
 
+pub use self::transaction::TransactionType;
+
 #[derive(Debug, Clone)]
 pub struct StarknetFilterFactory;
 

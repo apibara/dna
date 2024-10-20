@@ -5,11 +5,30 @@ use apibara_dna_common::{
 use apibara_dna_protocol::starknet;
 
 use crate::fragment::{
-    EVENT_FRAGMENT_ID, INDEX_TRANSACTION_BY_STATUS, MESSAGE_FRAGMENT_ID, RECEIPT_FRAGMENT_ID,
-    TRANSACTION_FRAGMENT_ID,
+    EVENT_FRAGMENT_ID, INDEX_TRANSACTION_BY_STATUS, INDEX_TRANSACTION_BY_TYPE, MESSAGE_FRAGMENT_ID,
+    RECEIPT_FRAGMENT_ID, TRANSACTION_FRAGMENT_ID,
 };
 
 use super::helpers::FragmentFilterExt;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TransactionType {
+    InvokeV0 = 0,
+    InvokeV1 = 1,
+    InvokeV3 = 2,
+
+    Deploy = 3,
+
+    DeclareV0 = 4,
+    DeclareV1 = 5,
+    DeclareV2 = 6,
+    DeclareV3 = 7,
+
+    L1Handler = 8,
+
+    DeployAccountV1 = 9,
+    DeployAccountV3 = 10,
+}
 
 impl FragmentFilterExt for starknet::TransactionFilter {
     fn compile_to_filter(&self) -> tonic::Result<Filter, tonic::Status> {
@@ -43,10 +62,26 @@ impl FragmentFilterExt for starknet::TransactionFilter {
             }
         };
 
-        if let Some(_inner) = self.inner.as_ref() {
-            return Err(tonic::Status::unimplemented(
-                "filter by transaction type is not implemented",
-            ));
+        if let Some(inner) = self.inner.as_ref() {
+            use starknet::transaction_filter::Inner;
+            let key = match inner {
+                Inner::InvokeV0(_) => TransactionType::InvokeV0,
+                Inner::InvokeV1(_) => TransactionType::InvokeV1,
+                Inner::InvokeV3(_) => TransactionType::InvokeV3,
+                Inner::Deploy(_) => TransactionType::Deploy,
+                Inner::DeclareV0(_) => TransactionType::DeclareV0,
+                Inner::DeclareV1(_) => TransactionType::DeclareV1,
+                Inner::DeclareV2(_) => TransactionType::DeclareV2,
+                Inner::DeclareV3(_) => TransactionType::DeclareV3,
+                Inner::L1Handler(_) => TransactionType::L1Handler,
+                Inner::DeployAccountV1(_) => TransactionType::DeployAccountV1,
+                Inner::DeployAccountV3(_) => TransactionType::DeployAccountV3,
+            };
+
+            conditions.push(Condition {
+                index_id: INDEX_TRANSACTION_BY_TYPE,
+                key: key.to_scalar_value(),
+            });
         }
 
         let mut joins = Vec::new();
@@ -69,5 +104,11 @@ impl FragmentFilterExt for starknet::TransactionFilter {
             conditions,
             joins,
         })
+    }
+}
+
+impl TransactionType {
+    pub fn to_scalar_value(&self) -> ScalarValue {
+        ScalarValue::Uint32(*self as u32)
     }
 }
