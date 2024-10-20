@@ -22,7 +22,7 @@ use crate::{
     file_cache::FileCacheError,
     fragment::{FragmentId, HEADER_FRAGMENT_ID},
     join::ArchivedJoinTo,
-    query::BlockFilter,
+    query::{BlockFilter, HeaderFilter},
     segment::SegmentGroup,
     Cursor,
 };
@@ -332,6 +332,7 @@ impl DataStream {
         segments.push((current_segment_cursor, blocks));
 
         // prefetch_tasks.join_all().await;
+        let finality = DataFinality::Finalized;
 
         for (segment_cursor, segment_data) in segments {
             if ct.is_cancelled() || tx.is_closed() {
@@ -351,12 +352,15 @@ impl DataStream {
                 let proto_end_cursor: Option<ProtoCursor> = Some(block.end_cursor.clone().into());
 
                 let mut blocks = Vec::new();
-                if self.filter_fragment(&fragment_access, &mut blocks).await? {
+                if self
+                    .filter_fragment(&fragment_access, &finality, &mut blocks)
+                    .await?
+                {
                     let data = Message::Data(Data {
                         cursor: proto_cursor.clone(),
                         end_cursor: proto_end_cursor.clone(),
                         data: blocks,
-                        finality: DataFinality::Finalized as i32,
+                        finality: finality as i32,
                     });
 
                     let Some(Ok(permit)) = ct.run_until_cancelled(tx.reserve()).await else {
@@ -435,6 +439,8 @@ impl DataStream {
 
         let segment_cursor = Cursor::new_finalized(segment_start);
 
+        let finality = DataFinality::Finalized;
+
         for block in blocks {
             use apibara_dna_protocol::dna::stream::Cursor as ProtoCursor;
 
@@ -447,12 +453,15 @@ impl DataStream {
             let proto_end_cursor: Option<ProtoCursor> = Some(block.end_cursor.clone().into());
 
             let mut blocks = Vec::new();
-            if self.filter_fragment(&fragment_access, &mut blocks).await? {
+            if self
+                .filter_fragment(&fragment_access, &finality, &mut blocks)
+                .await?
+            {
                 let data = Message::Data(Data {
                     cursor: proto_cursor.clone(),
                     end_cursor: proto_end_cursor.clone(),
                     data: blocks,
-                    finality: DataFinality::Finalized as i32,
+                    finality: finality as i32,
                 });
 
                 let Some(Ok(permit)) = ct.run_until_cancelled(tx.reserve()).await else {
@@ -501,7 +510,10 @@ impl DataStream {
         let fragment_access = FragmentAccess::new_in_block(self.store.clone(), cursor.clone());
 
         let mut blocks = Vec::new();
-        if self.filter_fragment(&fragment_access, &mut blocks).await? {
+        if self
+            .filter_fragment(&fragment_access, &finality, &mut blocks)
+            .await?
+        {
             let data = Message::Data(Data {
                 cursor: proto_cursor.clone(),
                 end_cursor: proto_end_cursor.clone(),
@@ -532,6 +544,7 @@ impl DataStream {
     async fn filter_fragment(
         &mut self,
         fragment_access: &FragmentAccess,
+        finality: &DataFinality,
         output: &mut Vec<Bytes>,
     ) -> Result<bool, DataStreamError> {
         let current_span = tracing::Span::current();
@@ -627,7 +640,15 @@ impl DataStream {
                 }
             }
 
-            if block_filter.always_include_header || !fragment_matches.is_empty() {
+            let should_send_header = match block_filter.header_filter {
+                HeaderFilter::Always => true,
+                HeaderFilter::OnData => !fragment_matches.is_empty(),
+                HeaderFilter::OnDataOrOnNewBlock => {
+                    !fragment_matches.is_empty() || *finality != DataFinality::Finalized
+                }
+            };
+
+            if should_send_header {
                 let header = fragment_access
                     .get_header_fragment()
                     .await

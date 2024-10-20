@@ -3,7 +3,10 @@ mod helpers;
 mod message;
 mod transaction;
 
-use apibara_dna_common::{data_stream::BlockFilterFactory, query::BlockFilter};
+use apibara_dna_common::{
+    data_stream::BlockFilterFactory,
+    query::{BlockFilter, HeaderFilter},
+};
 use apibara_dna_protocol::starknet;
 use prost::Message;
 
@@ -45,9 +48,17 @@ impl BlockFilterExt for starknet::Filter {
     fn compile_to_block_filter(&self) -> tonic::Result<BlockFilter, tonic::Status> {
         let mut block_filter = BlockFilter::default();
 
-        if self.header.map(|h| h.always()).unwrap_or(false) {
-            block_filter.set_always_include_header(true);
+        let header_filter = match starknet::HeaderFilter::try_from(self.header) {
+            Ok(starknet::HeaderFilter::Always) => Some(HeaderFilter::Always),
+            Ok(starknet::HeaderFilter::OnData) => Some(HeaderFilter::OnData),
+            Ok(starknet::HeaderFilter::OnDataOrOnNewBlock) => {
+                Some(HeaderFilter::OnDataOrOnNewBlock)
+            }
+            _ => None,
         }
+        .unwrap_or_default();
+
+        block_filter.set_header_filter(header_filter);
 
         for filter in self.transactions.iter() {
             let filter = filter.compile_to_filter()?;
@@ -64,7 +75,7 @@ impl BlockFilterExt for starknet::Filter {
             block_filter.add_filter(filter);
         }
 
-        if !block_filter.always_include_header && block_filter.is_empty() {
+        if !block_filter.always_include_header() && block_filter.is_empty() {
             return Err(tonic::Status::invalid_argument("no filters provided"));
         }
 

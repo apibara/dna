@@ -16,9 +16,11 @@ message Filter {
   repeated MessageToL1Filter messages = 4;
 }
 
-message HeaderFilter {
-  // Always include header data. Defaults to `false`.
-  optional bool always = 1;
+enum HeaderFilter {
+  HEADER_FILTER_UNSPECIFIED = 0;
+  HEADER_FILTER_ALWAYS = 1;
+  HEADER_FILTER_ON_DATA = 2;
+  HEADER_FILTER_ON_DATA_OR_ON_NEW_BLOCK = 3;
 }
 
 // Filter events.
