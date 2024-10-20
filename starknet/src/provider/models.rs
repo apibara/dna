@@ -1,15 +1,17 @@
 use apibara_dna_common::{Cursor, Hash};
 pub use starknet::core::types::{
-    BlockWithReceipts, ComputationResources, DataAvailabilityMode, DataResources,
-    DeclareTransaction, DeclareTransactionReceipt, DeclareTransactionV0, DeclareTransactionV1,
-    DeclareTransactionV2, DeclareTransactionV3, DeployAccountTransaction,
-    DeployAccountTransactionReceipt, DeployAccountTransactionV1, DeployAccountTransactionV3,
-    DeployTransaction, DeployTransactionReceipt, Event, ExecutionResources, ExecutionResult,
-    FeePayment, Felt as FieldElement, InvokeTransaction, InvokeTransactionReceipt,
-    InvokeTransactionV0, InvokeTransactionV1, InvokeTransactionV3, L1DataAvailabilityMode,
-    L1HandlerTransaction, L1HandlerTransactionReceipt, MaybePendingBlockWithReceipts,
-    MaybePendingBlockWithTxHashes, MaybePendingStateUpdate, MsgToL1, PriceUnit, ResourceBounds,
-    ResourceBoundsMapping, ResourcePrice, Transaction, TransactionReceipt, TransactionWithReceipt,
+    BlockWithReceipts, ComputationResources, ContractStorageDiffItem, DataAvailabilityMode,
+    DataResources, DeclareTransaction, DeclareTransactionReceipt, DeclareTransactionV0,
+    DeclareTransactionV1, DeclareTransactionV2, DeclareTransactionV3, DeclaredClassItem,
+    DeployAccountTransaction, DeployAccountTransactionReceipt, DeployAccountTransactionV1,
+    DeployAccountTransactionV3, DeployTransaction, DeployTransactionReceipt, DeployedContractItem,
+    Event, ExecutionResources, ExecutionResult, FeePayment, Felt as FieldElement,
+    InvokeTransaction, InvokeTransactionReceipt, InvokeTransactionV0, InvokeTransactionV1,
+    InvokeTransactionV3, L1DataAvailabilityMode, L1HandlerTransaction, L1HandlerTransactionReceipt,
+    MaybePendingBlockWithReceipts, MaybePendingBlockWithTxHashes, MaybePendingStateUpdate, MsgToL1,
+    NonceUpdate, PriceUnit, ReplacedClassItem, ResourceBounds, ResourceBoundsMapping,
+    ResourcePrice, StateDiff, StateUpdate, StorageEntry, Transaction, TransactionReceipt,
+    TransactionWithReceipt,
 };
 
 pub trait BlockExt {

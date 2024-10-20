@@ -14,11 +14,19 @@ message Filter {
   repeated EventFilter events = 3;
   // Filter messages to L1.
   repeated MessageToL1Filter messages = 4;
+  // Filter storage diffs.
+  repeated StorageDiffFilter storage_diffs = 5;
+  // Filter contract changes.
+  repeated ContractChangeFilter contract_changes = 6;
+  // Filter nonce updates.
+  repeated NonceUpdateFilter nonce_updates = 7;
 }
 
-message HeaderFilter {
-  // Always include header data. Defaults to `false`.
-  optional bool always = 1;
+enum HeaderFilter {
+  HEADER_FILTER_UNSPECIFIED = 0;
+  HEADER_FILTER_ALWAYS = 1;
+  HEADER_FILTER_ON_DATA = 2;
+  HEADER_FILTER_ON_DATA_OR_ON_NEW_BLOCK = 3;
 }
 
 // Filter events.
@@ -140,4 +148,29 @@ enum TransactionStatusFilter {
   TRANSACTION_STATUS_FILTER_SUCCEEDED = 1;
   TRANSACTION_STATUS_FILTER_REVERTED = 2;
   TRANSACTION_STATUS_FILTER_ALL = 3;
+}
+
+message StorageDiffFilter {
+  uint32 id = 1;
+  // Filter by contract address.
+  FieldElement contract_address = 2;
+}
+
+message ContractChangeFilter {
+  uint32 id = 1;
+  oneof change {
+    DeclaredClassFilter declared_class = 2;
+    ReplacedClassFilter replaced_class = 3;
+    DeployedContractFilter deployed_contract = 4;
+  }
+}
+
+message DeclaredClassFilter {}
+message ReplacedClassFilter {}
+message DeployedContractFilter {}
+
+message NonceUpdateFilter {
+  uint32 id = 1;
+  // Filter by contract address.
+  FieldElement contract_address = 2;
 }

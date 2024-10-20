@@ -1,8 +1,11 @@
 use apibara_dna_common::{fragment::FragmentInfo, ChainSupport};
 use filter::StarknetFilterFactory;
 use fragment::{
-    EVENT_FRAGMENT_ID, EVENT_FRAGMENT_NAME, MESSAGE_FRAGMENT_ID, MESSAGE_FRAGMENT_NAME,
-    RECEIPT_FRAGMENT_ID, RECEIPT_FRAGMENT_NAME, TRANSACTION_FRAGMENT_ID, TRANSACTION_FRAGMENT_NAME,
+    CONTRACT_CHANGE_FRAGMENT_ID, CONTRACT_CHANGE_FRAGMENT_NAME, EVENT_FRAGMENT_ID,
+    EVENT_FRAGMENT_NAME, MESSAGE_FRAGMENT_ID, MESSAGE_FRAGMENT_NAME, NONCE_UPDATE_FRAGMENT_ID,
+    NONCE_UPDATE_FRAGMENT_NAME, RECEIPT_FRAGMENT_ID, RECEIPT_FRAGMENT_NAME,
+    STORAGE_DIFF_FRAGMENT_ID, STORAGE_DIFF_FRAGMENT_NAME, TRANSACTION_FRAGMENT_ID,
+    TRANSACTION_FRAGMENT_NAME,
 };
 use ingestion::StarknetBlockIngestion;
 use provider::StarknetProvider;
@@ -46,6 +49,18 @@ impl ChainSupport for StarknetChainSupport {
             FragmentInfo {
                 fragment_id: MESSAGE_FRAGMENT_ID,
                 name: MESSAGE_FRAGMENT_NAME.to_string(),
+            },
+            FragmentInfo {
+                fragment_id: STORAGE_DIFF_FRAGMENT_ID,
+                name: STORAGE_DIFF_FRAGMENT_NAME.to_string(),
+            },
+            FragmentInfo {
+                fragment_id: CONTRACT_CHANGE_FRAGMENT_ID,
+                name: CONTRACT_CHANGE_FRAGMENT_NAME.to_string(),
+            },
+            FragmentInfo {
+                fragment_id: NONCE_UPDATE_FRAGMENT_ID,
+                name: NONCE_UPDATE_FRAGMENT_NAME.to_string(),
             },
         ]
     }

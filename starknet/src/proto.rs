@@ -728,3 +728,75 @@ impl ModelExt for models::ExecutionResult {
         }
     }
 }
+
+impl ModelExt for models::ContractStorageDiffItem {
+    type Proto = starknet::StorageDiff;
+
+    fn to_proto(&self) -> Self::Proto {
+        starknet::StorageDiff {
+            filter_ids: Vec::default(),
+            contract_address: self.address.to_proto().into(),
+            storage_entries: self
+                .storage_entries
+                .iter()
+                .map(ModelExt::to_proto)
+                .collect(),
+        }
+    }
+}
+
+impl ModelExt for models::StorageEntry {
+    type Proto = starknet::StorageEntry;
+
+    fn to_proto(&self) -> Self::Proto {
+        starknet::StorageEntry {
+            key: self.key.to_proto().into(),
+            value: self.value.to_proto().into(),
+        }
+    }
+}
+
+impl ModelExt for models::DeclaredClassItem {
+    type Proto = starknet::DeclaredClass;
+
+    fn to_proto(&self) -> Self::Proto {
+        starknet::DeclaredClass {
+            class_hash: self.class_hash.to_proto().into(),
+            compiled_class_hash: self.compiled_class_hash.to_proto().into(),
+        }
+    }
+}
+
+impl ModelExt for models::ReplacedClassItem {
+    type Proto = starknet::ReplacedClass;
+
+    fn to_proto(&self) -> Self::Proto {
+        starknet::ReplacedClass {
+            contract_address: self.contract_address.to_proto().into(),
+            class_hash: self.class_hash.to_proto().into(),
+        }
+    }
+}
+
+impl ModelExt for models::DeployedContractItem {
+    type Proto = starknet::DeployedContract;
+
+    fn to_proto(&self) -> Self::Proto {
+        starknet::DeployedContract {
+            contract_address: self.address.to_proto().into(),
+            class_hash: self.class_hash.to_proto().into(),
+        }
+    }
+}
+
+impl ModelExt for models::NonceUpdate {
+    type Proto = starknet::NonceUpdate;
+
+    fn to_proto(&self) -> Self::Proto {
+        starknet::NonceUpdate {
+            filter_ids: Vec::default(),
+            contract_address: self.contract_address.to_proto().into(),
+            nonce: self.nonce.to_proto().into(),
+        }
+    }
+}

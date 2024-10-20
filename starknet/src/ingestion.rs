@@ -16,14 +16,19 @@ use tokio::sync::Mutex;
 use tracing::trace;
 
 use crate::{
+    filter::{ContractChangeType, TransactionType},
     fragment::{
-        EVENT_FRAGMENT_ID, EVENT_FRAGMENT_NAME, INDEX_EVENT_BY_ADDRESS, INDEX_EVENT_BY_KEY0,
-        INDEX_EVENT_BY_KEY1, INDEX_EVENT_BY_KEY2, INDEX_EVENT_BY_KEY3, INDEX_EVENT_BY_KEY_LENGTH,
-        INDEX_EVENT_BY_TRANSACTION_STATUS, INDEX_MESSAGE_BY_FROM_ADDRESS,
-        INDEX_MESSAGE_BY_TO_ADDRESS, INDEX_MESSAGE_BY_TRANSACTION_STATUS,
-        INDEX_TRANSACTION_BY_STATUS, MESSAGE_FRAGMENT_ID, MESSAGE_FRAGMENT_NAME,
-        RECEIPT_FRAGMENT_ID, RECEIPT_FRAGMENT_NAME, TRANSACTION_FRAGMENT_ID,
-        TRANSACTION_FRAGMENT_NAME,
+        CONTRACT_CHANGE_FRAGMENT_ID, CONTRACT_CHANGE_FRAGMENT_NAME, EVENT_FRAGMENT_ID,
+        EVENT_FRAGMENT_NAME, INDEX_CONTRACT_CHANGE_BY_TYPE, INDEX_EVENT_BY_ADDRESS,
+        INDEX_EVENT_BY_KEY0, INDEX_EVENT_BY_KEY1, INDEX_EVENT_BY_KEY2, INDEX_EVENT_BY_KEY3,
+        INDEX_EVENT_BY_KEY_LENGTH, INDEX_EVENT_BY_TRANSACTION_STATUS,
+        INDEX_MESSAGE_BY_FROM_ADDRESS, INDEX_MESSAGE_BY_TO_ADDRESS,
+        INDEX_MESSAGE_BY_TRANSACTION_STATUS, INDEX_NONCE_UPDATE_BY_CONTRACT_ADDRESS,
+        INDEX_STORAGE_DIFF_BY_CONTRACT_ADDRESS, INDEX_TRANSACTION_BY_STATUS,
+        INDEX_TRANSACTION_BY_TYPE, MESSAGE_FRAGMENT_ID, MESSAGE_FRAGMENT_NAME,
+        NONCE_UPDATE_FRAGMENT_ID, NONCE_UPDATE_FRAGMENT_NAME, RECEIPT_FRAGMENT_ID,
+        RECEIPT_FRAGMENT_NAME, STORAGE_DIFF_FRAGMENT_ID, STORAGE_DIFF_FRAGMENT_NAME,
+        TRANSACTION_FRAGMENT_ID, TRANSACTION_FRAGMENT_NAME,
     },
     proto::{convert_block_header, ModelExt},
     provider::{models, BlockExt, BlockId, StarknetProvider},
@@ -42,6 +47,12 @@ impl StarknetBlockIngestion {
             finalized_hint,
         }
     }
+}
+
+struct BlockIngestionResult {
+    body: Vec<BodyFragment>,
+    index: Vec<IndexFragment>,
+    join: Vec<JoinFragment>,
 }
 
 impl BlockIngestion for StarknetBlockIngestion {
@@ -157,9 +168,8 @@ impl BlockIngestion for StarknetBlockIngestion {
                 .attach_printable_lazy(|| format!("block number: {}", block_number));
         };
 
-        /*
         // Use the block hash to avoid issues with reorgs.
-        let block_id = BlockId::Hash(block.block_hash.clone());
+        let block_id = BlockId::Hash(block.block_hash);
 
         let state_update = self
             .provider
@@ -172,7 +182,6 @@ impl BlockIngestion for StarknetBlockIngestion {
                 .attach_printable("unexpected pending state update")
                 .attach_printable_lazy(|| format!("block number: {}", block_number));
         };
-        */
 
         let hash = block.block_hash.to_bytes_be().to_vec();
         let parent = block.parent_hash.to_bytes_be().to_vec();
@@ -191,8 +200,25 @@ impl BlockIngestion for StarknetBlockIngestion {
             }
         };
 
-        let (body_fragments, index_group, join_group) =
-            collect_block_body_and_index(&block.transactions)?;
+        let body_ingestion_result = collect_block_body_and_index(&block.transactions)?;
+
+        let state_update_ingestion_result = collect_state_update_body_and_index(&state_update)?;
+
+        let mut body_fragments = body_ingestion_result.body;
+        let mut index_fragments = body_ingestion_result.index;
+        let mut join_fragments = body_ingestion_result.join;
+
+        body_fragments.extend(state_update_ingestion_result.body);
+        index_fragments.extend(state_update_ingestion_result.index);
+        join_fragments.extend(state_update_ingestion_result.join);
+
+        let index_group = IndexGroupFragment {
+            indexes: index_fragments,
+        };
+
+        let join_group = JoinGroupFragment {
+            joins: join_fragments,
+        };
 
         let block = Block {
             header: header_fragment,
@@ -216,13 +242,14 @@ impl Clone for StarknetBlockIngestion {
 
 fn collect_block_body_and_index(
     transactions: &[models::TransactionWithReceipt],
-) -> Result<(Vec<BodyFragment>, IndexGroupFragment, JoinGroupFragment), IngestionError> {
+) -> Result<BlockIngestionResult, IngestionError> {
     let mut block_transactions = Vec::new();
     let mut block_receipts = Vec::new();
     let mut block_events = Vec::new();
     let mut block_messages = Vec::new();
 
     let mut index_transaction_by_status = BitmapIndexBuilder::default();
+    let mut index_transaction_by_type = BitmapIndexBuilder::default();
     let mut join_transaction_to_receipt = JoinToOneIndexBuilder::default();
     let mut join_transaction_to_events = JoinToManyIndexBuilder::default();
     let mut join_transaction_to_messages = JoinToManyIndexBuilder::default();
@@ -383,6 +410,26 @@ fn collect_block_body_and_index(
         let mut transaction = transaction_with_receipt.transaction.to_proto();
         set_transaction_index_and_status(&mut transaction, transaction_index, transaction_status);
 
+        use starknet::transaction::Transaction;
+        let transaction_type = match transaction.transaction {
+            Some(Transaction::InvokeV0(_)) => Some(TransactionType::InvokeV0),
+            Some(Transaction::InvokeV1(_)) => Some(TransactionType::InvokeV1),
+            Some(Transaction::InvokeV3(_)) => Some(TransactionType::InvokeV3),
+            Some(Transaction::Deploy(_)) => Some(TransactionType::Deploy),
+            Some(Transaction::DeclareV0(_)) => Some(TransactionType::DeclareV0),
+            Some(Transaction::DeclareV1(_)) => Some(TransactionType::DeclareV1),
+            Some(Transaction::DeclareV2(_)) => Some(TransactionType::DeclareV2),
+            Some(Transaction::DeclareV3(_)) => Some(TransactionType::DeclareV3),
+            Some(Transaction::L1Handler(_)) => Some(TransactionType::L1Handler),
+            Some(Transaction::DeployAccountV1(_)) => Some(TransactionType::DeployAccountV1),
+            Some(Transaction::DeployAccountV3(_)) => Some(TransactionType::DeployAccountV3),
+            None => None,
+        };
+
+        if let Some(transaction_type) = transaction_type {
+            index_transaction_by_type.insert(transaction_type.to_scalar_value(), transaction_index);
+        }
+
         index_transaction_by_status.insert(
             ScalarValue::Int32(transaction_status as i32),
             transaction_index,
@@ -421,11 +468,19 @@ fn collect_block_body_and_index(
                 .into(),
         };
 
+        let index_transaction_by_type = Index {
+            index_id: INDEX_TRANSACTION_BY_TYPE,
+            index: index_transaction_by_type
+                .build()
+                .change_context(IngestionError::Indexing)?
+                .into(),
+        };
+
         IndexFragment {
             fragment_id: TRANSACTION_FRAGMENT_ID,
             range_start: 0,
             range_len: block_transactions.len() as u32,
-            indexes: vec![index_transaction_by_status],
+            indexes: vec![index_transaction_by_status, index_transaction_by_type],
         }
     };
 
@@ -679,24 +734,225 @@ fn collect_block_body_and_index(
         data: block_messages.iter().map(Message::encode_to_vec).collect(),
     };
 
-    let index_group = IndexGroupFragment {
-        indexes: vec![transaction_index, receipt_index, event_index, message_index],
-    };
-
-    let join_group = JoinGroupFragment {
-        joins: vec![transaction_join, receipt_join, event_join, message_join],
-    };
-
-    Ok((
-        vec![
+    Ok(BlockIngestionResult {
+        body: vec![
             transaction_fragment,
             receipt_fragment,
             event_fragment,
             message_fragment,
         ],
-        index_group,
-        join_group,
-    ))
+        index: vec![transaction_index, receipt_index, event_index, message_index],
+        join: vec![transaction_join, receipt_join, event_join, message_join],
+    })
+}
+
+fn collect_state_update_body_and_index(
+    state_update: &models::StateUpdate,
+) -> Result<BlockIngestionResult, IngestionError> {
+    let mut block_storage_diffs = Vec::new();
+    let mut block_contract_changes = Vec::new();
+    let mut block_nonce_updates = Vec::new();
+
+    let mut index_storage_diff_by_contract_address = BitmapIndexBuilder::default();
+    let mut index_contract_change_by_type = BitmapIndexBuilder::default();
+    let mut index_nonce_update_by_contract_address = BitmapIndexBuilder::default();
+
+    let state_diff = &state_update.state_diff;
+
+    for storage_diff in state_diff.storage_diffs.iter() {
+        let index = block_storage_diffs.len() as u32;
+        let storage_diff = storage_diff.to_proto();
+
+        if let Some(contract_address) = storage_diff.contract_address {
+            index_storage_diff_by_contract_address
+                .insert(ScalarValue::B256(contract_address.to_bytes()), index);
+        }
+
+        block_storage_diffs.push(storage_diff);
+    }
+
+    for deprecated_declared_class in state_diff.deprecated_declared_classes.iter() {
+        let index = block_contract_changes.len() as u32;
+
+        let class_hash = deprecated_declared_class.to_proto();
+
+        let change = starknet::contract_change::Change::DeclaredClass(starknet::DeclaredClass {
+            class_hash: class_hash.into(),
+            compiled_class_hash: None,
+        });
+
+        let contract_change = starknet::ContractChange {
+            filter_ids: Vec::default(),
+            change: change.into(),
+        };
+
+        index_contract_change_by_type
+            .insert(ContractChangeType::DeclaredClass.to_scalar_value(), index);
+
+        block_contract_changes.push(contract_change);
+    }
+
+    for declared_class in state_diff.declared_classes.iter() {
+        let index = block_contract_changes.len() as u32;
+        let declared_class = declared_class.to_proto();
+        let change = starknet::contract_change::Change::DeclaredClass(declared_class);
+        let contract_change = starknet::ContractChange {
+            filter_ids: Vec::default(),
+            change: change.into(),
+        };
+
+        index_contract_change_by_type
+            .insert(ContractChangeType::DeclaredClass.to_scalar_value(), index);
+
+        block_contract_changes.push(contract_change);
+    }
+
+    for replaced_class in state_diff.replaced_classes.iter() {
+        let index = block_contract_changes.len() as u32;
+        let replaced_class = replaced_class.to_proto();
+        let change = starknet::contract_change::Change::ReplacedClass(replaced_class);
+        let contract_change = starknet::ContractChange {
+            filter_ids: Vec::default(),
+            change: change.into(),
+        };
+
+        index_contract_change_by_type.insert(ContractChangeType::Replaced.to_scalar_value(), index);
+
+        block_contract_changes.push(contract_change);
+    }
+
+    for deployed_contract in state_diff.deployed_contracts.iter() {
+        let index = block_contract_changes.len() as u32;
+        let deployed_contract = deployed_contract.to_proto();
+        let change = starknet::contract_change::Change::DeployedContract(deployed_contract);
+        let contract_change = starknet::ContractChange {
+            filter_ids: Vec::default(),
+            change: change.into(),
+        };
+
+        index_contract_change_by_type.insert(ContractChangeType::Deployed.to_scalar_value(), index);
+
+        block_contract_changes.push(contract_change);
+    }
+
+    for nonce_update in state_diff.nonces.iter() {
+        let index = block_nonce_updates.len() as u32;
+        let nonce_update = nonce_update.to_proto();
+
+        if let Some(contract_address) = nonce_update.contract_address {
+            index_nonce_update_by_contract_address
+                .insert(ScalarValue::B256(contract_address.to_bytes()), index);
+        }
+
+        block_nonce_updates.push(nonce_update);
+    }
+
+    let storage_diff_fragment = BodyFragment {
+        fragment_id: STORAGE_DIFF_FRAGMENT_ID,
+        name: STORAGE_DIFF_FRAGMENT_NAME.to_string(),
+        data: block_storage_diffs
+            .iter()
+            .map(Message::encode_to_vec)
+            .collect(),
+    };
+
+    let storage_diff_index = {
+        let index_storage_diff_by_contract_address = Index {
+            index_id: INDEX_STORAGE_DIFF_BY_CONTRACT_ADDRESS,
+            index: index_storage_diff_by_contract_address
+                .build()
+                .change_context(IngestionError::Indexing)?
+                .into(),
+        };
+
+        IndexFragment {
+            fragment_id: STORAGE_DIFF_FRAGMENT_ID,
+            range_start: 0,
+            range_len: block_storage_diffs.len() as u32,
+            indexes: vec![index_storage_diff_by_contract_address],
+        }
+    };
+
+    let storage_diff_join = JoinFragment {
+        fragment_id: STORAGE_DIFF_FRAGMENT_ID,
+        joins: Vec::default(),
+    };
+
+    let contract_change_fragment = BodyFragment {
+        fragment_id: CONTRACT_CHANGE_FRAGMENT_ID,
+        name: CONTRACT_CHANGE_FRAGMENT_NAME.to_string(),
+        data: block_contract_changes
+            .iter()
+            .map(Message::encode_to_vec)
+            .collect(),
+    };
+
+    let contract_change_index = {
+        let index_contract_change_by_type = Index {
+            index_id: INDEX_CONTRACT_CHANGE_BY_TYPE,
+            index: index_contract_change_by_type
+                .build()
+                .change_context(IngestionError::Indexing)?
+                .into(),
+        };
+
+        IndexFragment {
+            fragment_id: CONTRACT_CHANGE_FRAGMENT_ID,
+            range_start: 0,
+            range_len: block_contract_changes.len() as u32,
+            indexes: vec![index_contract_change_by_type],
+        }
+    };
+
+    let contract_change_join = JoinFragment {
+        fragment_id: CONTRACT_CHANGE_FRAGMENT_ID,
+        joins: Vec::default(),
+    };
+
+    let nonce_update_fragment = BodyFragment {
+        fragment_id: NONCE_UPDATE_FRAGMENT_ID,
+        name: NONCE_UPDATE_FRAGMENT_NAME.to_string(),
+        data: block_nonce_updates
+            .iter()
+            .map(Message::encode_to_vec)
+            .collect(),
+    };
+
+    let nonce_update_index = {
+        let index_nonce_update_by_contract_address = Index {
+            index_id: INDEX_NONCE_UPDATE_BY_CONTRACT_ADDRESS,
+            index: index_nonce_update_by_contract_address
+                .build()
+                .change_context(IngestionError::Indexing)?
+                .into(),
+        };
+
+        IndexFragment {
+            fragment_id: NONCE_UPDATE_FRAGMENT_ID,
+            range_start: 0,
+            range_len: block_nonce_updates.len() as u32,
+            indexes: vec![index_nonce_update_by_contract_address],
+        }
+    };
+
+    let nonce_update_join = JoinFragment {
+        fragment_id: NONCE_UPDATE_FRAGMENT_ID,
+        joins: Vec::default(),
+    };
+
+    Ok(BlockIngestionResult {
+        body: vec![
+            storage_diff_fragment,
+            contract_change_fragment,
+            nonce_update_fragment,
+        ],
+        index: vec![
+            storage_diff_index,
+            contract_change_index,
+            nonce_update_index,
+        ],
+        join: vec![storage_diff_join, contract_change_join, nonce_update_join],
+    })
 }
 
 fn set_transaction_index_and_status(

@@ -11,6 +11,13 @@ use crate::{
 
 pub type FilterId = u32;
 
+#[derive(Debug, Clone)]
+pub enum HeaderFilter {
+    Always,
+    OnData,
+    OnDataOrOnNewBlock,
+}
+
 /// Filter a fragment based on the values from this index.
 #[derive(Debug, Clone)]
 pub struct Condition {
@@ -38,13 +45,17 @@ pub struct Filter {
 /// A collection of filters.
 #[derive(Debug, Clone, Default)]
 pub struct BlockFilter {
-    pub always_include_header: bool,
+    pub header_filter: HeaderFilter,
     filters: BTreeMap<FragmentId, Vec<Filter>>,
 }
 
 impl BlockFilter {
-    pub fn set_always_include_header(&mut self, value: bool) {
-        self.always_include_header = value;
+    pub fn always_include_header(&self) -> bool {
+        matches!(self.header_filter, HeaderFilter::Always)
+    }
+
+    pub fn set_header_filter(&mut self, value: HeaderFilter) {
+        self.header_filter = value;
     }
 
     /// Add a filter to the block filter.
@@ -108,5 +119,11 @@ impl error_stack::Context for FilterError {}
 impl std::fmt::Display for FilterError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "failed to filter block")
+    }
+}
+
+impl Default for HeaderFilter {
+    fn default() -> Self {
+        Self::OnData
     }
 }
