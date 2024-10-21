@@ -17,11 +17,17 @@ pub mod provider;
 
 pub struct BeaconChainChainSupport {
     provider: BeaconApiProvider,
+    options: BeaconChainOptions,
+}
+
+#[derive(Debug, Clone)]
+pub struct BeaconChainOptions {
+    pub ingest_validators: bool,
 }
 
 impl BeaconChainChainSupport {
-    pub fn new(provider: BeaconApiProvider) -> Self {
-        Self { provider }
+    pub fn new(provider: BeaconApiProvider, options: BeaconChainOptions) -> Self {
+        Self { provider, options }
     }
 }
 
@@ -51,6 +57,6 @@ impl ChainSupport for BeaconChainChainSupport {
     }
 
     fn block_ingestion(&self) -> Self::BlockIngestion {
-        BeaconChainBlockIngestion::new(self.provider.clone())
+        BeaconChainBlockIngestion::new(self.provider.clone(), self.options.clone())
     }
 }

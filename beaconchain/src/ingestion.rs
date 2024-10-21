@@ -28,16 +28,18 @@ use crate::{
         http::{BeaconApiErrorExt, BeaconApiProvider, BlockId},
         models::{self, BeaconCursorExt},
     },
+    BeaconChainOptions,
 };
 
 #[derive(Clone)]
 pub struct BeaconChainBlockIngestion {
     provider: BeaconApiProvider,
+    options: BeaconChainOptions,
 }
 
 impl BeaconChainBlockIngestion {
-    pub fn new(provider: BeaconApiProvider) -> Self {
-        Self { provider }
+    pub fn new(provider: BeaconApiProvider, options: BeaconChainOptions) -> Self {
+        Self { provider, options }
     }
 
     async fn ingest_block_by_id(
@@ -45,6 +47,8 @@ impl BeaconChainBlockIngestion {
         block_id: BlockId,
     ) -> Result<Option<(BlockInfo, Block)>, IngestionError> {
         // Fetch all data using the block root to avoid issues with reorgs.
+        // Except for the validators since it won't work with the block root.
+        let original_block_id = block_id.clone();
         let block_root = match self.provider.get_block_root(block_id).await {
             Ok(header) => header,
             Err(err) if err.is_not_found() => return Ok(None),
@@ -85,15 +89,20 @@ impl BeaconChainBlockIngestion {
 
         let validators = tokio::spawn({
             let provider = self.provider.clone();
-            let block_id = block_id.clone();
+            let block_id = original_block_id.clone();
+            let ingest_validators = self.options.ingest_validators;
             async move {
-                match provider.get_validators(block_id.clone()).await {
-                    Ok(response) => Ok(response.data),
-                    Err(err) if err.is_not_found() => Ok(Vec::new()),
-                    Err(err) => Err(err)
-                        .change_context(IngestionError::RpcRequest)
-                        .attach_printable("failed to get validators")
-                        .attach_printable_lazy(|| format!("block id: {block_id:?}")),
+                if ingest_validators {
+                    match provider.get_validators(block_id.clone()).await {
+                        Ok(response) => Ok(response.data),
+                        Err(err) if err.is_not_found() => Ok(Vec::new()),
+                        Err(err) => Err(err)
+                            .change_context(IngestionError::RpcRequest)
+                            .attach_printable("failed to get validators")
+                            .attach_printable_lazy(|| format!("block id: {block_id:?}")),
+                    }
+                } else {
+                    Ok(Vec::new())
                 }
             }
         })
