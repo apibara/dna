@@ -410,11 +410,16 @@ in
           patch=$(${pkgs.semver-tool}/bin/semver get patch ''${version})
           prerel=$(${pkgs.semver-tool}/bin/semver get prerel ''${version})
 
+          echo "major=''${major}"
+          echo "minor=''${minor}"
+          echo "patch=''${patch}"
+          echo "prerel=''${prerel}"
+
           echo "target=''${target}" >> "$GITHUB_OUTPUT"
           echo "major=''${major}" >> "$GITHUB_OUTPUT"
           echo "minor=''${minor}" >> "$GITHUB_OUTPUT"
           echo "patch=''${patch}" >> "$GITHUB_OUTPUT"
-          echo "prerel=''${patch}" >> "$GITHUB_OUTPUT"
+          echo "prerel=''${prerel}" >> "$GITHUB_OUTPUT"
         '';
 
         # Publish docker images to Quay.io
