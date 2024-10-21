@@ -39,6 +39,14 @@ pub struct BitmapIndex {
 pub struct BitmapIndexBuilder(BTreeMap<ScalarValue, RoaringBitmap>);
 
 impl BitmapIndexBuilder {
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
     /// Insert a value in the index.
     pub fn insert(&mut self, key: ScalarValue, value: u32) {
         self.0.entry(key).or_default().insert(value);
