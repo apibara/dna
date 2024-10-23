@@ -121,6 +121,7 @@ fn index_fragment_dump(fragment: &ArchivedIndexFragment) -> Result<(), DebugComm
 
     for index in fragment.indexes.iter() {
         match &index.index {
+            Index::Empty => {}
             Index::Bitmap(bitmap) => {
                 let keys = bitmap.keys().collect::<Vec<_>>();
                 let first = keys.first();

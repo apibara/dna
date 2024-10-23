@@ -47,6 +47,7 @@ impl SegmentGroupBuilder {
                                 block_index.insert(key.clone(), block_number);
                             }
                         }
+                        index::Index::Empty => {}
                     }
                 }
             }

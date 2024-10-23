@@ -97,6 +97,7 @@ impl Filter {
                 .ok_or(FilterError)?;
 
             match &cond_index.index {
+                index::ArchivedIndex::Empty => {}
                 index::ArchivedIndex::Bitmap(bitmap) => {
                     if let Some(bitmap) = bitmap.get(&cond.key) {
                         result &= bitmap;
