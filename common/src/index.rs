@@ -119,6 +119,8 @@ fn cmp_scalar_value(a: &ArchivedScalarValue, b: &ScalarValue) -> std::cmp::Order
 pub enum Index {
     /// An index containing bitmap values.
     Bitmap(BitmapIndex),
+    /// An empty index.
+    Empty,
 }
 
 impl std::fmt::Debug for ScalarValue {

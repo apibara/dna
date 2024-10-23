@@ -268,13 +268,35 @@ impl BlockIngestion for BeaconChainBlockIngestion {
                     fragment_id: TRANSACTION_FRAGMENT_ID,
                     range_start: 0,
                     range_len: 0,
-                    indexes: Vec::default(),
+                    indexes: vec![
+                        Index {
+                            index_id: INDEX_TRANSACTION_BY_FROM_ADDRESS,
+                            index: apibara_dna_common::index::Index::Empty,
+                        },
+                        Index {
+                            index_id: INDEX_TRANSACTION_BY_TO_ADDRESS,
+                            index: apibara_dna_common::index::Index::Empty,
+                        },
+                        Index {
+                            index_id: INDEX_TRANSACTION_BY_CREATE,
+                            index: apibara_dna_common::index::Index::Empty,
+                        },
+                    ],
                 },
                 IndexFragment {
                     fragment_id: VALIDATOR_FRAGMENT_ID,
                     range_start: 0,
                     range_len: 0,
-                    indexes: Vec::default(),
+                    indexes: vec![
+                        Index {
+                            index_id: INDEX_VALIDATOR_BY_INDEX,
+                            index: apibara_dna_common::index::Index::Empty,
+                        },
+                        Index {
+                            index_id: INDEX_VALIDATOR_BY_STATUS,
+                            index: apibara_dna_common::index::Index::Empty,
+                        },
+                    ],
                 },
                 IndexFragment {
                     fragment_id: BLOB_FRAGMENT_ID,
