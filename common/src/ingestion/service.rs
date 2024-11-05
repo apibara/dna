@@ -3,7 +3,10 @@ use std::{future::Future, sync::Arc, time::Duration};
 use apibara_etcd::{EtcdClient, Lock};
 use error_stack::{Result, ResultExt};
 use futures::{stream::FuturesOrdered, StreamExt};
-use tokio::{task::JoinHandle, time::Interval};
+use tokio::{
+    task::{JoinError, JoinHandle},
+    time::Interval,
+};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, field, info, trace, Instrument};
 
@@ -63,6 +66,8 @@ where
     task_queue: FuturesOrdered<IngestionTaskHandle>,
 }
 
+pub type IngestionJobJoinResult = std::result::Result<Result<BlockInfo, IngestionError>, JoinError>;
+
 /// Wrap ingestion-related clients so we can clone them and push them to the task queue.
 #[derive(Clone)]
 struct IngestionInner<I>
@@ -81,7 +86,7 @@ pub enum IngestionState {
 pub struct IngestState {
     pub finalized: Cursor,
     pub head: Cursor,
-    queued_block_number: u64,
+    pub queued_block_number: u64,
     head_refresh_interval: Interval,
     finalized_refresh_interval: Interval,
 }
@@ -259,124 +264,185 @@ where
             _ = state.finalized_refresh_interval.tick() => {
                 current_span.record("action", "refresh_finalized");
 
-                let finalized = self.ingestion.get_finalized_cursor().await.change_context(IngestionError::RpcRequest)
-                    .attach_printable("failed to refresh finalized cursor")?;
-
-                if state.finalized.number > finalized.number {
-                    return Err(IngestionError::Model)
-                        .attach_printable("the new finalized cursor is behind the old one")
-                        .attach_printable("this should never happen");
-                }
-
-                if state.finalized == finalized {
-                    return Ok(IngestionState::Ingest(state));
-                }
-
-                info!(cursor = %finalized, "refreshed finalized cursor");
-
-                self.state_client.put_finalized(finalized.number).await.change_context(IngestionError::StateClientRequest)?;
-
-                Ok(IngestionState::Ingest(IngestState {
-                    finalized,
-                    ..state
-                }))
+                self.tick_refresh_finalized(state).await
             }
 
             _ = state.head_refresh_interval.tick() => {
                 current_span.record("action", "refresh_head");
 
-                let head = self.ingestion.get_head_cursor().await.change_context(IngestionError::RpcRequest)
-                    .attach_printable("failed to refresh head cursor")?;
-
-                if state.head == head {
-                    return Ok(IngestionState::Ingest(state));
-                }
-
-                if state.head.number > head.number {
-                    info!(old_head = %state.head, new_head = %head, "reorg detected");
-                    return Ok(IngestionState::Recover);
-                }
-
-                if state.head.number == head.number && state.head.hash != head.hash {
-                    return Ok(IngestionState::Recover);
-                }
-
-                info!(cursor = %head, "refreshed head cursor");
-
-                let mut block_number = state.queued_block_number;
-                while self.can_push_task() {
-                    if block_number + 1 > state.head.number {
-                        break;
-                    }
-
-                    block_number += 1;
-                    trace!(block_number, "pushing finalized ingestion task");
-                    self.push_ingest_block_by_number(block_number);
-                }
-
-                Ok(IngestionState::Ingest(IngestState {
-                    head,
-                    queued_block_number: block_number,
-                    ..state
-                }))
+                self.tick_refresh_head(state).await
             }
 
-            join_result = self.task_queue.next(), if !self.task_queue.is_empty() => {
+            join_result = self.task_queue_next(), if !self.task_queue_is_empty() => {
                 current_span.record("action", "finish_ingestion");
 
-                if let Some(join_result) = join_result {
-                    let block_info = join_result
-                        .change_context(IngestionError::RpcRequest)?
-                        .attach_printable("failed to join ingestion task")
-                        .change_context(IngestionError::RpcRequest)
-                        .attach_printable("failed to ingest block")?;
-
-                    info!(block = %block_info.cursor(), "ingested block");
-
-                    // Always upload recent segment if the block is non-finalized.
-                    let mut should_upload_recent_segment = block_info.number >= state.finalized.number;
-
-                    if !self.chain_builder.can_grow(&block_info) {
-                        return Ok(IngestionState::Recover);
-                    }
-
-                    self.chain_builder.grow(block_info).change_context(IngestionError::Model)?;
-
-                    if self.chain_builder.segment_size() == self.options.chain_segment_size + self.options.chain_segment_upload_offset_size
-                    {
-                        let segment = self.chain_builder.take_segment(self.options.chain_segment_size).change_context(IngestionError::Model)?;
-                        info!(first_block = %segment.info.first_block, "uploading chain segment");
-                        self.chain_store.put(&segment).await.change_context(IngestionError::CanonicalChainStoreRequest)?;
-
-                        should_upload_recent_segment = true;
-                    }
-
-                    if should_upload_recent_segment {
-                        let current_segment = self.chain_builder.current_segment().change_context(IngestionError::Model)?;
-                        info!(first_block = %current_segment.info.first_block, last_block = %current_segment.info.last_block, "uploading recent chain segment");
-                        let recent_etag = self.chain_store.put_recent(&current_segment).await.change_context(IngestionError::CanonicalChainStoreRequest)?;
-                        self.state_client.put_ingested(recent_etag).await.change_context(IngestionError::StateClientRequest)?;
-                    }
-                }
-
-                let mut block_number = state.queued_block_number;
-
-                while self.can_push_task() {
-                    if block_number + 1 > state.head.number {
-                        break;
-                    }
-
-                    block_number += 1;
-                    trace!(block_number, "pushing finalized ingestion task");
-                    self.push_ingest_block_by_number(block_number);
-                }
-
-                Ok(IngestionState::Ingest(IngestState {
-                    queued_block_number: block_number,
-                    ..state
-                }))
+                self.tick_with_task_result(state, join_result).await
             }
         }
+    }
+
+    pub async fn tick_refresh_finalized(
+        &mut self,
+        state: IngestState,
+    ) -> Result<IngestionState, IngestionError> {
+        let finalized = self
+            .ingestion
+            .get_finalized_cursor()
+            .await
+            .change_context(IngestionError::RpcRequest)
+            .attach_printable("failed to refresh finalized cursor")?;
+
+        if state.finalized.number > finalized.number {
+            return Err(IngestionError::Model)
+                .attach_printable("the new finalized cursor is behind the old one")
+                .attach_printable("this should never happen");
+        }
+
+        if state.finalized == finalized {
+            return Ok(IngestionState::Ingest(state));
+        }
+
+        info!(cursor = %finalized, "refreshed finalized cursor");
+
+        self.state_client
+            .put_finalized(finalized.number)
+            .await
+            .change_context(IngestionError::StateClientRequest)?;
+
+        Ok(IngestionState::Ingest(IngestState { finalized, ..state }))
+    }
+
+    pub async fn tick_refresh_head(
+        &mut self,
+        state: IngestState,
+    ) -> Result<IngestionState, IngestionError> {
+        let head = self
+            .ingestion
+            .get_head_cursor()
+            .await
+            .change_context(IngestionError::RpcRequest)
+            .attach_printable("failed to refresh head cursor")?;
+
+        if state.head == head {
+            return Ok(IngestionState::Ingest(state));
+        }
+
+        if state.head.number > head.number {
+            info!(old_head = %state.head, new_head = %head, "reorg detected");
+            return Ok(IngestionState::Recover);
+        }
+
+        if state.head.number == head.number && state.head.hash != head.hash {
+            return Ok(IngestionState::Recover);
+        }
+
+        info!(cursor = %head, "refreshed head cursor");
+
+        let mut block_number = state.queued_block_number;
+        while self.can_push_task() {
+            if block_number + 1 > state.head.number {
+                break;
+            }
+
+            block_number += 1;
+            trace!(block_number, "pushing finalized ingestion task");
+            self.push_ingest_block_by_number(block_number);
+        }
+
+        Ok(IngestionState::Ingest(IngestState {
+            head,
+            queued_block_number: block_number,
+            ..state
+        }))
+    }
+
+    pub async fn tick_with_task_result(
+        &mut self,
+        state: IngestState,
+        join_result: Option<IngestionJobJoinResult>,
+    ) -> Result<IngestionState, IngestionError> {
+        if let Some(join_result) = join_result {
+            let block_info = join_result
+                .change_context(IngestionError::RpcRequest)?
+                .attach_printable("failed to join ingestion task")
+                .change_context(IngestionError::RpcRequest)
+                .attach_printable("failed to ingest block")?;
+
+            info!(block = %block_info.cursor(), "ingested block");
+
+            // Always upload recent segment if the block is non-finalized.
+            let mut should_upload_recent_segment = block_info.number >= state.finalized.number;
+
+            if !self.chain_builder.can_grow(&block_info) {
+                return Ok(IngestionState::Recover);
+            }
+
+            self.chain_builder
+                .grow(block_info)
+                .change_context(IngestionError::Model)?;
+
+            if self.chain_builder.segment_size()
+                == self.options.chain_segment_size + self.options.chain_segment_upload_offset_size
+            {
+                let segment = self
+                    .chain_builder
+                    .take_segment(self.options.chain_segment_size)
+                    .change_context(IngestionError::Model)?;
+                info!(first_block = %segment.info.first_block, "uploading chain segment");
+                self.chain_store
+                    .put(&segment)
+                    .await
+                    .change_context(IngestionError::CanonicalChainStoreRequest)?;
+
+                should_upload_recent_segment = true;
+            }
+
+            if should_upload_recent_segment {
+                let current_segment = self
+                    .chain_builder
+                    .current_segment()
+                    .change_context(IngestionError::Model)?;
+                info!(first_block = %current_segment.info.first_block, last_block = %current_segment.info.last_block, "uploading recent chain segment");
+                let recent_etag = self
+                    .chain_store
+                    .put_recent(&current_segment)
+                    .await
+                    .change_context(IngestionError::CanonicalChainStoreRequest)?;
+                self.state_client
+                    .put_ingested(recent_etag)
+                    .await
+                    .change_context(IngestionError::StateClientRequest)?;
+            }
+        }
+
+        let mut block_number = state.queued_block_number;
+
+        while self.can_push_task() {
+            if block_number + 1 > state.head.number {
+                break;
+            }
+
+            block_number += 1;
+            trace!(block_number, "pushing finalized ingestion task");
+            self.push_ingest_block_by_number(block_number);
+        }
+
+        Ok(IngestionState::Ingest(IngestState {
+            queued_block_number: block_number,
+            ..state
+        }))
+    }
+
+    pub fn task_queue_len(&self) -> usize {
+        self.task_queue.len()
+    }
+
+    pub fn task_queue_is_empty(&self) -> bool {
+        self.task_queue.is_empty()
+    }
+
+    pub fn task_queue_next(&mut self) -> impl Future<Output = Option<IngestionJobJoinResult>> + '_ {
+        self.task_queue.next()
     }
 
     fn can_push_task(&self) -> bool {
@@ -507,6 +573,13 @@ impl IngestionState {
     }
 
     pub fn as_ingest(&self) -> Option<&IngestState> {
+        match self {
+            IngestionState::Ingest(state) => Some(state),
+            _ => None,
+        }
+    }
+
+    pub fn take_ingest(self) -> Option<IngestState> {
         match self {
             IngestionState::Ingest(state) => Some(state),
             _ => None,

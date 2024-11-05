@@ -154,6 +154,102 @@ async fn test_ingestion_initialize_with_starting_block() {
     assert!(ingested.is_none());
 }
 
+#[tokio::test]
+async fn test_ingestion_advances_as_head_changes() {
+    let (_minio, object_store) = init_minio().await;
+    let (_etcd_server, etcd_client) = init_etcd_server().await;
+    let (_anvil_server, anvil_provider) = init_anvil().await;
+
+    let mut state_client = IngestionStateClient::new(&etcd_client);
+    let file_cache = init_file_cache().await;
+
+    let block_ingestion = TestBlockIngestion {
+        provider: anvil_provider.clone(),
+    };
+
+    let options = IngestionServiceOptions {
+        chain_segment_size: 10,
+        chain_segment_upload_offset_size: 1,
+        max_concurrent_tasks: 5,
+        ..Default::default()
+    };
+
+    let mut service = IngestionService::new(
+        block_ingestion,
+        etcd_client,
+        object_store,
+        file_cache,
+        options,
+    );
+
+    anvil_provider.anvil_mine(10, 3).await;
+    let header = anvil_provider.get_header(BlockNumberOrTag::Latest).await;
+    assert_eq!(header.number, 10);
+
+    let starting_state = service.initialize().await.unwrap();
+    assert_eq!(service.task_queue_len(), 0);
+
+    // Nothing changed, so state is the same.
+    let state = starting_state.take_ingest().unwrap();
+    let prev_head = state.head.clone();
+    let state = service.tick_refresh_head(state).await.unwrap();
+    let state = state.take_ingest().unwrap();
+    assert_eq!(service.task_queue_len(), 0);
+    assert_eq!(state.head, prev_head);
+
+    // We need a lot of blocks to push the finalized block forward.
+    anvil_provider.anvil_mine(100, 3).await;
+    let header = anvil_provider.get_header(BlockNumberOrTag::Latest).await;
+    assert_eq!(header.number, 110);
+
+    let state = service.tick_refresh_head(state).await.unwrap();
+    let state = state.take_ingest().unwrap();
+    let state = service.tick_refresh_finalized(state).await.unwrap();
+    let state = state.take_ingest().unwrap();
+
+    assert_eq!(service.task_queue_len(), 5);
+    assert_eq!(state.head.number, header.number);
+    assert_eq!(state.queued_block_number, 5);
+
+    let mut state = Some(state);
+    for offset in 0..5 {
+        let join_result = service.task_queue_next().await;
+        let next_state = service
+            .tick_with_task_result(state.take().unwrap(), join_result)
+            .await
+            .unwrap();
+        let next_state = next_state.take_ingest().unwrap();
+        assert_eq!(next_state.queued_block_number, 5 + offset + 1);
+        state = Some(next_state);
+    }
+
+    // Not enough blocks ingested yet.
+    let ingested = state_client.get_ingested().await.unwrap();
+    assert!(ingested.is_none());
+
+    for _ in 0..4 {
+        let join_result = service.task_queue_next().await;
+        let next_state = service
+            .tick_with_task_result(state.take().unwrap(), join_result)
+            .await
+            .unwrap();
+        let next_state = next_state.take_ingest().unwrap();
+        state = Some(next_state);
+    }
+
+    let ingested = state_client.get_ingested().await.unwrap();
+    assert!(ingested.is_none());
+
+    let join_result = service.task_queue_next().await;
+    service
+        .tick_with_task_result(state.take().unwrap(), join_result)
+        .await
+        .unwrap();
+
+    let ingested = state_client.get_ingested().await.unwrap();
+    assert!(ingested.is_some());
+}
+
 #[derive(Clone)]
 struct TestBlockIngestion {
     provider: Arc<AnvilProvider>,
