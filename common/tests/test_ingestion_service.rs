@@ -448,6 +448,76 @@ async fn test_ingestion_detect_shrinking_reorg_on_block_ingestion() {
 }
 
 #[tokio::test]
+async fn test_ingestion_detect_offline_reorg() {
+    let (_minio, object_store) = init_minio().await;
+    let (_etcd_server, etcd_client) = init_etcd_server().await;
+    let (_anvil_server, anvil_provider) = init_anvil().await;
+
+    let file_cache = init_file_cache().await;
+
+    let block_ingestion = TestBlockIngestion {
+        provider: anvil_provider.clone(),
+    };
+
+    let options = IngestionServiceOptions {
+        chain_segment_size: 10,
+        chain_segment_upload_offset_size: 1,
+        max_concurrent_tasks: 5,
+        ..Default::default()
+    };
+
+    let mut service = IngestionService::new(
+        block_ingestion.clone(),
+        etcd_client.clone(),
+        object_store.clone(),
+        file_cache.clone(),
+        options.clone(),
+    );
+
+    anvil_provider.anvil_mine(100, 3).await;
+    let header = anvil_provider.get_header(BlockNumberOrTag::Latest).await;
+    assert_eq!(header.number, 100);
+
+    let starting_state = service.initialize().await.unwrap();
+    assert_eq!(service.task_queue_len(), 0);
+
+    let state = starting_state.take_ingest().unwrap();
+    let state = service.tick_refresh_head(state).await.unwrap();
+    let state = state.take_ingest().unwrap();
+    let state = service.tick_refresh_finalized(state).await.unwrap();
+    let state = state.take_ingest().unwrap();
+
+    assert_eq!(service.task_queue_len(), 0);
+    assert_eq!(state.head.number, 100);
+
+    let mut state = Some(state);
+    for _ in 0..=100 {
+        let join_result = service.task_queue_next().await;
+        let next_state = service
+            .tick_with_task_result(state.take().unwrap(), join_result)
+            .await
+            .unwrap();
+        let next_state = next_state.take_ingest().unwrap();
+        state = Some(next_state);
+    }
+
+    anvil_provider.anvil_reorg(10).await;
+    anvil_provider.anvil_mine(20, 7).await;
+
+    let mut service = IngestionService::new(
+        block_ingestion,
+        etcd_client,
+        object_store,
+        file_cache,
+        options,
+    );
+
+    let starting_state = service.initialize().await.unwrap();
+    assert_eq!(service.task_queue_len(), 0);
+    assert!(starting_state.is_recover());
+}
+
+#[tokio::test]
 async fn test_ingestion_detect_reorg_on_head_refresh() {
     let (_minio, object_store) = init_minio().await;
     let (_etcd_server, etcd_client) = init_etcd_server().await;

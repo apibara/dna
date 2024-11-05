@@ -99,6 +99,8 @@ enum IngestionStartAction {
     Resume(Cursor),
     /// Start ingestion from the given block number (inclusive).
     Start(u64),
+    /// Recover from an offline reorg.
+    Recover,
 }
 
 impl<I> IngestionService<I>
@@ -191,6 +193,7 @@ where
             .change_context(IngestionError::StateClientRequest)?;
 
         match self.get_starting_cursor().await? {
+            IngestionStartAction::Recover => Ok(IngestionState::Recover),
             IngestionStartAction::Start(starting_block) => {
                 // Ingest genesis block here so that the rest of the body is the same
                 // as if we were resuming ingestion.
@@ -502,11 +505,7 @@ where
                 .await?;
 
             if info.last_block != block_info.cursor() {
-                return Err(IngestionError::Model)
-                    .attach_printable("last block in chain does not match last block in state")
-                    .attach_printable("offline reorg not handled yet")
-                    .attach_printable_lazy(|| format!("last block in state: {}", info.last_block))
-                    .attach_printable_lazy(|| format!("last block: {}", block_info.cursor()));
+                return Ok(IngestionStartAction::Recover);
             }
 
             Ok(IngestionStartAction::Resume(block_info.cursor()))
