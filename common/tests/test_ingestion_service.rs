@@ -250,6 +250,59 @@ async fn test_ingestion_advances_as_head_changes() {
     assert!(ingested.is_some());
 }
 
+#[tokio::test]
+async fn test_ingestion_not_affected_by_reorg_after_ingested_block() {
+    let (_minio, object_store) = init_minio().await;
+    let (_etcd_server, etcd_client) = init_etcd_server().await;
+    let (_anvil_server, anvil_provider) = init_anvil().await;
+
+    let mut state_client = IngestionStateClient::new(&etcd_client);
+    let file_cache = init_file_cache().await;
+
+    let block_ingestion = TestBlockIngestion {
+        provider: anvil_provider.clone(),
+    };
+
+    let options = IngestionServiceOptions {
+        chain_segment_size: 10,
+        chain_segment_upload_offset_size: 1,
+        max_concurrent_tasks: 5,
+        ..Default::default()
+    };
+
+    let mut service = IngestionService::new(
+        block_ingestion,
+        etcd_client,
+        object_store,
+        file_cache,
+        options,
+    );
+
+    anvil_provider.anvil_mine(100, 3).await;
+    let header = anvil_provider.get_header(BlockNumberOrTag::Latest).await;
+    assert_eq!(header.number, 100);
+
+    let starting_state = service.initialize().await.unwrap();
+    assert_eq!(service.task_queue_len(), 0);
+
+    let state = starting_state.take_ingest().unwrap();
+    let state = service.tick_refresh_head(state).await.unwrap();
+    let state = state.take_ingest().unwrap();
+    let state = service.tick_refresh_finalized(state).await.unwrap();
+    let state = state.take_ingest().unwrap();
+    let prev_head = state.head.clone();
+    assert_eq!(service.task_queue_len(), 0);
+    assert_eq!(state.head.number, 100);
+
+    anvil_provider.anvil_reorg(5).await;
+    let header = anvil_provider.get_header(BlockNumberOrTag::Latest).await;
+    assert_eq!(header.number, 100);
+
+    let state = service.tick_refresh_head(state).await.unwrap();
+    let state = state.take_ingest().unwrap();
+    assert_ne!(state.head, prev_head);
+}
+
 #[derive(Clone)]
 struct TestBlockIngestion {
     provider: Arc<AnvilProvider>,
@@ -338,6 +391,8 @@ pub mod testing {
         ) -> impl Future<Output = ()> + Send;
 
         fn get_header(&self, block: BlockNumberOrTag) -> impl Future<Output = Header> + Send;
+
+        fn anvil_reorg(&self, block_count: u64) -> impl Future<Output = ()> + Send;
     }
 
     impl Image for AnvilServer {
@@ -394,6 +449,15 @@ pub mod testing {
                 .expect("get_header request failed")
                 .expect("get_header block missing");
             response.header
+        }
+
+        async fn anvil_reorg(&self, block_count: u64) {
+            self.raw_request::<_, serde_json::Value>(
+                "anvil_reorg".into(),
+                &(block_count, Vec::<u64>::default()),
+            )
+            .await
+            .expect("anvil_reorg request failed");
         }
     }
 }

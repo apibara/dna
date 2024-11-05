@@ -86,6 +86,7 @@ pub enum IngestionState {
 pub struct IngestState {
     pub finalized: Cursor,
     pub head: Cursor,
+    pub last_ingested: Cursor,
     pub queued_block_number: u64,
     head_refresh_interval: Interval,
     finalized_refresh_interval: Interval,
@@ -216,6 +217,7 @@ where
                     queued_block_number: starting_cursor.number,
                     finalized,
                     head,
+                    last_ingested: starting_cursor,
                     head_refresh_interval: tokio::time::interval(
                         self.options.head_refresh_interval,
                     ),
@@ -231,6 +233,7 @@ where
                     queued_block_number: starting_cursor.number,
                     finalized,
                     head,
+                    last_ingested: starting_cursor,
                     head_refresh_interval: tokio::time::interval(
                         self.options.head_refresh_interval,
                     ),
@@ -327,20 +330,23 @@ where
             return Ok(IngestionState::Ingest(state));
         }
 
-        if state.head.number > head.number {
-            info!(old_head = %state.head, new_head = %head, "reorg detected");
-            return Ok(IngestionState::Recover);
-        }
+        // Change of heads that are not ingested are not important.
+        if state.last_ingested.number >= head.number {
+            if state.head.number > head.number {
+                info!(old_head = %state.head, new_head = %head, "reorg detected");
+                return Ok(IngestionState::Recover);
+            }
 
-        if state.head.number == head.number && state.head.hash != head.hash {
-            return Ok(IngestionState::Recover);
+            if state.head.number == head.number && state.head.hash != head.hash {
+                return Ok(IngestionState::Recover);
+            }
         }
 
         info!(cursor = %head, "refreshed head cursor");
 
         let mut block_number = state.queued_block_number;
         while self.can_push_task() {
-            if block_number + 1 > state.head.number {
+            if block_number + 1 > head.number {
                 break;
             }
 
