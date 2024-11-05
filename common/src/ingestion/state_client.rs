@@ -361,6 +361,7 @@ pub mod testing {
                 .get_host_port_ipv4(2379)
                 .await
                 .expect("Etcd port 2379 not found");
+
             let endpoint = format!("http://localhost:{port}");
             EtcdClient::connect(&[endpoint], Default::default())
                 .await

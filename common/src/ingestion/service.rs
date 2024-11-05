@@ -16,6 +16,7 @@ use crate::{
     chain_store::ChainStore,
     file_cache::FileCache,
     fragment::Block,
+    ingestion::IngestionErrorExt,
     object_store::ObjectStore,
     Cursor,
 };
@@ -367,12 +368,24 @@ where
         state: IngestState,
         join_result: Option<IngestionJobJoinResult>,
     ) -> Result<IngestionState, IngestionError> {
+        let mut last_ingested = state.last_ingested.clone();
+
         if let Some(join_result) = join_result {
-            let block_info = join_result
-                .change_context(IngestionError::RpcRequest)?
-                .attach_printable("failed to join ingestion task")
+            let task_result = join_result
                 .change_context(IngestionError::RpcRequest)
-                .attach_printable("failed to ingest block")?;
+                .attach_printable("failed to join ingestion task")?;
+
+            let block_info = match task_result {
+                Ok(block_info) => block_info,
+                Err(err) if err.is_block_not_found() => {
+                    return Ok(IngestionState::Recover);
+                }
+                Err(err) => {
+                    return Err(err)
+                        .change_context(IngestionError::RpcRequest)
+                        .attach_printable("failed to ingest block")
+                }
+            };
 
             info!(block = %block_info.cursor(), "ingested block");
 
@@ -382,6 +395,8 @@ where
             if !self.chain_builder.can_grow(&block_info) {
                 return Ok(IngestionState::Recover);
             }
+
+            last_ingested = block_info.cursor();
 
             self.chain_builder
                 .grow(block_info)
@@ -434,6 +449,7 @@ where
         }
 
         Ok(IngestionState::Ingest(IngestState {
+            last_ingested,
             queued_block_number: block_number,
             ..state
         }))
@@ -451,11 +467,11 @@ where
         self.task_queue.next()
     }
 
-    fn can_push_task(&self) -> bool {
+    pub fn can_push_task(&self) -> bool {
         self.task_queue.len() < self.options.max_concurrent_tasks
     }
 
-    fn push_ingest_block_by_number(&mut self, block_number: u64) {
+    pub fn push_ingest_block_by_number(&mut self, block_number: u64) {
         let ingestion = self.ingestion.clone();
         self.task_queue.push_back(tokio::spawn(async move {
             ingestion.ingest_block_by_number(block_number).await
@@ -518,8 +534,6 @@ where
         let (block_info, block) = ingestion
             .ingest_block_by_number(block_number)
             .await
-            .change_context(IngestionError::RpcRequest)
-            .attach_printable("failed to ingest block")
             .attach_printable_lazy(|| format!("block number: {}", block_number))?;
 
         if block.index.len() != block.body.len() {
@@ -578,6 +592,14 @@ impl IngestionState {
         }
     }
 
+    pub fn is_ingested(&self) -> bool {
+        matches!(self, IngestionState::Ingest(_))
+    }
+
+    pub fn is_recover(&self) -> bool {
+        matches!(self, IngestionState::Recover)
+    }
+
     pub fn as_ingest(&self) -> Option<&IngestState> {
         match self {
             IngestionState::Ingest(state) => Some(state),
@@ -585,9 +607,23 @@ impl IngestionState {
         }
     }
 
+    pub fn as_recover(&self) -> Option<()> {
+        match self {
+            IngestionState::Recover => Some(()),
+            _ => None,
+        }
+    }
+
     pub fn take_ingest(self) -> Option<IngestState> {
         match self {
             IngestionState::Ingest(state) => Some(state),
+            _ => None,
+        }
+    }
+
+    pub fn take_recover(self) -> Option<()> {
+        match self {
+            IngestionState::Recover => Some(()),
             _ => None,
         }
     }

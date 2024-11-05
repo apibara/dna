@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use alloy_rpc_types::BlockNumberOrTag;
 use apibara_etcd::EtcdClient;
-use error_stack::Result;
+use error_stack::{Result, ResultExt};
 use foyer::HybridCacheBuilder;
 use testcontainers::{runners::AsyncRunner, ContainerAsync};
 
@@ -256,7 +256,6 @@ async fn test_ingestion_not_affected_by_reorg_after_ingested_block() {
     let (_etcd_server, etcd_client) = init_etcd_server().await;
     let (_anvil_server, anvil_provider) = init_anvil().await;
 
-    let mut state_client = IngestionStateClient::new(&etcd_client);
     let file_cache = init_file_cache().await;
 
     let block_ingestion = TestBlockIngestion {
@@ -303,6 +302,293 @@ async fn test_ingestion_not_affected_by_reorg_after_ingested_block() {
     assert_ne!(state.head, prev_head);
 }
 
+#[tokio::test]
+async fn test_ingestion_detect_shrinking_reorg_on_head_refresh() {
+    let (_minio, object_store) = init_minio().await;
+    let (_etcd_server, etcd_client) = init_etcd_server().await;
+    let (_anvil_server, anvil_provider) = init_anvil().await;
+
+    let file_cache = init_file_cache().await;
+
+    let block_ingestion = TestBlockIngestion {
+        provider: anvil_provider.clone(),
+    };
+
+    let options = IngestionServiceOptions {
+        chain_segment_size: 10,
+        chain_segment_upload_offset_size: 1,
+        max_concurrent_tasks: 5,
+        ..Default::default()
+    };
+
+    let mut service = IngestionService::new(
+        block_ingestion,
+        etcd_client,
+        object_store,
+        file_cache,
+        options,
+    );
+
+    anvil_provider.anvil_mine(90, 3).await;
+    let snapshot_id = anvil_provider.anvil_snapshot().await;
+    anvil_provider.anvil_mine(10, 3).await;
+    let header = anvil_provider.get_header(BlockNumberOrTag::Latest).await;
+    assert_eq!(header.number, 100);
+
+    let starting_state = service.initialize().await.unwrap();
+    assert_eq!(service.task_queue_len(), 0);
+
+    let state = starting_state.take_ingest().unwrap();
+    let state = service.tick_refresh_head(state).await.unwrap();
+    let state = state.take_ingest().unwrap();
+    let state = service.tick_refresh_finalized(state).await.unwrap();
+    let state = state.take_ingest().unwrap();
+
+    assert_eq!(service.task_queue_len(), 0);
+    assert_eq!(state.head.number, 100);
+
+    let mut state = Some(state);
+    for _ in 0..=100 {
+        let join_result = service.task_queue_next().await;
+        let next_state = service
+            .tick_with_task_result(state.take().unwrap(), join_result)
+            .await
+            .unwrap();
+        let next_state = next_state.take_ingest().unwrap();
+        state = Some(next_state);
+    }
+
+    let state = state.unwrap();
+    assert_eq!(state.last_ingested.number, 100);
+    assert_eq!(service.task_queue_len(), 0);
+
+    anvil_provider.anvil_revert(snapshot_id).await;
+    anvil_provider.anvil_mine(5, 13).await;
+    let header = anvil_provider.get_header(BlockNumberOrTag::Latest).await;
+    assert_eq!(header.number, 95);
+
+    let state = service.tick_refresh_head(state).await.unwrap();
+    assert!(state.is_recover());
+}
+
+#[tokio::test]
+async fn test_ingestion_detect_shrinking_reorg_on_block_ingestion() {
+    let (_minio, object_store) = init_minio().await;
+    let (_etcd_server, etcd_client) = init_etcd_server().await;
+    let (_anvil_server, anvil_provider) = init_anvil().await;
+
+    let file_cache = init_file_cache().await;
+
+    let block_ingestion = TestBlockIngestion {
+        provider: anvil_provider.clone(),
+    };
+
+    let options = IngestionServiceOptions {
+        chain_segment_size: 10,
+        chain_segment_upload_offset_size: 1,
+        max_concurrent_tasks: 5,
+        ..Default::default()
+    };
+
+    let mut service = IngestionService::new(
+        block_ingestion,
+        etcd_client,
+        object_store,
+        file_cache,
+        options,
+    );
+
+    anvil_provider.anvil_mine(90, 3).await;
+    let snapshot_id = anvil_provider.anvil_snapshot().await;
+    anvil_provider.anvil_mine(10, 3).await;
+    let header = anvil_provider.get_header(BlockNumberOrTag::Latest).await;
+    assert_eq!(header.number, 100);
+
+    let starting_state = service.initialize().await.unwrap();
+    assert_eq!(service.task_queue_len(), 0);
+
+    let state = starting_state.take_ingest().unwrap();
+    let state = service.tick_refresh_head(state).await.unwrap();
+    let state = state.take_ingest().unwrap();
+    let state = service.tick_refresh_finalized(state).await.unwrap();
+    let state = state.take_ingest().unwrap();
+
+    assert_eq!(service.task_queue_len(), 0);
+    assert_eq!(state.head.number, 100);
+
+    let mut state = Some(state);
+    for _ in 0..=100 {
+        let join_result = service.task_queue_next().await;
+        let next_state = service
+            .tick_with_task_result(state.take().unwrap(), join_result)
+            .await
+            .unwrap();
+        let next_state = next_state.take_ingest().unwrap();
+        state = Some(next_state);
+    }
+
+    let state = state.unwrap();
+    assert_eq!(state.last_ingested.number, 100);
+    assert_eq!(service.task_queue_len(), 0);
+
+    anvil_provider.anvil_revert(snapshot_id).await;
+    anvil_provider.anvil_mine(5, 13).await;
+    let header = anvil_provider.get_header(BlockNumberOrTag::Latest).await;
+    assert_eq!(header.number, 95);
+
+    // Simulate a task queued before the reorg happened.
+    service.push_ingest_block_by_number(101);
+    let join_result = service.task_queue_next().await;
+    let state = service
+        .tick_with_task_result(state, join_result)
+        .await
+        .unwrap();
+
+    assert!(state.is_recover());
+}
+
+#[tokio::test]
+async fn test_ingestion_detect_reorg_on_head_refresh() {
+    let (_minio, object_store) = init_minio().await;
+    let (_etcd_server, etcd_client) = init_etcd_server().await;
+    let (_anvil_server, anvil_provider) = init_anvil().await;
+
+    let file_cache = init_file_cache().await;
+
+    let block_ingestion = TestBlockIngestion {
+        provider: anvil_provider.clone(),
+    };
+
+    let options = IngestionServiceOptions {
+        chain_segment_size: 10,
+        chain_segment_upload_offset_size: 1,
+        max_concurrent_tasks: 5,
+        ..Default::default()
+    };
+
+    let mut service = IngestionService::new(
+        block_ingestion,
+        etcd_client,
+        object_store,
+        file_cache,
+        options,
+    );
+
+    anvil_provider.anvil_mine(100, 3).await;
+    let header = anvil_provider.get_header(BlockNumberOrTag::Latest).await;
+    assert_eq!(header.number, 100);
+
+    let starting_state = service.initialize().await.unwrap();
+    assert_eq!(service.task_queue_len(), 0);
+
+    let state = starting_state.take_ingest().unwrap();
+    let state = service.tick_refresh_head(state).await.unwrap();
+    let state = state.take_ingest().unwrap();
+    let state = service.tick_refresh_finalized(state).await.unwrap();
+    let state = state.take_ingest().unwrap();
+
+    assert_eq!(service.task_queue_len(), 0);
+    assert_eq!(state.head.number, 100);
+
+    let mut state = Some(state);
+    for _ in 0..=100 {
+        let join_result = service.task_queue_next().await;
+        let next_state = service
+            .tick_with_task_result(state.take().unwrap(), join_result)
+            .await
+            .unwrap();
+        let next_state = next_state.take_ingest().unwrap();
+        state = Some(next_state);
+    }
+
+    let state = state.unwrap();
+    assert_eq!(state.last_ingested.number, 100);
+    assert_eq!(service.task_queue_len(), 0);
+
+    anvil_provider.anvil_reorg(10).await;
+    let header = anvil_provider.get_header(BlockNumberOrTag::Latest).await;
+    assert_eq!(header.number, 100);
+
+    let state = service.tick_refresh_head(state).await.unwrap();
+    assert!(state.is_recover());
+}
+
+#[tokio::test]
+async fn test_ingestion_detect_reorg_on_block_ingestion() {
+    let (_minio, object_store) = init_minio().await;
+    let (_etcd_server, etcd_client) = init_etcd_server().await;
+    let (_anvil_server, anvil_provider) = init_anvil().await;
+
+    let file_cache = init_file_cache().await;
+
+    let block_ingestion = TestBlockIngestion {
+        provider: anvil_provider.clone(),
+    };
+
+    let options = IngestionServiceOptions {
+        chain_segment_size: 10,
+        chain_segment_upload_offset_size: 1,
+        max_concurrent_tasks: 5,
+        ..Default::default()
+    };
+
+    let mut service = IngestionService::new(
+        block_ingestion,
+        etcd_client,
+        object_store,
+        file_cache,
+        options,
+    );
+
+    anvil_provider.anvil_mine(100, 3).await;
+    let header = anvil_provider.get_header(BlockNumberOrTag::Latest).await;
+    assert_eq!(header.number, 100);
+
+    let starting_state = service.initialize().await.unwrap();
+    assert_eq!(service.task_queue_len(), 0);
+
+    let state = starting_state.take_ingest().unwrap();
+    let state = service.tick_refresh_head(state).await.unwrap();
+    let state = state.take_ingest().unwrap();
+    let state = service.tick_refresh_finalized(state).await.unwrap();
+    let state = state.take_ingest().unwrap();
+
+    assert_eq!(service.task_queue_len(), 0);
+    assert_eq!(state.head.number, 100);
+
+    let mut state = Some(state);
+    for _ in 0..=100 {
+        let join_result = service.task_queue_next().await;
+        let next_state = service
+            .tick_with_task_result(state.take().unwrap(), join_result)
+            .await
+            .unwrap();
+        let next_state = next_state.take_ingest().unwrap();
+        state = Some(next_state);
+    }
+
+    let state = state.unwrap();
+    assert_eq!(state.last_ingested.number, 100);
+    assert_eq!(service.task_queue_len(), 0);
+
+    anvil_provider.anvil_reorg(10).await;
+    anvil_provider.anvil_mine(20, 7).await;
+    let header = anvil_provider.get_header(BlockNumberOrTag::Latest).await;
+    assert_eq!(header.number, 120);
+
+    let state = service.tick_refresh_head(state).await.unwrap();
+    let state = state.take_ingest().unwrap();
+    assert_eq!(service.task_queue_len(), 5);
+
+    let join_result = service.task_queue_next().await;
+    let state = service
+        .tick_with_task_result(state, join_result)
+        .await
+        .unwrap();
+
+    assert!(state.is_recover());
+}
+
 #[derive(Clone)]
 struct TestBlockIngestion {
     provider: Arc<AnvilProvider>,
@@ -322,10 +608,13 @@ impl BlockIngestion for TestBlockIngestion {
     }
 
     async fn get_block_info_by_number(&self, number: u64) -> Result<BlockInfo, IngestionError> {
-        let header = self
+        let Some(header) = self
             .provider
-            .get_header(BlockNumberOrTag::Number(number))
-            .await;
+            .get_maybe_header(BlockNumberOrTag::Number(number))
+            .await
+        else {
+            return Err(IngestionError::BlockNotFound).attach_printable("missing block");
+        };
         let hash = Hash(header.hash.to_vec());
         let parent_hash = Hash(header.parent_hash.to_vec());
 
@@ -384,15 +673,26 @@ pub mod testing {
     }
 
     pub trait AnvilProviderExt {
+        fn get_maybe_header(
+            &self,
+            block: BlockNumberOrTag,
+        ) -> impl Future<Output = Option<Header>> + Send;
+
+        #[allow(async_fn_in_trait)]
+        async fn get_header(&self, block: BlockNumberOrTag) -> Header {
+            self.get_maybe_header(block)
+                .await
+                .expect("get_header request failed")
+        }
+
         fn anvil_mine(
             &self,
             block_count: u64,
             interval_sec: u64,
         ) -> impl Future<Output = ()> + Send;
-
-        fn get_header(&self, block: BlockNumberOrTag) -> impl Future<Output = Header> + Send;
-
         fn anvil_reorg(&self, block_count: u64) -> impl Future<Output = ()> + Send;
+        fn anvil_snapshot(&self) -> impl Future<Output = String> + Send;
+        fn anvil_revert(&self, snapshot_id: String) -> impl Future<Output = ()> + Send;
     }
 
     impl Image for AnvilServer {
@@ -433,6 +733,13 @@ pub mod testing {
     }
 
     impl AnvilProviderExt for Arc<AnvilProvider> {
+        async fn get_maybe_header(&self, block: BlockNumberOrTag) -> Option<Header> {
+            self.get_block(BlockId::Number(block), BlockTransactionsKind::Hashes)
+                .await
+                .expect("get_header request failed")
+                .map(|response| response.header)
+        }
+
         async fn anvil_mine(&self, block_count: u64, interval_sec: u64) {
             self.raw_request::<_, serde_json::Value>(
                 "anvil_mine".into(),
@@ -442,15 +749,6 @@ pub mod testing {
             .expect("anvil_mine request failed");
         }
 
-        async fn get_header(&self, block: BlockNumberOrTag) -> Header {
-            let response = self
-                .get_block(BlockId::Number(block), BlockTransactionsKind::Hashes)
-                .await
-                .expect("get_header request failed")
-                .expect("get_header block missing");
-            response.header
-        }
-
         async fn anvil_reorg(&self, block_count: u64) {
             self.raw_request::<_, serde_json::Value>(
                 "anvil_reorg".into(),
@@ -458,6 +756,19 @@ pub mod testing {
             )
             .await
             .expect("anvil_reorg request failed");
+        }
+
+        async fn anvil_snapshot(&self) -> String {
+            self.raw_request::<_, String>("anvil_snapshot".into(), ())
+                .await
+                .expect("anvil_snapshot request failed")
+        }
+
+        async fn anvil_revert(&self, snapshot_id: String) {
+            println!("reverting snapshot {}", snapshot_id);
+            self.raw_request::<_, serde_json::Value>("anvil_revert".into(), &(snapshot_id,))
+                .await
+                .expect("anvil_revert request failed");
         }
     }
 }
