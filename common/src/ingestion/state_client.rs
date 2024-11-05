@@ -310,3 +310,61 @@ impl IngestionStateUpdate {
         }
     }
 }
+
+pub mod testing {
+    use std::borrow::Cow;
+
+    use apibara_etcd::EtcdClient;
+    use futures::Future;
+    use testcontainers::{
+        core::{ContainerPort, WaitFor},
+        ContainerAsync, Image,
+    };
+
+    pub struct EtcdServer;
+
+    pub trait EtcdServerExt {
+        fn etcd_client(&self) -> impl Future<Output = EtcdClient> + Send;
+    }
+
+    impl Image for EtcdServer {
+        fn name(&self) -> &str {
+            "bitnami/etcd"
+        }
+
+        fn tag(&self) -> &str {
+            "latest"
+        }
+
+        fn ready_conditions(&self) -> Vec<WaitFor> {
+            Vec::default()
+        }
+
+        fn env_vars(
+            &self,
+        ) -> impl IntoIterator<Item = (impl Into<Cow<'_, str>>, impl Into<Cow<'_, str>>)> {
+            vec![("ALLOW_NONE_AUTHENTICATION".to_string(), "yes".to_string())]
+        }
+
+        fn expose_ports(&self) -> &[ContainerPort] {
+            &[ContainerPort::Tcp(2379)]
+        }
+    }
+
+    pub fn etcd_server_container() -> EtcdServer {
+        EtcdServer
+    }
+
+    impl EtcdServerExt for ContainerAsync<EtcdServer> {
+        async fn etcd_client(&self) -> EtcdClient {
+            let port = self
+                .get_host_port_ipv4(2379)
+                .await
+                .expect("Etcd port 2379 not found");
+            let endpoint = format!("http://localhost:{port}");
+            EtcdClient::connect(&[endpoint], Default::default())
+                .await
+                .expect("Etcd connection error")
+        }
+    }
+}

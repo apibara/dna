@@ -28,6 +28,11 @@ incremental = false
 [workspace.dependencies]
 alloy-primitives = "0.8"
 alloy-eips = "0.3.6"
+alloy-rpc-client = "0.3.6"
+alloy-provider = "0.3.6"
+alloy-rpc-types = "0.3.6"
+alloy-transport = "0.3.6"
+alloy-transport-http = "0.3.6"
 bytes = { version = "1.7.1", features = ["serde"] }
 byte-unit = "5.1.4"
 clap = { version = "4.5.13", features = [

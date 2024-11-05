@@ -73,14 +73,14 @@ where
     ingestion: Arc<I>,
 }
 
-enum IngestionState {
+pub enum IngestionState {
     Ingest(IngestState),
     Recover,
 }
 
-struct IngestState {
-    finalized: Cursor,
-    head: Cursor,
+pub struct IngestState {
+    pub finalized: Cursor,
+    pub head: Cursor,
     queued_block_number: u64,
     head_refresh_interval: Interval,
     finalized_refresh_interval: Interval,
@@ -169,7 +169,7 @@ where
         err(Debug),
         fields(head, finalized, starting_block)
     )]
-    async fn initialize(&mut self) -> Result<IngestionState, IngestionError> {
+    pub async fn initialize(&mut self) -> Result<IngestionState, IngestionError> {
         let head = self.ingestion.get_head_cursor().await?;
         let finalized = self.ingestion.get_finalized_cursor().await?;
 
@@ -503,6 +503,13 @@ impl IngestionState {
         match self {
             IngestionState::Recover => "recover",
             IngestionState::Ingest(_) => "ingest",
+        }
+    }
+
+    pub fn as_ingest(&self) -> Option<&IngestState> {
+        match self {
+            IngestionState::Ingest(state) => Some(state),
+            _ => None,
         }
     }
 }

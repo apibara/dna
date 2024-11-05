@@ -593,6 +593,11 @@ dependencies = [
 name = "apibara-dna-common"
 version = "0.0.0"
 dependencies = [
+ "alloy-provider",
+ "alloy-rpc-client",
+ "alloy-rpc-types",
+ "alloy-transport",
+ "alloy-transport-http",
  "anyhow",
  "apibara-dna-protocol",
  "apibara-etcd",
@@ -612,8 +617,10 @@ dependencies = [
  "memmap2",
  "prost",
  "rand 0.8.5",
+ "reqwest 0.12.8",
  "rkyv 0.8.8",
  "roaring",
+ "serde_json",
  "tempdir",
  "tempfile",
  "testcontainers",
@@ -624,6 +631,7 @@ dependencies = [
  "tonic-health",
  "tonic-reflection",
  "tracing",
+ "url",
  "valuable",
  "zstd",
 ]
