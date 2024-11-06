@@ -119,6 +119,7 @@ impl DataStream {
 
                 // TODO: collect removed blocks.
                 let invalidate = Message::Invalidate(Invalidate {
+                    cursor: Some(cursor.clone().into()),
                     ..Default::default()
                 });
 
