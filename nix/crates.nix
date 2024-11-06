@@ -367,6 +367,7 @@ in
           cargo nextest run \
             --archive-file ${integrationTestsArchive}/archive.tar.zst\
             --workspace-remap=. \
+            --test-threads=1 \
             -E 'kind(test)'
         '';
       in
