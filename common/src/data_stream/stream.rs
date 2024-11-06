@@ -274,6 +274,10 @@ impl DataStream {
 
         // let mut prefetch_tasks = JoinSet::new();
         for block_number in data_bitmap.iter() {
+            if block_number < cursor.number as u32 {
+                continue;
+            }
+
             let block_number = block_number as u64;
 
             if block_number > current_segment_end {
@@ -420,9 +424,15 @@ impl DataStream {
                 break;
             }
 
+            let block_number = starting_block_number + i;
+
+            if block_number < cursor.number {
+                continue;
+            }
+
             let CanonicalCursor::Canonical(next_cursor) = self
                 .chain_view
-                .get_canonical(starting_block_number + i)
+                .get_canonical(block_number)
                 .await
                 .change_context(DataStreamError)?
             else {
