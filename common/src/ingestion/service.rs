@@ -8,7 +8,7 @@ use tokio::{
     time::Interval,
 };
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, field, info, trace, Instrument};
+use tracing::{debug, field, info, trace, warn, Instrument};
 
 use crate::{
     block_store::BlockStoreWriter,
@@ -496,6 +496,8 @@ where
         let current_span = tracing::Span::current();
         current_span.record("action", "recover");
 
+        warn!(last_ingested = %state.last_ingested, "recovering from a chain reorganization");
+
         let canonical_chain = self
             .chain_builder
             .current_segment()
@@ -543,6 +545,12 @@ where
                 }
             };
 
+            if new_head_candidate.number == 0 {
+                return Err(IngestionError::Model)
+                    .attach_printable("failed to recover from genesis block")
+                    .attach_printable("hint: are you connecting to the correct chain?");
+            }
+
             new_head_candidate = canonical_chain
                 .canonical(new_head_candidate.number - 1)
                 .change_context(IngestionError::Model)
@@ -558,6 +566,8 @@ where
             .change_context(IngestionError::Model)
             .attach_printable("failed to shrink canonical chain after reorg recovery")
             .attach_printable_lazy(|| format!("new head: {}", new_head_candidate))?;
+
+        info!(new_head = %new_head_candidate, "recovered from a chain reorganization");
 
         Ok(IngestionState::Ingest(IngestState {
             finalized: state.finalized,
@@ -620,10 +630,18 @@ where
 
             info!(first_block = %info.first_block, last_block = %info.last_block, "ingestion state restored");
 
-            let block_info = self
+            let block_info = match self
                 .ingestion
                 .get_block_info_by_number(info.last_block.number)
-                .await?;
+                .await
+                .attach_printable("failed to get starting cursor block info")
+            {
+                Ok(block_info) => block_info,
+                Err(err) if err.is_block_not_found() => {
+                    return Ok(IngestionStartAction::Recover(info.last_block.clone()));
+                }
+                Err(err) => return Err(err).change_context(IngestionError::RpcRequest),
+            };
 
             if info.last_block != block_info.cursor() {
                 return Ok(IngestionStartAction::Recover(info.last_block.clone()));

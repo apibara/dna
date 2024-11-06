@@ -38,6 +38,10 @@ pub struct BeaconApiProvider {
     options: BeaconApiProviderOptions,
 }
 
+pub trait BeaconApiProviderErrorExt {
+    fn is_not_found(&self) -> bool;
+}
+
 #[derive(Debug, Clone)]
 pub struct BeaconApiProviderOptions {
     /// Timeout for normal requests.
@@ -304,5 +308,11 @@ impl Default for BeaconApiProviderOptions {
             validators_timeout: Duration::from_secs(60),
             headers: HeaderMap::default(),
         }
+    }
+}
+
+impl BeaconApiProviderErrorExt for Report<BeaconApiError> {
+    fn is_not_found(&self) -> bool {
+        matches!(self.current_context(), BeaconApiError::NotFound)
     }
 }

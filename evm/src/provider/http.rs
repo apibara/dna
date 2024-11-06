@@ -4,7 +4,7 @@ use alloy_primitives::BlockHash;
 use alloy_provider::{network::Ethereum, Provider, ProviderBuilder};
 use alloy_rpc_client::ClientBuilder;
 use alloy_transport::BoxTransport;
-use error_stack::{Result, ResultExt};
+use error_stack::{Report, Result, ResultExt};
 use reqwest::header::{HeaderMap, HeaderValue};
 use url::Url;
 
@@ -32,6 +32,10 @@ pub struct JsonRpcProviderOptions {
 pub struct JsonRpcProvider {
     provider: Arc<dyn Provider<BoxTransport, Ethereum>>,
     options: JsonRpcProviderOptions,
+}
+
+pub trait JsonRpcProviderErrorExt {
+    fn is_not_found(&self) -> bool;
 }
 
 impl JsonRpcProvider {
@@ -133,5 +137,11 @@ impl std::fmt::Display for JsonRpcProviderError {
             JsonRpcProviderError::NotFound => write!(f, "not found"),
             JsonRpcProviderError::Configuration => write!(f, "configuration error"),
         }
+    }
+}
+
+impl JsonRpcProviderErrorExt for Report<JsonRpcProviderError> {
+    fn is_not_found(&self) -> bool {
+        matches!(self.current_context(), JsonRpcProviderError::NotFound)
     }
 }

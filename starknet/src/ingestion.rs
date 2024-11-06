@@ -31,7 +31,7 @@ use crate::{
         TRANSACTION_FRAGMENT_ID, TRANSACTION_FRAGMENT_NAME,
     },
     proto::{convert_block_header, ModelExt},
-    provider::{models, BlockExt, BlockId, StarknetProvider},
+    provider::{models, BlockExt, BlockId, StarknetProvider, StarknetProviderErrorExt},
 };
 
 pub struct StarknetBlockIngestion {
@@ -124,13 +124,22 @@ impl BlockIngestion for StarknetBlockIngestion {
         &self,
         block_number: u64,
     ) -> Result<BlockInfo, IngestionError> {
-        let block = self
+        let block = match self
             .provider
             .get_block_with_tx_hashes(&BlockId::Number(block_number))
             .await
-            .change_context(IngestionError::RpcRequest)
-            .attach_printable("failed to get block by number")
-            .attach_printable_lazy(|| format!("block number: {}", block_number))?;
+        {
+            Ok(block) => block,
+            Err(err) if err.is_not_found() => {
+                return Err(err).change_context(IngestionError::BlockNotFound)
+            }
+            Err(err) => {
+                return Err(err)
+                    .change_context(IngestionError::RpcRequest)
+                    .attach_printable("failed to get block by number")
+                    .attach_printable_lazy(|| format!("block number: {}", block_number))
+            }
+        };
 
         let models::MaybePendingBlockWithTxHashes::Block(block) = block else {
             return Err(IngestionError::RpcRequest)
@@ -154,13 +163,22 @@ impl BlockIngestion for StarknetBlockIngestion {
         &self,
         block_number: u64,
     ) -> Result<(BlockInfo, Block), IngestionError> {
-        let block = self
+        let block = match self
             .provider
             .get_block_with_receipts(&BlockId::Number(block_number))
             .await
-            .change_context(IngestionError::RpcRequest)
-            .attach_printable("failed to get block by number")
-            .attach_printable_lazy(|| format!("block number: {}", block_number))?;
+        {
+            Ok(block) => block,
+            Err(err) if err.is_not_found() => {
+                return Err(err).change_context(IngestionError::BlockNotFound)
+            }
+            Err(err) => {
+                return Err(err)
+                    .change_context(IngestionError::RpcRequest)
+                    .attach_printable("failed to get block by number")
+                    .attach_printable_lazy(|| format!("block number: {}", block_number))
+            }
+        };
 
         let models::MaybePendingBlockWithReceipts::Block(block) = block else {
             return Err(IngestionError::RpcRequest)

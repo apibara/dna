@@ -1,6 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
-use error_stack::{Result, ResultExt};
+use error_stack::{Report, Result, ResultExt};
 use reqwest::header::{HeaderMap, HeaderValue};
 use starknet::providers::{jsonrpc::HttpTransport, JsonRpcClient, Provider};
 use url::Url;
@@ -37,6 +37,10 @@ pub struct StarknetProviderOptions {
 pub struct StarknetProvider {
     client: Arc<JsonRpcClient<HttpTransport>>,
     options: StarknetProviderOptions,
+}
+
+pub trait StarknetProviderErrorExt {
+    fn is_not_found(&self) -> bool;
 }
 
 impl StarknetProvider {
@@ -149,5 +153,11 @@ fn convert_error<T>(err: starknet::providers::ProviderError) -> Result<T, Starkn
             Err(err).change_context(StarknetProviderError::NotFound)
         }
         _ => Err(err).change_context(StarknetProviderError::Request),
+    }
+}
+
+impl StarknetProviderErrorExt for Report<StarknetProviderError> {
+    fn is_not_found(&self) -> bool {
+        matches!(self.current_context(), StarknetProviderError::NotFound)
     }
 }
