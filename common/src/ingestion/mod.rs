@@ -1,7 +1,7 @@
 mod cli;
 mod error;
 mod service;
-mod state_client;
+pub mod state_client;
 
 use apibara_etcd::{EtcdClient, LockOptions};
 use error_stack::{Result, ResultExt};

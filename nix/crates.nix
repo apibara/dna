@@ -107,7 +107,7 @@ let
     '';
 
     checkPhaseCargoCommand = ''
-      cargo nextest archive --cargo-profile $CARGO_PROFILE --workspace --archive-format tar-zst --archive-file $out/archive.tar.zst
+      cargo nextest -P ci archive --cargo-profile $CARGO_PROFILE --workspace --archive-format tar-zst --archive-file $out/archive.tar.zst
     '';
   });
 
@@ -364,9 +364,10 @@ in
       let
         runTests = pkgs.writeScriptBin "run-integration-tests" ''
           echo "Using archive at ${integrationTestsArchive}"
-          cargo nextest run \
+          cargo nextest -P ci run \
             --archive-file ${integrationTestsArchive}/archive.tar.zst\
             --workspace-remap=. \
+            --test-threads=1 \
             -E 'kind(test)'
         '';
       in

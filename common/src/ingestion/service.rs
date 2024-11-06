@@ -3,16 +3,20 @@ use std::{future::Future, sync::Arc, time::Duration};
 use apibara_etcd::{EtcdClient, Lock};
 use error_stack::{Result, ResultExt};
 use futures::{stream::FuturesOrdered, StreamExt};
-use tokio::{task::JoinHandle, time::Interval};
+use tokio::{
+    task::{JoinError, JoinHandle},
+    time::Interval,
+};
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, field, info, trace, Instrument};
+use tracing::{debug, field, info, trace, warn, Instrument};
 
 use crate::{
     block_store::BlockStoreWriter,
-    chain::{BlockInfo, CanonicalChainBuilder},
+    chain::{BlockInfo, CanonicalChainBuilder, CanonicalChainSegment},
     chain_store::ChainStore,
     file_cache::FileCache,
     fragment::Block,
+    ingestion::IngestionErrorExt,
     object_store::ObjectStore,
     Cursor,
 };
@@ -63,6 +67,8 @@ where
     task_queue: FuturesOrdered<IngestionTaskHandle>,
 }
 
+pub type IngestionJobJoinResult = std::result::Result<Result<BlockInfo, IngestionError>, JoinError>;
+
 /// Wrap ingestion-related clients so we can clone them and push them to the task queue.
 #[derive(Clone)]
 struct IngestionInner<I>
@@ -73,17 +79,27 @@ where
     ingestion: Arc<I>,
 }
 
-enum IngestionState {
+#[derive(Debug)]
+pub enum IngestionState {
     Ingest(IngestState),
-    Recover,
+    Recover(RecoverState),
 }
 
-struct IngestState {
-    finalized: Cursor,
-    head: Cursor,
-    queued_block_number: u64,
+#[derive(Debug)]
+pub struct IngestState {
+    pub finalized: Cursor,
+    pub head: Cursor,
+    pub last_ingested: Cursor,
+    pub queued_block_number: u64,
     head_refresh_interval: Interval,
     finalized_refresh_interval: Interval,
+}
+
+#[derive(Debug)]
+pub struct RecoverState {
+    pub finalized: Cursor,
+    pub existing_head: Cursor,
+    pub last_ingested: Cursor,
 }
 
 /// What action to take when starting ingestion.
@@ -92,6 +108,8 @@ enum IngestionStartAction {
     Resume(Cursor),
     /// Start ingestion from the given block number (inclusive).
     Start(u64),
+    /// Recover from an offline reorg.
+    Recover(Cursor),
 }
 
 impl<I> IngestionService<I>
@@ -152,9 +170,8 @@ where
                     IngestionState::Ingest(inner_state) => {
                         self.tick_ingest(inner_state, ct.clone()).await
                     }
-                    IngestionState::Recover => {
-                        // TODO: implement recovery.
-                        Err(IngestionError::Model).attach_printable("chain is in recovery state")
+                    IngestionState::Recover(inner_state) => {
+                        self.tick_recover(inner_state, ct.clone()).await
                     }
                 }
             }
@@ -169,7 +186,7 @@ where
         err(Debug),
         fields(head, finalized, starting_block)
     )]
-    async fn initialize(&mut self) -> Result<IngestionState, IngestionError> {
+    pub async fn initialize(&mut self) -> Result<IngestionState, IngestionError> {
         let head = self.ingestion.get_head_cursor().await?;
         let finalized = self.ingestion.get_finalized_cursor().await?;
 
@@ -184,6 +201,13 @@ where
             .change_context(IngestionError::StateClientRequest)?;
 
         match self.get_starting_cursor().await? {
+            IngestionStartAction::Recover(last_ingested) => {
+                Ok(IngestionState::Recover(RecoverState {
+                    finalized,
+                    existing_head: head,
+                    last_ingested,
+                }))
+            }
             IngestionStartAction::Start(starting_block) => {
                 // Ingest genesis block here so that the rest of the body is the same
                 // as if we were resuming ingestion.
@@ -211,6 +235,7 @@ where
                     queued_block_number: starting_cursor.number,
                     finalized,
                     head,
+                    last_ingested: starting_cursor,
                     head_refresh_interval: tokio::time::interval(
                         self.options.head_refresh_interval,
                     ),
@@ -226,6 +251,7 @@ where
                     queued_block_number: starting_cursor.number,
                     finalized,
                     head,
+                    last_ingested: starting_cursor,
                     head_refresh_interval: tokio::time::interval(
                         self.options.head_refresh_interval,
                     ),
@@ -259,135 +285,331 @@ where
             _ = state.finalized_refresh_interval.tick() => {
                 current_span.record("action", "refresh_finalized");
 
-                let finalized = self.ingestion.get_finalized_cursor().await.change_context(IngestionError::RpcRequest)
-                    .attach_printable("failed to refresh finalized cursor")?;
-
-                if state.finalized.number > finalized.number {
-                    return Err(IngestionError::Model)
-                        .attach_printable("the new finalized cursor is behind the old one")
-                        .attach_printable("this should never happen");
-                }
-
-                if state.finalized == finalized {
-                    return Ok(IngestionState::Ingest(state));
-                }
-
-                info!(cursor = %finalized, "refreshed finalized cursor");
-
-                self.state_client.put_finalized(finalized.number).await.change_context(IngestionError::StateClientRequest)?;
-
-                Ok(IngestionState::Ingest(IngestState {
-                    finalized,
-                    ..state
-                }))
+                self.tick_refresh_finalized(state).await
             }
 
             _ = state.head_refresh_interval.tick() => {
                 current_span.record("action", "refresh_head");
 
-                let head = self.ingestion.get_head_cursor().await.change_context(IngestionError::RpcRequest)
-                    .attach_printable("failed to refresh head cursor")?;
-
-                if state.head == head {
-                    return Ok(IngestionState::Ingest(state));
-                }
-
-                if state.head.number > head.number {
-                    info!(old_head = %state.head, new_head = %head, "reorg detected");
-                    return Ok(IngestionState::Recover);
-                }
-
-                if state.head.number == head.number && state.head.hash != head.hash {
-                    return Ok(IngestionState::Recover);
-                }
-
-                info!(cursor = %head, "refreshed head cursor");
-
-                let mut block_number = state.queued_block_number;
-                while self.can_push_task() {
-                    if block_number + 1 > state.head.number {
-                        break;
-                    }
-
-                    block_number += 1;
-                    trace!(block_number, "pushing finalized ingestion task");
-                    self.push_ingest_block_by_number(block_number);
-                }
-
-                Ok(IngestionState::Ingest(IngestState {
-                    head,
-                    queued_block_number: block_number,
-                    ..state
-                }))
+                self.tick_refresh_head(state).await
             }
 
-            join_result = self.task_queue.next(), if !self.task_queue.is_empty() => {
+            join_result = self.task_queue_next(), if !self.task_queue_is_empty() => {
                 current_span.record("action", "finish_ingestion");
 
-                if let Some(join_result) = join_result {
-                    let block_info = join_result
-                        .change_context(IngestionError::RpcRequest)?
-                        .attach_printable("failed to join ingestion task")
-                        .change_context(IngestionError::RpcRequest)
-                        .attach_printable("failed to ingest block")?;
-
-                    info!(block = %block_info.cursor(), "ingested block");
-
-                    // Always upload recent segment if the block is non-finalized.
-                    let mut should_upload_recent_segment = block_info.number >= state.finalized.number;
-
-                    if !self.chain_builder.can_grow(&block_info) {
-                        return Ok(IngestionState::Recover);
-                    }
-
-                    self.chain_builder.grow(block_info).change_context(IngestionError::Model)?;
-
-                    if self.chain_builder.segment_size() == self.options.chain_segment_size + self.options.chain_segment_upload_offset_size
-                    {
-                        let segment = self.chain_builder.take_segment(self.options.chain_segment_size).change_context(IngestionError::Model)?;
-                        info!(first_block = %segment.info.first_block, "uploading chain segment");
-                        self.chain_store.put(&segment).await.change_context(IngestionError::CanonicalChainStoreRequest)?;
-
-                        should_upload_recent_segment = true;
-                    }
-
-                    if should_upload_recent_segment {
-                        let current_segment = self.chain_builder.current_segment().change_context(IngestionError::Model)?;
-                        info!(first_block = %current_segment.info.first_block, last_block = %current_segment.info.last_block, "uploading recent chain segment");
-                        let recent_etag = self.chain_store.put_recent(&current_segment).await.change_context(IngestionError::CanonicalChainStoreRequest)?;
-                        self.state_client.put_ingested(recent_etag).await.change_context(IngestionError::StateClientRequest)?;
-                    }
-                }
-
-                let mut block_number = state.queued_block_number;
-
-                while self.can_push_task() {
-                    if block_number + 1 > state.head.number {
-                        break;
-                    }
-
-                    block_number += 1;
-                    trace!(block_number, "pushing finalized ingestion task");
-                    self.push_ingest_block_by_number(block_number);
-                }
-
-                Ok(IngestionState::Ingest(IngestState {
-                    queued_block_number: block_number,
-                    ..state
-                }))
+                self.tick_with_task_result(state, join_result).await
             }
         }
     }
 
-    fn can_push_task(&self) -> bool {
+    pub async fn tick_refresh_finalized(
+        &mut self,
+        state: IngestState,
+    ) -> Result<IngestionState, IngestionError> {
+        let finalized = self
+            .ingestion
+            .get_finalized_cursor()
+            .await
+            .change_context(IngestionError::RpcRequest)
+            .attach_printable("failed to refresh finalized cursor")?;
+
+        if state.finalized.number > finalized.number {
+            return Err(IngestionError::Model)
+                .attach_printable("the new finalized cursor is behind the old one")
+                .attach_printable("this should never happen");
+        }
+
+        if state.finalized == finalized {
+            return Ok(IngestionState::Ingest(state));
+        }
+
+        info!(cursor = %finalized, "refreshed finalized cursor");
+
+        self.state_client
+            .put_finalized(finalized.number)
+            .await
+            .change_context(IngestionError::StateClientRequest)?;
+
+        Ok(IngestionState::Ingest(IngestState { finalized, ..state }))
+    }
+
+    pub async fn tick_refresh_head(
+        &mut self,
+        state: IngestState,
+    ) -> Result<IngestionState, IngestionError> {
+        let head = self
+            .ingestion
+            .get_head_cursor()
+            .await
+            .change_context(IngestionError::RpcRequest)
+            .attach_printable("failed to refresh head cursor")?;
+
+        if state.head == head {
+            return Ok(IngestionState::Ingest(state));
+        }
+
+        // Change of heads that are not ingested are not important.
+        if state.last_ingested.number >= head.number {
+            if state.head.number > head.number {
+                info!(old_head = %state.head, new_head = %head, "reorg detected");
+                return Ok(IngestionState::Recover(RecoverState {
+                    finalized: state.finalized,
+                    existing_head: state.head,
+                    last_ingested: state.last_ingested,
+                }));
+            }
+
+            if state.head.number == head.number && state.head.hash != head.hash {
+                return Ok(IngestionState::Recover(RecoverState {
+                    finalized: state.finalized,
+                    existing_head: state.head,
+                    last_ingested: state.last_ingested,
+                }));
+            }
+        }
+
+        info!(cursor = %head, "refreshed head cursor");
+
+        let mut block_number = state.queued_block_number;
+        while self.can_push_task() {
+            if block_number + 1 > head.number {
+                break;
+            }
+
+            block_number += 1;
+            trace!(block_number, "pushing finalized ingestion task");
+            self.push_ingest_block_by_number(block_number);
+        }
+
+        Ok(IngestionState::Ingest(IngestState {
+            head,
+            queued_block_number: block_number,
+            ..state
+        }))
+    }
+
+    pub async fn tick_with_task_result(
+        &mut self,
+        state: IngestState,
+        join_result: Option<IngestionJobJoinResult>,
+    ) -> Result<IngestionState, IngestionError> {
+        let mut last_ingested = state.last_ingested.clone();
+
+        if let Some(join_result) = join_result {
+            let task_result = join_result
+                .change_context(IngestionError::RpcRequest)
+                .attach_printable("failed to join ingestion task")?;
+
+            let block_info = match task_result {
+                Ok(block_info) => block_info,
+                Err(err) if err.is_block_not_found() => {
+                    return Ok(IngestionState::Recover(RecoverState {
+                        finalized: state.finalized,
+                        existing_head: state.head,
+                        last_ingested: state.last_ingested,
+                    }));
+                }
+                Err(err) => {
+                    return Err(err)
+                        .change_context(IngestionError::RpcRequest)
+                        .attach_printable("failed to ingest block")
+                }
+            };
+
+            info!(block = %block_info.cursor(), "ingested block");
+
+            // Always upload recent segment if the block is non-finalized.
+            let mut should_upload_recent_segment = block_info.number >= state.finalized.number;
+
+            if !self.chain_builder.can_grow(&block_info) {
+                return Ok(IngestionState::Recover(RecoverState {
+                    finalized: state.finalized,
+                    existing_head: state.head,
+                    last_ingested: state.last_ingested,
+                }));
+            }
+
+            last_ingested = block_info.cursor();
+
+            self.chain_builder
+                .grow(block_info)
+                .change_context(IngestionError::Model)?;
+
+            if self.chain_builder.segment_size()
+                == self.options.chain_segment_size + self.options.chain_segment_upload_offset_size
+            {
+                let segment = self
+                    .chain_builder
+                    .take_segment(self.options.chain_segment_size)
+                    .change_context(IngestionError::Model)?;
+                info!(first_block = %segment.info.first_block, "uploading chain segment");
+                self.chain_store
+                    .put(&segment)
+                    .await
+                    .change_context(IngestionError::CanonicalChainStoreRequest)?;
+
+                should_upload_recent_segment = true;
+            }
+
+            if should_upload_recent_segment {
+                let current_segment = self
+                    .chain_builder
+                    .current_segment()
+                    .change_context(IngestionError::Model)?;
+                info!(first_block = %current_segment.info.first_block, last_block = %current_segment.info.last_block, "uploading recent chain segment");
+                let recent_etag = self
+                    .chain_store
+                    .put_recent(&current_segment)
+                    .await
+                    .change_context(IngestionError::CanonicalChainStoreRequest)?;
+                self.state_client
+                    .put_ingested(recent_etag)
+                    .await
+                    .change_context(IngestionError::StateClientRequest)?;
+            }
+        }
+
+        let mut block_number = state.queued_block_number;
+
+        while self.can_push_task() {
+            if block_number + 1 > state.head.number {
+                break;
+            }
+
+            block_number += 1;
+            trace!(block_number, "pushing finalized ingestion task");
+            self.push_ingest_block_by_number(block_number);
+        }
+
+        Ok(IngestionState::Ingest(IngestState {
+            last_ingested,
+            queued_block_number: block_number,
+            ..state
+        }))
+    }
+
+    pub async fn tick_recover(
+        &mut self,
+        state: RecoverState,
+        ct: CancellationToken,
+    ) -> Result<IngestionState, IngestionError> {
+        let current_span = tracing::Span::current();
+        current_span.record("action", "recover");
+
+        warn!(last_ingested = %state.last_ingested, "recovering from a chain reorganization");
+
+        let canonical_chain = self
+            .chain_builder
+            .current_segment()
+            .change_context(IngestionError::Model)?;
+
+        let last_ingested = canonical_chain
+            .canonical(state.last_ingested.number)
+            .change_context(IngestionError::Model)?;
+
+        // This should never happen but we check just in case.
+        if last_ingested != state.last_ingested {
+            return Err(IngestionError::Model)
+                .attach_printable("last ingested block does not match canonical chain");
+        }
+
+        let mut new_head_candidate = state.last_ingested.clone();
+
+        loop {
+            // Give up and exit.
+            if ct.is_cancelled() {
+                return Ok(IngestionState::Recover(state));
+            }
+
+            match self
+                .ingestion
+                .get_block_info_by_number(new_head_candidate.number)
+                .await
+            {
+                Ok(remote_block_info) => {
+                    if remote_block_info.cursor() == new_head_candidate {
+                        break;
+                    }
+                }
+                Err(err) if err.is_block_not_found() => {
+                    // This block doesn't exist anymore.
+                    // This can happen in case of reorgs.
+                }
+                Err(err) => {
+                    return Err(err)
+                        .change_context(IngestionError::RpcRequest)
+                        .attach_printable("failed to get block info while recovering")
+                        .attach_printable_lazy(|| {
+                            format!("block number: {}", new_head_candidate.number)
+                        })
+                }
+            };
+
+            if new_head_candidate.number == 0 {
+                return Err(IngestionError::Model)
+                    .attach_printable("failed to recover from genesis block")
+                    .attach_printable("hint: are you connecting to the correct chain?");
+            }
+
+            new_head_candidate = canonical_chain
+                .canonical(new_head_candidate.number - 1)
+                .change_context(IngestionError::Model)
+                .attach_printable("failed to get parent block in reorg recovery")
+                .attach_printable_lazy(|| {
+                    format!("current block number: {}", new_head_candidate.number)
+                })?;
+        }
+
+        self.task_queue_clear();
+        self.chain_builder
+            .shrink(new_head_candidate.clone())
+            .change_context(IngestionError::Model)
+            .attach_printable("failed to shrink canonical chain after reorg recovery")
+            .attach_printable_lazy(|| format!("new head: {}", new_head_candidate))?;
+
+        info!(new_head = %new_head_candidate, "recovered from a chain reorganization");
+
+        Ok(IngestionState::Ingest(IngestState {
+            finalized: state.finalized,
+            head: state.existing_head,
+            queued_block_number: new_head_candidate.number,
+            last_ingested: new_head_candidate,
+            head_refresh_interval: tokio::time::interval(self.options.head_refresh_interval),
+            finalized_refresh_interval: tokio::time::interval(
+                self.options.finalized_refresh_interval,
+            ),
+        }))
+    }
+
+    pub fn task_queue_clear(&mut self) {
+        self.task_queue = FuturesOrdered::new();
+    }
+
+    pub fn task_queue_len(&self) -> usize {
+        self.task_queue.len()
+    }
+
+    pub fn task_queue_is_empty(&self) -> bool {
+        self.task_queue.is_empty()
+    }
+
+    pub fn task_queue_next(&mut self) -> impl Future<Output = Option<IngestionJobJoinResult>> + '_ {
+        self.task_queue.next()
+    }
+
+    pub fn can_push_task(&self) -> bool {
         self.task_queue.len() < self.options.max_concurrent_tasks
     }
 
-    fn push_ingest_block_by_number(&mut self, block_number: u64) {
+    pub fn push_ingest_block_by_number(&mut self, block_number: u64) {
         let ingestion = self.ingestion.clone();
         self.task_queue.push_back(tokio::spawn(async move {
             ingestion.ingest_block_by_number(block_number).await
         }));
+    }
+
+    pub fn current_chain_segment(&self) -> Option<CanonicalChainSegment> {
+        self.chain_builder.current_segment().ok()
     }
 
     async fn get_starting_cursor(&mut self) -> Result<IngestionStartAction, IngestionError> {
@@ -408,17 +630,21 @@ where
 
             info!(first_block = %info.first_block, last_block = %info.last_block, "ingestion state restored");
 
-            let block_info = self
+            let block_info = match self
                 .ingestion
                 .get_block_info_by_number(info.last_block.number)
-                .await?;
+                .await
+                .attach_printable("failed to get starting cursor block info")
+            {
+                Ok(block_info) => block_info,
+                Err(err) if err.is_block_not_found() => {
+                    return Ok(IngestionStartAction::Recover(info.last_block.clone()));
+                }
+                Err(err) => return Err(err).change_context(IngestionError::RpcRequest),
+            };
 
             if info.last_block != block_info.cursor() {
-                return Err(IngestionError::Model)
-                    .attach_printable("last block in chain does not match last block in state")
-                    .attach_printable("offline reorg not handled yet")
-                    .attach_printable_lazy(|| format!("last block in state: {}", info.last_block))
-                    .attach_printable_lazy(|| format!("last block: {}", block_info.cursor()));
+                return Ok(IngestionStartAction::Recover(info.last_block.clone()));
             }
 
             Ok(IngestionStartAction::Resume(block_info.cursor()))
@@ -446,8 +672,6 @@ where
         let (block_info, block) = ingestion
             .ingest_block_by_number(block_number)
             .await
-            .change_context(IngestionError::RpcRequest)
-            .attach_printable("failed to ingest block")
             .attach_printable_lazy(|| format!("block number: {}", block_number))?;
 
         if block.index.len() != block.body.len() {
@@ -501,8 +725,44 @@ impl Default for IngestionServiceOptions {
 impl IngestionState {
     pub fn state_name(&self) -> &'static str {
         match self {
-            IngestionState::Recover => "recover",
+            IngestionState::Recover(_) => "recover",
             IngestionState::Ingest(_) => "ingest",
+        }
+    }
+
+    pub fn is_ingested(&self) -> bool {
+        matches!(self, IngestionState::Ingest(_))
+    }
+
+    pub fn is_recover(&self) -> bool {
+        matches!(self, IngestionState::Recover(_))
+    }
+
+    pub fn as_ingest(&self) -> Option<&IngestState> {
+        match self {
+            IngestionState::Ingest(state) => Some(state),
+            _ => None,
+        }
+    }
+
+    pub fn as_recover(&self) -> Option<&RecoverState> {
+        match self {
+            IngestionState::Recover(state) => Some(state),
+            _ => None,
+        }
+    }
+
+    pub fn take_ingest(self) -> Option<IngestState> {
+        match self {
+            IngestionState::Ingest(state) => Some(state),
+            _ => None,
+        }
+    }
+
+    pub fn take_recover(self) -> Option<RecoverState> {
+        match self {
+            IngestionState::Recover(state) => Some(state),
+            _ => None,
         }
     }
 }

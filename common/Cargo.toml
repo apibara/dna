@@ -43,6 +43,14 @@ valuable.workspace = true
 zstd.workspace = true
 
 [dev-dependencies]
+alloy-rpc-client.workspace = true
+alloy-provider.workspace = true
+alloy-rpc-types.workspace = true
+alloy-transport.workspace = true
+alloy-transport-http.workspace = true
 rand.workspace = true
+reqwest.workspace = true
+serde_json.workspace = true
 tempfile.workspace = true
 tempdir.workspace = true
+url.workspace = true

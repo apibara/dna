@@ -1,6 +1,6 @@
 [package]
 name = "apibara-dna-evm"
-version = "2.0.0-beta.5"
+version = "2.0.0-beta.6"
 edition.workspace = true
 authors.workspace = true
 repository.workspace = true
@@ -15,11 +15,11 @@ name = "apibara-dna-evm"
 path = "src/bin.rs"
 
 [dependencies]
-alloy-rpc-client = "0.3.6"
-alloy-provider = "0.3.6"
+alloy-rpc-client.workspace = true
+alloy-provider.workspace = true
 alloy-primitives.workspace = true
-alloy-rpc-types = "0.3.6"
-alloy-transport = "0.3.6"
+alloy-rpc-types.workspace = true
+alloy-transport.workspace = true
 apibara-observability = { path = "../observability" }
 apibara-dna-common = { path = "../common" }
 apibara-dna-protocol = { path = "../protocol" }

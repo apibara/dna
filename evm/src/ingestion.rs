@@ -25,7 +25,7 @@ use crate::{
         TRANSACTION_FRAGMENT_NAME, WITHDRAWAL_FRAGMENT_ID, WITHDRAWAL_FRAGMENT_NAME,
     },
     proto::{convert_block_header, ModelExt},
-    provider::{models, BlockExt, JsonRpcProvider},
+    provider::{models, BlockExt, JsonRpcProvider, JsonRpcProviderErrorExt},
 };
 
 #[derive(Clone)]
@@ -67,13 +67,17 @@ impl BlockIngestion for EvmBlockIngestion {
         &self,
         block_number: u64,
     ) -> Result<BlockInfo, IngestionError> {
-        let block = self
+        match self
             .provider
             .get_block_header(BlockId::number(block_number))
             .await
-            .change_context(IngestionError::RpcRequest)?;
-
-        Ok(block.block_info())
+        {
+            Ok(block) => Ok(block.block_info()),
+            Err(err) if err.is_not_found() => {
+                Err(err).change_context(IngestionError::BlockNotFound)
+            }
+            Err(err) => Err(err).change_context(IngestionError::RpcRequest),
+        }
     }
 
     #[tracing::instrument("evm_ingest_block_by_number", skip(self), err(Debug))]
@@ -81,13 +85,22 @@ impl BlockIngestion for EvmBlockIngestion {
         &self,
         block_number: u64,
     ) -> Result<(BlockInfo, Block), IngestionError> {
-        let mut block_with_transactions = self
+        let mut block_with_transactions = match self
             .provider
             .get_block_with_transactions(BlockId::number(block_number))
             .await
-            .change_context(IngestionError::RpcRequest)
-            .attach_printable("failed to get block with transactions")
-            .attach_printable_lazy(|| format!("block number: {}", block_number))?;
+        {
+            Ok(block_with_transactions) => block_with_transactions,
+            Err(err) if err.is_not_found() => {
+                return Err(err).change_context(IngestionError::BlockNotFound)
+            }
+            Err(err) => {
+                return Err(err)
+                    .change_context(IngestionError::RpcRequest)
+                    .attach_printable("failed to get block with transactions")
+                    .attach_printable_lazy(|| format!("block number: {}", block_number))
+            }
+        };
 
         let block_id = BlockId::hash(block_with_transactions.header.hash);
 
