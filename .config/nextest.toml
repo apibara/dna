@@ -1,0 +1,6 @@
+[profile.default]
+default-filter = 'all()'
+
+[profile.ci]
+default-filter = 'not binary(test_ingestion_service)'
+fail-fast = false
