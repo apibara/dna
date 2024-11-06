@@ -12,7 +12,7 @@ use tracing::{debug, field, info, trace, Instrument};
 
 use crate::{
     block_store::BlockStoreWriter,
-    chain::{BlockInfo, CanonicalChainBuilder},
+    chain::{BlockInfo, CanonicalChainBuilder, CanonicalChainSegment},
     chain_store::ChainStore,
     file_cache::FileCache,
     fragment::Block,
@@ -79,11 +79,13 @@ where
     ingestion: Arc<I>,
 }
 
+#[derive(Debug)]
 pub enum IngestionState {
     Ingest(IngestState),
-    Recover,
+    Recover(RecoverState),
 }
 
+#[derive(Debug)]
 pub struct IngestState {
     pub finalized: Cursor,
     pub head: Cursor,
@@ -93,6 +95,13 @@ pub struct IngestState {
     finalized_refresh_interval: Interval,
 }
 
+#[derive(Debug)]
+pub struct RecoverState {
+    pub finalized: Cursor,
+    pub existing_head: Cursor,
+    pub last_ingested: Cursor,
+}
+
 /// What action to take when starting ingestion.
 enum IngestionStartAction {
     /// Resume ingestion from the given cursor (cursor already ingested).
@@ -100,7 +109,7 @@ enum IngestionStartAction {
     /// Start ingestion from the given block number (inclusive).
     Start(u64),
     /// Recover from an offline reorg.
-    Recover,
+    Recover(Cursor),
 }
 
 impl<I> IngestionService<I>
@@ -161,9 +170,8 @@ where
                     IngestionState::Ingest(inner_state) => {
                         self.tick_ingest(inner_state, ct.clone()).await
                     }
-                    IngestionState::Recover => {
-                        // TODO: implement recovery.
-                        Err(IngestionError::Model).attach_printable("chain is in recovery state")
+                    IngestionState::Recover(inner_state) => {
+                        self.tick_recover(inner_state, ct.clone()).await
                     }
                 }
             }
@@ -193,7 +201,13 @@ where
             .change_context(IngestionError::StateClientRequest)?;
 
         match self.get_starting_cursor().await? {
-            IngestionStartAction::Recover => Ok(IngestionState::Recover),
+            IngestionStartAction::Recover(last_ingested) => {
+                Ok(IngestionState::Recover(RecoverState {
+                    finalized,
+                    existing_head: head,
+                    last_ingested,
+                }))
+            }
             IngestionStartAction::Start(starting_block) => {
                 // Ingest genesis block here so that the rest of the body is the same
                 // as if we were resuming ingestion.
@@ -338,11 +352,19 @@ where
         if state.last_ingested.number >= head.number {
             if state.head.number > head.number {
                 info!(old_head = %state.head, new_head = %head, "reorg detected");
-                return Ok(IngestionState::Recover);
+                return Ok(IngestionState::Recover(RecoverState {
+                    finalized: state.finalized,
+                    existing_head: state.head,
+                    last_ingested: state.last_ingested,
+                }));
             }
 
             if state.head.number == head.number && state.head.hash != head.hash {
-                return Ok(IngestionState::Recover);
+                return Ok(IngestionState::Recover(RecoverState {
+                    finalized: state.finalized,
+                    existing_head: state.head,
+                    last_ingested: state.last_ingested,
+                }));
             }
         }
 
@@ -381,7 +403,11 @@ where
             let block_info = match task_result {
                 Ok(block_info) => block_info,
                 Err(err) if err.is_block_not_found() => {
-                    return Ok(IngestionState::Recover);
+                    return Ok(IngestionState::Recover(RecoverState {
+                        finalized: state.finalized,
+                        existing_head: state.head,
+                        last_ingested: state.last_ingested,
+                    }));
                 }
                 Err(err) => {
                     return Err(err)
@@ -396,7 +422,11 @@ where
             let mut should_upload_recent_segment = block_info.number >= state.finalized.number;
 
             if !self.chain_builder.can_grow(&block_info) {
-                return Ok(IngestionState::Recover);
+                return Ok(IngestionState::Recover(RecoverState {
+                    finalized: state.finalized,
+                    existing_head: state.head,
+                    last_ingested: state.last_ingested,
+                }));
             }
 
             last_ingested = block_info.cursor();
@@ -458,6 +488,93 @@ where
         }))
     }
 
+    pub async fn tick_recover(
+        &mut self,
+        state: RecoverState,
+        ct: CancellationToken,
+    ) -> Result<IngestionState, IngestionError> {
+        let current_span = tracing::Span::current();
+        current_span.record("action", "recover");
+
+        let canonical_chain = self
+            .chain_builder
+            .current_segment()
+            .change_context(IngestionError::Model)?;
+
+        let last_ingested = canonical_chain
+            .canonical(state.last_ingested.number)
+            .change_context(IngestionError::Model)?;
+
+        // This should never happen but we check just in case.
+        if last_ingested != state.last_ingested {
+            return Err(IngestionError::Model)
+                .attach_printable("last ingested block does not match canonical chain");
+        }
+
+        let mut new_head_candidate = state.last_ingested.clone();
+
+        loop {
+            // Give up and exit.
+            if ct.is_cancelled() {
+                return Ok(IngestionState::Recover(state));
+            }
+
+            match self
+                .ingestion
+                .get_block_info_by_number(new_head_candidate.number)
+                .await
+            {
+                Ok(remote_block_info) => {
+                    if remote_block_info.cursor() == new_head_candidate {
+                        break;
+                    }
+                }
+                Err(err) if err.is_block_not_found() => {
+                    // This block doesn't exist anymore.
+                    // This can happen in case of reorgs.
+                }
+                Err(err) => {
+                    return Err(err)
+                        .change_context(IngestionError::RpcRequest)
+                        .attach_printable("failed to get block info while recovering")
+                        .attach_printable_lazy(|| {
+                            format!("block number: {}", new_head_candidate.number)
+                        })
+                }
+            };
+
+            new_head_candidate = canonical_chain
+                .canonical(new_head_candidate.number - 1)
+                .change_context(IngestionError::Model)
+                .attach_printable("failed to get parent block in reorg recovery")
+                .attach_printable_lazy(|| {
+                    format!("current block number: {}", new_head_candidate.number)
+                })?;
+        }
+
+        self.task_queue_clear();
+        self.chain_builder
+            .shrink(new_head_candidate.clone())
+            .change_context(IngestionError::Model)
+            .attach_printable("failed to shrink canonical chain after reorg recovery")
+            .attach_printable_lazy(|| format!("new head: {}", new_head_candidate))?;
+
+        Ok(IngestionState::Ingest(IngestState {
+            finalized: state.finalized,
+            head: state.existing_head,
+            queued_block_number: new_head_candidate.number,
+            last_ingested: new_head_candidate,
+            head_refresh_interval: tokio::time::interval(self.options.head_refresh_interval),
+            finalized_refresh_interval: tokio::time::interval(
+                self.options.finalized_refresh_interval,
+            ),
+        }))
+    }
+
+    pub fn task_queue_clear(&mut self) {
+        self.task_queue = FuturesOrdered::new();
+    }
+
     pub fn task_queue_len(&self) -> usize {
         self.task_queue.len()
     }
@@ -479,6 +596,10 @@ where
         self.task_queue.push_back(tokio::spawn(async move {
             ingestion.ingest_block_by_number(block_number).await
         }));
+    }
+
+    pub fn current_chain_segment(&self) -> Option<CanonicalChainSegment> {
+        self.chain_builder.current_segment().ok()
     }
 
     async fn get_starting_cursor(&mut self) -> Result<IngestionStartAction, IngestionError> {
@@ -505,7 +626,7 @@ where
                 .await?;
 
             if info.last_block != block_info.cursor() {
-                return Ok(IngestionStartAction::Recover);
+                return Ok(IngestionStartAction::Recover(info.last_block.clone()));
             }
 
             Ok(IngestionStartAction::Resume(block_info.cursor()))
@@ -586,7 +707,7 @@ impl Default for IngestionServiceOptions {
 impl IngestionState {
     pub fn state_name(&self) -> &'static str {
         match self {
-            IngestionState::Recover => "recover",
+            IngestionState::Recover(_) => "recover",
             IngestionState::Ingest(_) => "ingest",
         }
     }
@@ -596,7 +717,7 @@ impl IngestionState {
     }
 
     pub fn is_recover(&self) -> bool {
-        matches!(self, IngestionState::Recover)
+        matches!(self, IngestionState::Recover(_))
     }
 
     pub fn as_ingest(&self) -> Option<&IngestState> {
@@ -606,9 +727,9 @@ impl IngestionState {
         }
     }
 
-    pub fn as_recover(&self) -> Option<()> {
+    pub fn as_recover(&self) -> Option<&RecoverState> {
         match self {
-            IngestionState::Recover => Some(()),
+            IngestionState::Recover(state) => Some(state),
             _ => None,
         }
     }
@@ -620,9 +741,9 @@ impl IngestionState {
         }
     }
 
-    pub fn take_recover(self) -> Option<()> {
+    pub fn take_recover(self) -> Option<RecoverState> {
         match self {
-            IngestionState::Recover => Some(()),
+            IngestionState::Recover(state) => Some(state),
             _ => None,
         }
     }

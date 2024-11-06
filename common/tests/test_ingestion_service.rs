@@ -24,6 +24,7 @@ use apibara_dna_common::{
 use testing::{
     anvil_server_container, AnvilProvider, AnvilProviderExt, AnvilServer, AnvilServerExt,
 };
+use tokio_util::sync::CancellationToken;
 
 async fn init_minio() -> (ContainerAsync<MinIO>, ObjectStore) {
     let minio = minio_container().start().await.unwrap();
@@ -315,8 +316,8 @@ async fn test_ingestion_detect_shrinking_reorg_on_head_refresh() {
     };
 
     let options = IngestionServiceOptions {
-        chain_segment_size: 10,
-        chain_segment_upload_offset_size: 1,
+        chain_segment_size: 100,
+        chain_segment_upload_offset_size: 10,
         max_concurrent_tasks: 5,
         ..Default::default()
     };
@@ -367,8 +368,28 @@ async fn test_ingestion_detect_shrinking_reorg_on_head_refresh() {
     let header = anvil_provider.get_header(BlockNumberOrTag::Latest).await;
     assert_eq!(header.number, 95);
 
+    let chain_segment_before_recovery = service.current_chain_segment().unwrap();
+    assert_eq!(chain_segment_before_recovery.info.last_block.number, 100);
+    let block_before_recovery = chain_segment_before_recovery.canonical(95).unwrap();
+
     let state = service.tick_refresh_head(state).await.unwrap();
     assert!(state.is_recover());
+
+    let state = state.take_recover().unwrap();
+    let ct = CancellationToken::new();
+    let state = service.tick_recover(state, ct).await.unwrap();
+
+    let state = state.take_ingest().unwrap();
+    assert_eq!(service.task_queue_len(), 0);
+    assert_eq!(state.last_ingested.number, 90);
+
+    let chain_segment_after_recovery = service.current_chain_segment().unwrap();
+    assert_eq!(chain_segment_after_recovery.info.last_block.number, 90);
+    let action = chain_segment_after_recovery
+        .reconnect(&block_before_recovery)
+        .unwrap();
+    let reconnect_cursor = action.as_offline_reorg_cursor().unwrap();
+    assert_eq!(reconnect_cursor.number, 90);
 }
 
 #[tokio::test]
@@ -384,8 +405,8 @@ async fn test_ingestion_detect_shrinking_reorg_on_block_ingestion() {
     };
 
     let options = IngestionServiceOptions {
-        chain_segment_size: 10,
-        chain_segment_upload_offset_size: 1,
+        chain_segment_size: 100,
+        chain_segment_upload_offset_size: 10,
         max_concurrent_tasks: 5,
         ..Default::default()
     };
@@ -445,6 +466,26 @@ async fn test_ingestion_detect_shrinking_reorg_on_block_ingestion() {
         .unwrap();
 
     assert!(state.is_recover());
+
+    let chain_segment_before_recovery = service.current_chain_segment().unwrap();
+    assert_eq!(chain_segment_before_recovery.info.last_block.number, 100);
+    let block_before_recovery = chain_segment_before_recovery.canonical(95).unwrap();
+
+    let state = state.take_recover().unwrap();
+    let ct = CancellationToken::new();
+    let state = service.tick_recover(state, ct).await.unwrap();
+
+    let state = state.take_ingest().unwrap();
+    assert_eq!(service.task_queue_len(), 0);
+    assert_eq!(state.last_ingested.number, 90);
+
+    let chain_segment_after_recovery = service.current_chain_segment().unwrap();
+    assert_eq!(chain_segment_after_recovery.info.last_block.number, 90);
+    let action = chain_segment_after_recovery
+        .reconnect(&block_before_recovery)
+        .unwrap();
+    let reconnect_cursor = action.as_offline_reorg_cursor().unwrap();
+    assert_eq!(reconnect_cursor.number, 90);
 }
 
 #[tokio::test]
@@ -460,8 +501,8 @@ async fn test_ingestion_detect_offline_reorg() {
     };
 
     let options = IngestionServiceOptions {
-        chain_segment_size: 10,
-        chain_segment_upload_offset_size: 1,
+        chain_segment_size: 100,
+        chain_segment_upload_offset_size: 10,
         max_concurrent_tasks: 5,
         ..Default::default()
     };
@@ -515,6 +556,26 @@ async fn test_ingestion_detect_offline_reorg() {
     let starting_state = service.initialize().await.unwrap();
     assert_eq!(service.task_queue_len(), 0);
     assert!(starting_state.is_recover());
+
+    let chain_segment_before_recovery = service.current_chain_segment().unwrap();
+    assert_eq!(chain_segment_before_recovery.info.last_block.number, 100);
+    let block_before_recovery = chain_segment_before_recovery.canonical(95).unwrap();
+
+    let state = starting_state.take_recover().unwrap();
+    let ct = CancellationToken::new();
+    let state = service.tick_recover(state, ct).await.unwrap();
+
+    let state = state.take_ingest().unwrap();
+    assert_eq!(service.task_queue_len(), 0);
+    assert_eq!(state.last_ingested.number, 90);
+
+    let chain_segment_after_recovery = service.current_chain_segment().unwrap();
+    assert_eq!(chain_segment_after_recovery.info.last_block.number, 90);
+    let action = chain_segment_after_recovery
+        .reconnect(&block_before_recovery)
+        .unwrap();
+    let reconnect_cursor = action.as_offline_reorg_cursor().unwrap();
+    assert_eq!(reconnect_cursor.number, 90);
 }
 
 #[tokio::test]
@@ -530,8 +591,8 @@ async fn test_ingestion_detect_reorg_on_head_refresh() {
     };
 
     let options = IngestionServiceOptions {
-        chain_segment_size: 10,
-        chain_segment_upload_offset_size: 1,
+        chain_segment_size: 100,
+        chain_segment_upload_offset_size: 10,
         max_concurrent_tasks: 5,
         ..Default::default()
     };
@@ -581,6 +642,26 @@ async fn test_ingestion_detect_reorg_on_head_refresh() {
 
     let state = service.tick_refresh_head(state).await.unwrap();
     assert!(state.is_recover());
+
+    let chain_segment_before_recovery = service.current_chain_segment().unwrap();
+    assert_eq!(chain_segment_before_recovery.info.last_block.number, 100);
+    let block_before_recovery = chain_segment_before_recovery.canonical(95).unwrap();
+
+    let state = state.take_recover().unwrap();
+    let ct = CancellationToken::new();
+    let state = service.tick_recover(state, ct).await.unwrap();
+
+    let state = state.take_ingest().unwrap();
+    assert_eq!(service.task_queue_len(), 0);
+    assert_eq!(state.last_ingested.number, 90);
+
+    let chain_segment_after_recovery = service.current_chain_segment().unwrap();
+    assert_eq!(chain_segment_after_recovery.info.last_block.number, 90);
+    let action = chain_segment_after_recovery
+        .reconnect(&block_before_recovery)
+        .unwrap();
+    let reconnect_cursor = action.as_offline_reorg_cursor().unwrap();
+    assert_eq!(reconnect_cursor.number, 90);
 }
 
 #[tokio::test]
@@ -596,8 +677,8 @@ async fn test_ingestion_detect_reorg_on_block_ingestion() {
     };
 
     let options = IngestionServiceOptions {
-        chain_segment_size: 10,
-        chain_segment_upload_offset_size: 1,
+        chain_segment_size: 100,
+        chain_segment_upload_offset_size: 10,
         max_concurrent_tasks: 5,
         ..Default::default()
     };
@@ -657,6 +738,26 @@ async fn test_ingestion_detect_reorg_on_block_ingestion() {
         .unwrap();
 
     assert!(state.is_recover());
+
+    let chain_segment_before_recovery = service.current_chain_segment().unwrap();
+    assert_eq!(chain_segment_before_recovery.info.last_block.number, 100);
+    let block_before_recovery = chain_segment_before_recovery.canonical(95).unwrap();
+
+    let state = state.take_recover().unwrap();
+    let ct = CancellationToken::new();
+    let state = service.tick_recover(state, ct).await.unwrap();
+
+    let state = state.take_ingest().unwrap();
+    assert_eq!(service.task_queue_len(), 0);
+    assert_eq!(state.last_ingested.number, 90);
+
+    let chain_segment_after_recovery = service.current_chain_segment().unwrap();
+    assert_eq!(chain_segment_after_recovery.info.last_block.number, 90);
+    let action = chain_segment_after_recovery
+        .reconnect(&block_before_recovery)
+        .unwrap();
+    let reconnect_cursor = action.as_offline_reorg_cursor().unwrap();
+    assert_eq!(reconnect_cursor.number, 90);
 }
 
 #[derive(Clone)]
@@ -835,7 +936,6 @@ pub mod testing {
         }
 
         async fn anvil_revert(&self, snapshot_id: String) {
-            println!("reverting snapshot {}", snapshot_id);
             self.raw_request::<_, serde_json::Value>("anvil_revert".into(), &(snapshot_id,))
                 .await
                 .expect("anvil_revert request failed");

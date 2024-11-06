@@ -19,6 +19,19 @@ impl BlockInfo {
             hash: self.hash.clone(),
         }
     }
+
+    pub fn parent_cursor(&self) -> Option<Cursor> {
+        if self.number == 0 {
+            return None;
+        }
+
+        let cursor = Cursor {
+            number: self.number - 1,
+            hash: self.parent.clone(),
+        };
+
+        Some(cursor)
+    }
 }
 
 /// What action to take on reconnection.
@@ -441,6 +454,27 @@ impl std::fmt::Display for CanonicalChainError {
         match self {
             CanonicalChainError::Builder => write!(f, "canonical chain builder error"),
             CanonicalChainError::View => write!(f, "canonical chain view error"),
+        }
+    }
+}
+
+impl ReconnectAction {
+    pub fn is_continue(&self) -> bool {
+        matches!(self, ReconnectAction::Continue)
+    }
+
+    pub fn is_offline_reorg(&self) -> bool {
+        matches!(self, ReconnectAction::OfflineReorg(_))
+    }
+
+    pub fn is_unknown(&self) -> bool {
+        matches!(self, ReconnectAction::Unknown)
+    }
+
+    pub fn as_offline_reorg_cursor(&self) -> Option<Cursor> {
+        match self {
+            ReconnectAction::OfflineReorg(cursor) => Some(cursor.clone()),
+            _ => None,
         }
     }
 }
