@@ -868,7 +868,7 @@ pub mod testing {
 
     impl Image for AnvilServer {
         fn name(&self) -> &str {
-            "anvil"
+            "quay.io/fracek/anvil"
         }
 
         fn tag(&self) -> &str {
