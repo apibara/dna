@@ -42,10 +42,18 @@ impl BlockFilterFactory for StarknetFilterFactory {
             )));
         }
 
-        proto_filters
+        let filters = proto_filters
             .iter()
             .map(BlockFilterExt::compile_to_block_filter)
-            .collect()
+            .collect::<tonic::Result<Vec<_>>>()?;
+
+        if filters.iter().any(|f| f.can_produce_data()) {
+            Ok(filters)
+        } else {
+            Err(tonic::Status::invalid_argument(
+                "at least one filter must be non-empty",
+            ))
+        }
     }
 }
 
@@ -93,10 +101,6 @@ impl BlockFilterExt for starknet::Filter {
         for filter in self.nonce_updates.iter() {
             let filter = filter.compile_to_filter()?;
             block_filter.add_filter(filter);
-        }
-
-        if !block_filter.always_include_header() && block_filter.is_empty() {
-            return Err(tonic::Status::invalid_argument("no filters provided"));
         }
 
         Ok(block_filter)
