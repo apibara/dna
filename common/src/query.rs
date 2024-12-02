@@ -50,6 +50,10 @@ pub struct BlockFilter {
 }
 
 impl BlockFilter {
+    pub fn can_produce_data(&self) -> bool {
+        self.always_include_header() || !self.is_empty()
+    }
+
     pub fn always_include_header(&self) -> bool {
         matches!(self.header_filter, HeaderFilter::Always)
     }

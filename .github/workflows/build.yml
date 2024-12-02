@@ -29,10 +29,10 @@ jobs:
             echo "USER=runner" >> "$GITHUB_ENV"
           fi
       - uses: actions/checkout@v4
-      - uses: cachix/install-nix-action@v25
+      - uses: cachix/install-nix-action@v30
         with:
-          nix_path: nixpkgs=channel:nixos-23.11
-      - uses: cachix/cachix-action@v14
+          nix_path: nixpkgs=channel:nixos-24.11
+      - uses: cachix/cachix-action@v15
         with:
           name: apibara-public
           authToken: "${{ secrets.cachix-token }}"
