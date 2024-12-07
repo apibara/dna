@@ -115,7 +115,7 @@ about each one of them.
 
 Copyright 2024 GNC Labs Limited
 
-Licensed under the Apache License, Version 2.0 (the "License"); you may not use
+Licensed under the [Apache License](https://github.com/apibara/dna/blob/main/LICENSE.txt), Version 2.0 (the "License"); you may not use
 this file except in compliance with the License. You may obtain a copy of the
 License at
 
