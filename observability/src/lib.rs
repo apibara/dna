@@ -8,9 +8,12 @@ use std::time::Duration;
 use error_stack::{Result, ResultExt};
 use fastrace::collector::Config;
 use fastrace_opentelemetry::OpenTelemetryReporter;
-use opentelemetry::trace::{SpanKind, TracerProvider};
-use opentelemetry::{global, InstrumentationLibrary};
+use opentelemetry::trace::{SpanKind, TracerProvider as _};
+use opentelemetry::{global, InstrumentationScope};
+use opentelemetry_otlp::{MetricExporter, SpanExporter};
+use opentelemetry_sdk::metrics::{MeterProviderBuilder, PeriodicReader};
 use opentelemetry_sdk::resource::{ResourceDetector, SdkProvidedResourceDetector};
+use opentelemetry_sdk::trace::TracerProvider;
 use tracing::Subscriber;
 
 pub use opentelemetry::metrics::{ObservableCounter, ObservableGauge};
@@ -94,46 +97,57 @@ where
     let otel_env_filter =
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("INFO"));
 
-    let exporter = opentelemetry_otlp::new_exporter()
-        .tonic()
-        .build_span_exporter()
-        .change_context(OpenTelemetryInitError)
-        .attach_printable("failed to create span exporter")?;
     let resource = SdkProvidedResourceDetector.detect(Duration::from_secs(1));
-    let instrumentation_lib = InstrumentationLibrary::builder(package_name.clone())
+    let instrumentation_lib = InstrumentationScope::builder(package_name.clone())
         .with_version(version.clone())
         .build();
+
+    let span_exporter = SpanExporter::builder()
+        .with_tonic()
+        .build()
+        .change_context(OpenTelemetryInitError)
+        .attach_printable("failed to create span exporter")?;
+
+    let trace_provider = TracerProvider::builder()
+        .with_resource(resource.clone())
+        .with_batch_exporter(span_exporter, opentelemetry_sdk::runtime::Tokio)
+        .build();
+
+    let tracer = trace_provider.tracer_with_scope(instrumentation_lib.clone());
+
+    let metrics_exporter = MetricExporter::builder()
+        .with_tonic()
+        .build()
+        .change_context(OpenTelemetryInitError)
+        .attach_printable("failed to create metrics exporter")?;
+
+    let metrics_reader =
+        PeriodicReader::builder(metrics_exporter, opentelemetry_sdk::runtime::Tokio)
+            .with_interval(Duration::from_secs(30))
+            .build();
+
+    let meter_provider = MeterProviderBuilder::default()
+        .with_resource(resource.clone())
+        .with_reader(metrics_reader)
+        .build();
+
+    let span_exporter = SpanExporter::builder()
+        .with_tonic()
+        .build()
+        .change_context(OpenTelemetryInitError)
+        .attach_printable("failed to create span exporter")?;
+
     let reporter = OpenTelemetryReporter::new(
-        exporter,
+        span_exporter,
         SpanKind::Server,
         Cow::Owned(resource),
         instrumentation_lib,
     );
     fastrace::set_reporter(reporter, Config::default());
 
-    // Both tracer and meter are configured with environment variables.
-    let meter = opentelemetry_otlp::new_pipeline()
-        .metrics(opentelemetry_sdk::runtime::Tokio)
-        .with_exporter(opentelemetry_otlp::new_exporter().tonic())
-        .build()
-        .change_context(OpenTelemetryInitError)
-        .attach_printable("failed to create metrics pipeline")?;
-
-    let trace_provider = opentelemetry_otlp::new_pipeline()
-        .tracing()
-        .with_exporter(opentelemetry_otlp::new_exporter().tonic())
-        .install_batch(opentelemetry_sdk::runtime::Tokio)
-        .change_context(OpenTelemetryInitError)
-        .attach_printable("failed to create tracing pipeline")?;
-
-    let tracer = trace_provider
-        .tracer_builder(package_name)
-        .with_version(version)
-        .build();
-
     // export traces and metrics to otel
     let otel_trace_layer = tracing_opentelemetry::layer().with_tracer(tracer);
-    let otel_metrics_layer = MetricsLayer::new(meter);
+    let otel_metrics_layer = MetricsLayer::new(meter_provider);
     let otel_layer = otel_trace_layer
         .and_then(otel_metrics_layer)
         .and_then(otel_env_filter)

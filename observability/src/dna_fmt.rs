@@ -95,7 +95,7 @@ impl<'a> DnaFormatVisitor<'a> {
     }
 }
 
-impl<'a> field::Visit for DnaFormatVisitor<'a> {
+impl field::Visit for DnaFormatVisitor<'_> {
     fn record_str(&mut self, field: &field::Field, value: &str) {
         if self.result.is_err() {
             return;
@@ -140,14 +140,14 @@ impl<'a> field::Visit for DnaFormatVisitor<'a> {
     }
 }
 
-impl<'a> VisitOutput<std::fmt::Result> for DnaFormatVisitor<'a> {
+impl VisitOutput<std::fmt::Result> for DnaFormatVisitor<'_> {
     fn finish(mut self) -> std::fmt::Result {
         write!(&mut self.writer, "{}", self.style.suffix())?;
         self.result
     }
 }
 
-impl<'a> VisitFmt for DnaFormatVisitor<'a> {
+impl VisitFmt for DnaFormatVisitor<'_> {
     fn writer(&mut self) -> &mut dyn fmt::Write {
         &mut self.writer
     }
@@ -178,7 +178,7 @@ impl<'a> FmtLevel<'a> {
     }
 }
 
-impl<'a> std::fmt::Display for FmtLevel<'a> {
+impl std::fmt::Display for FmtLevel<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.ansi {
             match *self.level {
@@ -200,7 +200,7 @@ impl<'a> std::fmt::Display for FmtLevel<'a> {
     }
 }
 
-impl<'a> io::Write for WriteAdaptor<'a> {
+impl io::Write for WriteAdaptor<'_> {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         let s =
             std::str::from_utf8(buf).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
