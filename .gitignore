@@ -4,6 +4,6 @@
 /result-bin
 /.devcontainer/.profile
 .pre-commit-config.yaml
-.envrc
+.direnv
 perf.data
 perf.data.old
