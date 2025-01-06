@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use apibara_etcd::{AuthOptions, EtcdClient, EtcdClientError, EtcdClientOptions};
 use aws_config::{meta::region::RegionProviderChain, Region};
 use clap::Args;
@@ -62,6 +64,13 @@ pub struct EtcdArgs {
     /// The etcd password.
     #[arg(long = "etcd.password", env = "DNA_ETCD_PASSWORD")]
     pub etcd_password: Option<String>,
+    /// The etcd auth token TTL in secondls.
+    #[arg(
+        long = "etcd.auth-token-ttl",
+        env = "DNA_ETCD_AUTH_TOKEN_TTL",
+        default_value = "300"
+    )]
+    pub etcd_auth_token_ttl: u64,
 }
 
 impl ObjectStoreArgs {
@@ -97,7 +106,12 @@ impl ObjectStoreArgs {
 impl EtcdArgs {
     pub async fn into_etcd_client(self) -> Result<EtcdClient, EtcdClientError> {
         let auth = if let (Some(user), Some(password)) = (self.etcd_user, self.etcd_password) {
-            Some(AuthOptions { user, password })
+            let token_ttl = Duration::from_secs(self.etcd_auth_token_ttl);
+            Some(AuthOptions {
+                user,
+                password,
+                token_ttl,
+            })
         } else {
             None
         };
