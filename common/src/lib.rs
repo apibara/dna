@@ -89,6 +89,9 @@ mod server_impl {
 
         let ingestion_options = args.ingestion.to_ingestion_service_options();
 
+        let etcd_renew_handle =
+            tokio::spawn(etcd_client.clone().start_renew_auth_token(ct.clone()));
+
         let ingestion_handle = if args.ingestion.ingestion_enabled {
             let ingestion = chain_support.block_ingestion();
             tokio::spawn(ingestion_service_loop(
@@ -204,6 +207,10 @@ mod server_impl {
         };
 
         tokio::select! {
+            etcd_renew = etcd_renew_handle => {
+                info!("etcd auth token renewal loop terminated");
+                etcd_renew.change_context(ServerError)?.change_context(ServerError)?;
+            }
             ingestion = ingestion_handle => {
                 info!("ingestion loop terminated");
                 ingestion.change_context(ServerError)?.change_context(ServerError)?;
