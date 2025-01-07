@@ -34,7 +34,7 @@ pub enum Command {
 #[derive(Args, Debug, Clone)]
 pub struct CommonArgs {
     /// Hex-encoded filter.
-    #[clap(long, default_value = "0x")]
+    #[clap(long, default_value = "00")]
     pub filter: String,
     /// Stream URL.
     #[clap(long, default_value = "http://localhost:7007")]
