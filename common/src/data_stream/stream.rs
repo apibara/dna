@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, HashMap, HashSet},
     time::Duration,
 };
 
@@ -20,7 +20,7 @@ use crate::{
     chain_view::{CanonicalCursor, ChainView, NextCursor},
     data_stream::{FilterMatch, FragmentAccess},
     file_cache::FileCacheError,
-    fragment::{FragmentId, HEADER_FRAGMENT_ID},
+    fragment::{FragmentId, HEADER_FRAGMENT_ID, INDEX_FRAGMENT_ID, JOIN_FRAGMENT_ID},
     join::ArchivedJoinTo,
     query::{BlockFilter, HeaderFilter},
     segment::SegmentGroup,
@@ -229,6 +229,8 @@ impl DataStream {
 
         let group_start_cursor = Cursor::new_finalized(group_start);
         let mut data_bitmap = RoaringBitmap::default();
+        let mut all_fragment_ids =
+            HashSet::from([INDEX_FRAGMENT_ID, JOIN_FRAGMENT_ID, HEADER_FRAGMENT_ID]);
 
         {
             let group_bytes = self
@@ -258,7 +260,12 @@ impl DataStream {
 
                     for filter in filters {
                         let rows = filter.filter(indexes).change_context(DataStreamError)?;
+                        if rows.is_empty() {
+                            continue;
+                        }
+
                         data_bitmap |= &rows;
+                        all_fragment_ids.insert(*fragment_id);
                     }
                 }
             }
@@ -284,10 +291,18 @@ impl DataStream {
                 let blocks = std::mem::take(&mut current_segment_data);
                 let current_segment_cursor = Cursor::new_finalized(current_segment_start);
 
-                // TODO: prefetch segments.
-                // self.scanner
-                //     .prefetch_segment(&mut prefetch_tasks, current_segment_cursor.clone())
-                //     .change_context(DataStreamError)?;
+                // Prefetch all segments for this group.
+                for fragment_id in all_fragment_ids.iter() {
+                    let Some(fragment_name) = self.fragment_id_to_name.get(fragment_id).cloned()
+                    else {
+                        return Err(DataStreamError)
+                            .attach_printable("unknown fragment id")
+                            .attach_printable_lazy(|| format!("fragment id: {}", fragment_id));
+                    };
+
+                    self.store
+                        .get_segment(&current_segment_cursor, fragment_name);
+                }
 
                 segments.push((current_segment_cursor, blocks));
 
@@ -329,10 +344,16 @@ impl DataStream {
         let blocks = std::mem::take(&mut current_segment_data);
         let current_segment_cursor = Cursor::new_finalized(current_segment_start);
 
-        // TODO: prefetch segments.
-        // self.scanner
-        //     .prefetch_segment(&mut prefetch_tasks, current_segment_cursor.clone())
-        //     .change_context(DataStreamError)?;
+        for fragment_id in all_fragment_ids.iter() {
+            let Some(fragment_name) = self.fragment_id_to_name.get(fragment_id).cloned() else {
+                return Err(DataStreamError)
+                    .attach_printable("unknown fragment id")
+                    .attach_printable_lazy(|| format!("fragment id: {}", fragment_id));
+            };
+
+            self.store
+                .get_segment(&current_segment_cursor, fragment_name);
+        }
 
         segments.push((current_segment_cursor, blocks));
 
