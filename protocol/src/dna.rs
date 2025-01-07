@@ -1,5 +1,5 @@
 pub mod stream {
-    use std::fmt::{self, Display};
+    use std::fmt::{self, Debug, Display};
 
     use serde::{
         de::{self, Deserialize, Deserializer, Visitor},
@@ -177,6 +177,37 @@ pub mod stream {
 
             const FIELDS: &[&str] = &["orderKey", "uniqueKey"];
             deserializer.deserialize_struct("Cursor", FIELDS, CursorVisitor)
+        }
+    }
+
+    struct PrettyCursor<'a>(&'a Option<Cursor>);
+    struct PrettyFilter<'a>(&'a Vec<u8>);
+
+    impl Debug for StreamDataRequest {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            let cursor = PrettyCursor(&self.starting_cursor);
+            let filter = self.filter.iter().map(PrettyFilter).collect::<Vec<_>>();
+            f.debug_struct("StreamDataRequest")
+                .field("starting_cursor", &cursor)
+                .field("finality", &self.finality)
+                .field("filter", &filter)
+                .field("heartbeat_interval", &self.heartbeat_interval)
+                .finish()
+        }
+    }
+
+    impl Debug for PrettyCursor<'_> {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            match self.0 {
+                Some(cursor) => write!(f, "{}", cursor),
+                None => write!(f, "None"),
+            }
+        }
+    }
+
+    impl Debug for PrettyFilter<'_> {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(f, "<{} bytes>", self.0.len())
         }
     }
 }
