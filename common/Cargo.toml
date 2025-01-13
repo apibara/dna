@@ -31,6 +31,7 @@ memmap2.workspace = true
 prost.workspace = true
 rkyv.workspace = true
 roaring.workspace = true
+sha256 = "1.5.0"
 testcontainers.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true

@@ -12,7 +12,7 @@ use tracing::{debug, field, info, trace, warn, Instrument};
 
 use crate::{
     block_store::BlockStoreWriter,
-    chain::{BlockInfo, CanonicalChainBuilder, CanonicalChainSegment},
+    chain::{BlockInfo, CanonicalChainBuilder, CanonicalChainSegment, PendingBlockInfo},
     chain_store::ChainStore,
     file_cache::FileCache,
     fragment::Block,
@@ -35,9 +35,23 @@ pub trait BlockIngestion: Clone {
         &self,
         block_number: u64,
     ) -> impl Future<Output = Result<(BlockInfo, Block), IngestionError>> + Send;
+
+    fn ingest_pending_block(
+        &self,
+        _parent: &Cursor,
+        _generation: u64,
+    ) -> impl Future<Output = Result<Option<(PendingBlockInfo, Block)>, IngestionError>> + Send
+    {
+        async { Ok(None) }
+    }
 }
 
-type IngestionTaskHandle = JoinHandle<Result<BlockInfo, IngestionError>>;
+pub enum IngestionTask {
+    Main(BlockInfo),
+    Pending(Option<PendingBlockInfo>),
+}
+
+type IngestionTaskHandle = JoinHandle<Result<IngestionTask, IngestionError>>;
 
 #[derive(Clone, Debug)]
 pub struct IngestionServiceOptions {
@@ -49,6 +63,8 @@ pub struct IngestionServiceOptions {
     pub chain_segment_upload_offset_size: usize,
     /// Override the ingestion starting block.
     pub override_starting_block: Option<u64>,
+    /// How often to refresh the pending block.
+    pub pending_refresh_interval: Duration,
     /// How often to refresh the head block.
     pub head_refresh_interval: Duration,
     /// How often to refresh the finalized block.
@@ -67,7 +83,8 @@ where
     task_queue: FuturesOrdered<IngestionTaskHandle>,
 }
 
-pub type IngestionJobJoinResult = std::result::Result<Result<BlockInfo, IngestionError>, JoinError>;
+pub type IngestionJobJoinResult =
+    std::result::Result<Result<IngestionTask, IngestionError>, JoinError>;
 
 /// Wrap ingestion-related clients so we can clone them and push them to the task queue.
 #[derive(Clone)]
@@ -85,12 +102,20 @@ pub enum IngestionState {
     Recover(RecoverState),
 }
 
+#[derive(Debug, Default)]
+struct PendingBlockState {
+    queued: bool,
+    generation: u64,
+}
+
 #[derive(Debug)]
 pub struct IngestState {
     pub finalized: Cursor,
     pub head: Cursor,
     pub last_ingested: Cursor,
     pub queued_block_number: u64,
+    pending_block_state: PendingBlockState,
+    pending_refresh_interval: Interval,
     head_refresh_interval: Interval,
     finalized_refresh_interval: Interval,
 }
@@ -236,6 +261,10 @@ where
                     finalized,
                     head,
                     last_ingested: starting_cursor,
+                    pending_block_state: PendingBlockState::default(),
+                    pending_refresh_interval: tokio::time::interval(
+                        self.options.pending_refresh_interval,
+                    ),
                     head_refresh_interval: tokio::time::interval(
                         self.options.head_refresh_interval,
                     ),
@@ -252,6 +281,10 @@ where
                     finalized,
                     head,
                     last_ingested: starting_cursor,
+                    pending_block_state: PendingBlockState::default(),
+                    pending_refresh_interval: tokio::time::interval(
+                        self.options.pending_refresh_interval,
+                    ),
                     head_refresh_interval: tokio::time::interval(
                         self.options.head_refresh_interval,
                     ),
@@ -286,6 +319,12 @@ where
                 current_span.record("action", "refresh_finalized");
 
                 self.tick_refresh_finalized(state).await
+            }
+
+            _ = state.pending_refresh_interval.tick(), if state.head == state.last_ingested => {
+                current_span.record("action", "refresh_pending");
+
+                self.tick_refresh_pending(state).await
             }
 
             _ = state.head_refresh_interval.tick() => {
@@ -335,7 +374,7 @@ where
 
     pub async fn tick_refresh_head(
         &mut self,
-        state: IngestState,
+        mut state: IngestState,
     ) -> Result<IngestionState, IngestionError> {
         let head = self
             .ingestion
@@ -347,6 +386,9 @@ where
         if state.head == head {
             return Ok(IngestionState::Ingest(state));
         }
+
+        // Reset the pending refresh interval so that we don't ingest pending data too early.
+        state.pending_refresh_interval.reset();
 
         // Change of heads that are not ingested are not important.
         if state.last_ingested.number >= head.number {
@@ -388,6 +430,24 @@ where
         }))
     }
 
+    pub async fn tick_refresh_pending(
+        &mut self,
+        mut state: IngestState,
+    ) -> Result<IngestionState, IngestionError> {
+        if state.pending_block_state.queued {
+            return Ok(IngestionState::Ingest(state));
+        }
+
+        self.push_ingest_pending_block(
+            state.last_ingested.clone(),
+            state.pending_block_state.generation + 1,
+        );
+
+        state.pending_block_state.queued = true;
+
+        Ok(IngestionState::Ingest(state))
+    }
+
     pub async fn tick_with_task_result(
         &mut self,
         state: IngestState,
@@ -413,6 +473,40 @@ where
                     return Err(err)
                         .change_context(IngestionError::RpcRequest)
                         .attach_printable("failed to ingest block")
+                }
+            };
+
+            let block_info = match block_info {
+                IngestionTask::Main(block_info) => block_info,
+                IngestionTask::Pending(None) => {
+                    let new_pending_block_state = PendingBlockState {
+                        queued: false,
+                        generation: state.pending_block_state.generation,
+                    };
+
+                    return Ok(IngestionState::Ingest(IngestState {
+                        pending_block_state: new_pending_block_state,
+                        ..state
+                    }));
+                }
+                IngestionTask::Pending(Some(block_info)) => {
+                    info!(
+                        number = block_info.number,
+                        generation = block_info.generation,
+                        "ingested pending block"
+                    );
+
+                    // TODO: must update the state in etcd
+
+                    let new_pending_block_state = PendingBlockState {
+                        queued: false,
+                        generation: block_info.generation,
+                    };
+
+                    return Ok(IngestionState::Ingest(IngestState {
+                        pending_block_state: new_pending_block_state,
+                        ..state
+                    }));
                 }
             };
 
@@ -484,6 +578,7 @@ where
         Ok(IngestionState::Ingest(IngestState {
             last_ingested,
             queued_block_number: block_number,
+            pending_block_state: PendingBlockState::default(),
             ..state
         }))
     }
@@ -574,6 +669,8 @@ where
             head: state.existing_head,
             queued_block_number: new_head_candidate.number,
             last_ingested: new_head_candidate,
+            pending_block_state: PendingBlockState::default(),
+            pending_refresh_interval: tokio::time::interval(self.options.pending_refresh_interval),
             head_refresh_interval: tokio::time::interval(self.options.head_refresh_interval),
             finalized_refresh_interval: tokio::time::interval(
                 self.options.finalized_refresh_interval,
@@ -604,7 +701,18 @@ where
     pub fn push_ingest_block_by_number(&mut self, block_number: u64) {
         let ingestion = self.ingestion.clone();
         self.task_queue.push_back(tokio::spawn(async move {
-            ingestion.ingest_block_by_number(block_number).await
+            let block_info = ingestion.ingest_block_by_number(block_number).await?;
+            Ok(IngestionTask::Main(block_info))
+        }));
+    }
+
+    pub fn push_ingest_pending_block(&mut self, last_ingested: Cursor, generation: u64) {
+        let ingestion = self.ingestion.clone();
+        self.task_queue.push_back(tokio::spawn(async move {
+            let block_info = ingestion
+                .ingest_pending_block(last_ingested, generation)
+                .await?;
+            Ok(IngestionTask::Pending(block_info))
         }));
     }
 
@@ -693,6 +801,42 @@ where
         Ok(block_info)
     }
 
+    #[tracing::instrument("ingestion_ingest_pending_block", skip(self), err(Debug))]
+    async fn ingest_pending_block(
+        &self,
+        parent: Cursor,
+        generation: u64,
+    ) -> Result<Option<PendingBlockInfo>, IngestionError> {
+        let block_number = parent.number + 1;
+        let ingestion = self.ingestion.clone();
+        let store = self.block_store.clone();
+        let Some((block_info, block)) =
+            ingestion
+                .ingest_pending_block(&parent, generation)
+                .await
+                .attach_printable_lazy(|| format!("block number: {}", block_number))?
+        else {
+            return Ok(None);
+        };
+
+        if block.index.len() != block.body.len() {
+            return Err(IngestionError::Model)
+                .attach_printable("block indexes and body fragments do not match (pending block)")
+                .attach_printable_lazy(|| format!("block number: {}", block_number))
+                .attach_printable_lazy(|| format!("indexes len: {}", block.index.len()))
+                .attach_printable_lazy(|| format!("body len: {}", block.body.len()));
+        }
+
+        debug!(cursor = ?block_info, "uploading pending block");
+
+        store
+            .put_pending_block(&block_info, &block)
+            .await
+            .change_context(IngestionError::BlockStoreRequest)?;
+
+        Ok(block_info.into())
+    }
+
     async fn get_head_cursor(&self) -> Result<Cursor, IngestionError> {
         self.ingestion.get_head_cursor().await
     }
@@ -716,6 +860,7 @@ impl Default for IngestionServiceOptions {
             chain_segment_size: 10_000,
             chain_segment_upload_offset_size: 100,
             override_starting_block: None,
+            pending_refresh_interval: Duration::from_secs(1),
             head_refresh_interval: Duration::from_secs(3),
             finalized_refresh_interval: Duration::from_secs(30),
         }

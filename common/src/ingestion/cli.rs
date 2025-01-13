@@ -25,6 +25,13 @@ pub struct IngestionArgs {
         env = "DNA_INGESTION_DANGEROUSLY_OVERRIDE_STARTING_BLOCK"
     )]
     pub ingestion_dangerously_override_starting_block: Option<u64>,
+    /// How often to refresh the pending block, in seconds.
+    #[clap(
+        long = "ingestion.pending-refresh-interval",
+        env = "DNA_INGESTION_PENDING_REFRESH_INTERVAL",
+        default_value = "1"
+    )]
+    pub ingestion_pending_refresh_interval: u64,
     /// How often to refresh the head block, in seconds.
     #[clap(
         long = "ingestion.head-refresh-interval",
@@ -48,6 +55,9 @@ impl IngestionArgs {
             chain_segment_size: self.ingestion_chain_segment_size,
             chain_segment_upload_offset_size: 100,
             override_starting_block: self.ingestion_dangerously_override_starting_block,
+            pending_refresh_interval: std::time::Duration::from_secs(
+                self.ingestion_pending_refresh_interval,
+            ),
             head_refresh_interval: std::time::Duration::from_secs(
                 self.ingestion_head_refresh_interval,
             ),

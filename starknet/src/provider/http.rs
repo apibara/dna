@@ -19,6 +19,8 @@ pub enum StarknetProviderError {
 pub enum BlockId {
     /// Head block.
     Head,
+    /// Pending block.
+    Pending,
     /// Block by number.
     Number(u64),
     /// Block by hash.
@@ -137,6 +139,9 @@ impl From<&BlockId> for starknet::core::types::BlockId {
         match v {
             BlockId::Head => {
                 starknet::core::types::BlockId::Tag(starknet::core::types::BlockTag::Latest)
+            }
+            BlockId::Pending => {
+                starknet::core::types::BlockId::Tag(starknet::core::types::BlockTag::Pending)
             }
             BlockId::Number(number) => starknet::core::types::BlockId::Number(*number),
             BlockId::Hash(hash) => starknet::core::types::BlockId::Hash(*hash),

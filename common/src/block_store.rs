@@ -4,6 +4,7 @@ use error_stack::{Result, ResultExt};
 use foyer::FetchState;
 
 use crate::{
+    chain::PendingBlockInfo,
     file_cache::{FileCache, FileFetch},
     fragment,
     object_store::{GetOptions, ObjectETag, ObjectStore, PutOptions},
@@ -153,6 +154,32 @@ impl BlockStoreWriter {
         Ok(response.etag)
     }
 
+    pub async fn put_pending_block(
+        &self,
+        block_info: &PendingBlockInfo,
+        block: &fragment::Block,
+    ) -> Result<ObjectETag, BlockStoreError> {
+        let serialized = rkyv::to_bytes::<rkyv::rancor::Error>(block)
+            .change_context(BlockStoreError)
+            .attach_printable("failed to serialize pending block")?;
+
+        let bytes = Bytes::copy_from_slice(serialized.as_slice());
+
+        let response = self
+            .client
+            .put(
+                &format_pending_block_key(block_info),
+                bytes,
+                PutOptions::default(),
+            )
+            .await
+            .change_context(BlockStoreError)
+            .attach_printable("failed to put pending block")
+            .attach_printable_lazy(|| format!("info: {:?}", block_info))?;
+
+        Ok(response.etag)
+    }
+
     pub async fn put_segment(
         &self,
         first_cursor: &Cursor,
@@ -199,6 +226,13 @@ impl BlockStoreWriter {
 
         Ok(response.etag)
     }
+}
+
+fn format_pending_block_key(info: &PendingBlockInfo) -> String {
+    format!(
+        "{}/{:0>10}/pending-{:0>4}",
+        BLOCK_PREFIX, info.number, info.generation
+    )
 }
 
 fn format_block_key(cursor: &Cursor) -> String {

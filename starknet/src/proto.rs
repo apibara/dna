@@ -27,6 +27,29 @@ pub fn convert_block_header(block: &models::BlockWithReceipts) -> starknet::Bloc
     }
 }
 
+pub fn convert_pending_block_header(
+    block: &models::PendingBlockWithReceipts,
+    block_number: u64,
+) -> starknet::BlockHeader {
+    let timestamp = prost_types::Timestamp {
+        seconds: block.timestamp as i64,
+        nanos: 0,
+    };
+
+    starknet::BlockHeader {
+        block_hash: None,
+        parent_block_hash: block.parent_hash.to_proto().into(),
+        block_number,
+        new_root: None,
+        sequencer_address: block.sequencer_address.to_proto().into(),
+        starknet_version: block.starknet_version.clone(),
+        timestamp: timestamp.into(),
+        l1_data_gas_price: block.l1_gas_price.to_proto().into(),
+        l1_gas_price: block.l1_gas_price.to_proto().into(),
+        l1_data_availability_mode: block.l1_da_mode.to_proto(),
+    }
+}
+
 impl ModelExt for models::FieldElement {
     type Proto = starknet::FieldElement;
 
