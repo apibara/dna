@@ -496,7 +496,10 @@ where
                         "ingested pending block"
                     );
 
-                    // TODO: must update the state in etcd
+                    self.state_client
+                        .put_pending(block_info.generation)
+                        .await
+                        .change_context(IngestionError::StateClientRequest)?;
 
                     let new_pending_block_state = PendingBlockState {
                         queued: false,

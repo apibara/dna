@@ -1,6 +1,6 @@
 use error_stack::{Result, ResultExt};
 
-use etcd_client::GetOptions;
+use etcd_client::{GetOptions, TxnResponse};
 pub use etcd_client::{GetResponse, PutResponse};
 
 use crate::client::EtcdClientError;
@@ -52,6 +52,31 @@ impl KvClient {
             .change_context(EtcdClientError)
             .attach_printable("failed to put key to etcd")
             .attach_printable_lazy(|| format!("key: {}", key))
+    }
+
+    #[tracing::instrument(level = "debug", skip_all, fields(put_key = put_key.as_ref(), del_key = del_key.as_ref()))]
+    pub async fn put_and_delete(
+        &mut self,
+        put_key: impl AsRef<str>,
+        put_value: impl AsRef<[u8]>,
+        del_key: impl AsRef<str>,
+    ) -> Result<TxnResponse, EtcdClientError> {
+        let put_key = put_key.as_ref();
+        let put_value = put_value.as_ref();
+        let del_key = del_key.as_ref();
+
+        let txn = etcd_client::Txn::new().and_then(&[
+            etcd_client::TxnOp::put(self.format_key(put_key), put_value, None),
+            etcd_client::TxnOp::delete(self.format_key(del_key), None),
+        ]);
+
+        self.client
+            .txn(txn)
+            .await
+            .change_context(EtcdClientError)
+            .attach_printable("failed to put and delete key to etcd")
+            .attach_printable_lazy(|| format!("put_key: {}", put_key))
+            .attach_printable_lazy(|| format!("del_key: {}", del_key))
     }
 
     fn format_key(&self, key: &str) -> Vec<u8> {

@@ -7,6 +7,7 @@ use crate::object_store::ObjectETag;
 
 pub static INGESTION_PREFIX_KEY: &str = "ingestion/";
 pub static INGESTED_KEY: &str = "ingestion/ingested";
+pub static PENDING_KEY: &str = "ingestion/pending";
 pub static STARTING_BLOCK_KEY: &str = "ingestion/starting_block";
 pub static FINALIZED_KEY: &str = "ingestion/finalized";
 pub static SEGMENTED_KEY: &str = "ingestion/segmented";
@@ -182,10 +183,21 @@ impl IngestionStateClient {
     ) -> Result<(), IngestionStateClientError> {
         let value = etag.0;
         self.kv_client
-            .put(INGESTED_KEY, value.as_bytes())
+            .put_and_delete(INGESTED_KEY, value.as_bytes(), PENDING_KEY)
             .await
             .change_context(IngestionStateClientError)
             .attach_printable("failed to put latest ingested block")?;
+
+        Ok(())
+    }
+
+    pub async fn put_pending(&mut self, generation: u64) -> Result<(), IngestionStateClientError> {
+        let value = generation.to_string();
+        self.kv_client
+            .put(PENDING_KEY, value.as_bytes())
+            .await
+            .change_context(IngestionStateClientError)
+            .attach_printable("failed to put pending block generation")?;
 
         Ok(())
     }
