@@ -438,6 +438,11 @@ where
             return Ok(IngestionState::Ingest(state));
         }
 
+        // Only ingest pending blocks if they will be used.
+        if state.head != state.last_ingested {
+            return Ok(IngestionState::Ingest(state));
+        }
+
         self.push_ingest_pending_block(
             state.last_ingested.clone(),
             state.pending_block_state.generation + 1,
@@ -863,7 +868,7 @@ impl Default for IngestionServiceOptions {
             chain_segment_size: 10_000,
             chain_segment_upload_offset_size: 100,
             override_starting_block: None,
-            pending_refresh_interval: Duration::from_secs(1),
+            pending_refresh_interval: Duration::from_secs(3),
             head_refresh_interval: Duration::from_secs(3),
             finalized_refresh_interval: Duration::from_secs(30),
         }

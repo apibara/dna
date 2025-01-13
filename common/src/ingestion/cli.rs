@@ -29,7 +29,7 @@ pub struct IngestionArgs {
     #[clap(
         long = "ingestion.pending-refresh-interval",
         env = "DNA_INGESTION_PENDING_REFRESH_INTERVAL",
-        default_value = "1"
+        default_value = "3"
     )]
     pub ingestion_pending_refresh_interval: u64,
     /// How often to refresh the head block, in seconds.

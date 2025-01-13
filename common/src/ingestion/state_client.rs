@@ -26,6 +26,7 @@ pub struct IngestionStateClient {
 pub enum IngestionStateUpdate {
     StartingBlock(u64),
     Finalized(u64),
+    Pending(Option<u64>),
     Segmented(u64),
     Grouped(u64),
     Ingested(String),
@@ -282,6 +283,10 @@ impl std::fmt::Display for IngestionStateClientError {
 }
 
 impl IngestionStateUpdate {
+    pub fn is_pending(&self) -> bool {
+        matches!(self, IngestionStateUpdate::Pending(_))
+    }
+
     pub fn from_kv(kv: &etcd_client::KeyValue) -> Result<Option<Self>, IngestionStateClientError> {
         let key = String::from_utf8(kv.key().to_vec())
             .change_context(IngestionStateClientError)
@@ -303,6 +308,16 @@ impl IngestionStateUpdate {
                 .change_context(IngestionStateClientError)
                 .attach_printable("failed to parse finalized block")?;
             Ok(Some(IngestionStateUpdate::Finalized(block)))
+        } else if key.ends_with(PENDING_KEY) {
+            if value.is_empty() {
+                Ok(Some(IngestionStateUpdate::Pending(None)))
+            } else {
+                let generation = value
+                    .parse::<u64>()
+                    .change_context(IngestionStateClientError)
+                    .attach_printable("failed to parse pending block generation")?;
+                Ok(Some(IngestionStateUpdate::Pending(Some(generation))))
+            }
         } else if key.ends_with(INGESTED_KEY) {
             Ok(Some(IngestionStateUpdate::Ingested(value)))
         } else if key.ends_with(SEGMENTED_KEY) {
