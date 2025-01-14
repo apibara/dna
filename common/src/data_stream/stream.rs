@@ -195,6 +195,25 @@ impl DataStream {
             }
         };
 
+        if self.finality == DataFinality::Finalized && next_cursor.strict_after(&self.finalized) {
+            // Wait for the finalized cursor to catch up and then try again.
+            // Keep sending heartbeats while waiting.
+            loop {
+                tokio::select! {
+                    _ = ct.cancelled() => return Ok(()),
+                    _ = self.heartbeat_interval.tick() => {
+                        debug!("heartbeat (finalized)");
+                        self.send_heartbeat_message(tx, ct).await?;
+                    }
+                    _ = self.chain_view.finalized_changed() => {
+                        debug!("finalized changed (finalized)");
+                        self.finalized = self.chain_view.get_finalized_cursor().await.change_context(DataStreamError)?;
+                        return Ok(());
+                    },
+                }
+            }
+        }
+
         if self
             .chain_view
             .has_group_for_block(next_cursor.number)
@@ -571,10 +590,10 @@ impl DataStream {
             .await
             .change_context(DataStreamError)?;
 
-        let finality = if finalized.strict_after(&cursor) {
-            DataFinality::Finalized
-        } else {
+        let finality = if cursor.strict_after(&finalized) {
             DataFinality::Accepted
+        } else {
+            DataFinality::Finalized
         };
 
         let fragment_access = FragmentAccess::new_in_block(self.store.clone(), cursor.clone());
