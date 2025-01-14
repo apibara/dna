@@ -20,6 +20,11 @@ pub struct FragmentAccess {
 }
 
 enum InnerAccess {
+    PendingBlock {
+        store: BlockStoreReader,
+        pending_cursor: Cursor,
+        generation: u64,
+    },
     Block {
         store: BlockStoreReader,
         block_cursor: Cursor,
@@ -37,6 +42,20 @@ impl FragmentAccess {
             inner: InnerAccess::Block {
                 store,
                 block_cursor,
+            },
+        }
+    }
+
+    pub fn new_in_pending_block(
+        store: BlockStoreReader,
+        pending_cursor: Cursor,
+        generation: u64,
+    ) -> Self {
+        FragmentAccess {
+            inner: InnerAccess::PendingBlock {
+                store,
+                pending_cursor,
+                generation,
             },
         }
     }
@@ -102,6 +121,23 @@ impl InnerAccess {
                     _phantom: Default::default(),
                 })
             }
+            InnerAccess::PendingBlock {
+                store,
+                pending_cursor,
+                generation,
+            } => {
+                let inner = store
+                    .get_pending_block(pending_cursor, *generation)
+                    .await
+                    .map_err(FileCacheError::Foyer)
+                    .change_context(FragmentAccessError)?;
+
+                Ok(Access::Block {
+                    inner,
+                    fragment_id,
+                    _phantom: Default::default(),
+                })
+            }
             InnerAccess::Segment {
                 store,
                 segment_cursor,
@@ -134,6 +170,23 @@ impl InnerAccess {
             } => {
                 let inner = store
                     .get_block(block_cursor)
+                    .await
+                    .map_err(FileCacheError::Foyer)
+                    .change_context(FragmentAccessError)?;
+
+                Ok(Access::Block {
+                    inner,
+                    fragment_id,
+                    _phantom: Default::default(),
+                })
+            }
+            InnerAccess::PendingBlock {
+                store,
+                pending_cursor,
+                generation,
+            } => {
+                let inner = store
+                    .get_pending_block(pending_cursor, *generation)
                     .await
                     .map_err(FileCacheError::Foyer)
                     .change_context(FragmentAccessError)?;
@@ -187,6 +240,23 @@ impl InnerAccess {
                     _phantom: Default::default(),
                 })
             }
+            InnerAccess::PendingBlock {
+                store,
+                pending_cursor,
+                generation,
+            } => {
+                let inner = store
+                    .get_pending_block(pending_cursor, *generation)
+                    .await
+                    .map_err(FileCacheError::Foyer)
+                    .change_context(FragmentAccessError)?;
+
+                Ok(Access::Block {
+                    inner,
+                    fragment_id,
+                    _phantom: Default::default(),
+                })
+            }
             InnerAccess::Segment {
                 store,
                 segment_cursor,
@@ -216,6 +286,23 @@ impl InnerAccess {
             } => {
                 let inner = store
                     .get_block(block_cursor)
+                    .await
+                    .map_err(FileCacheError::Foyer)
+                    .change_context(FragmentAccessError)?;
+
+                Ok(Access::Block {
+                    inner,
+                    fragment_id: HEADER_FRAGMENT_ID,
+                    _phantom: Default::default(),
+                })
+            }
+            InnerAccess::PendingBlock {
+                store,
+                pending_cursor,
+                generation,
+            } => {
+                let inner = store
+                    .get_pending_block(pending_cursor, *generation)
                     .await
                     .map_err(FileCacheError::Foyer)
                     .change_context(FragmentAccessError)?;

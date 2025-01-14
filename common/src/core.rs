@@ -25,6 +25,13 @@ impl Cursor {
         }
     }
 
+    pub fn new_pending(number: u64) -> Self {
+        Self {
+            number,
+            hash: Default::default(),
+        }
+    }
+
     pub fn strict_before(&self, other: &Self) -> bool {
         self.number < other.number
     }

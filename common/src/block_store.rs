@@ -64,6 +64,33 @@ impl BlockStoreReader {
         entry
     }
 
+    #[tracing::instrument(name = "block_store_get_pending_block", skip_all, fields(cache_hit))]
+    pub fn get_pending_block(&self, cursor: &Cursor, generation: u64) -> FileFetch {
+        let current_span = tracing::Span::current();
+        let key = format_pending_block_key(cursor.number, generation);
+
+        let fetch_block = {
+            let key = key.clone();
+            move || {
+                let client = self.client.clone();
+                async move {
+                    match client.get(&key, GetOptions::default()).await {
+                        Ok(response) => Ok(response.body),
+                        Err(err) => Err(anyhow!(err)),
+                    }
+                }
+            }
+        };
+        let entry = self.file_cache.fetch(key, fetch_block);
+
+        match entry.state() {
+            FetchState::Miss => current_span.record("cache_hit", 0),
+            _ => current_span.record("cache_hit", 1),
+        };
+
+        entry
+    }
+
     pub fn get_index_segment(&self, first_cursor: &Cursor) -> FileFetch {
         self.get_segment(first_cursor, "index")
     }
@@ -168,7 +195,7 @@ impl BlockStoreWriter {
         let response = self
             .client
             .put(
-                &format_pending_block_key(block_info),
+                &format_pending_block_key(block_info.number, block_info.generation),
                 bytes,
                 PutOptions::default(),
             )
@@ -228,10 +255,10 @@ impl BlockStoreWriter {
     }
 }
 
-fn format_pending_block_key(info: &PendingBlockInfo) -> String {
+fn format_pending_block_key(number: u64, generation: u64) -> String {
     format!(
         "{}/{:0>10}/pending-{:0>4}",
-        BLOCK_PREFIX, info.number, info.generation
+        BLOCK_PREFIX, number, generation
     )
 }
 
