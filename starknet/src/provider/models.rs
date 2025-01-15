@@ -9,9 +9,9 @@ pub use starknet::core::types::{
     InvokeTransaction, InvokeTransactionReceipt, InvokeTransactionV0, InvokeTransactionV1,
     InvokeTransactionV3, L1DataAvailabilityMode, L1HandlerTransaction, L1HandlerTransactionReceipt,
     MaybePendingBlockWithReceipts, MaybePendingBlockWithTxHashes, MaybePendingStateUpdate, MsgToL1,
-    NonceUpdate, PriceUnit, ReplacedClassItem, ResourceBounds, ResourceBoundsMapping,
-    ResourcePrice, StateDiff, StateUpdate, StorageEntry, Transaction, TransactionReceipt,
-    TransactionWithReceipt,
+    NonceUpdate, PendingBlockWithReceipts, PendingStateUpdate, PriceUnit, ReplacedClassItem,
+    ResourceBounds, ResourceBoundsMapping, ResourcePrice, StateDiff, StateUpdate, StorageEntry,
+    Transaction, TransactionReceipt, TransactionWithReceipt,
 };
 
 pub trait BlockExt {

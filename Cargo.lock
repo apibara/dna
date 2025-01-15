@@ -559,7 +559,7 @@ dependencies = [
 
 [[package]]
 name = "apibara-dna-beaconchain"
-version = "2.0.0-beta.10"
+version = "2.0.0-beta.11"
 dependencies = [
  "alloy-consensus",
  "alloy-eips",
@@ -610,6 +610,7 @@ dependencies = [
  "clap",
  "crc32fast",
  "dirs",
+ "duration-str",
  "error-stack",
  "etcd-client",
  "foyer",
@@ -622,6 +623,7 @@ dependencies = [
  "rkyv 0.8.9",
  "roaring",
  "serde_json",
+ "sha2",
  "tempdir",
  "tempfile",
  "testcontainers",
@@ -639,7 +641,7 @@ dependencies = [
 
 [[package]]
 name = "apibara-dna-evm"
-version = "2.0.0-beta.10"
+version = "2.0.0-beta.11"
 dependencies = [
  "alloy-primitives",
  "alloy-provider",
@@ -689,7 +691,7 @@ dependencies = [
 
 [[package]]
 name = "apibara-dna-starknet"
-version = "2.0.0-beta.10"
+version = "2.0.0-beta.11"
 dependencies = [
  "apibara-dna-common",
  "apibara-dna-protocol",
@@ -2217,6 +2219,20 @@ name = "dunce"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "92773504d58c093f6de2459af4af33faa518c13451eb8f2b5698ed3d36e7c813"
+
+[[package]]
+name = "duration-str"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "64ad6b66883f70e2f38f1ee99e3797b9d7e7b7fb051ed2e23e027c81753056c8"
+dependencies = [
+ "chrono",
+ "rust_decimal",
+ "serde",
+ "thiserror 2.0.7",
+ "time",
+ "winnow",
+]
 
 [[package]]
 name = "ecdsa"

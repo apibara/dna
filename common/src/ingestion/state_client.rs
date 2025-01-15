@@ -7,6 +7,7 @@ use crate::object_store::ObjectETag;
 
 pub static INGESTION_PREFIX_KEY: &str = "ingestion/";
 pub static INGESTED_KEY: &str = "ingestion/ingested";
+pub static PENDING_KEY: &str = "ingestion/pending";
 pub static STARTING_BLOCK_KEY: &str = "ingestion/starting_block";
 pub static FINALIZED_KEY: &str = "ingestion/finalized";
 pub static SEGMENTED_KEY: &str = "ingestion/segmented";
@@ -25,6 +26,7 @@ pub struct IngestionStateClient {
 pub enum IngestionStateUpdate {
     StartingBlock(u64),
     Finalized(u64),
+    Pending(Option<u64>),
     Segmented(u64),
     Grouped(u64),
     Ingested(String),
@@ -182,10 +184,21 @@ impl IngestionStateClient {
     ) -> Result<(), IngestionStateClientError> {
         let value = etag.0;
         self.kv_client
-            .put(INGESTED_KEY, value.as_bytes())
+            .put_and_delete(INGESTED_KEY, value.as_bytes(), PENDING_KEY)
             .await
             .change_context(IngestionStateClientError)
             .attach_printable("failed to put latest ingested block")?;
+
+        Ok(())
+    }
+
+    pub async fn put_pending(&mut self, generation: u64) -> Result<(), IngestionStateClientError> {
+        let value = generation.to_string();
+        self.kv_client
+            .put(PENDING_KEY, value.as_bytes())
+            .await
+            .change_context(IngestionStateClientError)
+            .attach_printable("failed to put pending block generation")?;
 
         Ok(())
     }
@@ -270,6 +283,10 @@ impl std::fmt::Display for IngestionStateClientError {
 }
 
 impl IngestionStateUpdate {
+    pub fn is_pending(&self) -> bool {
+        matches!(self, IngestionStateUpdate::Pending(_))
+    }
+
     pub fn from_kv(kv: &etcd_client::KeyValue) -> Result<Option<Self>, IngestionStateClientError> {
         let key = String::from_utf8(kv.key().to_vec())
             .change_context(IngestionStateClientError)
@@ -291,6 +308,16 @@ impl IngestionStateUpdate {
                 .change_context(IngestionStateClientError)
                 .attach_printable("failed to parse finalized block")?;
             Ok(Some(IngestionStateUpdate::Finalized(block)))
+        } else if key.ends_with(PENDING_KEY) {
+            if value.is_empty() {
+                Ok(Some(IngestionStateUpdate::Pending(None)))
+            } else {
+                let generation = value
+                    .parse::<u64>()
+                    .change_context(IngestionStateClientError)
+                    .attach_printable("failed to parse pending block generation")?;
+                Ok(Some(IngestionStateUpdate::Pending(Some(generation))))
+            }
         } else if key.ends_with(INGESTED_KEY) {
             Ok(Some(IngestionStateUpdate::Ingested(value)))
         } else if key.ends_with(SEGMENTED_KEY) {

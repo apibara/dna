@@ -10,6 +10,8 @@ use fragment::{
 use ingestion::StarknetBlockIngestion;
 use provider::StarknetProvider;
 
+pub use ingestion::StarknetBlockIngestionOptions;
+
 pub mod cli;
 pub mod error;
 pub mod filter;
@@ -20,11 +22,12 @@ pub mod provider;
 
 pub struct StarknetChainSupport {
     provider: StarknetProvider,
+    options: StarknetBlockIngestionOptions,
 }
 
 impl StarknetChainSupport {
-    pub fn new(provider: StarknetProvider) -> Self {
-        Self { provider }
+    pub fn new(provider: StarknetProvider, options: StarknetBlockIngestionOptions) -> Self {
+        Self { provider, options }
     }
 }
 
@@ -70,6 +73,6 @@ impl ChainSupport for StarknetChainSupport {
     }
 
     fn block_ingestion(&self) -> Self::BlockIngestion {
-        StarknetBlockIngestion::new(self.provider.clone())
+        StarknetBlockIngestion::new(self.provider.clone(), self.options.clone())
     }
 }

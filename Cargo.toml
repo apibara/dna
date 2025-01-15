@@ -45,6 +45,7 @@ clap = { version = "4.5.13", features = [
 ] }
 ctrlc = { version = "3.4.5", features = ["termination"] }
 dirs = "5.0.1"
+duration-str = "0.12.0"
 error-stack = "0.5.0"
 etcd-client = { version = "0.14.0", features = ["tls", "tls-roots"] }
 fastrace = "0.7"

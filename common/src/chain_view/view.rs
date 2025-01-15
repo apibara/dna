@@ -17,11 +17,13 @@ pub struct ChainView(Arc<RwLock<ChainViewInner>>);
 
 pub(crate) struct ChainViewInner {
     finalized: u64,
+    pending_generation: Option<u64>,
     segmented: Option<u64>,
     grouped: Option<u64>,
     canonical: FullCanonicalChain,
     segment_size: u64,
     group_size: u64,
+    pending_notify: Arc<Notify>,
     head_notify: Arc<Notify>,
     finalized_notify: Arc<Notify>,
     segmented_notify: Arc<Notify>,
@@ -39,10 +41,12 @@ impl ChainView {
         let inner = ChainViewInner {
             finalized,
             segmented,
+            pending_generation: None,
             grouped,
             canonical,
             segment_size,
             group_size,
+            pending_notify: Arc::new(Notify::new()),
             head_notify: Arc::new(Notify::new()),
             finalized_notify: Arc::new(Notify::new()),
             segmented_notify: Arc::new(Notify::new()),
@@ -115,6 +119,14 @@ impl ChainView {
         inner.canonical.get_head().await
     }
 
+    pub async fn pending_changed(&self) {
+        let notify = {
+            let inner = self.0.read().await;
+            inner.pending_notify.clone()
+        };
+        notify.notified().await;
+    }
+
     pub async fn head_changed(&self) {
         let notify = {
             let inner = self.0.read().await;
@@ -180,10 +192,21 @@ impl ChainView {
         }
     }
 
+    pub async fn get_pending_generation(&self) -> Option<u64> {
+        let inner = self.0.read().await;
+        inner.pending_generation
+    }
+
     pub(crate) async fn set_finalized_block(&self, block: u64) {
         let mut inner = self.0.write().await;
         inner.finalized = block;
         inner.finalized_notify.notify_waiters();
+    }
+
+    pub(crate) async fn set_pending_generation(&self, generation: Option<u64>) {
+        let mut inner = self.0.write().await;
+        inner.pending_generation = generation;
+        inner.pending_notify.notify_waiters();
     }
 
     pub(crate) async fn set_segmented_block(&self, block: u64) {

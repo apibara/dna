@@ -12,6 +12,13 @@ pub struct BlockInfo {
     pub parent: Hash,
 }
 
+#[derive(Clone, PartialEq, Eq, Hash, Archive, Serialize, Deserialize, Debug)]
+pub struct PendingBlockInfo {
+    pub number: u64,
+    pub generation: u64,
+    pub parent: Hash,
+}
+
 impl BlockInfo {
     pub fn cursor(&self) -> Cursor {
         Cursor {
@@ -20,6 +27,21 @@ impl BlockInfo {
         }
     }
 
+    pub fn parent_cursor(&self) -> Option<Cursor> {
+        if self.number == 0 {
+            return None;
+        }
+
+        let cursor = Cursor {
+            number: self.number - 1,
+            hash: self.parent.clone(),
+        };
+
+        Some(cursor)
+    }
+}
+
+impl PendingBlockInfo {
     pub fn parent_cursor(&self) -> Option<Cursor> {
         if self.number == 0 {
             return None;

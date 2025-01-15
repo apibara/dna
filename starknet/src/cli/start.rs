@@ -4,7 +4,7 @@ use error_stack::{Result, ResultExt};
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
-use crate::{error::StarknetError, StarknetChainSupport};
+use crate::{error::StarknetError, StarknetBlockIngestionOptions, StarknetChainSupport};
 
 use super::rpc::RpcArgs;
 
@@ -14,13 +14,24 @@ pub struct StartCommand {
     rpc: RpcArgs,
     #[clap(flatten)]
     start: StartArgs,
+
+    /// Do NOT ingest and serve pending blocks.
+    #[arg(
+        long = "starknet.no-ingest-pending",
+        env = "STARKNET_NO_INGEST_PENDING",
+        default_value = "false"
+    )]
+    no_ingest_pending: bool,
 }
 
 impl StartCommand {
     pub async fn run(self, ct: CancellationToken) -> Result<(), StarknetError> {
         info!("Starting Starknet DNA server");
         let provider = self.rpc.to_starknet_provider()?;
-        let starknet_chain = StarknetChainSupport::new(provider);
+        let starknet_ingestion_options = StarknetBlockIngestionOptions {
+            ingest_pending: !self.no_ingest_pending,
+        };
+        let starknet_chain = StarknetChainSupport::new(provider, starknet_ingestion_options);
 
         run_server(starknet_chain, self.start, ct)
             .await

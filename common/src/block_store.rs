@@ -4,6 +4,7 @@ use error_stack::{Result, ResultExt};
 use foyer::FetchState;
 
 use crate::{
+    chain::PendingBlockInfo,
     file_cache::{FileCache, FileFetch},
     fragment,
     object_store::{GetOptions, ObjectETag, ObjectStore, PutOptions},
@@ -40,6 +41,33 @@ impl BlockStoreReader {
     pub fn get_block(&self, cursor: &Cursor) -> FileFetch {
         let current_span = tracing::Span::current();
         let key = format_block_key(cursor);
+
+        let fetch_block = {
+            let key = key.clone();
+            move || {
+                let client = self.client.clone();
+                async move {
+                    match client.get(&key, GetOptions::default()).await {
+                        Ok(response) => Ok(response.body),
+                        Err(err) => Err(anyhow!(err)),
+                    }
+                }
+            }
+        };
+        let entry = self.file_cache.fetch(key, fetch_block);
+
+        match entry.state() {
+            FetchState::Miss => current_span.record("cache_hit", 0),
+            _ => current_span.record("cache_hit", 1),
+        };
+
+        entry
+    }
+
+    #[tracing::instrument(name = "block_store_get_pending_block", skip_all, fields(cache_hit))]
+    pub fn get_pending_block(&self, cursor: &Cursor, generation: u64) -> FileFetch {
+        let current_span = tracing::Span::current();
+        let key = format_pending_block_key(cursor.number, generation);
 
         let fetch_block = {
             let key = key.clone();
@@ -153,6 +181,32 @@ impl BlockStoreWriter {
         Ok(response.etag)
     }
 
+    pub async fn put_pending_block(
+        &self,
+        block_info: &PendingBlockInfo,
+        block: &fragment::Block,
+    ) -> Result<ObjectETag, BlockStoreError> {
+        let serialized = rkyv::to_bytes::<rkyv::rancor::Error>(block)
+            .change_context(BlockStoreError)
+            .attach_printable("failed to serialize pending block")?;
+
+        let bytes = Bytes::copy_from_slice(serialized.as_slice());
+
+        let response = self
+            .client
+            .put(
+                &format_pending_block_key(block_info.number, block_info.generation),
+                bytes,
+                PutOptions::default(),
+            )
+            .await
+            .change_context(BlockStoreError)
+            .attach_printable("failed to put pending block")
+            .attach_printable_lazy(|| format!("info: {:?}", block_info))?;
+
+        Ok(response.etag)
+    }
+
     pub async fn put_segment(
         &self,
         first_cursor: &Cursor,
@@ -199,6 +253,13 @@ impl BlockStoreWriter {
 
         Ok(response.etag)
     }
+}
+
+fn format_pending_block_key(number: u64, generation: u64) -> String {
+    format!(
+        "{}/{:0>10}/pending-{:0>4}",
+        BLOCK_PREFIX, number, generation
+    )
 }
 
 fn format_block_key(cursor: &Cursor) -> String {

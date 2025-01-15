@@ -1,6 +1,6 @@
 use alloy_rpc_types::BlockId;
 use apibara_dna_common::{
-    chain::BlockInfo,
+    chain::{BlockInfo, PendingBlockInfo},
     fragment::{
         Block, BodyFragment, HeaderFragment, Index, IndexFragment, IndexGroupFragment, Join,
         JoinFragment, JoinGroupFragment,
@@ -8,7 +8,7 @@ use apibara_dna_common::{
     index::{BitmapIndexBuilder, ScalarValue},
     ingestion::{BlockIngestion, IngestionError},
     join::{JoinToManyIndexBuilder, JoinToOneIndexBuilder},
-    Cursor,
+    Cursor, Hash,
 };
 use apibara_dna_protocol::evm;
 use error_stack::{Result, ResultExt};
@@ -28,18 +28,28 @@ use crate::{
     provider::{models, BlockExt, JsonRpcProvider, JsonRpcProviderErrorExt},
 };
 
+#[derive(Clone, Debug)]
+pub struct EvmBlockIngestionOptions {
+    pub ingest_pending: bool,
+}
+
 #[derive(Clone)]
 pub struct EvmBlockIngestion {
     provider: JsonRpcProvider,
+    options: EvmBlockIngestionOptions,
 }
 
 impl EvmBlockIngestion {
-    pub fn new(provider: JsonRpcProvider) -> Self {
-        Self { provider }
+    pub fn new(provider: JsonRpcProvider, options: EvmBlockIngestionOptions) -> Self {
+        Self { provider, options }
     }
 }
 
 impl BlockIngestion for EvmBlockIngestion {
+    fn supports_pending(&self) -> bool {
+        self.options.ingest_pending
+    }
+
     #[tracing::instrument("evm_get_head_cursor", skip_all, err(Debug))]
     async fn get_head_cursor(&self) -> Result<Cursor, IngestionError> {
         let block = self
@@ -144,6 +154,81 @@ impl BlockIngestion for EvmBlockIngestion {
         };
 
         Ok((block_info, block))
+    }
+
+    #[tracing::instrument("evm_ingest_pending_block", skip(self), err(Debug))]
+    async fn ingest_pending_block(
+        &self,
+        parent: &Cursor,
+        generation: u64,
+    ) -> Result<Option<(PendingBlockInfo, Block)>, IngestionError> {
+        let block_id = BlockId::pending();
+
+        let mut block_with_transactions =
+            match self.provider.get_block_with_transactions(block_id).await {
+                Ok(block_with_transactions) => block_with_transactions,
+                Err(err) if err.is_not_found() => {
+                    return Ok(None);
+                }
+                Err(err) => {
+                    return Err(err)
+                        .change_context(IngestionError::RpcRequest)
+                        .attach_printable("failed to get pending block with transactions");
+                }
+            };
+
+        // Sanity checks that the pending block is what we expect.
+        let block_parent_hash = Hash(block_with_transactions.header.parent_hash.to_vec());
+        if block_parent_hash != parent.hash {
+            return Ok(None);
+        }
+        if block_with_transactions.header.number != parent.number + 1 {
+            return Ok(None);
+        }
+
+        let block_receipts = self
+            .provider
+            .get_block_receipts(block_id)
+            .await
+            .change_context(IngestionError::RpcRequest)
+            .attach_printable("failed to get pending block receipts")
+            .attach_printable_lazy(|| {
+                format!("block hash: {}", block_with_transactions.header.hash)
+            })?;
+
+        let block_transactions = std::mem::take(&mut block_with_transactions.transactions);
+        let Some(block_transactions) = block_transactions.as_transactions() else {
+            return Err(IngestionError::RpcRequest)
+                .attach_printable("unexpected transactions as hashes");
+        };
+
+        let block_withdrawals =
+            std::mem::take(&mut block_with_transactions.withdrawals).unwrap_or_default();
+
+        let header_fragment = {
+            let header = convert_block_header(block_with_transactions.header);
+            HeaderFragment {
+                data: header.encode_to_vec(),
+            }
+        };
+
+        let (body, index, join) =
+            collect_block_body_and_index(block_transactions, &block_withdrawals, &block_receipts)?;
+
+        let pending_block_info = PendingBlockInfo {
+            number: parent.number + 1,
+            generation,
+            parent: parent.hash.clone(),
+        };
+
+        let block = Block {
+            header: header_fragment,
+            index,
+            body,
+            join,
+        };
+
+        Ok(Some((pending_block_info, block)))
     }
 }
 

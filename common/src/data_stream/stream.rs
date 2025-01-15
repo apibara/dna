@@ -34,7 +34,7 @@ pub struct DataStream {
     block_filter: Vec<BlockFilter>,
     current: Option<Cursor>,
     finalized: Cursor,
-    _finality: DataFinality,
+    finality: DataFinality,
     chain_view: ChainView,
     store: BlockStoreReader,
     fragment_id_to_name: HashMap<FragmentId, String>,
@@ -75,7 +75,7 @@ impl DataStream {
             block_filter,
             current: starting,
             finalized,
-            _finality: finality,
+            finality,
             heartbeat_interval,
             chain_view,
             fragment_id_to_name,
@@ -138,24 +138,81 @@ impl DataStream {
             }
             NextCursor::AtHead => {
                 debug!("head reached. waiting for new head");
-                tokio::select! {
-                    _ = ct.cancelled() => return Ok(()),
-                    _ = self.heartbeat_interval.tick() => {
-                        debug!("heartbeat");
-                        return self.send_heartbeat_message(tx, ct).await;
+                if self.finality == DataFinality::Pending {
+                    let mut pending_generation = self.chain_view.get_pending_generation().await;
+                    let mut content_hash = Vec::new();
+                    loop {
+                        if let Some(generation) = pending_generation.take() {
+                            if let Some(head) = &self.current {
+                                self.tick_pending(head, generation, &mut content_hash, tx, ct)
+                                    .await?;
+                                // Reset here so that tick_pending doesn't need to be mutable.
+                                self.heartbeat_interval.reset();
+                            }
+                        }
+
+                        tokio::select! {
+                            biased;
+
+                            _ = ct.cancelled() => return Ok(()),
+                            _ = self.chain_view.head_changed() => {
+                                debug!("head changed (pending)");
+                                return Ok(());
+                            },
+                            _ = self.chain_view.finalized_changed() => {
+                                debug!("finalized changed (pending)");
+                                self.finalized = self.chain_view.get_finalized_cursor().await.change_context(DataStreamError)?;
+                                self.send_finalize_message(tx, ct).await?;
+                            },
+                            _ = self.chain_view.pending_changed() => {
+                                debug!("pending changed (pending)");
+                                pending_generation = self.chain_view.get_pending_generation().await;
+                            }
+                            _ = self.heartbeat_interval.tick() => {
+                                debug!("heartbeat (pending)");
+                                self.send_heartbeat_message(tx, ct).await?;
+                            }
+                        }
                     }
-                    _ = self.chain_view.head_changed() => {
-                        debug!("head changed");
-                        return Ok(());
-                    },
-                    _ = self.chain_view.finalized_changed() => {
-                        debug!("finalized changed");
-                        self.finalized = self.chain_view.get_finalized_cursor().await.change_context(DataStreamError)?;
-                        return self.send_finalize_message(tx, ct).await;
-                    },
+                } else {
+                    tokio::select! {
+                        _ = ct.cancelled() => return Ok(()),
+                        _ = self.heartbeat_interval.tick() => {
+                            debug!("heartbeat");
+                            return self.send_heartbeat_message(tx, ct).await;
+                        }
+                        _ = self.chain_view.head_changed() => {
+                            debug!("head changed");
+                            return Ok(());
+                        },
+                        _ = self.chain_view.finalized_changed() => {
+                            debug!("finalized changed");
+                            self.finalized = self.chain_view.get_finalized_cursor().await.change_context(DataStreamError)?;
+                            return self.send_finalize_message(tx, ct).await;
+                        },
+                    }
                 }
             }
         };
+
+        if self.finality == DataFinality::Finalized && next_cursor.strict_after(&self.finalized) {
+            // Wait for the finalized cursor to catch up and then try again.
+            // Keep sending heartbeats while waiting.
+            loop {
+                tokio::select! {
+                    _ = ct.cancelled() => return Ok(()),
+                    _ = self.heartbeat_interval.tick() => {
+                        debug!("heartbeat (finalized)");
+                        self.send_heartbeat_message(tx, ct).await?;
+                    }
+                    _ = self.chain_view.finalized_changed() => {
+                        debug!("finalized changed (finalized)");
+                        self.finalized = self.chain_view.get_finalized_cursor().await.change_context(DataStreamError)?;
+                        return Ok(());
+                    },
+                }
+            }
+        }
 
         if self
             .chain_view
@@ -533,10 +590,10 @@ impl DataStream {
             .await
             .change_context(DataStreamError)?;
 
-        let finality = if finalized.strict_after(&cursor) {
-            DataFinality::Finalized
-        } else {
+        let finality = if cursor.strict_after(&finalized) {
             DataFinality::Accepted
+        } else {
+            DataFinality::Finalized
         };
 
         let fragment_access = FragmentAccess::new_in_block(self.store.clone(), cursor.clone());
@@ -568,13 +625,75 @@ impl DataStream {
         Ok(())
     }
 
+    async fn tick_pending(
+        &self,
+        head: &Cursor,
+        generation: u64,
+        content_hash: &mut Vec<u8>,
+        tx: &mpsc::Sender<DataStreamMessage>,
+        ct: &CancellationToken,
+    ) -> Result<(), DataStreamError> {
+        use apibara_dna_protocol::dna::stream::Cursor as ProtoCursor;
+
+        debug!("tick: pending block");
+
+        let end_cursor = Cursor::new_pending(head.number + 1);
+
+        debug!(cursor = %head, end_cursor = %end_cursor, "sending pending data");
+
+        let proto_cursor: Option<ProtoCursor> = Some(head.clone().into());
+        let proto_end_cursor: Option<ProtoCursor> = Some(end_cursor.clone().into());
+        let finality = DataFinality::Pending;
+
+        let fragment_access =
+            FragmentAccess::new_in_pending_block(self.store.clone(), end_cursor, generation);
+
+        let mut blocks = Vec::new();
+        if self
+            .filter_fragment(&fragment_access, &finality, &mut blocks)
+            .await?
+        {
+            use sha2::Digest;
+
+            let mut hasher = sha2::Sha256::new();
+            for block in &blocks {
+                hasher.update(block.as_ref());
+            }
+
+            let new_content_hash = hasher.finalize().to_vec();
+
+            if new_content_hash == *content_hash {
+                return Ok(());
+            }
+
+            let data = Message::Data(Data {
+                cursor: proto_cursor.clone(),
+                end_cursor: proto_end_cursor.clone(),
+                data: blocks,
+                finality: finality.into(),
+            });
+
+            let Some(Ok(permit)) = ct.run_until_cancelled(tx.reserve()).await else {
+                return Ok(());
+            };
+
+            permit.send(Ok(StreamDataResponse {
+                message: Some(data),
+            }));
+
+            *content_hash = new_content_hash;
+        }
+
+        Ok(())
+    }
+
     #[tracing::instrument(
         name = "send_data",
         skip_all,
         fields(blocks_count, blocks_size_bytes, fragments_count, fragments_size_bytes)
     )]
     async fn filter_fragment(
-        &mut self,
+        &self,
         fragment_access: &FragmentAccess,
         finality: &DataFinality,
         output: &mut Vec<Bytes>,

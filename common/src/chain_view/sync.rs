@@ -4,7 +4,7 @@ use apibara_etcd::EtcdClient;
 use error_stack::{Result, ResultExt};
 use futures::TryStreamExt;
 use tokio_util::sync::CancellationToken;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use crate::{
     chain_store::ChainStore,
@@ -172,7 +172,12 @@ impl ChainViewSyncService {
             .await
             .change_context(ChainViewError)?
         {
-            info!(update = ?update, "chain view sync update");
+            if !update.is_pending() {
+                info!(update = ?update, "chain view sync update");
+            } else {
+                debug!(update = ?update, "chain view sync update");
+            }
+
             match update {
                 IngestionStateUpdate::StartingBlock(block) => {
                     // The starting block should never be updated.
@@ -186,6 +191,9 @@ impl ChainViewSyncService {
                 }
                 IngestionStateUpdate::Grouped(block) => {
                     chain_view.set_grouped_block(block).await;
+                }
+                IngestionStateUpdate::Pending(generation) => {
+                    chain_view.set_pending_generation(generation).await;
                 }
                 IngestionStateUpdate::Ingested(_etag) => {
                     chain_view.refresh_recent().await?;

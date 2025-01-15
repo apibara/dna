@@ -1,5 +1,5 @@
 use apibara_dna_common::{
-    chain::BlockInfo,
+    chain::{BlockInfo, PendingBlockInfo},
     fragment::{
         Block, BodyFragment, HeaderFragment, Index, IndexFragment, IndexGroupFragment, Join,
         JoinFragment, JoinGroupFragment,
@@ -30,21 +30,28 @@ use crate::{
         RECEIPT_FRAGMENT_NAME, STORAGE_DIFF_FRAGMENT_ID, STORAGE_DIFF_FRAGMENT_NAME,
         TRANSACTION_FRAGMENT_ID, TRANSACTION_FRAGMENT_NAME,
     },
-    proto::{convert_block_header, ModelExt},
+    proto::{convert_block_header, convert_pending_block_header, ModelExt},
     provider::{models, BlockExt, BlockId, StarknetProvider, StarknetProviderErrorExt},
 };
+
+#[derive(Clone, Debug)]
+pub struct StarknetBlockIngestionOptions {
+    pub ingest_pending: bool,
+}
 
 pub struct StarknetBlockIngestion {
     provider: StarknetProvider,
     finalized_hint: Mutex<Option<u64>>,
+    options: StarknetBlockIngestionOptions,
 }
 
 impl StarknetBlockIngestion {
-    pub fn new(provider: StarknetProvider) -> Self {
+    pub fn new(provider: StarknetProvider, options: StarknetBlockIngestionOptions) -> Self {
         let finalized_hint = Mutex::new(None);
         Self {
             provider,
             finalized_hint,
+            options,
         }
     }
 }
@@ -56,6 +63,10 @@ struct BlockIngestionResult {
 }
 
 impl BlockIngestion for StarknetBlockIngestion {
+    fn supports_pending(&self) -> bool {
+        self.options.ingest_pending
+    }
+
     #[tracing::instrument("starknet_get_head_cursor", skip_all, err(Debug))]
     async fn get_head_cursor(&self) -> Result<Cursor, IngestionError> {
         let cursor = self
@@ -158,6 +169,92 @@ impl BlockIngestion for StarknetBlockIngestion {
         })
     }
 
+    #[tracing::instrument("starknet_ingest_pending_block", skip(self), err(Debug))]
+    async fn ingest_pending_block(
+        &self,
+        parent: &Cursor,
+        generation: u64,
+    ) -> Result<Option<(PendingBlockInfo, Block)>, IngestionError> {
+        let block_id = BlockId::Pending;
+
+        let block = match self.provider.get_block_with_receipts(&block_id).await {
+            Ok(block) => block,
+            Err(err) if err.is_not_found() => {
+                return Ok(None);
+            }
+            Err(err) => {
+                return Err(err)
+                    .change_context(IngestionError::RpcRequest)
+                    .attach_printable("failed to get pending block");
+            }
+        };
+
+        let models::MaybePendingBlockWithReceipts::PendingBlock(block) = block else {
+            return Err(IngestionError::RpcRequest)
+                .attach_printable("unexpected non-pending block");
+        };
+
+        let block_parent_hash = Hash(block.parent_hash.to_bytes_be().to_vec());
+
+        if block_parent_hash != parent.hash {
+            return Ok(None);
+        }
+
+        let state_update = self
+            .provider
+            .get_state_update(&block_id)
+            .await
+            .change_context(IngestionError::RpcRequest)?;
+
+        let models::MaybePendingStateUpdate::PendingUpdate(state_update) = state_update else {
+            return Err(IngestionError::RpcRequest)
+                .attach_printable("unexpected non-pending state update");
+        };
+
+        let pending_block_info = PendingBlockInfo {
+            number: parent.number + 1,
+            generation,
+            parent: parent.hash.clone(),
+        };
+
+        let header_fragment = {
+            let header = convert_pending_block_header(&block, pending_block_info.number);
+            HeaderFragment {
+                data: header.encode_to_vec(),
+            }
+        };
+
+        let body_ingestion_result = collect_block_body_and_index(&block.transactions)?;
+
+        let state_update_ingestion_result =
+            collect_state_update_body_and_index(&state_update.state_diff)?;
+
+        let mut body_fragments = body_ingestion_result.body;
+        let mut index_fragments = body_ingestion_result.index;
+        let mut join_fragments = body_ingestion_result.join;
+
+        body_fragments.extend(state_update_ingestion_result.body);
+        index_fragments.extend(state_update_ingestion_result.index);
+        join_fragments.extend(state_update_ingestion_result.join);
+
+        let index_group = IndexGroupFragment {
+            indexes: index_fragments,
+        };
+
+        let join_group = JoinGroupFragment {
+            joins: join_fragments,
+        };
+
+        let block = Block {
+            header: header_fragment,
+            index: index_group,
+            body: body_fragments,
+            join: join_group,
+        };
+
+        Ok(Some((pending_block_info, block)))
+    }
+
     #[tracing::instrument("starknet_ingest_block_by_number", skip(self), err(Debug))]
     async fn ingest_block_by_number(
         &self,
@@ -220,7 +317,8 @@ impl BlockIngestion for StarknetBlockIngestion {
 
         let body_ingestion_result = collect_block_body_and_index(&block.transactions)?;
 
-        let state_update_ingestion_result = collect_state_update_body_and_index(&state_update)?;
+        let state_update_ingestion_result =
+            collect_state_update_body_and_index(&state_update.state_diff)?;
 
         let mut body_fragments = body_ingestion_result.body;
         let mut index_fragments = body_ingestion_result.index;
@@ -254,6 +352,7 @@ impl Clone for StarknetBlockIngestion {
         Self {
             provider: self.provider.clone(),
             finalized_hint: Mutex::new(None),
+            options: self.options.clone(),
         }
     }
 }
@@ -765,7 +864,7 @@ fn collect_block_body_and_index(
 }
 
 fn collect_state_update_body_and_index(
-    state_update: &models::StateUpdate,
+    state_diff: &models::StateDiff,
 ) -> Result<BlockIngestionResult, IngestionError> {
     let mut block_storage_diffs = Vec::new();
     let mut block_contract_changes = Vec::new();
@@ -774,8 +873,6 @@ fn collect_state_update_body_and_index(
     let mut index_storage_diff_by_contract_address = BitmapIndexBuilder::default();
     let mut index_contract_change_by_type = BitmapIndexBuilder::default();
     let mut index_nonce_update_by_contract_address = BitmapIndexBuilder::default();
-
-    let state_diff = &state_update.state_diff;
 
     for storage_diff in state_diff.storage_diffs.iter() {
         let index = block_storage_diffs.len() as u32;
