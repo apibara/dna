@@ -157,7 +157,7 @@ impl ObjectStore {
             .change_context(ObjectStoreError::Request)?;
         let decompressed = writer.into_inner();
 
-        let checksum = decompressed[decompressed.len() - 4..].as_ref().get_u32();
+        let checksum = (&decompressed[decompressed.len() - 4..]).get_u32();
         let data = decompressed[..decompressed.len() - 4].as_ref();
 
         if crc32fast::hash(data) != checksum {

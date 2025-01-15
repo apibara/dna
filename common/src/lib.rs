@@ -87,7 +87,10 @@ mod server_impl {
             .await
             .change_context(ServerError)?;
 
-        let ingestion_options = args.ingestion.to_ingestion_service_options();
+        let ingestion_options = args
+            .ingestion
+            .to_ingestion_service_options()
+            .change_context(ServerError)?;
 
         let etcd_renew_handle =
             tokio::spawn(etcd_client.clone().start_renew_auth_token(ct.clone()));
