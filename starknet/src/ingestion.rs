@@ -34,17 +34,24 @@ use crate::{
     provider::{models, BlockExt, BlockId, StarknetProvider, StarknetProviderErrorExt},
 };
 
+#[derive(Clone, Debug)]
+pub struct StarknetBlockIngestionOptions {
+    pub ingest_pending: bool,
+}
+
 pub struct StarknetBlockIngestion {
     provider: StarknetProvider,
     finalized_hint: Mutex<Option<u64>>,
+    options: StarknetBlockIngestionOptions,
 }
 
 impl StarknetBlockIngestion {
-    pub fn new(provider: StarknetProvider) -> Self {
+    pub fn new(provider: StarknetProvider, options: StarknetBlockIngestionOptions) -> Self {
         let finalized_hint = Mutex::new(None);
         Self {
             provider,
             finalized_hint,
+            options,
         }
     }
 }
@@ -56,6 +63,10 @@ struct BlockIngestionResult {
 }
 
 impl BlockIngestion for StarknetBlockIngestion {
+    fn supports_pending(&self) -> bool {
+        self.options.ingest_pending
+    }
+
     #[tracing::instrument("starknet_get_head_cursor", skip_all, err(Debug))]
     async fn get_head_cursor(&self) -> Result<Cursor, IngestionError> {
         let cursor = self
@@ -341,6 +352,7 @@ impl Clone for StarknetBlockIngestion {
         Self {
             provider: self.provider.clone(),
             finalized_hint: Mutex::new(None),
+            options: self.options.clone(),
         }
     }
 }

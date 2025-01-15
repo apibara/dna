@@ -24,8 +24,14 @@ use crate::{
 use super::{error::IngestionError, state_client::IngestionStateClient};
 
 pub trait BlockIngestion: Clone {
+    fn supports_pending(&self) -> bool {
+        false
+    }
+
     fn get_head_cursor(&self) -> impl Future<Output = Result<Cursor, IngestionError>> + Send;
+
     fn get_finalized_cursor(&self) -> impl Future<Output = Result<Cursor, IngestionError>> + Send;
+
     fn get_block_info_by_number(
         &self,
         block_number: u64,
@@ -321,7 +327,7 @@ where
                 self.tick_refresh_finalized(state).await
             }
 
-            _ = state.pending_refresh_interval.tick(), if state.head == state.last_ingested => {
+            _ = state.pending_refresh_interval.tick(), if state.head == state.last_ingested && self.ingestion.supports_pending() => {
                 current_span.record("action", "refresh_pending");
 
                 self.tick_refresh_pending(state).await
@@ -781,6 +787,10 @@ impl<I> IngestionInner<I>
 where
     I: BlockIngestion + Send + Sync + 'static,
 {
+    fn supports_pending(&self) -> bool {
+        self.ingestion.supports_pending()
+    }
+
     #[tracing::instrument("ingestion_ingest_block", skip(self), err(Debug))]
     async fn ingest_block_by_number(&self, block_number: u64) -> Result<BlockInfo, IngestionError> {
         let ingestion = self.ingestion.clone();
