@@ -19,13 +19,16 @@ use crate::{
     provider::JsonRpcProvider,
 };
 
+pub use ingestion::EvmBlockIngestionOptions;
+
 pub struct EvmChainSupport {
     provider: JsonRpcProvider,
+    options: EvmBlockIngestionOptions,
 }
 
 impl EvmChainSupport {
-    pub fn new(provider: JsonRpcProvider) -> Self {
-        Self { provider }
+    pub fn new(provider: JsonRpcProvider, options: EvmBlockIngestionOptions) -> Self {
+        Self { provider, options }
     }
 }
 
@@ -59,6 +62,6 @@ impl ChainSupport for EvmChainSupport {
     }
 
     fn block_ingestion(&self) -> Self::BlockIngestion {
-        EvmBlockIngestion::new(self.provider.clone())
+        EvmBlockIngestion::new(self.provider.clone(), self.options.clone())
     }
 }

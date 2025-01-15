@@ -180,7 +180,7 @@ impl BlockIngestion for StarknetBlockIngestion {
         let block = match self.provider.get_block_with_receipts(&block_id).await {
             Ok(block) => block,
             Err(err) if err.is_not_found() => {
-                return Err(err).change_context(IngestionError::BlockNotFound)
+                return Ok(None);
             }
             Err(err) => {
                 return Err(err)
