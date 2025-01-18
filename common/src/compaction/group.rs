@@ -60,7 +60,7 @@ impl SegmentGroupService {
                 .await
                 .change_context(CompactionError)?
             {
-                let NextCursor::Continue(cursor) = chain_view
+                let NextCursor::Continue { cursor, .. } = chain_view
                     .get_next_cursor(&Some(cursor.clone()))
                     .await
                     .change_context(CompactionError)?

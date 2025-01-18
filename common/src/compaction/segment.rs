@@ -51,7 +51,7 @@ impl SegmentService {
                 .await
                 .change_context(CompactionError)?
             {
-                let NextCursor::Continue(cursor) = chain_view
+                let NextCursor::Continue { cursor, .. } = chain_view
                     .get_next_cursor(&Some(cursor.clone()))
                     .await
                     .change_context(CompactionError)?
@@ -115,7 +115,10 @@ impl SegmentService {
                         .attach_printable("failed to add block to segment")
                         .attach_printable_lazy(|| format!("cursor: {current}"))?;
 
-                    let NextCursor::Continue(next_cursor) = chain_view
+                    let NextCursor::Continue {
+                        cursor: next_cursor,
+                        ..
+                    } = chain_view
                         .get_next_cursor(&Some(current.clone()))
                         .await
                         .change_context(CompactionError)?

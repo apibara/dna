@@ -5,6 +5,16 @@ use rkyv::{Archive, Deserialize, Serialize};
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Archive, Serialize, Deserialize, Default)]
 pub struct Hash(pub Vec<u8>);
 
+impl Hash {
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
 /// Cursor uniquely identifies a block by its number and hash.
 #[derive(Clone, PartialEq, Eq, Hash, Archive, Serialize, Deserialize)]
 pub struct Cursor {
@@ -46,6 +56,34 @@ impl Cursor {
 
     pub fn hash_as_hex(&self) -> String {
         format!("{}", self.hash)
+    }
+
+    pub fn is_equivalent(&self, other: &Self) -> bool {
+        if self.number != other.number {
+            return false;
+        }
+
+        if self.hash.is_empty() || other.hash.is_empty() {
+            return true;
+        }
+
+        if self.hash.len() == other.hash.len() {
+            return self.hash == other.hash;
+        }
+
+        // Check that the two hashes end with the same bytes and that the longer hash extra bytes are all zero.
+        let min_len = std::cmp::min(self.hash.len(), other.hash.len());
+
+        let prefix = &self.hash.0[self.hash.len() - min_len..];
+        let other_prefix = &other.hash.0[other.hash.len() - min_len..];
+
+        if self.hash.len() > other.hash.len() {
+            let len_diff = self.hash.len() - other.hash.len();
+            return other_prefix == prefix && self.hash.0[0..len_diff] == vec![0; len_diff];
+        }
+
+        let len_diff = other.hash.len() - self.hash.len();
+        prefix == other_prefix && other.hash.0[0..len_diff] == vec![0; len_diff]
     }
 }
 
@@ -121,6 +159,65 @@ pub mod testing {
         super::Cursor {
             number,
             hash: super::Hash(hash),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::Hash;
+
+    use super::Cursor;
+
+    #[test]
+    fn test_cursor_is_equivalent() {
+        {
+            let cursor = Cursor::new(1, Hash::default());
+            let other = Cursor::new(1, Hash([0, 0, 1].to_vec()));
+            assert!(cursor.is_equivalent(&other));
+            assert!(other.is_equivalent(&cursor));
+        }
+
+        {
+            let cursor = Cursor::new(1, Hash::default());
+            let other = Cursor::new(1, Hash::default());
+            assert!(cursor.is_equivalent(&other));
+            assert!(other.is_equivalent(&cursor));
+        }
+
+        {
+            let cursor = Cursor::new(1, Hash::default());
+            let other = Cursor::new(2, Hash::default());
+            assert!(!cursor.is_equivalent(&other));
+            assert!(!other.is_equivalent(&cursor));
+        }
+
+        {
+            let cursor = Cursor::new(1, Hash([0, 0, 1].to_vec()));
+            let other = Cursor::new(1, Hash([0, 1].to_vec()));
+            assert!(cursor.is_equivalent(&other));
+            assert!(other.is_equivalent(&cursor));
+        }
+
+        {
+            let cursor = Cursor::new(1, Hash([0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4].to_vec()));
+            let other = Cursor::new(1, Hash([1, 2, 3, 4].to_vec()));
+            assert!(cursor.is_equivalent(&other));
+            assert!(other.is_equivalent(&cursor));
+        }
+
+        {
+            let cursor = Cursor::new(1, Hash([0, 0, 1].to_vec()));
+            let other = Cursor::new(1, Hash([0, 0, 2].to_vec()));
+            assert!(!cursor.is_equivalent(&other));
+            assert!(!other.is_equivalent(&cursor));
+        }
+
+        {
+            let cursor = Cursor::new(1, Hash([0, 0, 1].to_vec()));
+            let other = Cursor::new(1, Hash([0, 0, 1, 1].to_vec()));
+            assert!(!cursor.is_equivalent(&other));
+            assert!(!other.is_equivalent(&cursor));
         }
     }
 }

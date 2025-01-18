@@ -4,8 +4,8 @@ use std::{
 };
 
 use apibara_dna_protocol::dna::stream::{
-    stream_data_response::Message, Data, DataFinality, Finalize, Heartbeat, Invalidate,
-    StreamDataResponse,
+    stream_data_response::Message, Data, DataFinality, DataProduction, Finalize, Heartbeat,
+    Invalidate, StreamDataResponse,
 };
 use bytes::{BufMut, Bytes, BytesMut};
 use error_stack::{Result, ResultExt};
@@ -107,13 +107,13 @@ impl DataStream {
         tx: &mpsc::Sender<DataStreamMessage>,
         ct: &CancellationToken,
     ) -> Result<(), DataStreamError> {
-        let next_cursor = match self
+        let (next_cursor, is_head) = match self
             .chain_view
             .get_next_cursor(&self.current)
             .await
             .change_context(DataStreamError)?
         {
-            NextCursor::Continue(cursor) => cursor,
+            NextCursor::Continue { cursor, is_head } => (cursor, is_head),
             NextCursor::Invalidate(cursor) => {
                 debug!(cursor = %cursor, "invalidating data");
 
@@ -230,7 +230,7 @@ impl DataStream {
             return self.tick_segment(next_cursor, tx, ct).await;
         }
 
-        self.tick_single(next_cursor, tx, ct).await
+        self.tick_single(next_cursor, is_head, tx, ct).await
     }
 
     async fn send_heartbeat_message(
@@ -444,6 +444,7 @@ impl DataStream {
                         end_cursor: proto_end_cursor.clone(),
                         data: blocks,
                         finality: finality as i32,
+                        production: DataProduction::Backfill.into(),
                     });
 
                     let Some(Ok(permit)) = ct.run_until_cancelled(tx.reserve()).await else {
@@ -551,6 +552,7 @@ impl DataStream {
                     end_cursor: proto_end_cursor.clone(),
                     data: blocks,
                     finality: finality as i32,
+                    production: DataProduction::Backfill.into(),
                 });
 
                 let Some(Ok(permit)) = ct.run_until_cancelled(tx.reserve()).await else {
@@ -572,6 +574,7 @@ impl DataStream {
     async fn tick_single(
         &mut self,
         cursor: Cursor,
+        is_head: bool,
         tx: &mpsc::Sender<DataStreamMessage>,
         ct: &CancellationToken,
     ) -> Result<(), DataStreamError> {
@@ -599,6 +602,7 @@ impl DataStream {
         let fragment_access = FragmentAccess::new_in_block(self.store.clone(), cursor.clone());
 
         let mut blocks = Vec::new();
+
         if self
             .filter_fragment(&fragment_access, &finality, &mut blocks)
             .await?
@@ -608,6 +612,11 @@ impl DataStream {
                 end_cursor: proto_end_cursor.clone(),
                 data: blocks,
                 finality: finality.into(),
+                production: if is_head {
+                    DataProduction::Live.into()
+                } else {
+                    DataProduction::Backfill.into()
+                },
             });
 
             let Some(Ok(permit)) = ct.run_until_cancelled(tx.reserve()).await else {
@@ -671,6 +680,7 @@ impl DataStream {
                 end_cursor: proto_end_cursor.clone(),
                 data: blocks,
                 finality: finality.into(),
+                production: DataProduction::Live.into(),
             });
 
             let Some(Ok(permit)) = ct.run_until_cancelled(tx.reserve()).await else {

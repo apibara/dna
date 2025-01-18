@@ -419,6 +419,38 @@ impl CanonicalChainSegment {
         Ok(cursor)
     }
 
+    pub fn siblings(&self, cursor: &Cursor) -> Result<Vec<Cursor>, CanonicalChainError> {
+        if cursor.number < self.info.first_block.number {
+            return Err(CanonicalChainError::View)
+                .attach_printable("cursor is before the first block")
+                .attach_printable_lazy(|| format!("cursor: {cursor:?}"))
+                .attach_printable_lazy(|| format!("first block: {:?}", self.info.first_block));
+        }
+
+        if cursor.number > self.info.last_block.number {
+            // The block could have been reorged while the chain shrunk.
+            let Some(reorgs) = self
+                .extra_reorgs
+                .iter()
+                .find(|r| r.block_number == cursor.number)
+            else {
+                return Err(CanonicalChainError::View)
+                    .attach_printable("cursor is after the last block")
+                    .attach_printable_lazy(|| format!("cursor: {cursor:?}"))
+                    .attach_printable_lazy(|| format!("last block: {:?}", self.info.last_block));
+            };
+
+            let siblings = reorgs.reorgs.values().cloned().collect::<Vec<_>>();
+            return Ok(siblings);
+        }
+
+        let offset = cursor.number - self.info.first_block.number;
+
+        let canonical = &self.canonical[offset as usize];
+        let siblings = canonical.reorgs.values().cloned().collect::<Vec<_>>();
+        Ok(siblings)
+    }
+
     pub fn reconnect(&self, cursor: &Cursor) -> Result<ReconnectAction, CanonicalChainError> {
         if cursor.number < self.info.first_block.number {
             return Err(CanonicalChainError::View)
