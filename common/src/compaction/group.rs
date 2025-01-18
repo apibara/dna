@@ -98,7 +98,7 @@ impl SegmentGroupService {
             if first_block_in_group.number + blocks_in_group <= segmented.number {
                 info!(starting_cursor = %first_block_in_group, "creating new group");
 
-                let mut builder = SegmentGroupBuilder::default();
+                let mut builder = SegmentGroupBuilder::new(self.segment_size);
 
                 for i in 0..self.group_size {
                     let segment_start =

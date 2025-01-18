@@ -11,22 +11,32 @@ use crate::{
 
 use super::CompactionError;
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct SegmentGroupBuilder {
-    block_range: Option<(Cursor, Cursor)>,
+    segment_size: u64,
+    block_range: Option<(Cursor, u64)>,
     block_indexes: BTreeMap<FragmentId, BTreeMap<IndexId, index::BitmapIndexBuilder>>,
 }
 
 impl SegmentGroupBuilder {
+    pub fn new(segment_size: usize) -> Self {
+        Self {
+            segment_size: segment_size as u64,
+            block_range: None,
+            block_indexes: BTreeMap::new(),
+        }
+    }
+
     pub fn add_segment(
         &mut self,
         segment: &Segment<IndexGroupFragment>,
     ) -> Result<(), CompactionError> {
         let segment_cursor = segment.first_block.clone();
+        let segment_end = segment_cursor.number + self.segment_size - 1;
 
         self.block_range = match self.block_range.take() {
-            None => Some((segment_cursor.clone(), segment_cursor)),
-            Some((first_block, _)) => Some((first_block, segment_cursor)),
+            None => Some((segment_cursor, segment_end)),
+            Some((first_block, _)) => Some((first_block, segment_end)),
         };
 
         for block_data in segment.data.iter() {
@@ -62,7 +72,7 @@ impl SegmentGroupBuilder {
         };
 
         let range_start = first_block.number as u32;
-        let range_len = (last_block.number - first_block.number + 1) as u32;
+        let range_len = (last_block - first_block.number + 1) as u32;
 
         let mut indexes = Vec::new();
 
