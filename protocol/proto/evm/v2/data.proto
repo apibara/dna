@@ -175,6 +175,8 @@ message Log {
   B256 transaction_hash = 7;
   // The transaction status.
   TransactionStatus transaction_status = 8;
+  // Index of the log in the transaction.
+  uint32 log_index_in_transaction = 9;
 }
 
 message Signature {

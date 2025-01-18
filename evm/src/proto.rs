@@ -136,6 +136,7 @@ impl ModelExt for models::Log {
             transaction_index: u32::MAX,
             transaction_hash: None,
             transaction_status: 0,
+            log_index_in_transaction: u32::MAX,
         }
     }
 }

@@ -348,7 +348,7 @@ fn collect_block_body_and_index(
 
         let mut transaction_logs_id = Vec::new();
 
-        for log in receipt.inner.logs() {
+        for (log_index_in_transaction, log) in receipt.inner.logs().iter().enumerate() {
             let log_index = block_logs.len() as u32;
 
             if let Some(rpc_log_index) = log.log_index {
@@ -379,6 +379,7 @@ fn collect_block_body_and_index(
             log.transaction_index = transaction_index;
             log.transaction_hash = transaction_hash.into();
             log.transaction_status = transaction_status;
+            log.log_index_in_transaction = log_index_in_transaction as u32;
 
             join_log_to_transaction.insert(log_index, transaction_index);
             join_log_to_receipt.insert(log_index, transaction_index);
