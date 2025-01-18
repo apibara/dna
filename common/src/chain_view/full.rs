@@ -13,6 +13,15 @@ pub enum CanonicalCursor {
     Canonical(Cursor),
 }
 
+/// Result of validating a cursor.
+#[derive(Debug, Clone)]
+pub enum ValidatedCursor {
+    /// The cursor is valid. The cursor returned is normalized.
+    Valid(Cursor),
+    /// The cursor is invalid. The cursors returned are the canonical cursor and its siblings.
+    Invalid(Cursor, Vec<Cursor>),
+}
+
 #[derive(Debug, Clone)]
 pub enum NextCursor {
     /// Continue streaming from the given cursor.
@@ -74,6 +83,30 @@ impl FullCanonicalChain {
             ReconnectAction::OfflineReorg(target) => Ok(NextCursor::Invalidate(target)),
             ReconnectAction::Unknown => Err(ChainViewError).attach_printable("unknown cursor"),
         }
+    }
+
+    pub async fn validate_cursor(
+        &self,
+        cursor: &Cursor,
+    ) -> Result<ValidatedCursor, ChainViewError> {
+        let segment = self.get_chain_segment(cursor.number).await?;
+        let canonical = segment
+            .canonical(cursor.number)
+            .change_context(ChainViewError)?;
+
+        if canonical.is_equivalent(cursor) {
+            return Ok(ValidatedCursor::Valid(canonical.clone()));
+        }
+
+        // Iterate over the siblings because the user may have provided a malformed cursor that was reorged.
+        let siblings = segment.siblings(cursor).change_context(ChainViewError)?;
+        for sibling in siblings.iter() {
+            if sibling.is_equivalent(cursor) {
+                return Ok(ValidatedCursor::Valid(sibling.clone()));
+            }
+        }
+
+        Ok(ValidatedCursor::Invalid(canonical, siblings))
     }
 
     pub async fn get_head(&self) -> Result<Cursor, ChainViewError> {

@@ -7,7 +7,7 @@ use crate::Cursor;
 
 use super::{
     error::ChainViewError,
-    full::{FullCanonicalChain, NextCursor},
+    full::{FullCanonicalChain, NextCursor, ValidatedCursor},
     CanonicalCursor,
 };
 
@@ -104,6 +104,14 @@ impl ChainView {
     ) -> Result<NextCursor, ChainViewError> {
         let inner = self.0.read().await;
         inner.canonical.get_next_cursor(cursor).await
+    }
+
+    pub async fn validate_cursor(
+        &self,
+        cursor: &Cursor,
+    ) -> Result<ValidatedCursor, ChainViewError> {
+        let inner = self.0.read().await;
+        inner.canonical.validate_cursor(cursor).await
     }
 
     pub async fn get_canonical(

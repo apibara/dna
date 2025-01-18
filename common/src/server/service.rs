@@ -9,11 +9,11 @@ use futures::{Future, Stream, StreamExt, TryFutureExt};
 use tokio::sync::{mpsc, Semaphore};
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 use crate::{
     block_store::BlockStoreReader,
-    chain_view::{CanonicalCursor, ChainView, ChainViewError},
+    chain_view::{CanonicalCursor, ChainView, ChainViewError, ValidatedCursor},
     data_stream::{BlockFilterFactory, DataStream},
     fragment::FragmentId,
     Cursor,
@@ -143,8 +143,29 @@ where
         // The block could be reorged but that's handled by the `DataStream`.
         let starting_cursor = if let Some(cursor) = request.starting_cursor {
             let cursor = Cursor::from(cursor);
+            debug!(cursor = %cursor, "starting cursor before validation");
             chain_view.ensure_cursor_in_range(&cursor).await?;
-            cursor.into()
+            match chain_view.validate_cursor(&cursor).await {
+                Ok(ValidatedCursor::Valid(cursor)) => Some(cursor),
+                Ok(ValidatedCursor::Invalid(canonical, siblings)) => {
+                    let sibling_hashes = if siblings.is_empty() {
+                        "none".to_string()
+                    } else {
+                        siblings
+                            .iter()
+                            .map(|c| c.hash_as_hex())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    };
+                    return Err(tonic::Status::invalid_argument(format!(
+                        "starting cursor {cursor} not found. canonical: {}, reorged: {sibling_hashes}",
+                        canonical.hash_as_hex()
+                    )));
+                }
+                Err(_) => {
+                    return Err(tonic::Status::internal("internal server error"));
+                }
+            }
         } else {
             None
         };
