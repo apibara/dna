@@ -604,6 +604,7 @@ impl ModelExt for models::Event {
             transaction_index: u32::MAX,
             transaction_hash: None,
             transaction_status: 0,
+            event_index_in_transaction: u32::MAX,
         }
     }
 }
@@ -621,6 +622,7 @@ impl ModelExt for models::MsgToL1 {
             transaction_index: u32::MAX,
             transaction_hash: None,
             transaction_status: 0,
+            message_index_in_transaction: u32::MAX,
         }
     }
 }

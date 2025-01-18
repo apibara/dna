@@ -414,13 +414,14 @@ fn collect_block_body_and_index(
         let mut transaction_events_id = Vec::new();
         let mut transaction_messages_id = Vec::new();
 
-        for event in events.iter() {
+        for (event_index_in_transaction, event) in events.iter().enumerate() {
             let mut event = event.to_proto();
 
             event.event_index = block_events.len() as u32;
             event.transaction_index = transaction_index;
             event.transaction_hash = transaction_hash.into();
             event.transaction_status = transaction_status as i32;
+            event.event_index_in_transaction = event_index_in_transaction as u32;
 
             join_transaction_to_events.insert(transaction_index, event.event_index);
             join_event_to_transaction.insert(event.event_index, transaction_index);
@@ -469,13 +470,14 @@ fn collect_block_body_and_index(
             models::TransactionReceipt::DeployAccount(rx) => &rx.messages_sent,
         };
 
-        for message in messages.iter() {
+        for (message_index_in_transaction, message) in messages.iter().enumerate() {
             let mut message = message.to_proto();
 
             message.message_index = block_messages.len() as u32;
             message.transaction_index = transaction_index;
             message.transaction_hash = transaction_hash.into();
             message.transaction_status = transaction_status as i32;
+            message.message_index_in_transaction = message_index_in_transaction as u32;
 
             join_transaction_to_messages.insert(transaction_index, message.message_index);
             join_message_to_transaction.insert(message.message_index, transaction_index);
