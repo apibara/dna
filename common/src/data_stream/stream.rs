@@ -10,7 +10,7 @@ use apibara_dna_protocol::dna::stream::{
 use bytes::{BufMut, Bytes, BytesMut};
 use error_stack::{Result, ResultExt};
 use roaring::RoaringBitmap;
-use tokio::sync::mpsc;
+use tokio::{sync::mpsc, time::Instant};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, warn};
 use valuable::Valuable;
@@ -38,7 +38,7 @@ pub struct DataStream {
     chain_view: ChainView,
     store: BlockStoreReader,
     fragment_id_to_name: HashMap<FragmentId, String>,
-    heartbeat_interval: tokio::time::Interval,
+    heartbeat_interval: Duration,
     _permit: tokio::sync::OwnedSemaphorePermit,
 }
 
@@ -70,7 +70,6 @@ impl DataStream {
         store: BlockStoreReader,
         permit: tokio::sync::OwnedSemaphorePermit,
     ) -> Self {
-        let heartbeat_interval = tokio::time::interval(heartbeat_interval);
         Self {
             block_filter,
             current: starting,
@@ -89,13 +88,48 @@ impl DataStream {
         tx: mpsc::Sender<DataStreamMessage>,
         ct: CancellationToken,
     ) -> Result<(), DataStreamError> {
+        tokio::pin! {
+            let heartbeat_sleep = tokio::time::sleep(self.heartbeat_interval);
+        }
+
         while !ct.is_cancelled() && !tx.is_closed() {
-            if let Err(err) = self.tick(&tx, &ct).await {
-                warn!(error = ?err, "data stream error");
-                tx.send(Err(tonic::Status::internal("internal server error")))
-                    .await
-                    .change_context(DataStreamError)?;
-                return Err(err).change_context(DataStreamError);
+            let deadline = heartbeat_sleep.as_ref().deadline();
+
+            tokio::select! {
+                biased;
+
+                _ = ct.cancelled() => return Ok(()),
+                _ = &mut heartbeat_sleep => {
+                    debug!("tick: send heartbeat message");
+                    let Some(Ok(permit)) = ct.run_until_cancelled(tx.reserve()).await else {
+                        return Ok(());
+                    };
+
+                    let heartbeat = Message::Heartbeat(Heartbeat {});
+
+                    permit.send(Ok(StreamDataResponse {
+                        message: Some(heartbeat),
+                    }));
+
+                    heartbeat_sleep.as_mut().reset(Instant::now() + self.heartbeat_interval);
+
+                    continue;
+                }
+                tick_result = self.tick(deadline, &tx, &ct) => {
+                    match tick_result {
+                        Ok(false) => {},
+                        Ok(true) => {
+                            heartbeat_sleep.as_mut().reset(Instant::now() + self.heartbeat_interval);
+                        }
+                        Err(err) => {
+                            warn!(error = ?err, "data stream error");
+                            tx.send(Err(tonic::Status::internal("internal server error")))
+                                .await
+                                .change_context(DataStreamError)?;
+                            return Err(err).change_context(DataStreamError);
+                        }
+                    }
+                }
             }
         }
 
@@ -104,9 +138,10 @@ impl DataStream {
 
     async fn tick(
         &mut self,
+        deadline: Instant,
         tx: &mpsc::Sender<DataStreamMessage>,
         ct: &CancellationToken,
-    ) -> Result<(), DataStreamError> {
+    ) -> Result<bool, DataStreamError> {
         let (next_cursor, is_head) = match self
             .chain_view
             .get_next_cursor(&self.current)
@@ -124,40 +159,38 @@ impl DataStream {
                 });
 
                 let Some(Ok(permit)) = ct.run_until_cancelled(tx.reserve()).await else {
-                    return Ok(());
+                    return Ok(false);
                 };
 
                 permit.send(Ok(StreamDataResponse {
                     message: Some(invalidate),
                 }));
 
-                self.heartbeat_interval.reset();
                 self.current = Some(cursor);
 
-                return Ok(());
+                return Ok(true);
             }
             NextCursor::AtHead => {
                 debug!("head reached. waiting for new head");
                 if self.finality == DataFinality::Pending {
                     let mut pending_generation = self.chain_view.get_pending_generation().await;
                     let mut content_hash = Vec::new();
+
                     loop {
                         if let Some(generation) = pending_generation.take() {
                             if let Some(head) = &self.current {
                                 self.tick_pending(head, generation, &mut content_hash, tx, ct)
                                     .await?;
-                                // Reset here so that tick_pending doesn't need to be mutable.
-                                self.heartbeat_interval.reset();
                             }
                         }
 
                         tokio::select! {
                             biased;
 
-                            _ = ct.cancelled() => return Ok(()),
+                            _ = ct.cancelled() => return Ok(false),
                             _ = self.chain_view.head_changed() => {
                                 debug!("head changed (pending)");
-                                return Ok(());
+                                return Ok(false);
                             },
                             _ = self.chain_view.finalized_changed() => {
                                 debug!("finalized changed (pending)");
@@ -168,25 +201,21 @@ impl DataStream {
                                 debug!("pending changed (pending)");
                                 pending_generation = self.chain_view.get_pending_generation().await;
                             }
-                            _ = self.heartbeat_interval.tick() => {
-                                debug!("heartbeat (pending)");
-                                self.send_heartbeat_message(tx, ct).await?;
-                            }
                         }
                     }
                 } else {
                     tokio::select! {
-                        _ = ct.cancelled() => return Ok(()),
-                        _ = self.heartbeat_interval.tick() => {
-                            debug!("heartbeat");
-                            return self.send_heartbeat_message(tx, ct).await;
-                        }
+                        _ = ct.cancelled() => return Ok(false),
+                        _ = tokio::time::sleep_until(deadline) => {
+                            debug!("heartbeat (at head)");
+                            return Ok(false);
+                        },
                         _ = self.chain_view.head_changed() => {
-                            debug!("head changed");
-                            return Ok(());
+                            debug!("head changed (at head)");
+                            return Ok(false);
                         },
                         _ = self.chain_view.finalized_changed() => {
-                            debug!("finalized changed");
+                            debug!("finalized changed (at head)");
                             self.finalized = self.chain_view.get_finalized_cursor().await.change_context(DataStreamError)?;
                             return self.send_finalize_message(tx, ct).await;
                         },
@@ -197,20 +226,17 @@ impl DataStream {
 
         if self.finality == DataFinality::Finalized && next_cursor.strict_after(&self.finalized) {
             // Wait for the finalized cursor to catch up and then try again.
-            // Keep sending heartbeats while waiting.
-            loop {
-                tokio::select! {
-                    _ = ct.cancelled() => return Ok(()),
-                    _ = self.heartbeat_interval.tick() => {
-                        debug!("heartbeat (finalized)");
-                        self.send_heartbeat_message(tx, ct).await?;
-                    }
-                    _ = self.chain_view.finalized_changed() => {
-                        debug!("finalized changed (finalized)");
-                        self.finalized = self.chain_view.get_finalized_cursor().await.change_context(DataStreamError)?;
-                        return Ok(());
-                    },
-                }
+            tokio::select! {
+                _ = ct.cancelled() => return Ok(false),
+                _ = tokio::time::sleep_until(deadline) => {
+                    debug!("heartbeat (finalized)");
+                    return Ok(false);
+                },
+                _ = self.chain_view.finalized_changed() => {
+                    debug!("finalized changed (finalized)");
+                    self.finalized = self.chain_view.get_finalized_cursor().await.change_context(DataStreamError)?;
+                    return Ok(false);
+                },
             }
         }
 
@@ -233,33 +259,14 @@ impl DataStream {
         self.tick_single(next_cursor, is_head, tx, ct).await
     }
 
-    async fn send_heartbeat_message(
-        &mut self,
-        tx: &mpsc::Sender<DataStreamMessage>,
-        ct: &CancellationToken,
-    ) -> Result<(), DataStreamError> {
-        debug!("tick: send heartbeat message");
-        let Some(Ok(permit)) = ct.run_until_cancelled(tx.reserve()).await else {
-            return Ok(());
-        };
-
-        let heartbeat = Message::Heartbeat(Heartbeat {});
-
-        permit.send(Ok(StreamDataResponse {
-            message: Some(heartbeat),
-        }));
-
-        Ok(())
-    }
-
     async fn send_finalize_message(
         &mut self,
         tx: &mpsc::Sender<DataStreamMessage>,
         ct: &CancellationToken,
-    ) -> Result<(), DataStreamError> {
+    ) -> Result<bool, DataStreamError> {
         debug!("tick: send finalize message");
         let Some(Ok(permit)) = ct.run_until_cancelled(tx.reserve()).await else {
-            return Ok(());
+            return Ok(false);
         };
 
         let finalize = Message::Finalize(Finalize {
@@ -270,7 +277,7 @@ impl DataStream {
             message: Some(finalize),
         }));
 
-        Ok(())
+        Ok(true)
     }
 
     async fn tick_group(
@@ -278,7 +285,7 @@ impl DataStream {
         cursor: Cursor,
         tx: &mpsc::Sender<DataStreamMessage>,
         ct: &CancellationToken,
-    ) -> Result<(), DataStreamError> {
+    ) -> Result<bool, DataStreamError> {
         debug!("tick: group");
 
         let group_start = self.chain_view.get_group_start_block(cursor.number).await;
@@ -336,7 +343,6 @@ impl DataStream {
         let mut current_segment_start = self.chain_view.get_segment_start_block(group_start).await;
         let mut current_segment_end = self.chain_view.get_segment_end_block(group_start).await;
 
-        // let mut prefetch_tasks = JoinSet::new();
         for block_number in data_bitmap.iter() {
             if block_number < cursor.number as u32 {
                 continue;
@@ -414,12 +420,13 @@ impl DataStream {
 
         segments.push((current_segment_cursor, blocks));
 
-        // prefetch_tasks.join_all().await;
         let finality = DataFinality::Finalized;
+
+        let mut data_sent = false;
 
         for (segment_cursor, segment_data) in segments {
             if ct.is_cancelled() || tx.is_closed() {
-                return Ok(());
+                return Ok(false);
             }
 
             for block in segment_data {
@@ -436,7 +443,7 @@ impl DataStream {
 
                 let mut blocks = Vec::new();
                 if self
-                    .filter_fragment(&fragment_access, &finality, &mut blocks)
+                    .filter_fragment(&fragment_access, &finality, false, &mut blocks)
                     .await?
                 {
                     let data = Message::Data(Data {
@@ -448,9 +455,10 @@ impl DataStream {
                     });
 
                     let Some(Ok(permit)) = ct.run_until_cancelled(tx.reserve()).await else {
-                        return Ok(());
+                        return Ok(false);
                     };
 
+                    data_sent = true;
                     permit.send(Ok(StreamDataResponse {
                         message: Some(data),
                     }));
@@ -467,10 +475,9 @@ impl DataStream {
             return Err(DataStreamError).attach_printable("missing canonical block");
         };
 
-        self.heartbeat_interval.reset();
         self.current = group_end_cursor.into();
 
-        Ok(())
+        Ok(data_sent)
     }
 
     async fn tick_segment(
@@ -478,7 +485,7 @@ impl DataStream {
         cursor: Cursor,
         tx: &mpsc::Sender<DataStreamMessage>,
         ct: &CancellationToken,
-    ) -> Result<(), DataStreamError> {
+    ) -> Result<bool, DataStreamError> {
         let mut current = cursor.clone();
 
         let segment_size = self.chain_view.get_segment_size().await;
@@ -531,6 +538,8 @@ impl DataStream {
 
         let finality = DataFinality::Finalized;
 
+        let mut data_sent = false;
+
         for block in blocks {
             use apibara_dna_protocol::dna::stream::Cursor as ProtoCursor;
 
@@ -544,7 +553,7 @@ impl DataStream {
 
             let mut blocks = Vec::new();
             if self
-                .filter_fragment(&fragment_access, &finality, &mut blocks)
+                .filter_fragment(&fragment_access, &finality, false, &mut blocks)
                 .await?
             {
                 let data = Message::Data(Data {
@@ -556,8 +565,10 @@ impl DataStream {
                 });
 
                 let Some(Ok(permit)) = ct.run_until_cancelled(tx.reserve()).await else {
-                    return Ok(());
+                    return Ok(false);
                 };
+
+                data_sent = true;
 
                 permit.send(Ok(StreamDataResponse {
                     message: Some(data),
@@ -565,10 +576,9 @@ impl DataStream {
             }
         }
 
-        self.heartbeat_interval.reset();
         self.current = current.into();
 
-        Ok(())
+        Ok(data_sent)
     }
 
     async fn tick_single(
@@ -577,7 +587,7 @@ impl DataStream {
         is_head: bool,
         tx: &mpsc::Sender<DataStreamMessage>,
         ct: &CancellationToken,
-    ) -> Result<(), DataStreamError> {
+    ) -> Result<bool, DataStreamError> {
         use apibara_dna_protocol::dna::stream::Cursor as ProtoCursor;
 
         debug!("tick: single block");
@@ -603,8 +613,10 @@ impl DataStream {
 
         let mut blocks = Vec::new();
 
+        let mut data_sent = false;
+
         if self
-            .filter_fragment(&fragment_access, &finality, &mut blocks)
+            .filter_fragment(&fragment_access, &finality, is_head, &mut blocks)
             .await?
         {
             let data = Message::Data(Data {
@@ -620,18 +632,19 @@ impl DataStream {
             });
 
             let Some(Ok(permit)) = ct.run_until_cancelled(tx.reserve()).await else {
-                return Ok(());
+                return Ok(false);
             };
+
+            data_sent = true;
 
             permit.send(Ok(StreamDataResponse {
                 message: Some(data),
             }));
         }
 
-        self.heartbeat_interval.reset();
         self.current = Some(cursor);
 
-        Ok(())
+        Ok(data_sent)
     }
 
     async fn tick_pending(
@@ -659,7 +672,7 @@ impl DataStream {
 
         let mut blocks = Vec::new();
         if self
-            .filter_fragment(&fragment_access, &finality, &mut blocks)
+            .filter_fragment(&fragment_access, &finality, true, &mut blocks)
             .await?
         {
             use sha2::Digest;
@@ -705,7 +718,8 @@ impl DataStream {
     async fn filter_fragment(
         &self,
         fragment_access: &FragmentAccess,
-        finality: &DataFinality,
+        _finality: &DataFinality,
+        is_live: bool,
         output: &mut Vec<Bytes>,
     ) -> Result<bool, DataStreamError> {
         let current_span = tracing::Span::current();
@@ -804,9 +818,7 @@ impl DataStream {
             let should_send_header = match block_filter.header_filter {
                 HeaderFilter::Always => true,
                 HeaderFilter::OnData => !fragment_matches.is_empty(),
-                HeaderFilter::OnDataOrOnNewBlock => {
-                    !fragment_matches.is_empty() || *finality != DataFinality::Finalized
-                }
+                HeaderFilter::OnDataOrOnNewBlock => !fragment_matches.is_empty() || is_live,
             };
 
             if should_send_header {
