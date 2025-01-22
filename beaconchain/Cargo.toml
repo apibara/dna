@@ -1,6 +1,6 @@
 [package]
 name = "apibara-dna-beaconchain"
-version = "2.0.0-beta.14"
+version = "2.0.0-beta.15"
 edition.workspace = true
 authors.workspace = true
 repository.workspace = true
