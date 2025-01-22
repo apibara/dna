@@ -99,7 +99,7 @@ pub struct Withdrawal {
     pub amount: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct BlobSidecarResponse {
     pub data: Vec<BlobSidecar>,
 }

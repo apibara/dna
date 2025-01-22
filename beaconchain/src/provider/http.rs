@@ -12,6 +12,7 @@ use crate::provider::models;
 pub enum BeaconApiError {
     Request,
     NotFound,
+    BadRequest,
     DeserializeResponse,
     Timeout,
     Unauthorized,
@@ -83,7 +84,13 @@ impl BeaconApiProvider {
         block_id: BlockId,
     ) -> Result<models::BlobSidecarResponse, BeaconApiError> {
         let request = BlobSidecarRequest::new(block_id);
-        self.send_request(request, self.options.timeout).await
+        match self.send_request(request, self.options.timeout).await {
+            Ok(response) => Ok(response),
+            Err(err) if BeaconApiErrorExt::is_not_found(&err) || err.is_bad_request() => {
+                Ok(models::BlobSidecarResponse::default())
+            }
+            Err(err) => Err(err),
+        }
     }
 
     pub async fn get_validators(
@@ -136,6 +143,10 @@ impl BeaconApiProvider {
 
         if response.status().as_u16() == 404 {
             return Err(BeaconApiError::NotFound.into());
+        }
+
+        if response.status().as_u16() == 400 {
+            return Err(BeaconApiError::BadRequest.into());
         }
 
         if response.status().as_u16() == 401 {
@@ -202,17 +213,26 @@ impl std::fmt::Display for BlockId {
 
 pub trait BeaconApiErrorExt {
     fn is_not_found(&self) -> bool;
+    fn is_bad_request(&self) -> bool;
 }
 
 impl BeaconApiError {
     pub fn is_not_found(&self) -> bool {
         matches!(self, BeaconApiError::NotFound)
     }
+
+    pub fn is_bad_request(&self) -> bool {
+        matches!(self, BeaconApiError::BadRequest)
+    }
 }
 
 impl BeaconApiErrorExt for Report<BeaconApiError> {
     fn is_not_found(&self) -> bool {
         self.current_context().is_not_found()
+    }
+
+    fn is_bad_request(&self) -> bool {
+        self.current_context().is_bad_request()
     }
 }
 
@@ -224,6 +244,7 @@ impl std::fmt::Display for BeaconApiError {
             BeaconApiError::NotFound => write!(f, "not found"),
             BeaconApiError::Timeout => write!(f, "the request timed out"),
             BeaconApiError::Unauthorized => write!(f, "unauthorized"),
+            BeaconApiError::BadRequest => write!(f, "bad request"),
             BeaconApiError::ServerError => write!(f, "server error"),
         }
     }
