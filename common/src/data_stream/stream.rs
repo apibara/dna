@@ -338,87 +338,56 @@ impl DataStream {
         debug!(blocks = ?data_bitmap, "group bitmap");
 
         let mut segments = Vec::new();
-        let mut current_segment_data = Vec::default();
+        let mut blocks = Vec::new();
 
-        let mut current_segment_start = self.chain_view.get_segment_start_block(group_start).await;
-        let mut current_segment_end = self.chain_view.get_segment_end_block(group_start).await;
+        let mut block_number = group_start;
 
-        for block_number in data_bitmap.iter() {
-            if block_number < cursor.number as u32 {
-                continue;
+        while block_number < group_end {
+            let current_segment_start = self.chain_view.get_segment_start_block(block_number).await;
+            let current_segment_end = self.chain_view.get_segment_end_block(block_number).await;
+            debug!(block_number, current_segment_end, "prepare segment data");
+
+            let starting_block = current_segment_start.max(cursor.number);
+
+            let segment_bitmap =
+                RoaringBitmap::from_sorted_iter(starting_block as u32..=current_segment_end as u32)
+                    .expect("segment bitmap from range")
+                    & data_bitmap.clone();
+
+            let filtered_blocks: Vec<u64> = segment_bitmap.iter().map(u64::from).collect();
+
+            for block_number in filtered_blocks {
+                // Send the block cursor as finalized to save _many_ canonical chain lookups.
+                blocks.push(SegmentBlock {
+                    cursor: if block_number == 0 {
+                        None
+                    } else {
+                        Cursor::new_finalized(block_number).into()
+                    },
+                    end_cursor: Cursor::new_finalized(block_number),
+                    offset: (block_number - current_segment_start) as usize,
+                });
             }
 
-            let block_number = block_number as u64;
+            let current_segment_cursor = Cursor::new_finalized(current_segment_start);
 
-            if block_number > current_segment_end {
-                let blocks = std::mem::take(&mut current_segment_data);
-                let current_segment_cursor = Cursor::new_finalized(current_segment_start);
+            // Prefetch all segments for this group.
+            debug!(cursor = %current_segment_cursor, "prefetch group segments");
+            for fragment_id in all_fragment_ids.iter() {
+                let Some(fragment_name) = self.fragment_id_to_name.get(fragment_id).cloned() else {
+                    return Err(DataStreamError)
+                        .attach_printable("unknown fragment id")
+                        .attach_printable_lazy(|| format!("fragment id: {}", fragment_id));
+                };
 
-                // Prefetch all segments for this group.
-                for fragment_id in all_fragment_ids.iter() {
-                    let Some(fragment_name) = self.fragment_id_to_name.get(fragment_id).cloned()
-                    else {
-                        return Err(DataStreamError)
-                            .attach_printable("unknown fragment id")
-                            .attach_printable_lazy(|| format!("fragment id: {}", fragment_id));
-                    };
-
-                    self.store
-                        .get_segment(&current_segment_cursor, fragment_name);
-                }
-
-                segments.push((current_segment_cursor, blocks));
-
-                current_segment_start = self.chain_view.get_segment_start_block(block_number).await;
-                current_segment_end = self.chain_view.get_segment_end_block(block_number).await;
+                self.store
+                    .get_segment(&current_segment_cursor, fragment_name);
             }
 
-            let CanonicalCursor::Canonical(block_cursor) = self
-                .chain_view
-                .get_canonical(block_number)
-                .await
-                .change_context(DataStreamError)?
-            else {
-                return Err(DataStreamError)
-                    .attach_printable("missing canonical block")
-                    .attach_printable_lazy(|| format!("block number: {}", block_number));
-            };
+            segments.push((current_segment_cursor, std::mem::take(&mut blocks)));
 
-            let previous_cursor = if block_number == 0 {
-                None
-            } else if let CanonicalCursor::Canonical(previous_cursor) = self
-                .chain_view
-                .get_canonical(block_number - 1)
-                .await
-                .change_context(DataStreamError)?
-            {
-                previous_cursor.into()
-            } else {
-                None
-            };
-
-            current_segment_data.push(SegmentBlock {
-                cursor: previous_cursor,
-                end_cursor: block_cursor.clone(),
-                offset: (block_number - current_segment_start) as usize,
-            });
+            block_number = current_segment_end + 1;
         }
-
-        let blocks = std::mem::take(&mut current_segment_data);
-        let current_segment_cursor = Cursor::new_finalized(current_segment_start);
-
-        for fragment_id in all_fragment_ids.iter() {
-            let Some(fragment_name) = self.fragment_id_to_name.get(fragment_id).cloned() else {
-                return Err(DataStreamError)
-                    .attach_printable("unknown fragment id")
-                    .attach_printable_lazy(|| format!("fragment id: {}", fragment_id));
-            };
-
-            self.store
-                .get_segment(&current_segment_cursor, fragment_name);
-        }
-
-        segments.push((current_segment_cursor, blocks));
 
         let finality = DataFinality::Finalized;
 
@@ -438,7 +407,7 @@ impl DataStream {
                     block.offset,
                 );
 
-                let proto_cursor: Option<ProtoCursor> = block.cursor.map(Into::into);
+                let proto_cursor: Option<ProtoCursor> = block.cursor.clone().map(Into::into);
                 let proto_end_cursor: Option<ProtoCursor> = Some(block.end_cursor.clone().into());
 
                 let mut blocks = Vec::new();

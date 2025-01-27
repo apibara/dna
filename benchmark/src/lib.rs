@@ -131,7 +131,7 @@ where
         use apibara_dna_protocol::dna::stream::stream_data_response::Message as ProtoMessage;
         if let Some(ProtoMessage::Data(data_message)) = message.message {
             let block_number = data_message
-                .cursor
+                .end_cursor
                 .as_ref()
                 .map(|c| c.order_key)
                 .unwrap_or_default();
