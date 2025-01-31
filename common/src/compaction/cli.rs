@@ -9,7 +9,7 @@ pub struct CompactionArgs {
     #[clap(
         long = "compaction.segment-size",
         env = "DNA_COMPACTION_SEGMENT_SIZE",
-        default_value = "1000"
+        default_value = "100"
     )]
     pub compaction_segment_size: usize,
     /// How many segments in a single segment group.

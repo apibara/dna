@@ -3,6 +3,7 @@ mod rpc;
 mod start;
 
 use clap::{Parser, Subcommand};
+use dbg::DebugPrefetchCommand;
 use error_stack::Result;
 use tokio_util::sync::CancellationToken;
 
@@ -27,6 +28,9 @@ pub enum Command {
         #[clap(subcommand)]
         command: DebugRpcCommand,
     },
+    #[command(name = "dbg-prefetch")]
+    /// Debug the prefetch module.
+    DebugPrefetch(DebugPrefetchCommand),
 }
 
 impl Cli {
@@ -34,6 +38,7 @@ impl Cli {
         match self.command {
             Command::Start(command) => command.run(ct).await,
             Command::DebugRpc { command } => command.run().await,
+            Command::DebugPrefetch(command) => command.run(ct).await,
         }
     }
 }

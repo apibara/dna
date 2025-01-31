@@ -13,9 +13,11 @@ use apibara_dna_common::{
 use apibara_dna_protocol::starknet;
 use prost::Message;
 
-use self::helpers::{BlockFilterExt, FragmentFilterExt};
-
-pub use self::{contract_change::ContractChangeType, transaction::TransactionType};
+pub use self::{
+    contract_change::ContractChangeType,
+    helpers::{BlockFilterExt, FragmentFilterExt},
+    transaction::TransactionType,
+};
 
 #[derive(Debug, Clone)]
 pub struct StarknetFilterFactory;
