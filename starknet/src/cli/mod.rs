@@ -30,7 +30,7 @@ pub enum Command {
     },
     #[command(name = "dbg-prefetch")]
     /// Debug the prefetch module.
-    DebugPrefetch(DebugPrefetchCommand),
+    DebugPrefetch(Box<DebugPrefetchCommand>),
 }
 
 impl Cli {

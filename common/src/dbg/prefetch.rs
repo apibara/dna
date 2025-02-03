@@ -1,24 +1,26 @@
-use std::time::Instant;
+use std::{collections::HashMap, time::Instant};
 
-use clap::Subcommand;
 use error_stack::{Result, ResultExt};
-use tokio::sync::{mpsc, watch};
+use futures::FutureExt as _;
+use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
 use crate::{
     block_store::BlockStoreReader,
-    chain_view::{chain_view_sync_loop, ChainView},
+    chain_view::chain_view_sync_loop,
     cli::{EtcdArgs, ObjectStoreArgs},
-    file_cache::{FileCacheArgs, FileFetch},
+    data_stream::{SegmentAccessFetch, SegmentStream},
+    file_cache::FileCacheArgs,
+    fragment::FragmentId,
     query::BlockFilter,
-    Cursor,
 };
 
 use super::DebugCommandError;
 
 pub async fn run_debug_prefetch_stream(
     filter: BlockFilter,
+    fragment_id_to_name: HashMap<FragmentId, String>,
     queue_size: usize,
     object_store: ObjectStoreArgs,
     etcd: EtcdArgs,
@@ -40,137 +42,92 @@ pub async fn run_debug_prefetch_stream(
         .await
         .change_context(DebugCommandError)?;
 
-    let sync_handle = tokio::spawn(chain_view_sync.start(ct.clone()));
+    let mut sync_handle = tokio::spawn(chain_view_sync.start(ct.clone()));
+
+    let chain_view = loop {
+        if let Some(chain_view) = chain_view.borrow().clone() {
+            break chain_view;
+        };
+
+        tokio::select! {
+            _ = tokio::time::sleep(std::time::Duration::from_secs(1)) => {},
+            _ = ct.cancelled() => {
+                return Ok(())
+            }
+            sync = &mut sync_handle => {
+                info!("sync loop terminated");
+                sync.change_context(DebugCommandError)?.change_context(DebugCommandError)?;
+                return Ok(());
+            }
+        };
+    };
+
+    let starting_cursor = chain_view
+        .get_starting_cursor()
+        .await
+        .change_context(DebugCommandError)?;
+
+    let segment_stream =
+        SegmentStream::new(vec![filter], fragment_id_to_name, block_store, chain_view);
 
     let (tx, rx) = mpsc::channel(queue_size);
 
-    let producer_handle = tokio::spawn(run_producer(
-        filter,
-        block_store,
-        chain_view,
-        tx,
-        ct.clone(),
-    ));
+    let mut segment_stream_handle =
+        tokio::spawn(segment_stream.start(starting_cursor, tx, ct.clone())).fuse();
 
-    let consumer_handle = tokio::spawn(run_consumer(rx));
+    let mut consumer_handle = tokio::spawn(run_consumer(rx));
 
-    tokio::select! {
-        _ = ct.cancelled() => {}
-        producer = producer_handle => {
-            info!("producer handle terminated");
-            producer.change_context(DebugCommandError)?.change_context(DebugCommandError)?;
-        }
-        consumer = consumer_handle => {
-            info!("consumer handle terminated");
-            consumer.change_context(DebugCommandError)?.change_context(DebugCommandError)?;
-        }
-        sync = sync_handle => {
-            info!("sync loop terminated");
-            sync.change_context(DebugCommandError)?.change_context(DebugCommandError)?;
+    loop {
+        tokio::select! {
+            _ = ct.cancelled() => {}
+            producer = &mut segment_stream_handle => {
+                info!("segment stream handle terminated");
+                producer.change_context(DebugCommandError)?.change_context(DebugCommandError)?;
+            }
+            consumer = &mut consumer_handle => {
+                info!("consumer handle terminated");
+                consumer.change_context(DebugCommandError)?.change_context(DebugCommandError)?;
+                break;
+            }
+            sync = &mut sync_handle => {
+                info!("sync loop terminated");
+                sync.change_context(DebugCommandError)?.change_context(DebugCommandError)?;
+            }
         }
     }
 
     Ok(())
 }
 
-async fn run_producer(
-    filter: BlockFilter,
-    store: BlockStoreReader,
-    chain_view: watch::Receiver<Option<ChainView>>,
-    tx: mpsc::Sender<FileFetch>,
-    ct: CancellationToken,
-) -> Result<(), DebugCommandError> {
-    let chain_view = loop {
-        if let Some(chain_view) = chain_view.borrow().clone() {
-            break chain_view;
-        };
-
-        info!("waiting for chain view");
-        let Some(_) = ct
-            .run_until_cancelled(tokio::time::sleep(std::time::Duration::from_secs(1)))
-            .await
-        else {
-            return Ok(());
-        };
-    };
-
-    let mut current_block = chain_view
-        .get_starting_cursor()
-        .await
-        .change_context(DebugCommandError)?
-        .number;
-    let group_size = chain_view.get_group_size().await;
-    let segment_size = chain_view.get_segment_size().await;
-    let blocks_in_group = group_size * segment_size;
-
-    info!(current_block, group_size, segment_size, "starting producer");
-
-    let Some(mut grouped) = chain_view
-        .get_grouped_cursor()
-        .await
-        .change_context(DebugCommandError)?
-    else {
-        info!("no grouped block");
-        return Ok(());
-    };
-
-    loop {
-        if current_block <= grouped.number {
-            info!(block = current_block, "fetching block");
-
-            let file = store.get_segment(&Cursor::new_finalized(current_block), "index");
-
-            let Ok(_) = tx.send(file).await else {
-                info!("failed to send block");
-                return Ok(());
-            };
-
-            current_block += segment_size;
-        } else {
-            info!("refreshing grouped cursor");
-            let Some(new_grouped) = chain_view
-                .get_grouped_cursor()
-                .await
-                .change_context(DebugCommandError)?
-            else {
-                info!("no grouped block");
-                return Ok(());
-            };
-
-            if new_grouped != grouped {
-                grouped = new_grouped;
-            } else {
-                info!("waiting for head change");
-                let Some(_) = ct.run_until_cancelled(chain_view.head_changed()).await else {
-                    info!("chain view terminated");
-                    return Ok(());
-                };
-            }
-        }
-    }
-}
-
-async fn run_consumer(mut rx: mpsc::Receiver<FileFetch>) -> Result<(), DebugCommandError> {
-    let mut count = 0;
+async fn run_consumer(mut rx: mpsc::Receiver<SegmentAccessFetch>) -> Result<(), DebugCommandError> {
+    let mut block_count = 0;
     let time = Instant::now();
-    while let Some(fetch) = rx.recv().await {
-        info!(state = ?fetch.state(), "received fetch");
-        match fetch.await {
-            Ok(segment) => {
-                count += 1;
-                let elapsed = time.elapsed();
-                info!(
-                    segment = segment.key(),
-                    size = segment.value().len(),
-                    elapsed = ?elapsed,
-                    count,
-                    "fetched segment"
-                );
-            }
-            Err(e) => {
-                info!(%e, "failed to fetch segment");
-            }
+    while let Some(segment_fetch) = rx.recv().await {
+        let segment_access = segment_fetch
+            .wait()
+            .await
+            .change_context(DebugCommandError)?;
+        let elapsed = time.elapsed();
+
+        let iter_start = Instant::now();
+
+        for block in segment_access.iter() {
+            let _header = block
+                .get_header_fragment()
+                .change_context(DebugCommandError)?;
+            info!(block_number = block.block_number(), "header");
+            block_count += 1;
         }
+
+        info!(
+            segment = segment_access.first_block,
+            fragment_len = segment_access.fragment_len(),
+            blocks = ?segment_access.blocks,
+            elapsed = ?elapsed,
+            iter_elapsed = ?iter_start.elapsed(),
+            block_count,
+            "fetched segment"
+        );
     }
 
     Ok(())
