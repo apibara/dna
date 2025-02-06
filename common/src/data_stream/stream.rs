@@ -1,35 +1,28 @@
-use std::{
-    collections::{BTreeMap, HashMap, HashSet},
-    time::Duration,
-};
+use std::collections::{BTreeMap, HashMap};
 
 use apibara_dna_protocol::dna::stream::{
-    stream_data_response::Message, Data, DataFinality, DataProduction, Finalize, Heartbeat,
-    Invalidate, StreamDataResponse,
+    stream_data_response::Message, Data, DataFinality, DataProduction, Finalize, Invalidate,
+    StreamDataResponse,
 };
 use bytes::{BufMut, Bytes, BytesMut};
 use error_stack::{Result, ResultExt};
 use futures::FutureExt;
-use roaring::RoaringBitmap;
-use tokio::{sync::mpsc, time::Instant};
+use tokio::sync::mpsc;
 use tokio_stream::{wrappers::ReceiverStream, StreamExt};
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, warn};
+use tracing::debug;
 use valuable::Valuable;
 
 use crate::{
     block_store::BlockStoreReader,
-    chain_view::{CanonicalCursor, ChainView, NextCursor},
-    data_stream::{FilterMatch, FragmentAccess, SegmentStream},
+    chain_view::{ChainView, NextCursor},
+    data_stream::{fragment_access::BlockAccess, FilterMatch, FragmentAccess, SegmentStream},
     file_cache::FileCacheError,
-    fragment::{FragmentId, HEADER_FRAGMENT_ID, INDEX_FRAGMENT_ID, JOIN_FRAGMENT_ID},
+    fragment::{FragmentId, HEADER_FRAGMENT_ID},
     join::ArchivedJoinTo,
     query::{BlockFilter, HeaderFilter},
-    segment::SegmentGroup,
     Cursor,
 };
-
-const SEGMENT_CHANNEL_SIZE: usize = 128;
 
 #[derive(Debug)]
 pub struct DataStreamError;
@@ -42,24 +35,13 @@ pub struct DataStream {
     chain_view: ChainView,
     store: BlockStoreReader,
     fragment_id_to_name: HashMap<FragmentId, String>,
-    heartbeat_interval: Duration,
     _permit: tokio::sync::OwnedSemaphorePermit,
 }
 
 type DataStreamMessage = tonic::Result<StreamDataResponse, tonic::Status>;
 
 const DEFAULT_BLOCKS_BUFFER_SIZE: usize = 1024 * 1024;
-
-/// Information about a block in a segment.
-#[derive(Debug, Clone)]
-struct SegmentBlock {
-    /// The block's cursor.
-    pub cursor: Option<Cursor>,
-    /// The block's end cursor.
-    pub end_cursor: Cursor,
-    /// Offset of the block in the segment.
-    pub offset: usize,
-}
+const SEGMENT_CHANNEL_SIZE: usize = 128;
 
 impl DataStream {
     #[allow(clippy::too_many_arguments)]
@@ -68,7 +50,6 @@ impl DataStream {
         starting: Option<Cursor>,
         finalized: Cursor,
         finality: DataFinality,
-        heartbeat_interval: Duration,
         chain_view: ChainView,
         fragment_id_to_name: HashMap<FragmentId, String>,
         store: BlockStoreReader,
@@ -79,7 +60,6 @@ impl DataStream {
             current: starting,
             finalized,
             finality,
-            heartbeat_interval,
             chain_view,
             fragment_id_to_name,
             store,
@@ -143,21 +123,11 @@ impl DataStream {
             }
             NextCursor::AtHead => {
                 debug!("head reached. waiting for new head");
+
                 if self.finality == DataFinality::Pending {
-                    todo!();
+                    return self.tick_at_head_pending(tx, ct).await;
                 } else {
-                    tokio::select! {
-                        _ = ct.cancelled() => return Ok(()),
-                        _ = self.chain_view.head_changed() => {
-                            debug!("head changed (at head)");
-                            return Ok(());
-                        },
-                        _ = self.chain_view.finalized_changed() => {
-                            debug!("finalized changed (at head)");
-                            self.finalized = self.chain_view.get_finalized_cursor().await.change_context(DataStreamError)?;
-                            return self.send_finalize_message(tx, ct).await;
-                        },
-                    }
+                    return self.tick_at_head(tx, ct).await;
                 }
             }
         };
@@ -185,131 +155,6 @@ impl DataStream {
         self.tick_single(next_cursor, is_head, tx, ct).await
     }
 
-    /*
-    async fn tick(
-        &mut self,
-        deadline: Instant,
-        tx: &mpsc::Sender<DataStreamMessage>,
-        ct: &CancellationToken,
-    ) -> Result<bool, DataStreamError> {
-        let (next_cursor, is_head) = match self
-            .chain_view
-            .get_next_cursor(&self.current)
-            .await
-            .change_context(DataStreamError)?
-        {
-            NextCursor::Continue { cursor, is_head } => (cursor, is_head),
-            NextCursor::Invalidate(cursor) => {
-                debug!(cursor = %cursor, "invalidating data");
-
-                // TODO: collect removed blocks.
-                let invalidate = Message::Invalidate(Invalidate {
-                    cursor: Some(cursor.clone().into()),
-                    ..Default::default()
-                });
-
-                let Some(Ok(permit)) = ct.run_until_cancelled(tx.reserve()).await else {
-                    return Ok(false);
-                };
-
-                permit.send(Ok(StreamDataResponse {
-                    message: Some(invalidate),
-                }));
-
-                self.current = Some(cursor);
-
-                return Ok(true);
-            }
-            NextCursor::AtHead => {
-                debug!("head reached. waiting for new head");
-                if self.finality == DataFinality::Pending {
-                    let mut pending_generation = self.chain_view.get_pending_generation().await;
-                    let mut content_hash = Vec::new();
-
-                    loop {
-                        if let Some(generation) = pending_generation.take() {
-                            if let Some(head) = &self.current {
-                                self.tick_pending(head, generation, &mut content_hash, tx, ct)
-                                    .await?;
-                            }
-                        }
-
-                        tokio::select! {
-                            biased;
-
-                            _ = ct.cancelled() => return Ok(false),
-                            _ = self.chain_view.head_changed() => {
-                                debug!("head changed (pending)");
-                                return Ok(false);
-                            },
-                            _ = self.chain_view.finalized_changed() => {
-                                debug!("finalized changed (pending)");
-                                self.finalized = self.chain_view.get_finalized_cursor().await.change_context(DataStreamError)?;
-                                self.send_finalize_message(tx, ct).await?;
-                            },
-                            _ = self.chain_view.pending_changed() => {
-                                debug!("pending changed (pending)");
-                                pending_generation = self.chain_view.get_pending_generation().await;
-                            }
-                        }
-                    }
-                } else {
-                    tokio::select! {
-                        _ = ct.cancelled() => return Ok(false),
-                        _ = tokio::time::sleep_until(deadline) => {
-                            debug!("heartbeat (at head)");
-                            return Ok(false);
-                        },
-                        _ = self.chain_view.head_changed() => {
-                            debug!("head changed (at head)");
-                            return Ok(false);
-                        },
-                        _ = self.chain_view.finalized_changed() => {
-                            debug!("finalized changed (at head)");
-                            self.finalized = self.chain_view.get_finalized_cursor().await.change_context(DataStreamError)?;
-                            return self.send_finalize_message(tx, ct).await;
-                        },
-                    }
-                }
-            }
-        };
-
-        if self.finality == DataFinality::Finalized && next_cursor.strict_after(&self.finalized) {
-            // Wait for the finalized cursor to catch up and then try again.
-            tokio::select! {
-                _ = ct.cancelled() => return Ok(false),
-                _ = tokio::time::sleep_until(deadline) => {
-                    debug!("heartbeat (finalized)");
-                    return Ok(false);
-                },
-                _ = self.chain_view.finalized_changed() => {
-                    debug!("finalized changed (finalized)");
-                    self.finalized = self.chain_view.get_finalized_cursor().await.change_context(DataStreamError)?;
-                    return Ok(false);
-                },
-            }
-        }
-
-        if self
-            .chain_view
-            .has_group_for_block(next_cursor.number)
-            .await
-        {
-            return self.tick_group(next_cursor, tx, ct).await;
-        }
-
-        if self
-            .chain_view
-            .has_segment_for_block(next_cursor.number)
-            .await
-        {
-            return self.tick_segment(next_cursor, tx, ct).await;
-        }
-
-        self.tick_single(next_cursor, is_head, tx, ct).await
-    }
-    */
-
     async fn send_finalize_message(
         &mut self,
         tx: &mpsc::Sender<DataStreamMessage>,
@@ -330,278 +175,6 @@ impl DataStream {
 
         Ok(())
     }
-
-    /*
-    async fn tick_group(
-        &mut self,
-        cursor: Cursor,
-        tx: &mpsc::Sender<DataStreamMessage>,
-        ct: &CancellationToken,
-    ) -> Result<bool, DataStreamError> {
-        debug!("tick: group");
-
-        let group_start = self.chain_view.get_group_start_block(cursor.number).await;
-        let group_end = self.chain_view.get_group_end_block(cursor.number).await;
-
-        let group_start_cursor = Cursor::new_finalized(group_start);
-        let mut data_bitmap = RoaringBitmap::default();
-        let mut all_fragment_ids =
-            HashSet::from([INDEX_FRAGMENT_ID, JOIN_FRAGMENT_ID, HEADER_FRAGMENT_ID]);
-
-        {
-            let group_bytes = self
-                .store
-                .get_group(&group_start_cursor)
-                .await
-                .map_err(FileCacheError::Foyer)
-                .change_context(DataStreamError)
-                .attach_printable("failed to get group")?;
-            let group =
-                unsafe { rkyv::access_unchecked::<rkyv::Archived<SegmentGroup>>(&group_bytes) };
-
-            for block_filter in self.block_filter.iter() {
-                for (fragment_id, filters) in block_filter.iter() {
-                    let Some(pos) = group
-                        .index
-                        .indexes
-                        .iter()
-                        .position(|f| f.fragment_id == *fragment_id)
-                    else {
-                        return Err(DataStreamError)
-                            .attach_printable("missing index")
-                            .attach_printable_lazy(|| format!("fragment id: {}", fragment_id));
-                    };
-
-                    let indexes = &group.index.indexes[pos];
-
-                    for filter in filters {
-                        let rows = filter.filter(indexes).change_context(DataStreamError)?;
-                        if rows.is_empty() {
-                            continue;
-                        }
-
-                        data_bitmap |= &rows;
-                        all_fragment_ids.insert(*fragment_id);
-                    }
-                }
-            }
-        }
-
-        debug!(blocks = ?data_bitmap, "group bitmap");
-
-        let mut segments = Vec::new();
-        let mut blocks = Vec::new();
-
-        let mut block_number = group_start;
-
-        while block_number < group_end {
-            let current_segment_start = self.chain_view.get_segment_start_block(block_number).await;
-            let current_segment_end = self.chain_view.get_segment_end_block(block_number).await;
-            debug!(block_number, current_segment_end, "prepare segment data");
-
-            let starting_block = current_segment_start.max(cursor.number);
-
-            let segment_bitmap =
-                RoaringBitmap::from_sorted_iter(starting_block as u32..=current_segment_end as u32)
-                    .expect("segment bitmap from range")
-                    & data_bitmap.clone();
-
-            let filtered_blocks: Vec<u64> = segment_bitmap.iter().map(u64::from).collect();
-
-            for block_number in filtered_blocks {
-                // Send the block cursor as finalized to save _many_ canonical chain lookups.
-                blocks.push(SegmentBlock {
-                    cursor: if block_number == 0 {
-                        None
-                    } else {
-                        Cursor::new_finalized(block_number).into()
-                    },
-                    end_cursor: Cursor::new_finalized(block_number),
-                    offset: (block_number - current_segment_start) as usize,
-                });
-            }
-
-            let current_segment_cursor = Cursor::new_finalized(current_segment_start);
-
-            // Prefetch all segments for this group.
-            debug!(cursor = %current_segment_cursor, "prefetch group segments");
-            for fragment_id in all_fragment_ids.iter() {
-                let Some(fragment_name) = self.fragment_id_to_name.get(fragment_id).cloned() else {
-                    return Err(DataStreamError)
-                        .attach_printable("unknown fragment id")
-                        .attach_printable_lazy(|| format!("fragment id: {}", fragment_id));
-                };
-
-                self.store
-                    .get_segment(&current_segment_cursor, fragment_name);
-            }
-
-            segments.push((current_segment_cursor, std::mem::take(&mut blocks)));
-
-            block_number = current_segment_end + 1;
-        }
-
-        let finality = DataFinality::Finalized;
-
-        let mut data_sent = false;
-
-        for (segment_cursor, segment_data) in segments {
-            if ct.is_cancelled() || tx.is_closed() {
-                return Ok(false);
-            }
-
-            for block in segment_data {
-                use apibara_dna_protocol::dna::stream::Cursor as ProtoCursor;
-
-                let fragment_access = FragmentAccess::new_in_segment(
-                    self.store.clone(),
-                    segment_cursor.clone(),
-                    block.offset,
-                );
-
-                let proto_cursor: Option<ProtoCursor> = block.cursor.clone().map(Into::into);
-                let proto_end_cursor: Option<ProtoCursor> = Some(block.end_cursor.clone().into());
-
-                let mut blocks = Vec::new();
-                if self
-                    .filter_fragment(&fragment_access, &finality, false, &mut blocks)
-                    .await?
-                {
-                    let data = Message::Data(Data {
-                        cursor: proto_cursor.clone(),
-                        end_cursor: proto_end_cursor.clone(),
-                        data: blocks,
-                        finality: finality as i32,
-                        production: DataProduction::Backfill.into(),
-                    });
-
-                    let Some(Ok(permit)) = ct.run_until_cancelled(tx.reserve()).await else {
-                        return Ok(false);
-                    };
-
-                    data_sent = true;
-                    permit.send(Ok(StreamDataResponse {
-                        message: Some(data),
-                    }));
-                }
-            }
-        }
-
-        let CanonicalCursor::Canonical(group_end_cursor) = self
-            .chain_view
-            .get_canonical(group_end)
-            .await
-            .change_context(DataStreamError)?
-        else {
-            return Err(DataStreamError).attach_printable("missing canonical block");
-        };
-
-        self.current = group_end_cursor.into();
-
-        Ok(data_sent)
-    }
-
-    async fn tick_segment(
-        &mut self,
-        cursor: Cursor,
-        tx: &mpsc::Sender<DataStreamMessage>,
-        ct: &CancellationToken,
-    ) -> Result<bool, DataStreamError> {
-        let mut current = cursor.clone();
-
-        let segment_size = self.chain_view.get_segment_size().await;
-        let segment_start = self
-            .chain_view
-            .get_segment_start_block(current.number)
-            .await;
-        let segment_end = self.chain_view.get_segment_end_block(current.number).await;
-
-        let starting_block_number = cursor.number;
-        // Notice that we could be starting from anywhere in the segment.
-        let base_offset = current.number - segment_start;
-
-        let mut blocks = vec![SegmentBlock {
-            cursor: self.current.clone(),
-            end_cursor: current.clone(),
-            offset: base_offset as usize,
-        }];
-
-        for i in 1..segment_size {
-            if current.number >= segment_end {
-                break;
-            }
-
-            let block_number = starting_block_number + i;
-
-            if block_number < cursor.number {
-                continue;
-            }
-
-            let CanonicalCursor::Canonical(next_cursor) = self
-                .chain_view
-                .get_canonical(block_number)
-                .await
-                .change_context(DataStreamError)?
-            else {
-                return Err(DataStreamError).attach_printable("missing canonical block");
-            };
-
-            blocks.push(SegmentBlock {
-                cursor: current.clone().into(),
-                end_cursor: next_cursor.clone(),
-                offset: (base_offset + i) as usize,
-            });
-
-            current = next_cursor;
-        }
-
-        let segment_cursor = Cursor::new_finalized(segment_start);
-
-        let finality = DataFinality::Finalized;
-
-        let mut data_sent = false;
-
-        for block in blocks {
-            use apibara_dna_protocol::dna::stream::Cursor as ProtoCursor;
-
-            let fragment_access = FragmentAccess::new_in_segment(
-                self.store.clone(),
-                segment_cursor.clone(),
-                block.offset,
-            );
-            let proto_cursor: Option<ProtoCursor> = block.cursor.map(Into::into);
-            let proto_end_cursor: Option<ProtoCursor> = Some(block.end_cursor.clone().into());
-
-            let mut blocks = Vec::new();
-            if self
-                .filter_fragment(&fragment_access, &finality, false, &mut blocks)
-                .await?
-            {
-                let data = Message::Data(Data {
-                    cursor: proto_cursor.clone(),
-                    end_cursor: proto_end_cursor.clone(),
-                    data: blocks,
-                    finality: finality as i32,
-                    production: DataProduction::Backfill.into(),
-                });
-
-                let Some(Ok(permit)) = ct.run_until_cancelled(tx.reserve()).await else {
-                    return Ok(false);
-                };
-
-                data_sent = true;
-
-                permit.send(Ok(StreamDataResponse {
-                    message: Some(data),
-                }));
-            }
-        }
-
-        self.current = current.into();
-
-        Ok(data_sent)
-    }
-    */
 
     async fn tick_segment_stream(
         &mut self,
@@ -691,8 +264,6 @@ impl DataStream {
 
         debug!(cursor = %cursor, "tick: single block");
 
-        debug!(cursor = ?self.current, end_cursor = %cursor, "sending data");
-
         let proto_cursor: Option<ProtoCursor> = self.current.clone().map(Into::into);
         let proto_end_cursor: Option<ProtoCursor> = Some(cursor.clone().into());
 
@@ -708,13 +279,22 @@ impl DataStream {
             DataFinality::Finalized
         };
 
-        /*
-        let fragment_access = FragmentAccess::new_in_block(self.store.clone(), cursor.clone());
+        let block_entry: BlockAccess = self
+            .store
+            .get_block(&cursor)
+            .await
+            .map_err(FileCacheError::Foyer)
+            .change_context(DataStreamError)
+            .attach_printable("failed to get single block")
+            .attach_printable_lazy(|| format!("cursor: {}", cursor))?
+            .into();
+
+        let fragment_access = FragmentAccess::Block(block_entry);
 
         let mut blocks = Vec::new();
 
         if self
-            .filter_fragment(&fragment_access, &finality, is_head, &mut blocks)
+            .filter_fragment(fragment_access, &finality, is_head, &mut blocks)
             .await?
         {
             let data = Message::Data(Data {
@@ -737,16 +317,70 @@ impl DataStream {
                 message: Some(data),
             }));
         }
-        */
-        todo!();
 
         self.current = Some(cursor);
 
         Ok(())
     }
 
-    /*
-    async fn tick_pending(
+    async fn tick_at_head(
+        &mut self,
+        tx: &mpsc::Sender<DataStreamMessage>,
+        ct: &CancellationToken,
+    ) -> Result<(), DataStreamError> {
+        loop {
+            tokio::select! {
+                _ = ct.cancelled() => return Ok(()),
+                _ = self.chain_view.head_changed() => {
+                    debug!("head changed (at head)");
+                    return Ok(());
+                },
+                _ = self.chain_view.finalized_changed() => {
+                    debug!("finalized changed (at head)");
+                    self.finalized = self.chain_view.get_finalized_cursor().await.change_context(DataStreamError)?;
+                    self.send_finalize_message(tx, ct).await?;
+                },
+            }
+        }
+    }
+
+    async fn tick_at_head_pending(
+        &mut self,
+        tx: &mpsc::Sender<DataStreamMessage>,
+        ct: &CancellationToken,
+    ) -> Result<(), DataStreamError> {
+        let mut pending_generation = self.chain_view.get_pending_generation().await;
+        let mut content_hash = Vec::new();
+        loop {
+            if let Some(generation) = pending_generation.take() {
+                if let Some(head) = &self.current {
+                    self.send_pending_block(head, generation, &mut content_hash, tx, ct)
+                        .await?;
+                }
+            }
+
+            tokio::select! {
+                biased;
+
+                _ = ct.cancelled() => return Ok(()),
+                _ = self.chain_view.head_changed() => {
+                    debug!("head changed (pending)");
+                    return Ok(());
+                },
+                _ = self.chain_view.finalized_changed() => {
+                    debug!("finalized changed (pending)");
+                    self.finalized = self.chain_view.get_finalized_cursor().await.change_context(DataStreamError)?;
+                    self.send_finalize_message(tx, ct).await?;
+                },
+                _ = self.chain_view.pending_changed() => {
+                    debug!("pending changed (pending)");
+                    pending_generation = self.chain_view.get_pending_generation().await;
+                }
+            }
+        }
+    }
+
+    async fn send_pending_block(
         &self,
         head: &Cursor,
         generation: u64,
@@ -766,12 +400,22 @@ impl DataStream {
         let proto_end_cursor: Option<ProtoCursor> = Some(end_cursor.clone().into());
         let finality = DataFinality::Pending;
 
-        let fragment_access =
-            FragmentAccess::new_in_pending_block(self.store.clone(), end_cursor, generation);
+        let block_entry: BlockAccess = self
+            .store
+            .get_pending_block(&end_cursor, generation)
+            .await
+            .map_err(FileCacheError::Foyer)
+            .change_context(DataStreamError)
+            .attach_printable("failed to get pending block")
+            .attach_printable_lazy(|| format!("cursor: {}", end_cursor))
+            .attach_printable_lazy(|| format!("generation: {}", generation))?
+            .into();
+
+        let fragment_access = FragmentAccess::Block(block_entry);
 
         let mut blocks = Vec::new();
         if self
-            .filter_fragment(&fragment_access, &finality, true, &mut blocks)
+            .filter_fragment(fragment_access, &finality, true, &mut blocks)
             .await?
         {
             use sha2::Digest;
@@ -808,7 +452,6 @@ impl DataStream {
 
         Ok(())
     }
-    */
 
     #[tracing::instrument(
         name = "send_data",
