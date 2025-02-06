@@ -4,10 +4,9 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, info};
 
 use crate::{
-    block_store::{BlockStoreReader, BlockStoreWriter},
+    block_store::{BlockStoreWriter, UncachedBlockStoreReader},
     chain_view::ChainView,
     compaction::group::SegmentGroupService,
-    file_cache::FileCache,
     ingestion::IngestionStateClient,
     object_store::ObjectStore,
 };
@@ -24,7 +23,7 @@ pub struct CompactionServiceOptions {
 
 pub struct CompactionService {
     options: CompactionServiceOptions,
-    block_store_reader: BlockStoreReader,
+    block_store_reader: UncachedBlockStoreReader,
     block_store_writer: BlockStoreWriter,
     state_client: IngestionStateClient,
     chain_view: tokio::sync::watch::Receiver<Option<ChainView>>,
@@ -34,11 +33,10 @@ impl CompactionService {
     pub fn new(
         etcd_client: EtcdClient,
         object_store: ObjectStore,
-        file_cache: FileCache,
         chain_view: tokio::sync::watch::Receiver<Option<ChainView>>,
         options: CompactionServiceOptions,
     ) -> Self {
-        let block_store_reader = BlockStoreReader::new(object_store.clone(), file_cache);
+        let block_store_reader = UncachedBlockStoreReader::new(object_store.clone());
         let block_store_writer = BlockStoreWriter::new(object_store);
         let state_client = IngestionStateClient::new(&etcd_client);
 

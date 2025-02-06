@@ -4,9 +4,8 @@ use tokio_util::sync::CancellationToken;
 use tracing::info;
 
 use crate::{
-    block_store::{BlockStoreReader, BlockStoreWriter},
+    block_store::{BlockStoreWriter, UncachedBlockStoreReader},
     chain_view::{ChainView, NextCursor},
-    file_cache::FileCacheError,
     ingestion::IngestionStateClient,
 };
 
@@ -15,7 +14,7 @@ use super::{segment_builder::SegmentBuilder, CompactionError};
 pub struct SegmentService {
     segment_size: usize,
     chain_view: ChainView,
-    block_store_reader: BlockStoreReader,
+    block_store_reader: UncachedBlockStoreReader,
     block_store_writer: BlockStoreWriter,
     state_client: IngestionStateClient,
 }
@@ -24,7 +23,7 @@ impl SegmentService {
     pub fn new(
         segment_size: usize,
         chain_view: ChainView,
-        block_store_reader: BlockStoreReader,
+        block_store_reader: UncachedBlockStoreReader,
         block_store_writer: BlockStoreWriter,
         state_client: IngestionStateClient,
     ) -> Self {
@@ -104,13 +103,12 @@ impl SegmentService {
                         .block_store_reader
                         .get_block(&current)
                         .await
-                        .map_err(FileCacheError::Foyer)
                         .change_context(CompactionError)
                         .attach_printable("failed to get block")
                         .attach_printable_lazy(|| format!("cursor: {current}"))?;
 
                     builder
-                        .add_block(&current, entry.value())
+                        .add_block(&current, &entry)
                         .change_context(CompactionError)
                         .attach_printable("failed to add block to segment")
                         .attach_printable_lazy(|| format!("cursor: {current}"))?;

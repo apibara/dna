@@ -3,10 +3,9 @@ use tokio_util::sync::CancellationToken;
 use tracing::info;
 
 use crate::{
-    block_store::{BlockStoreReader, BlockStoreWriter},
+    block_store::{BlockStoreWriter, UncachedBlockStoreReader},
     chain_view::{ChainView, NextCursor},
     compaction::group_builder::SegmentGroupBuilder,
-    file_cache::FileCacheError,
     fragment::IndexGroupFragment,
     ingestion::IngestionStateClient,
     segment::Segment,
@@ -19,7 +18,7 @@ pub struct SegmentGroupService {
     segment_size: usize,
     group_size: usize,
     chain_view: ChainView,
-    block_store_reader: BlockStoreReader,
+    block_store_reader: UncachedBlockStoreReader,
     block_store_writer: BlockStoreWriter,
     state_client: IngestionStateClient,
 }
@@ -29,7 +28,7 @@ impl SegmentGroupService {
         segment_size: usize,
         group_size: usize,
         chain_view: ChainView,
-        block_store_reader: BlockStoreReader,
+        block_store_reader: UncachedBlockStoreReader,
         block_store_writer: BlockStoreWriter,
         state_client: IngestionStateClient,
     ) -> Self {
@@ -108,13 +107,12 @@ impl SegmentGroupService {
                         .block_store_reader
                         .get_index_segment(&current_cursor)
                         .await
-                        .map_err(FileCacheError::Foyer)
                         .change_context(CompactionError)?;
 
                     let segment = rkyv::from_bytes::<
                         Segment<IndexGroupFragment>,
                         rkyv::rancor::Error,
-                    >(segment.value())
+                    >(&segment)
                     .change_context(CompactionError)?;
 
                     builder

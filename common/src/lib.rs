@@ -133,7 +133,6 @@ mod server_impl {
                 etcd_client.clone(),
                 object_store.clone(),
                 chain_view.clone(),
-                file_cache.clone(),
                 options,
                 ct.clone(),
             ))
