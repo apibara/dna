@@ -26,6 +26,12 @@ pub struct BlockStoreReader {
     file_cache: FileCache,
 }
 
+/// Download blocks from the object store without a local cache.
+#[derive(Clone)]
+pub struct UncachedBlockStoreReader {
+    client: ObjectStore,
+}
+
 /// Upload blocks to the object store.
 #[derive(Clone)]
 pub struct BlockStoreWriter {
@@ -151,6 +157,68 @@ impl BlockStoreReader {
         };
 
         entry
+    }
+}
+
+impl UncachedBlockStoreReader {
+    pub fn new(client: ObjectStore) -> Self {
+        Self { client }
+    }
+
+    #[tracing::instrument(name = "uncached_block_store_get_block", skip_all)]
+    pub async fn get_block(&self, cursor: &Cursor) -> Result<Bytes, BlockStoreError> {
+        let key = format_block_key(cursor);
+        let response = self
+            .client
+            .get(&key, GetOptions::default())
+            .await
+            .change_context(BlockStoreError)
+            .attach_printable("failed to get block")
+            .attach_printable_lazy(|| format!("cursor: {}", cursor))?;
+
+        Ok(response.body)
+    }
+
+    pub async fn get_index_segment(&self, first_cursor: &Cursor) -> Result<Bytes, BlockStoreError> {
+        self.get_segment(first_cursor, "index").await
+    }
+
+    #[tracing::instrument(name = "uncached_block_store_get_segment", skip_all, fields(name))]
+    pub async fn get_segment(
+        &self,
+        first_cursor: &Cursor,
+        name: impl Into<String>,
+    ) -> Result<Bytes, BlockStoreError> {
+        let current_span = tracing::Span::current();
+        let name = name.into();
+        let key = format_segment_key(first_cursor, &name);
+
+        current_span.record("name", &name);
+
+        let response = self
+            .client
+            .get(&key, GetOptions::default())
+            .await
+            .change_context(BlockStoreError)
+            .attach_printable("failed to get segment")
+            .attach_printable_lazy(|| format!("cursor: {}", first_cursor))
+            .attach_printable_lazy(|| format!("name: {}", name))?;
+
+        Ok(response.body)
+    }
+
+    #[tracing::instrument(name = "uncached_block_store_get_group", skip_all)]
+    pub async fn get_group(&self, cursor: &Cursor) -> Result<Bytes, BlockStoreError> {
+        let key = format_group_key(cursor);
+        let response = self
+            .client
+            .get(&key, GetOptions::default())
+            .await
+            .change_context(BlockStoreError)
+            .attach_printable("failed to get group")
+            .attach_printable_lazy(|| format!("cursor: {}", cursor))?;
+
+        Ok(response.body)
     }
 }
 

@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 use error_stack::Result;
 use roaring::RoaringBitmap;
@@ -81,6 +81,20 @@ impl BlockFilter {
 
     pub fn len(&self) -> usize {
         self.filters.len()
+    }
+
+    /// Returns all fragment id needed by this filter.
+    pub fn all_fragment_ids(&self) -> HashSet<FragmentId> {
+        let mut out = HashSet::default();
+
+        for (filter_id, filters) in self.iter() {
+            out.insert(*filter_id);
+            for filter in filters {
+                out.extend(filter.joins.iter());
+            }
+        }
+
+        out
     }
 }
 

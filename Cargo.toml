@@ -52,6 +52,7 @@ fastrace = "0.7"
 fastrace-opentelemetry = "0.8"
 foyer = { version = "0.13.1", features = ["tracing"] }
 futures = "0.3.30"
+futures-util = "0.3.30"
 hex = { version = "0.4.3", features = ["serde"] }
 memmap2 = "0.9.4"
 mimalloc = "0.1.43"

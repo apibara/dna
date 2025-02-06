@@ -1,6 +1,7 @@
 mod cli;
 mod error;
 mod service;
+mod stream_with_heartbeat;
 
 use std::collections::HashMap;
 use std::net::SocketAddr;

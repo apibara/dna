@@ -1,13 +1,12 @@
-use std::{collections::HashMap, pin::Pin, sync::Arc, time::Duration};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use apibara_dna_protocol::dna::stream::{
     dna_stream_server::{self, DnaStream},
-    DataFinality, StatusRequest, StatusResponse, StreamDataRequest, StreamDataResponse,
+    DataFinality, StatusRequest, StatusResponse, StreamDataRequest,
 };
 use error_stack::Result;
-use futures::{Future, Stream, StreamExt, TryFutureExt};
+use futures::{Future, TryFutureExt};
 use tokio::sync::{mpsc, Semaphore};
-use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
 
@@ -16,6 +15,7 @@ use crate::{
     chain_view::{CanonicalCursor, ChainView, ChainViewError, ValidatedCursor},
     data_stream::{BlockFilterFactory, DataStream},
     fragment::FragmentId,
+    server::stream_with_heartbeat::ResponseStreamWithHeartbeat,
     Cursor,
 };
 
@@ -84,9 +84,7 @@ impl<BFF> DnaStream for StreamService<BFF>
 where
     BFF: BlockFilterFactory + Send + Sync + 'static,
 {
-    type StreamDataStream = Pin<
-        Box<dyn Stream<Item = tonic::Result<StreamDataResponse, tonic::Status>> + Send + 'static>,
-    >;
+    type StreamDataStream = ResponseStreamWithHeartbeat;
 
     #[tracing::instrument(name = "stream::status", skip_all)]
     async fn status(
@@ -198,7 +196,6 @@ where
             starting_cursor,
             finalized,
             finality,
-            heartbeat_interval,
             chain_view,
             self.fragment_id_to_name.clone(),
             self.block_store.clone(),
@@ -210,7 +207,7 @@ where
             error!(error = ?err, "data stream error");
         }));
 
-        let stream = ReceiverStream::new(rx).boxed();
+        let stream = ResponseStreamWithHeartbeat::new(rx, heartbeat_interval);
 
         Ok(tonic::Response::new(stream))
     }
