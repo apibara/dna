@@ -6,6 +6,7 @@ use foyer::CacheEntry;
 use roaring::RoaringBitmap;
 
 use crate::{
+    core::Cursor,
     file_cache::{FileCacheError, FileFetch},
     fragment::{
         BodyFragment, FragmentId, HeaderFragment, IndexFragment, IndexGroupFragment, JoinFragment,
@@ -86,6 +87,10 @@ impl SegmentAccess {
 }
 
 impl<'a> SegmentBlockAccess<'a> {
+    pub fn cursor(&self) -> Cursor {
+        Cursor::new_finalized(self.block_number())
+    }
+
     pub fn block_number(&self) -> u64 {
         self.segment.first_block + self.offset as u64
     }
@@ -179,7 +184,8 @@ impl<'a> SegmentBlockAccess<'a> {
             .get(fragment_id)
             .ok_or(FragmentAccessError)
             .attach_printable("body fragment not found")
-            .attach_printable_lazy(|| format!("fragment id: {}", fragment_id))?;
+            .attach_printable_lazy(|| format!("fragment id: {}", fragment_id))
+            .attach_printable_lazy(|| format!("block number: {}", self.block_number()))?;
 
         let segment = unsafe {
             rkyv::access_unchecked::<rkyv::Archived<Segment<BodyFragment>>>(entry.value())
