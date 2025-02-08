@@ -1,7 +1,8 @@
 use error_stack::{Result, ResultExt};
-use futures::FutureExt;
+use futures::{FutureExt, StreamExt};
+use futures_buffered::FuturesOrderedBounded;
 use tokio_util::sync::CancellationToken;
-use tracing::info;
+use tracing::{debug, info};
 
 use crate::{
     block_store::{BlockStoreWriter, UncachedBlockStoreReader},
@@ -10,6 +11,8 @@ use crate::{
 };
 
 use super::{segment_builder::SegmentBuilder, CompactionError};
+
+const MAX_BUFFERED_BLOCKS: usize = 128;
 
 pub struct SegmentService {
     segment_size: usize,
@@ -91,27 +94,26 @@ impl SegmentService {
                     "creating new segment"
                 );
 
+                builder
+                    .start_new_segment(first_block_in_segment.clone())
+                    .change_context(CompactionError)?;
+
+                let buffered_queue_size = usize::min(self.segment_size, MAX_BUFFERED_BLOCKS);
+                let mut block_queue = FuturesOrderedBounded::new(buffered_queue_size);
+
                 let mut current = first_block_in_segment.clone();
                 let mut last_block_in_segment = first_block_in_segment.clone();
 
-                builder
-                    .start_new_segment(current.clone())
-                    .change_context(CompactionError)?;
+                debug!(
+                    first_block = %first_block_in_segment,
+                    buffered_queue_size,
+                    "starting segment compaction"
+                );
 
-                for _ in 0..self.segment_size {
-                    let entry = self
-                        .block_store_reader
-                        .get_block(&current)
-                        .await
-                        .change_context(CompactionError)
-                        .attach_printable("failed to get block")
-                        .attach_printable_lazy(|| format!("cursor: {current}"))?;
-
-                    builder
-                        .add_block(&current, &entry)
-                        .change_context(CompactionError)
-                        .attach_printable("failed to add block to segment")
-                        .attach_printable_lazy(|| format!("cursor: {current}"))?;
+                for _ in 0..buffered_queue_size {
+                    let block_cursor = current.clone();
+                    block_queue
+                        .push_back(self.block_store_reader.get_block_and_cursor(block_cursor));
 
                     let NextCursor::Continue {
                         cursor: next_cursor,
@@ -126,8 +128,101 @@ impl SegmentService {
                             .attach_printable_lazy(|| format!("cursor: {current}"));
                     };
 
-                    last_block_in_segment = current.clone();
+                    debug!(current = %current, "compaction: pushed block to queue");
+
                     current = next_cursor;
+                }
+
+                if self.segment_size > buffered_queue_size {
+                    debug!("compaction: queue full, waiting for blocks");
+
+                    for _ in buffered_queue_size..self.segment_size {
+                        let (block_cursor, block_data) = block_queue
+                            .next()
+                            .await
+                            .ok_or(CompactionError)
+                            .attach_printable("compaction segment buffer is empty")?
+                            .change_context(CompactionError)
+                            .attach_printable("failed to get block")?;
+
+                        builder
+                            .add_block(&block_cursor, &block_data)
+                            .change_context(CompactionError)
+                            .attach_printable("failed to add block to segment")
+                            .attach_printable_lazy(|| format!("cursor: {current}"))?;
+
+                        debug!(cursor = %block_cursor, "compaction: added block to segment");
+
+                        last_block_in_segment = block_cursor;
+
+                        let block_cursor = current.clone();
+                        block_queue
+                            .push_back(self.block_store_reader.get_block_and_cursor(block_cursor));
+
+                        let NextCursor::Continue {
+                            cursor: next_cursor,
+                            ..
+                        } = chain_view
+                            .get_next_cursor(&Some(current.clone()))
+                            .await
+                            .change_context(CompactionError)?
+                        else {
+                            return Err(CompactionError)
+                                .attach_printable("chain view returned invalid next cursor")
+                                .attach_printable_lazy(|| format!("cursor: {current}"));
+                        };
+
+                        debug!(current = %current, "compaction: pushed block to queue");
+
+                        current = next_cursor;
+                    }
+                }
+
+                debug!("compaction: pushed all blocks to queue");
+
+                for _ in 0..buffered_queue_size {
+                    let (block_cursor, block_data) = block_queue
+                        .next()
+                        .await
+                        .ok_or(CompactionError)
+                        .attach_printable("compaction segment buffer is empty")?
+                        .change_context(CompactionError)
+                        .attach_printable("failed to get block")?;
+
+                    builder
+                        .add_block(&block_cursor, &block_data)
+                        .change_context(CompactionError)
+                        .attach_printable("failed to add block to segment")
+                        .attach_printable_lazy(|| format!("cursor: {current}"))?;
+
+                    debug!(cursor = %block_cursor, "compaction: added block to segment");
+
+                    if block_cursor != first_block_in_segment
+                        && block_cursor.number != last_block_in_segment.number + 1
+                    {
+                        return Err(CompactionError)
+                            .attach_printable("block cursor number does not match expected number")
+                            .attach_printable_lazy(|| {
+                                format!(
+                                    "cursor: {block_cursor}, last_block: {last_block_in_segment}"
+                                )
+                            });
+                    }
+
+                    last_block_in_segment = block_cursor;
+                }
+
+                // Sanity checks
+                if builder.block_count() != self.segment_size {
+                    return Err(CompactionError)
+                        .attach_printable("builder block count does not match segment size")
+                        .attach_printable_lazy(|| {
+                            format!(
+                                "builder: {:}, segment: {:}",
+                                builder.block_count(),
+                                self.segment_size
+                            )
+                        });
                 }
 
                 let segment_data = builder.segment_data().change_context(CompactionError)?;
