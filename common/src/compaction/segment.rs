@@ -212,6 +212,19 @@ impl SegmentService {
                     last_block_in_segment = block_cursor;
                 }
 
+                // Sanity checks
+                if builder.block_count() != self.segment_size {
+                    return Err(CompactionError)
+                        .attach_printable("builder block count does not match segment size")
+                        .attach_printable_lazy(|| {
+                            format!(
+                                "builder: {:}, segment: {:}",
+                                builder.block_count(),
+                                self.segment_size
+                            )
+                        });
+                }
+
                 let segment_data = builder.segment_data().change_context(CompactionError)?;
 
                 info!(

@@ -14,7 +14,8 @@ use super::CompactionError;
 #[derive(Debug)]
 pub struct SegmentGroupBuilder {
     segment_size: u64,
-    block_range: Option<(Cursor, u64)>,
+    pub segment_count: usize,
+    pub block_range: Option<(Cursor, u64)>,
     block_indexes: BTreeMap<FragmentId, BTreeMap<IndexId, index::BitmapIndexBuilder>>,
 }
 
@@ -22,6 +23,7 @@ impl SegmentGroupBuilder {
     pub fn new(segment_size: usize) -> Self {
         Self {
             segment_size: segment_size as u64,
+            segment_count: 0,
             block_range: None,
             block_indexes: BTreeMap::new(),
         }
@@ -62,6 +64,8 @@ impl SegmentGroupBuilder {
                 }
             }
         }
+
+        self.segment_count += 1;
 
         Ok(())
     }

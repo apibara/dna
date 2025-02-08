@@ -1,6 +1,8 @@
 use error_stack::{Result, ResultExt};
+use futures_buffered::FuturesOrderedBounded;
+use tokio_stream::StreamExt;
 use tokio_util::sync::CancellationToken;
-use tracing::info;
+use tracing::{debug, info};
 
 use crate::{
     block_store::{BlockStoreWriter, UncachedBlockStoreReader},
@@ -13,6 +15,8 @@ use crate::{
 };
 
 use super::CompactionError;
+
+const MAX_BUFFERED_SEGMENTS: usize = 128;
 
 pub struct SegmentGroupService {
     segment_size: usize,
@@ -99,26 +103,95 @@ impl SegmentGroupService {
 
                 let mut builder = SegmentGroupBuilder::new(self.segment_size);
 
-                for i in 0..self.group_size {
+                let buffered_queue_size = usize::min(self.group_size, MAX_BUFFERED_SEGMENTS);
+                let mut segment_queue = FuturesOrderedBounded::new(buffered_queue_size);
+
+                for i in 0..buffered_queue_size {
                     let segment_start =
                         first_block_in_group.number + (i * self.segment_size) as u64;
                     let current_cursor = Cursor::new_finalized(segment_start);
-                    let segment = self
-                        .block_store_reader
-                        .get_index_segment(&current_cursor)
-                        .await
+
+                    segment_queue.push_back(
+                        self.block_store_reader
+                            .get_index_segment_and_cursor(current_cursor),
+                    );
+
+                    debug!(segment_start, "group compaction: pushed segment to queue");
+                }
+
+                if self.group_size > buffered_queue_size {
+                    debug!("compaction: queue full, waiting for segments");
+
+                    for i in buffered_queue_size..self.group_size {
+                        let (segment_cursor, segment_data) = segment_queue
+                            .next()
+                            .await
+                            .ok_or(CompactionError)
+                            .attach_printable("compaction group buffer is empty")?
+                            .change_context(CompactionError)
+                            .attach_printable("failed to get segment")?;
+
+                        let segment = rkyv::from_bytes::<
+                            Segment<IndexGroupFragment>,
+                            rkyv::rancor::Error,
+                        >(&segment_data)
                         .change_context(CompactionError)?;
+
+                        builder
+                            .add_segment(&segment)
+                            .change_context(CompactionError)
+                            .attach_printable("failed to add segment to group")?;
+
+                        debug!(cursor = %segment_cursor, "group compaction: added segment to group");
+
+                        let segment_start =
+                            first_block_in_group.number + (i * self.segment_size) as u64;
+                        let current_cursor = Cursor::new_finalized(segment_start);
+
+                        segment_queue.push_back(
+                            self.block_store_reader
+                                .get_index_segment_and_cursor(current_cursor),
+                        );
+
+                        debug!(segment_start, "group compaction: pushed segment to queue");
+                    }
+                }
+
+                debug!("compaction: pushed all segments to queue");
+
+                for _ in 0..buffered_queue_size {
+                    let (segment_cursor, segment_data) = segment_queue
+                        .next()
+                        .await
+                        .ok_or(CompactionError)
+                        .attach_printable("compaction group buffer is empty")?
+                        .change_context(CompactionError)
+                        .attach_printable("failed to get segment")?;
 
                     let segment = rkyv::from_bytes::<
                         Segment<IndexGroupFragment>,
                         rkyv::rancor::Error,
-                    >(&segment)
+                    >(&segment_data)
                     .change_context(CompactionError)?;
 
                     builder
                         .add_segment(&segment)
                         .change_context(CompactionError)
                         .attach_printable("failed to add segment to group")?;
+
+                    debug!(cursor = %segment_cursor, "group compaction: added segment to group");
+                }
+
+                // Sanity checks
+                if builder.segment_count != self.group_size {
+                    return Err(CompactionError)
+                        .attach_printable("builder segment count does not match group size")
+                        .attach_printable_lazy(|| {
+                            format!(
+                                "builder: {:}, group: {:}",
+                                builder.segment_count, self.group_size
+                            )
+                        });
                 }
 
                 let group = builder.build().change_context(CompactionError)?;

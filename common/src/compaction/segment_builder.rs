@@ -36,6 +36,10 @@ impl SegmentBuilder {
         Ok(())
     }
 
+    pub fn block_count(&self) -> usize {
+        self.headers.len()
+    }
+
     pub fn add_block(&mut self, cursor: &Cursor, bytes: &Bytes) -> Result<(), CompactionError> {
         let block = rkyv::from_bytes::<Block, rkyv::rancor::Error>(bytes)
             .change_context(CompactionError)

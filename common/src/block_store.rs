@@ -200,6 +200,14 @@ impl UncachedBlockStoreReader {
         self.get_segment(first_cursor, "index").await
     }
 
+    pub async fn get_index_segment_and_cursor(
+        &self,
+        first_cursor: Cursor,
+    ) -> Result<(Cursor, Bytes), BlockStoreError> {
+        let segment = self.get_segment(&first_cursor, "index").await?;
+        Ok((first_cursor, segment))
+    }
+
     #[tracing::instrument(name = "uncached_block_store_get_segment", skip_all, fields(name))]
     pub async fn get_segment(
         &self,
