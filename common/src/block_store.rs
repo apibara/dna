@@ -179,6 +179,23 @@ impl UncachedBlockStoreReader {
         Ok(response.body)
     }
 
+    #[tracing::instrument(name = "uncached_block_store_get_block", skip_all)]
+    pub async fn get_block_and_cursor(
+        &self,
+        cursor: Cursor,
+    ) -> Result<(Cursor, Bytes), BlockStoreError> {
+        let key = format_block_key(&cursor);
+        let response = self
+            .client
+            .get(&key, GetOptions::default())
+            .await
+            .change_context(BlockStoreError)
+            .attach_printable("failed to get block")
+            .attach_printable_lazy(|| format!("cursor: {}", cursor))?;
+
+        Ok((cursor, response.body))
+    }
+
     pub async fn get_index_segment(&self, first_cursor: &Cursor) -> Result<Bytes, BlockStoreError> {
         self.get_segment(first_cursor, "index").await
     }
