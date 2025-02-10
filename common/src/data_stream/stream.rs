@@ -4,6 +4,7 @@ use apibara_dna_protocol::dna::stream::{
     stream_data_response::Message, Data, DataFinality, DataProduction, Finalize, Invalidate,
     StreamDataResponse,
 };
+use apibara_observability::{Counter, KeyValue};
 use bytes::{BufMut, Bytes, BytesMut};
 use error_stack::{Result, ResultExt};
 use futures::FutureExt;
@@ -27,6 +28,13 @@ use crate::{
 #[derive(Debug)]
 pub struct DataStreamError;
 
+struct DataStreamMetrics {
+    pub block_count: Counter<u64>,
+    pub block_size_bytes: Counter<u64>,
+    pub fragment_count: Counter<u64>,
+    pub fragment_size_bytes: Counter<u64>,
+}
+
 pub struct DataStream {
     block_filter: Vec<BlockFilter>,
     current: Option<Cursor>,
@@ -35,6 +43,7 @@ pub struct DataStream {
     chain_view: ChainView,
     store: BlockStoreReader,
     fragment_id_to_name: HashMap<FragmentId, String>,
+    metrics: DataStreamMetrics,
     _permit: tokio::sync::OwnedSemaphorePermit,
 }
 
@@ -63,6 +72,7 @@ impl DataStream {
             chain_view,
             fragment_id_to_name,
             store,
+            metrics: DataStreamMetrics::default(),
             _permit: permit,
         }
     }
@@ -641,6 +651,27 @@ impl DataStream {
             field_fragments_size_bytes.as_value(),
         );
 
+        if has_data {
+            self.metrics.block_count.add(output.len() as u64, &[]);
+            self.metrics
+                .block_size_bytes
+                .add(field_blocks_size_bytes as u64, &[]);
+
+            for (fragment_name, fragment_count) in field_fragments_sent {
+                self.metrics.fragment_count.add(
+                    fragment_count as u64,
+                    &[KeyValue::new("fragment_name", fragment_name)],
+                );
+            }
+
+            for (fragment_name, fragment_size_bytes) in field_fragments_size_bytes {
+                self.metrics.fragment_size_bytes.add(
+                    fragment_size_bytes as u64,
+                    &[KeyValue::new("fragment_name", fragment_name)],
+                );
+            }
+        }
+
         Ok(has_data)
     }
 }
@@ -650,5 +681,34 @@ impl error_stack::Context for DataStreamError {}
 impl std::fmt::Display for DataStreamError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "data stream error")
+    }
+}
+
+impl Default for DataStreamMetrics {
+    fn default() -> Self {
+        let meter = apibara_observability::meter("dna_data_stream");
+
+        Self {
+            block_count: meter
+                .u64_counter("dna.data_stream.block_count")
+                .with_description("total number of blocks sent to the client")
+                .with_unit("{block}")
+                .build(),
+            block_size_bytes: meter
+                .u64_counter("dna.data_stream.block_size")
+                .with_description("total size (in bytes) of blocks sent to the client")
+                .with_unit("By")
+                .build(),
+            fragment_count: meter
+                .u64_counter("dna.data_stream.fragment_count")
+                .with_description("total number of fragments sent to the client")
+                .with_unit("{fragment}")
+                .build(),
+            fragment_size_bytes: meter
+                .u64_counter("dna.data_stream.fragment_size")
+                .with_description("total size (in bytes) of fragments sent to the client")
+                .with_unit("By")
+                .build(),
+        }
     }
 }

@@ -48,15 +48,14 @@ dirs = "5.0.1"
 duration-str = "0.12.0"
 error-stack = "0.5.0"
 etcd-client = { version = "0.14.0", features = ["tls", "tls-roots"] }
-fastrace = "0.7"
-fastrace-opentelemetry = "0.8"
-foyer = { version = "0.13.1", features = ["tracing"] }
+foyer = { version = "0.14.1" }
 futures = "0.3.30"
 futures-buffered = "0.2.9"
 futures-util = "0.3.30"
 hex = { version = "0.4.3", features = ["serde"] }
 memmap2 = "0.9.4"
 mimalloc = "0.1.43"
+mixtrics = { version = "0.0.3", features = ["opentelemetry"] }
 opentelemetry = { version = "0.27", features = ["trace", "metrics"] }
 opentelemetry_sdk = { version = "0.27", features = [
     "trace",

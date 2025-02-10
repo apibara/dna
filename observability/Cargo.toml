@@ -8,9 +8,8 @@ license.workspace = true
 
 [dependencies]
 error-stack.workspace = true
-fastrace.workspace = true
-fastrace-opentelemetry.workspace = true
 nu-ansi-term = "0.50.1"
+mixtrics.workspace = true
 opentelemetry.workspace = true
 opentelemetry-otlp.workspace = true
 opentelemetry_sdk.workspace = true

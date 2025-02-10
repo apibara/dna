@@ -6,9 +6,8 @@ use std::borrow::Cow;
 use std::time::Duration;
 
 use error_stack::{Result, ResultExt};
-use fastrace::collector::Config;
-use fastrace_opentelemetry::OpenTelemetryReporter;
-use opentelemetry::trace::{SpanKind, TracerProvider as _};
+use mixtrics::metrics::BoxedRegistry;
+use opentelemetry::trace::TracerProvider as _;
 use opentelemetry::{global, InstrumentationScope};
 use opentelemetry_otlp::{MetricExporter, SpanExporter};
 use opentelemetry_sdk::metrics::{MeterProviderBuilder, PeriodicReader};
@@ -41,6 +40,12 @@ impl std::fmt::Display for OpenTelemetryInitError {
 
 pub fn meter(name: &'static str) -> Meter {
     global::meter(name)
+}
+
+pub fn mixtrics_registry(name: &'static str) -> BoxedRegistry {
+    let m = meter(name);
+    let registry = mixtrics::registry::opentelemetry::OpenTelemetryMetricsRegistry::new(m);
+    Box::new(registry)
 }
 
 /// Initialize OpenTelemetry.
@@ -123,7 +128,7 @@ where
 
     let metrics_reader =
         PeriodicReader::builder(metrics_exporter, opentelemetry_sdk::runtime::Tokio)
-            .with_interval(Duration::from_secs(30))
+            .with_interval(Duration::from_secs(10))
             .build();
 
     let meter_provider = MeterProviderBuilder::default()
@@ -131,19 +136,7 @@ where
         .with_reader(metrics_reader)
         .build();
 
-    let span_exporter = SpanExporter::builder()
-        .with_tonic()
-        .build()
-        .change_context(OpenTelemetryInitError)
-        .attach_printable("failed to create span exporter")?;
-
-    let reporter = OpenTelemetryReporter::new(
-        span_exporter,
-        SpanKind::Server,
-        Cow::Owned(resource),
-        instrumentation_lib,
-    );
-    fastrace::set_reporter(reporter, Config::default());
+    global::set_meter_provider(meter_provider.clone());
 
     // export traces and metrics to otel
     let otel_trace_layer = tracing_opentelemetry::layer().with_tracer(tracer);
@@ -152,6 +145,7 @@ where
         .and_then(otel_metrics_layer)
         .and_then(otel_env_filter)
         .boxed();
+
     Ok(otel_layer)
 }
 
