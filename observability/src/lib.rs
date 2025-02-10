@@ -22,7 +22,7 @@ use tracing_opentelemetry::MetricsLayer;
 pub use tracing_opentelemetry::OpenTelemetrySpanExt;
 use tracing_subscriber::{prelude::*, registry::LookupSpan, EnvFilter, Layer};
 
-pub use opentelemetry::metrics::{Counter, Meter};
+pub use opentelemetry::metrics::{Counter, Meter, UpDownCounter};
 
 const OTEL_SDK_DISABLED: &str = "OTEL_SDK_DISABLED";
 

@@ -4,8 +4,9 @@ use apibara_dna_protocol::dna::stream::{
     dna_stream_server::{self, DnaStream},
     DataFinality, StatusRequest, StatusResponse, StreamDataRequest,
 };
+use apibara_observability::UpDownCounter;
 use error_stack::Result;
-use futures::{Future, TryFutureExt};
+use futures::{Future, FutureExt, TryFutureExt};
 use tokio::sync::{mpsc, Semaphore};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
@@ -39,7 +40,12 @@ where
     fragment_id_to_name: HashMap<FragmentId, String>,
     block_store: BlockStoreReader,
     options: StreamServiceOptions,
+    metrics: StreamServiceMetrics,
     ct: CancellationToken,
+}
+
+struct StreamServiceMetrics {
+    pub active_connections: UpDownCounter<i64>,
 }
 
 impl<BFF> StreamService<BFF>
@@ -62,6 +68,7 @@ where
             fragment_id_to_name,
             block_store,
             options,
+            metrics: Default::default(),
             ct,
         }
     }
@@ -203,9 +210,18 @@ where
         );
         let (tx, rx) = mpsc::channel(CHANNEL_SIZE);
 
-        tokio::spawn(ds.start(tx, self.ct.clone()).inspect_err(|err| {
-            error!(error = ?err, "data stream error");
-        }));
+        let active = self.metrics.active_connections.clone();
+        active.add(1, &[]);
+
+        tokio::spawn(
+            ds.start(tx, self.ct.clone())
+                .inspect_err(|err| {
+                    error!(error = ?err, "data stream error");
+                })
+                .inspect(move |_| {
+                    active.add(-1, &[]);
+                }),
+        );
 
         let stream = ResponseStreamWithHeartbeat::new(rx, heartbeat_interval);
 
@@ -277,5 +293,19 @@ fn validate_heartbeat_interval(
         )))
     } else {
         Ok(heartbeat_interval)
+    }
+}
+
+impl Default for StreamServiceMetrics {
+    fn default() -> Self {
+        let meter = apibara_observability::meter("dna_stream_service");
+
+        Self {
+            active_connections: meter
+                .i64_up_down_counter("dna.dna_stream.active")
+                .with_description("number of active connections")
+                .with_unit("{connection}")
+                .build(),
+        }
     }
 }
