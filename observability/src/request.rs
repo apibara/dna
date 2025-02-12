@@ -14,6 +14,21 @@ pub struct RequestMetrics {
 
 impl RequestMetrics {
     pub fn new(meter_name: &'static str, metric_name: &'static str) -> Self {
+        Self::new_with_boundaries(
+            meter_name,
+            metric_name,
+            vec![
+                0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1.0, 2.5, 5.0, 7.5, 10.0,
+                20.0, 30.0, 60.0, 120.0,
+            ],
+        )
+    }
+
+    pub fn new_with_boundaries(
+        meter_name: &'static str,
+        metric_name: &'static str,
+        boundaries: Vec<f64>,
+    ) -> Self {
         let meter = crate::meter(meter_name);
 
         Self {
@@ -21,10 +36,7 @@ impl RequestMetrics {
                 .f64_histogram(format!("{metric_name}.duration"))
                 .with_description(format!("{metric_name} duration"))
                 .with_unit("s")
-                .with_boundaries(vec![
-                    0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1.0, 2.5, 5.0, 7.5,
-                    10.0, 20.0, 30.0, 60.0, 120.0,
-                ])
+                .with_boundaries(boundaries)
                 .build(),
             error: meter
                 .u64_counter(format!("{metric_name}.error"))

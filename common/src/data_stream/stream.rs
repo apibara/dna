@@ -4,7 +4,7 @@ use apibara_dna_protocol::dna::stream::{
     stream_data_response::Message, Data, DataFinality, DataProduction, Finalize, Invalidate,
     StreamDataResponse,
 };
-use apibara_observability::{Histogram, KeyValue, UpDownCounter};
+use apibara_observability::{Histogram, KeyValue, RecordRequest, RequestMetrics, UpDownCounter};
 use bytes::{BufMut, Bytes, BytesMut};
 use error_stack::{Result, ResultExt};
 use futures::FutureExt;
@@ -32,6 +32,7 @@ pub struct DataStreamMetrics {
     pub active: UpDownCounter<i64>,
     pub block_size: Histogram<u64>,
     pub fragment_size: Histogram<u64>,
+    pub segment: RequestMetrics,
 }
 
 pub struct DataStream {
@@ -224,8 +225,10 @@ impl DataStream {
                         debug!("tick: segment stream consumer finished");
                         return Ok(());
                     };
-                    let segment_access = segment_fetch.wait().await.change_context(DataStreamError)
-                        .attach_printable("Failed to wait for segment fetch")?;
+                    let segment_access = segment_fetch.wait()
+                        .record_request(self.metrics.segment.clone())
+                        .await.change_context(DataStreamError)
+                            .attach_printable("Failed to wait for segment fetch")?;
 
                     let finality = DataFinality::Finalized;
 
@@ -714,6 +717,14 @@ impl Default for DataStreamMetrics {
                     1_000_000_000.0,
                 ])
                 .build(),
+            segment: RequestMetrics::new_with_boundaries(
+                "dna_data_stream",
+                "dna.data_stream.segment",
+                vec![
+                    0.0001, 0.00025, 0.0005, 0.001, 0.0025, 0.005, 0.0075, 0.01, 0.025, 0.05,
+                    0.075, 0.1, 0.25, 0.5, 0.75, 1.0, 2.5, 5.0, 10.0, 20.0, 30.0, 60.0, 120.0,
+                ],
+            ),
         }
     }
 }
