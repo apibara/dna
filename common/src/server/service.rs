@@ -13,7 +13,7 @@ use tracing::{debug, error, info};
 use crate::{
     block_store::BlockStoreReader,
     chain_view::{CanonicalCursor, ChainView, ChainViewError, ValidatedCursor},
-    data_stream::{BlockFilterFactory, DataStream},
+    data_stream::{BlockFilterFactory, DataStream, DataStreamMetrics},
     fragment::FragmentId,
     server::stream_with_heartbeat::ResponseStreamWithHeartbeat,
     Cursor,
@@ -39,6 +39,7 @@ where
     fragment_id_to_name: HashMap<FragmentId, String>,
     block_store: BlockStoreReader,
     options: StreamServiceOptions,
+    metrics: DataStreamMetrics,
     ct: CancellationToken,
 }
 
@@ -62,6 +63,7 @@ where
             fragment_id_to_name,
             block_store,
             options,
+            metrics: Default::default(),
             ct,
         }
     }
@@ -200,6 +202,7 @@ where
             self.fragment_id_to_name.clone(),
             self.block_store.clone(),
             permit,
+            self.metrics.clone(),
         );
         let (tx, rx) = mpsc::channel(CHANNEL_SIZE);
 

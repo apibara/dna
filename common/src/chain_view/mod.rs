@@ -1,5 +1,6 @@
 mod error;
 mod full;
+mod metrics;
 mod sync;
 mod view;
 

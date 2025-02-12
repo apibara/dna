@@ -1,5 +1,6 @@
 use std::{path::PathBuf, str::FromStr, sync::Arc};
 
+use apibara_observability::mixtrics_registry;
 use bytes::Bytes;
 use clap::Args;
 use error_stack::{Result, ResultExt};
@@ -162,7 +163,8 @@ impl FileCacheArgs {
             .as_u64();
 
         let builder = HybridCacheBuilder::new()
-            .with_name("dna.cache")
+            .with_name("global")
+            .with_metrics_registry(mixtrics_registry("file_cache"))
             .memory(max_size_memory_bytes as usize)
             .with_weighter(|_: &String, bytes: &Bytes| bytes.len())
             .storage(Engine::Large)

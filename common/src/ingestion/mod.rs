@@ -1,5 +1,6 @@
 mod cli;
 mod error;
+mod metrics;
 mod service;
 pub mod state_client;
 
@@ -14,6 +15,7 @@ use crate::options_store::OptionsStore;
 
 pub use self::cli::IngestionArgs;
 pub use self::error::{IngestionError, IngestionErrorExt};
+pub use self::metrics::IngestionMetrics;
 pub use self::service::{BlockIngestion, IngestionService, IngestionServiceOptions};
 pub use self::state_client::{
     IngestionStateClient, IngestionStateClientError, IngestionStateUpdate, FINALIZED_KEY,
@@ -31,10 +33,16 @@ pub async fn ingestion_service_loop<I>(
 where
     I: BlockIngestion + Send + Sync + 'static,
 {
+    use apibara_observability::KeyValue;
+
+    let metrics = IngestionMetrics::default();
+
     let mut lock_client = etcd_client.lock_client(LockOptions::default());
 
     while !ct.is_cancelled() {
         info!("acquiring ingestion lock");
+
+        metrics.up.record(1, &[KeyValue::new("active", false)]);
 
         let Some(mut lock) = lock_client
             .lock("ingestion/lock", ct.clone())
@@ -46,6 +54,7 @@ where
         };
 
         info!("ingestion lock acquired");
+        metrics.up.record(1, &[KeyValue::new("active", true)]);
 
         // Compare the current options with the stored options.
         // If they differ, return an error.
@@ -80,6 +89,7 @@ where
             object_store.clone(),
             file_cache.clone(),
             options.clone(),
+            metrics.clone(),
         );
 
         match ingestion_service.start(&mut lock, ct.clone()).await {

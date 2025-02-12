@@ -1,4 +1,5 @@
 use anyhow::anyhow;
+use apibara_observability::{Counter, KeyValue};
 use bytes::Bytes;
 use error_stack::{Result, ResultExt};
 use foyer::FetchState;
@@ -19,11 +20,24 @@ static GROUP_PREFIX: &str = "group";
 #[derive(Debug)]
 pub struct BlockStoreError;
 
+#[derive(Debug, Clone)]
+pub struct BlockStoreMetrics {
+    pub block_count: Counter<u64>,
+    pub block_cache_hit: Counter<u64>,
+    pub pending_block_count: Counter<u64>,
+    pub pending_block_cache_hit: Counter<u64>,
+    pub segment_count: Counter<u64>,
+    pub segment_cache_hit: Counter<u64>,
+    pub group_count: Counter<u64>,
+    pub group_cache_hit: Counter<u64>,
+}
+
 /// Download blocks from the object store with a local cache.
 #[derive(Clone)]
 pub struct BlockStoreReader {
     client: ObjectStore,
     file_cache: FileCache,
+    metrics: BlockStoreMetrics,
 }
 
 /// Download blocks from the object store without a local cache.
@@ -40,13 +54,20 @@ pub struct BlockStoreWriter {
 
 impl BlockStoreReader {
     pub fn new(client: ObjectStore, file_cache: FileCache) -> Self {
-        Self { client, file_cache }
+        let metrics = BlockStoreMetrics::default();
+        Self {
+            client,
+            file_cache,
+            metrics,
+        }
     }
 
     #[tracing::instrument(name = "block_store_get_block", skip_all, fields(cache_hit))]
     pub fn get_block(&self, cursor: &Cursor) -> FileFetch {
         let current_span = tracing::Span::current();
         let key = format_block_key(cursor);
+
+        self.metrics.block_count.add(1, &[]);
 
         let fetch_block = {
             let key = key.clone();
@@ -64,7 +85,10 @@ impl BlockStoreReader {
 
         match entry.state() {
             FetchState::Miss => current_span.record("cache_hit", 0),
-            _ => current_span.record("cache_hit", 1),
+            _ => {
+                self.metrics.block_cache_hit.add(1, &[]);
+                current_span.record("cache_hit", 1)
+            }
         };
 
         entry
@@ -75,6 +99,8 @@ impl BlockStoreReader {
         let current_span = tracing::Span::current();
         let key = format_pending_block_key(cursor.number, generation);
 
+        self.metrics.pending_block_count.add(1, &[]);
+
         let fetch_block = {
             let key = key.clone();
             move || {
@@ -91,7 +117,10 @@ impl BlockStoreReader {
 
         match entry.state() {
             FetchState::Miss => current_span.record("cache_hit", 0),
-            _ => current_span.record("cache_hit", 1),
+            _ => {
+                self.metrics.pending_block_cache_hit.add(1, &[]);
+                current_span.record("cache_hit", 1)
+            }
         };
 
         entry
@@ -108,6 +137,9 @@ impl BlockStoreReader {
         let key = format_segment_key(first_cursor, &name);
 
         current_span.record("name", &name);
+        self.metrics
+            .segment_count
+            .add(1, &[KeyValue::new("name", name.clone())]);
 
         let fetch_segment = {
             let key = key.clone();
@@ -126,7 +158,12 @@ impl BlockStoreReader {
 
         match entry.state() {
             FetchState::Miss => current_span.record("cache_hit", 0),
-            _ => current_span.record("cache_hit", 1),
+            _ => {
+                self.metrics
+                    .segment_cache_hit
+                    .add(1, &[KeyValue::new("name", name)]);
+                current_span.record("cache_hit", 1)
+            }
         };
 
         entry
@@ -136,6 +173,8 @@ impl BlockStoreReader {
     pub fn get_group(&self, cursor: &Cursor) -> FileFetch {
         let current_span = tracing::Span::current();
         let key = format_group_key(cursor);
+
+        self.metrics.group_count.add(1, &[]);
 
         let fetch_group = {
             let key = key.clone();
@@ -153,7 +192,10 @@ impl BlockStoreReader {
 
         match entry.state() {
             FetchState::Miss => current_span.record("cache_hit", 0),
-            _ => current_span.record("cache_hit", 1),
+            _ => {
+                self.metrics.group_cache_hit.add(1, &[]);
+                current_span.record("cache_hit", 1)
+            }
         };
 
         entry
@@ -256,12 +298,13 @@ impl BlockStoreWriter {
         &self,
         cursor: &Cursor,
         block: &fragment::Block,
-    ) -> Result<ObjectETag, BlockStoreError> {
+    ) -> Result<(usize, ObjectETag), BlockStoreError> {
         let serialized = rkyv::to_bytes::<rkyv::rancor::Error>(block)
             .change_context(BlockStoreError)
             .attach_printable("failed to serialize block")?;
 
         let bytes = Bytes::copy_from_slice(serialized.as_slice());
+        let size = bytes.len();
 
         let response = self
             .client
@@ -271,19 +314,20 @@ impl BlockStoreWriter {
             .attach_printable("failed to put block")
             .attach_printable_lazy(|| format!("cursor: {}", cursor))?;
 
-        Ok(response.etag)
+        Ok((size, response.etag))
     }
 
     pub async fn put_pending_block(
         &self,
         block_info: &PendingBlockInfo,
         block: &fragment::Block,
-    ) -> Result<ObjectETag, BlockStoreError> {
+    ) -> Result<(usize, ObjectETag), BlockStoreError> {
         let serialized = rkyv::to_bytes::<rkyv::rancor::Error>(block)
             .change_context(BlockStoreError)
             .attach_printable("failed to serialize pending block")?;
 
         let bytes = Bytes::copy_from_slice(serialized.as_slice());
+        let size = bytes.len();
 
         let response = self
             .client
@@ -297,7 +341,7 @@ impl BlockStoreWriter {
             .attach_printable("failed to put pending block")
             .attach_printable_lazy(|| format!("info: {:?}", block_info))?;
 
-        Ok(response.etag)
+        Ok((size, response.etag))
     }
 
     pub async fn put_segment(
@@ -325,12 +369,13 @@ impl BlockStoreWriter {
         &self,
         first_cursor: &Cursor,
         group: &SegmentGroup,
-    ) -> Result<ObjectETag, BlockStoreError> {
+    ) -> Result<(usize, ObjectETag), BlockStoreError> {
         let serialized = rkyv::to_bytes::<rkyv::rancor::Error>(group)
             .change_context(BlockStoreError)
             .attach_printable("failed to serialize segment group")?;
 
         let bytes = Bytes::copy_from_slice(serialized.as_slice());
+        let size = bytes.len();
 
         let response = self
             .client
@@ -344,7 +389,7 @@ impl BlockStoreWriter {
             .attach_printable("failed to put segment group")
             .attach_printable_lazy(|| format!("cursor: {}", first_cursor))?;
 
-        Ok(response.etag)
+        Ok((size, response.etag))
     }
 }
 
@@ -372,5 +417,32 @@ impl error_stack::Context for BlockStoreError {}
 impl std::fmt::Display for BlockStoreError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "block store error")
+    }
+}
+
+impl Default for BlockStoreMetrics {
+    fn default() -> Self {
+        let meter = apibara_observability::meter("dna_block_store");
+
+        Self {
+            block_count: meter.u64_counter("dna.block_store.get_block").build(),
+            block_cache_hit: meter
+                .u64_counter("dna.block_store.get_block_cache_hit")
+                .build(),
+            pending_block_count: meter
+                .u64_counter("dna.block_store.get_pending_block")
+                .build(),
+            pending_block_cache_hit: meter
+                .u64_counter("dna.block_store.get_pending_block_cache_hit")
+                .build(),
+            segment_count: meter.u64_counter("dna.block_store.get_segment").build(),
+            segment_cache_hit: meter
+                .u64_counter("dna.block_store.get_segment_cache_hit")
+                .build(),
+            group_count: meter.u64_counter("dna.block_store.get_group").build(),
+            group_cache_hit: meter
+                .u64_counter("dna.block_store.get_group_cache_hit")
+                .build(),
+        }
     }
 }

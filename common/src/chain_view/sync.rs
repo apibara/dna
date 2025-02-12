@@ -150,6 +150,8 @@ impl ChainViewSyncService {
             canonical_chain,
         );
 
+        chain_view.record_starting_metrics().await?;
+
         self.tx
             .send(Some(chain_view.clone()))
             .change_context(ChainViewError)?;

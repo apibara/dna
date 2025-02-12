@@ -4,6 +4,7 @@ use apibara_dna_protocol::dna::stream::{
     stream_data_response::Message, Data, DataFinality, DataProduction, Finalize, Invalidate,
     StreamDataResponse,
 };
+use apibara_observability::{Histogram, KeyValue, RecordRequest, RequestMetrics, UpDownCounter};
 use bytes::{BufMut, Bytes, BytesMut};
 use error_stack::{Result, ResultExt};
 use futures::FutureExt;
@@ -11,7 +12,6 @@ use tokio::sync::mpsc;
 use tokio_stream::{wrappers::ReceiverStream, StreamExt};
 use tokio_util::sync::CancellationToken;
 use tracing::debug;
-use valuable::Valuable;
 
 use crate::{
     block_store::BlockStoreReader,
@@ -27,6 +27,14 @@ use crate::{
 #[derive(Debug)]
 pub struct DataStreamError;
 
+#[derive(Debug, Clone)]
+pub struct DataStreamMetrics {
+    pub active: UpDownCounter<i64>,
+    pub block_size: Histogram<u64>,
+    pub fragment_size: Histogram<u64>,
+    pub segment: RequestMetrics,
+}
+
 pub struct DataStream {
     block_filter: Vec<BlockFilter>,
     current: Option<Cursor>,
@@ -35,6 +43,7 @@ pub struct DataStream {
     chain_view: ChainView,
     store: BlockStoreReader,
     fragment_id_to_name: HashMap<FragmentId, String>,
+    metrics: DataStreamMetrics,
     _permit: tokio::sync::OwnedSemaphorePermit,
 }
 
@@ -54,6 +63,7 @@ impl DataStream {
         fragment_id_to_name: HashMap<FragmentId, String>,
         store: BlockStoreReader,
         permit: tokio::sync::OwnedSemaphorePermit,
+        metrics: DataStreamMetrics,
     ) -> Self {
         Self {
             block_filter,
@@ -63,6 +73,7 @@ impl DataStream {
             chain_view,
             fragment_id_to_name,
             store,
+            metrics,
             _permit: permit,
         }
     }
@@ -72,6 +83,8 @@ impl DataStream {
         tx: mpsc::Sender<DataStreamMessage>,
         ct: CancellationToken,
     ) -> Result<(), DataStreamError> {
+        self.metrics.active.add(1, &[]);
+
         while !ct.is_cancelled() && !tx.is_closed() {
             tokio::select! {
                 biased;
@@ -212,8 +225,10 @@ impl DataStream {
                         debug!("tick: segment stream consumer finished");
                         return Ok(());
                     };
-                    let segment_access = segment_fetch.wait().await.change_context(DataStreamError)
-                        .attach_printable("Failed to wait for segment fetch")?;
+                    let segment_access = segment_fetch.wait()
+                        .record_request(self.metrics.segment.clone())
+                        .await.change_context(DataStreamError)
+                            .attach_printable("Failed to wait for segment fetch")?;
 
                     let finality = DataFinality::Finalized;
 
@@ -465,14 +480,14 @@ impl DataStream {
         is_live: bool,
         output: &mut Vec<Bytes>,
     ) -> Result<bool, DataStreamError> {
-        let current_span = tracing::Span::current();
         let mut has_data = false;
 
-        let mut field_fragments_sent = HashMap::<String, usize>::new();
-        let mut field_fragments_size_bytes = HashMap::<String, usize>::new();
-        let mut field_blocks_size_bytes = 0;
+        let mut total_fragments_size_bytes = Vec::with_capacity(self.block_filter.len());
+        let mut total_blocks_size_bytes = Vec::with_capacity(self.block_filter.len());
 
         for block_filter in self.block_filter.iter() {
+            let mut local_fragments_size_bytes = HashMap::<String, usize>::new();
+
             let mut data_buffer = BytesMut::with_capacity(DEFAULT_BLOCKS_BUFFER_SIZE);
             let mut fragment_matches = BTreeMap::default();
 
@@ -588,10 +603,6 @@ impl DataStream {
                     .change_context(DataStreamError)
                     .attach_printable("failed to get body fragment")?;
 
-                *field_fragments_sent
-                    .entry(fragment_name.clone())
-                    .or_default() += filter_match.len();
-
                 let starting_size = data_buffer.len();
                 for match_ in filter_match.iter() {
                     const FILTER_IDS_TAG: u32 = 1;
@@ -622,24 +633,33 @@ impl DataStream {
                 }
 
                 let fragment_size = data_buffer.len() - starting_size;
-                *field_fragments_size_bytes.entry(fragment_name).or_default() += fragment_size;
+                *local_fragments_size_bytes.entry(fragment_name).or_default() += fragment_size;
             }
 
             if !data_buffer.is_empty() {
                 has_data = true;
             }
 
-            field_blocks_size_bytes += data_buffer.len();
+            total_blocks_size_bytes.push(data_buffer.len());
+            total_fragments_size_bytes.push(local_fragments_size_bytes);
+
             output.push(data_buffer.freeze());
         }
 
-        current_span.record("blocks_count", output.len());
-        current_span.record("blocks_size_bytes", field_blocks_size_bytes);
-        current_span.record("fragments_count", field_fragments_sent.as_value());
-        current_span.record(
-            "fragments_size_bytes",
-            field_fragments_size_bytes.as_value(),
-        );
+        if has_data {
+            for block_size in total_blocks_size_bytes {
+                self.metrics.block_size.record(block_size as u64, &[]);
+            }
+
+            for block_fragment_size_bytes in total_fragments_size_bytes {
+                for (fragment_name, fragment_size_bytes) in block_fragment_size_bytes {
+                    self.metrics.fragment_size.record(
+                        fragment_size_bytes as u64,
+                        &[KeyValue::new("name", fragment_name)],
+                    );
+                }
+            }
+        }
 
         Ok(has_data)
     }
@@ -650,5 +670,67 @@ impl error_stack::Context for DataStreamError {}
 impl std::fmt::Display for DataStreamError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "data stream error")
+    }
+}
+
+impl Default for DataStreamMetrics {
+    fn default() -> Self {
+        let meter = apibara_observability::meter("dna_data_stream");
+
+        Self {
+            active: meter
+                .i64_up_down_counter("dna.data_stream.active")
+                .with_description("number of active data streams")
+                .with_unit("{connection}")
+                .build(),
+            block_size: meter
+                .u64_histogram("dna.data_stream.block_size")
+                .with_description("size (in bytes) of blocks sent to the client")
+                .with_unit("By")
+                .with_boundaries(vec![
+                    1_000.0,
+                    10_000.0,
+                    100_000.0,
+                    1_000_000.0,
+                    5_000_000.0,
+                    10_000_000.0,
+                    25_000_000.0,
+                    50_000_000.0,
+                    100_000_000.0,
+                    1_000_000_000.0,
+                ])
+                .build(),
+            fragment_size: meter
+                .u64_histogram("dna.data_stream.fragment_size")
+                .with_description("size (in bytes) of fragments sent to the client")
+                .with_unit("By")
+                .with_boundaries(vec![
+                    1_000.0,
+                    10_000.0,
+                    100_000.0,
+                    1_000_000.0,
+                    5_000_000.0,
+                    10_000_000.0,
+                    25_000_000.0,
+                    50_000_000.0,
+                    100_000_000.0,
+                    1_000_000_000.0,
+                ])
+                .build(),
+            segment: RequestMetrics::new_with_boundaries(
+                "dna_data_stream",
+                "dna.data_stream.segment",
+                vec![
+                    0.0001, 0.00025, 0.0005, 0.001, 0.0025, 0.005, 0.0075, 0.01, 0.025, 0.05,
+                    0.075, 0.1, 0.25, 0.5, 0.75, 1.0, 2.5, 5.0, 10.0, 20.0, 30.0, 60.0, 120.0,
+                ],
+            ),
+        }
+    }
+}
+
+impl Drop for DataStream {
+    fn drop(&mut self) {
+        self.metrics.active.add(-1, &[]);
     }
 }

@@ -8,6 +8,7 @@ use crate::Cursor;
 use super::{
     error::ChainViewError,
     full::{FullCanonicalChain, NextCursor, ValidatedCursor},
+    metrics::ChainViewMetrics,
     CanonicalCursor,
 };
 
@@ -27,6 +28,7 @@ pub(crate) struct ChainViewInner {
     head_notify: Arc<Notify>,
     finalized_notify: Arc<Notify>,
     segmented_notify: Arc<Notify>,
+    metrics: ChainViewMetrics,
 }
 
 impl ChainView {
@@ -50,6 +52,7 @@ impl ChainView {
             head_notify: Arc::new(Notify::new()),
             finalized_notify: Arc::new(Notify::new()),
             segmented_notify: Arc::new(Notify::new()),
+            metrics: ChainViewMetrics::default(),
         };
 
         Self(Arc::new(RwLock::new(inner)))
@@ -207,6 +210,7 @@ impl ChainView {
 
     pub(crate) async fn set_finalized_block(&self, block: u64) {
         let mut inner = self.0.write().await;
+        inner.metrics.finalized.record(block, &[]);
         inner.finalized = block;
         inner.finalized_notify.notify_waiters();
     }
@@ -219,12 +223,14 @@ impl ChainView {
 
     pub(crate) async fn set_segmented_block(&self, block: u64) {
         let mut inner = self.0.write().await;
+        inner.metrics.segmented.record(block, &[]);
         inner.segmented = Some(block);
         inner.segmented_notify.notify_waiters();
     }
 
     pub(crate) async fn set_grouped_block(&self, block: u64) {
         let mut inner = self.0.write().await;
+        inner.metrics.grouped.record(block, &[]);
         inner.grouped = Some(block);
     }
 
@@ -236,7 +242,25 @@ impl ChainView {
         let new_head = inner.canonical.get_head().await?;
 
         if prev_head != new_head {
+            inner.metrics.head.record(new_head.number, &[]);
             inner.head_notify.notify_waiters();
+        }
+
+        Ok(())
+    }
+
+    pub async fn record_starting_metrics(&self) -> Result<(), ChainViewError> {
+        let inner = self.0.read().await;
+        let head = inner.canonical.get_head().await?;
+
+        inner.metrics.up.record(1, &[]);
+        inner.metrics.head.record(head.number, &[]);
+        inner.metrics.finalized.record(inner.finalized, &[]);
+        if let Some(segmented) = inner.segmented {
+            inner.metrics.segmented.record(segmented, &[]);
+        }
+        if let Some(grouped) = inner.grouped {
+            inner.metrics.grouped.record(grouped, &[]);
         }
 
         Ok(())

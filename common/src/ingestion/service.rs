@@ -1,6 +1,7 @@
 use std::{future::Future, sync::Arc, time::Duration};
 
 use apibara_etcd::{EtcdClient, Lock};
+use apibara_observability::{KeyValue, RecordRequest};
 use error_stack::{Result, ResultExt};
 use futures::{stream::FuturesOrdered, StreamExt};
 use tokio::{
@@ -21,7 +22,7 @@ use crate::{
     Cursor,
 };
 
-use super::{error::IngestionError, state_client::IngestionStateClient};
+use super::{error::IngestionError, metrics::IngestionMetrics, state_client::IngestionStateClient};
 
 pub trait BlockIngestion: Clone {
     fn supports_pending(&self) -> bool {
@@ -87,6 +88,7 @@ where
     chain_store: ChainStore,
     chain_builder: CanonicalChainBuilder,
     task_queue: FuturesOrdered<IngestionTaskHandle>,
+    metrics: IngestionMetrics,
 }
 
 pub type IngestionJobJoinResult =
@@ -100,6 +102,7 @@ where
 {
     block_store: BlockStoreWriter,
     ingestion: Arc<I>,
+    metrics: IngestionMetrics,
 }
 
 #[derive(Debug)]
@@ -153,6 +156,7 @@ where
         object_store: ObjectStore,
         file_cache: FileCache,
         options: IngestionServiceOptions,
+        metrics: IngestionMetrics,
     ) -> Self {
         let chain_store = ChainStore::new(object_store.clone(), file_cache);
         let block_store = BlockStoreWriter::new(object_store);
@@ -163,11 +167,13 @@ where
             ingestion: IngestionInner {
                 ingestion: ingestion.into(),
                 block_store,
+                metrics: metrics.clone(),
             },
             state_client,
             chain_store,
             chain_builder: CanonicalChainBuilder::new(),
             task_queue: FuturesOrdered::new(),
+            metrics,
         }
     }
 
@@ -208,6 +214,8 @@ where
             }
             .instrument(tick_span)
             .await?;
+
+            state.record_metrics(&self.metrics);
         }
     }
 
@@ -795,8 +803,14 @@ where
     async fn ingest_block_by_number(&self, block_number: u64) -> Result<BlockInfo, IngestionError> {
         let ingestion = self.ingestion.clone();
         let store = self.block_store.clone();
+        let rpc_metrics = self.metrics.rpc.clone();
+
         let (block_info, block) = ingestion
             .ingest_block_by_number(block_number)
+            .record_request_with_attributes(
+                rpc_metrics,
+                &[KeyValue::new("method", "ingest_block_by_number")],
+            )
             .await
             .attach_printable_lazy(|| format!("block number: {}", block_number))?;
 
@@ -811,10 +825,20 @@ where
         let block_cursor = block_info.cursor();
         debug!(cursor = %block_cursor, "uploading block");
 
-        store
+        let block_upload_metrics = self.metrics.block_upload.clone();
+
+        let (size, _etag) = store
             .put_block(&block_cursor, &block)
+            .record_request_with_attributes(
+                block_upload_metrics,
+                &[KeyValue::new("method", "ingest_block_by_number")],
+            )
             .await
             .change_context(IngestionError::BlockStoreRequest)?;
+
+        self.metrics
+            .block_size
+            .record(size as u64, &[KeyValue::new("type", "produced")]);
 
         Ok(block_info)
     }
@@ -828,11 +852,16 @@ where
         let block_number = parent.number + 1;
         let ingestion = self.ingestion.clone();
         let store = self.block_store.clone();
-        let Some((block_info, block)) =
-            ingestion
-                .ingest_pending_block(&parent, generation)
-                .await
-                .attach_printable_lazy(|| format!("block number: {}", block_number))?
+        let rpc_metrics = self.metrics.rpc.clone();
+
+        let Some((block_info, block)) = ingestion
+            .ingest_pending_block(&parent, generation)
+            .record_request_with_attributes(
+                rpc_metrics,
+                &[KeyValue::new("method", "ingest_pending_block")],
+            )
+            .await
+            .attach_printable_lazy(|| format!("block number: {}", block_number))?
         else {
             return Ok(None);
         };
@@ -847,10 +876,20 @@ where
 
         debug!(cursor = ?block_info, "uploading pending block");
 
-        store
+        let block_upload_metrics = self.metrics.block_upload.clone();
+
+        let (size, _etag) = store
             .put_pending_block(&block_info, &block)
+            .record_request_with_attributes(
+                block_upload_metrics,
+                &[KeyValue::new("method", "ingest_pending_block")],
+            )
             .await
             .change_context(IngestionError::BlockStoreRequest)?;
+
+        self.metrics
+            .block_size
+            .record(size as u64, &[KeyValue::new("type", "pending")]);
 
         Ok(block_info.into())
     }
@@ -926,6 +965,22 @@ impl IngestionState {
         match self {
             IngestionState::Recover(state) => Some(state),
             _ => None,
+        }
+    }
+
+    pub fn record_metrics(&self, metrics: &IngestionMetrics) {
+        match self {
+            IngestionState::Ingest(state) => {
+                metrics.state.record(1, &[]);
+                metrics.head.record(state.head.number, &[]);
+                metrics.ingested.record(state.last_ingested.number, &[]);
+                metrics.finalized.record(state.finalized.number, &[]);
+            }
+            IngestionState::Recover(state) => {
+                metrics.state.record(2, &[]);
+                metrics.ingested.record(state.last_ingested.number, &[]);
+                metrics.finalized.record(state.finalized.number, &[]);
+            }
         }
     }
 }

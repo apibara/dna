@@ -2,12 +2,14 @@ mod cli;
 mod error;
 mod group;
 mod group_builder;
+mod metrics;
 mod segment;
 mod segment_builder;
 mod service;
 
 use apibara_etcd::{EtcdClient, LockOptions};
 use error_stack::{Result, ResultExt};
+use metrics::CompactionMetrics;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
@@ -24,10 +26,16 @@ pub async fn compaction_service_loop(
     options: CompactionServiceOptions,
     ct: CancellationToken,
 ) -> Result<(), CompactionError> {
+    use apibara_observability::KeyValue;
+
     let mut lock_client = etcd_client.lock_client(LockOptions::default());
+
+    let metrics = CompactionMetrics::default();
 
     while !ct.is_cancelled() {
         info!("acquiring compaction lock");
+
+        metrics.up.record(1, &[KeyValue::new("active", false)]);
 
         let Some(mut lock) = lock_client
             .lock("compaction/lock", ct.clone())
@@ -38,6 +46,8 @@ pub async fn compaction_service_loop(
             warn!("failed to acquire compaction lock");
             break;
         };
+
+        metrics.up.record(1, &[KeyValue::new("active", true)]);
 
         // Load options from etcd and check if they match the current options.
         let mut options_store = OptionsStore::new(&etcd_client);
@@ -89,6 +99,7 @@ pub async fn compaction_service_loop(
             object_store.clone(),
             chain_view.clone(),
             options.clone(),
+            metrics.clone(),
         );
 
         match compaction_service.start(&mut lock, ct.clone()).await {

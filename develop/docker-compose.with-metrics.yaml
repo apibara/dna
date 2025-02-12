@@ -1,0 +1,63 @@
+services:
+  minio:
+    image: minio/minio:latest
+    ports:
+    - "9000:9000"
+    - "9001:9001"
+    volumes:
+    - minio_data:/data
+    environment:
+      MINIO_ROOT_USER: "minioadmin"
+      MINIO_ROOT_PASSWORD: "minioadmin"
+    command: ["server", "/data", "--console-address", ":9001"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+  etcd:
+    image: bitnami/etcd:latest
+    environment:
+    - ALLOW_NONE_AUTHENTICATION=yes
+    - ETCD_ADVERTISE_CLIENT_URLS=http://etcd:2379
+    ports:
+    - "2379:2379"
+    - "2380:2380"
+    volumes:
+    - etcd_data:/bitnami/etcd
+
+  opentelemetry-collector:
+    image: otel/opentelemetry-collector:latest
+    ports:
+    - "4317:4317"
+    volumes:
+    - ./opentelemetry-collector:/etc/opentelemetry-collector
+    command:
+    - '--config=/etc/opentelemetry-collector/config.yaml'
+
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+    - ./prometheus:/etc/prometheus:ro
+    command:
+    - '--config.file=/etc/prometheus/prometheus.yaml'
+    - '--storage.tsdb.path=/prometheus'
+    - '--web.enable-remote-write-receiver'
+    ports:
+    - 9090:9090
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+    - 3000:3000
+    volumes:
+    - grafana_data:/var/lib/grafana
+    - ./grafana/datasources:/etc/grafana/provisioning/datasources
+    environment:
+    - GF_SECURITY_ADMIN_USER=admin
+    - GF_SECURITY_ADMIN_PASSWORD=admin
+    - GF_USERS_ALLOW_SIGN_UP=false
+
+volumes:
+  minio_data:
+  etcd_data:
+  grafana_data:
