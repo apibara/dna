@@ -4,9 +4,8 @@ use apibara_dna_protocol::dna::stream::{
     dna_stream_server::{self, DnaStream},
     DataFinality, StatusRequest, StatusResponse, StreamDataRequest,
 };
-use apibara_observability::UpDownCounter;
 use error_stack::Result;
-use futures::{Future, FutureExt, TryFutureExt};
+use futures::{Future, TryFutureExt};
 use tokio::sync::{mpsc, Semaphore};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
@@ -14,7 +13,7 @@ use tracing::{debug, error, info};
 use crate::{
     block_store::BlockStoreReader,
     chain_view::{CanonicalCursor, ChainView, ChainViewError, ValidatedCursor},
-    data_stream::{BlockFilterFactory, DataStream},
+    data_stream::{BlockFilterFactory, DataStream, DataStreamMetrics},
     fragment::FragmentId,
     server::stream_with_heartbeat::ResponseStreamWithHeartbeat,
     Cursor,
@@ -40,12 +39,8 @@ where
     fragment_id_to_name: HashMap<FragmentId, String>,
     block_store: BlockStoreReader,
     options: StreamServiceOptions,
-    metrics: StreamServiceMetrics,
+    metrics: DataStreamMetrics,
     ct: CancellationToken,
-}
-
-struct StreamServiceMetrics {
-    pub active_connections: UpDownCounter<i64>,
 }
 
 impl<BFF> StreamService<BFF>
@@ -207,21 +202,13 @@ where
             self.fragment_id_to_name.clone(),
             self.block_store.clone(),
             permit,
+            self.metrics.clone(),
         );
         let (tx, rx) = mpsc::channel(CHANNEL_SIZE);
 
-        let active = self.metrics.active_connections.clone();
-        active.add(1, &[]);
-
-        tokio::spawn(
-            ds.start(tx, self.ct.clone())
-                .inspect_err(|err| {
-                    error!(error = ?err, "data stream error");
-                })
-                .inspect(move |_| {
-                    active.add(-1, &[]);
-                }),
-        );
+        tokio::spawn(ds.start(tx, self.ct.clone()).inspect_err(|err| {
+            error!(error = ?err, "data stream error");
+        }));
 
         let stream = ResponseStreamWithHeartbeat::new(rx, heartbeat_interval);
 
@@ -293,19 +280,5 @@ fn validate_heartbeat_interval(
         )))
     } else {
         Ok(heartbeat_interval)
-    }
-}
-
-impl Default for StreamServiceMetrics {
-    fn default() -> Self {
-        let meter = apibara_observability::meter("dna_stream_service");
-
-        Self {
-            active_connections: meter
-                .i64_up_down_counter("dna.dna_stream.active")
-                .with_description("number of active connections")
-                .with_unit("{connection}")
-                .build(),
-        }
     }
 }
