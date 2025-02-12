@@ -33,7 +33,7 @@ impl StartCommand {
         };
         let starknet_chain = StarknetChainSupport::new(provider, starknet_ingestion_options);
 
-        run_server(starknet_chain, self.start, ct)
+        run_server(starknet_chain, self.start, env!("CARGO_PKG_VERSION"), ct)
             .await
             .change_context(StarknetError)
     }

@@ -35,7 +35,7 @@ impl StartCommand {
         let options = self.beaconchain.to_beacon_chain_options();
         let beaconchain_chain = BeaconChainChainSupport::new(provider, options);
 
-        run_server(beaconchain_chain, self.start, ct)
+        run_server(beaconchain_chain, self.start, env!("CARGO_PKG_VERSION"), ct)
             .await
             .change_context(BeaconChainError)
     }

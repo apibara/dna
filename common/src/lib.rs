@@ -62,11 +62,14 @@ mod server_impl {
     pub async fn run_server<CS>(
         chain_support: CS,
         args: StartArgs,
+        version: &'static str,
         ct: CancellationToken,
     ) -> error_stack::Result<(), ServerError>
     where
         CS: ChainSupport,
     {
+        emit_dna_up_metric(version);
+
         let object_store = args.object_store.into_object_store_client().await;
         let mut etcd_client = args
             .etcd
@@ -232,6 +235,19 @@ mod server_impl {
         }
 
         Ok(())
+    }
+
+    fn emit_dna_up_metric(version: &'static str) {
+        use apibara_observability::KeyValue;
+
+        let meter = apibara_observability::meter("dna");
+
+        let up = meter
+            .u64_gauge("dna.up")
+            .with_description("DNA server is up")
+            .build();
+
+        up.record(1, &[KeyValue::new("version", version)]);
     }
 
     impl error_stack::Context for ServerError {}

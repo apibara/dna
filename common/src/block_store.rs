@@ -256,12 +256,13 @@ impl BlockStoreWriter {
         &self,
         cursor: &Cursor,
         block: &fragment::Block,
-    ) -> Result<ObjectETag, BlockStoreError> {
+    ) -> Result<(usize, ObjectETag), BlockStoreError> {
         let serialized = rkyv::to_bytes::<rkyv::rancor::Error>(block)
             .change_context(BlockStoreError)
             .attach_printable("failed to serialize block")?;
 
         let bytes = Bytes::copy_from_slice(serialized.as_slice());
+        let size = bytes.len();
 
         let response = self
             .client
@@ -271,19 +272,20 @@ impl BlockStoreWriter {
             .attach_printable("failed to put block")
             .attach_printable_lazy(|| format!("cursor: {}", cursor))?;
 
-        Ok(response.etag)
+        Ok((size, response.etag))
     }
 
     pub async fn put_pending_block(
         &self,
         block_info: &PendingBlockInfo,
         block: &fragment::Block,
-    ) -> Result<ObjectETag, BlockStoreError> {
+    ) -> Result<(usize, ObjectETag), BlockStoreError> {
         let serialized = rkyv::to_bytes::<rkyv::rancor::Error>(block)
             .change_context(BlockStoreError)
             .attach_printable("failed to serialize pending block")?;
 
         let bytes = Bytes::copy_from_slice(serialized.as_slice());
+        let size = bytes.len();
 
         let response = self
             .client
@@ -297,7 +299,7 @@ impl BlockStoreWriter {
             .attach_printable("failed to put pending block")
             .attach_printable_lazy(|| format!("info: {:?}", block_info))?;
 
-        Ok(response.etag)
+        Ok((size, response.etag))
     }
 
     pub async fn put_segment(

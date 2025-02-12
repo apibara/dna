@@ -12,8 +12,8 @@ use apibara_dna_common::{
     fragment,
     ingestion::{
         state_client::testing::{etcd_server_container, EtcdServer, EtcdServerExt},
-        BlockIngestion, IngestionError, IngestionService, IngestionServiceOptions,
-        IngestionStateClient,
+        BlockIngestion, IngestionError, IngestionMetrics, IngestionService,
+        IngestionServiceOptions, IngestionStateClient,
     },
     object_store::{
         testing::{minio_container, MinIO, MinIOExt},
@@ -85,6 +85,7 @@ async fn test_ingestion_initialize() {
         object_store,
         file_cache,
         IngestionServiceOptions::default(),
+        IngestionMetrics::default(),
     );
 
     anvil_provider.anvil_mine(100, 3).await;
@@ -132,6 +133,7 @@ async fn test_ingestion_initialize_with_starting_block() {
         object_store,
         file_cache,
         options,
+        IngestionMetrics::default(),
     );
 
     anvil_provider.anvil_mine(200, 3).await;
@@ -181,6 +183,7 @@ async fn test_ingestion_advances_as_head_changes() {
         object_store,
         file_cache,
         options,
+        IngestionMetrics::default(),
     );
 
     anvil_provider.anvil_mine(10, 3).await;
@@ -276,6 +279,7 @@ async fn test_ingestion_not_affected_by_reorg_after_ingested_block() {
         object_store,
         file_cache,
         options,
+        IngestionMetrics::default(),
     );
 
     anvil_provider.anvil_mine(100, 3).await;
@@ -328,6 +332,7 @@ async fn test_ingestion_detect_shrinking_reorg_on_head_refresh() {
         object_store,
         file_cache,
         options,
+        IngestionMetrics::default(),
     );
 
     anvil_provider.anvil_mine(90, 3).await;
@@ -417,6 +422,7 @@ async fn test_ingestion_detect_shrinking_reorg_on_block_ingestion() {
         object_store,
         file_cache,
         options,
+        IngestionMetrics::default(),
     );
 
     anvil_provider.anvil_mine(90, 3).await;
@@ -513,6 +519,7 @@ async fn test_ingestion_detect_offline_reorg() {
         object_store.clone(),
         file_cache.clone(),
         options.clone(),
+        IngestionMetrics::default(),
     );
 
     anvil_provider.anvil_mine(100, 3).await;
@@ -551,6 +558,7 @@ async fn test_ingestion_detect_offline_reorg() {
         object_store,
         file_cache,
         options,
+        IngestionMetrics::default(),
     );
 
     let starting_state = service.initialize().await.unwrap();
@@ -603,6 +611,7 @@ async fn test_ingestion_detect_reorg_on_head_refresh() {
         object_store,
         file_cache,
         options,
+        IngestionMetrics::default(),
     );
 
     anvil_provider.anvil_mine(100, 3).await;
@@ -689,6 +698,7 @@ async fn test_ingestion_detect_reorg_on_block_ingestion() {
         object_store,
         file_cache,
         options,
+        IngestionMetrics::default(),
     );
 
     anvil_provider.anvil_mine(100, 3).await;

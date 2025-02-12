@@ -1,6 +1,7 @@
 //! # OpenTelemetry helpers
 
 mod dna_fmt;
+mod request;
 
 use std::borrow::Cow;
 use std::time::Duration;
@@ -22,7 +23,9 @@ use tracing_opentelemetry::MetricsLayer;
 pub use tracing_opentelemetry::OpenTelemetrySpanExt;
 use tracing_subscriber::{prelude::*, registry::LookupSpan, EnvFilter, Layer};
 
-pub use opentelemetry::metrics::{Counter, Meter, UpDownCounter};
+pub use opentelemetry::metrics::{Counter, Gauge, Histogram, Meter, UpDownCounter};
+
+pub use self::request::{RecordRequest, RecordedRequest, RequestMetrics};
 
 const OTEL_SDK_DISABLED: &str = "OTEL_SDK_DISABLED";
 

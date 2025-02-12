@@ -33,7 +33,7 @@ impl StartCommand {
         };
         let evm_chain = EvmChainSupport::new(provider, evm_ingestion_options);
 
-        run_server(evm_chain, self.start, ct)
+        run_server(evm_chain, self.start, env!("CARGO_PKG_VERSION"), ct)
             .await
             .change_context(EvmError)
     }

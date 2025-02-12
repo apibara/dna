@@ -753,11 +753,13 @@ name = "apibara-observability"
 version = "0.1.0"
 dependencies = [
  "error-stack",
+ "futures",
  "mixtrics",
  "nu-ansi-term 0.50.1",
  "opentelemetry",
  "opentelemetry-otlp",
  "opentelemetry_sdk",
+ "pin-project",
  "time",
  "tracing",
  "tracing-opentelemetry",
