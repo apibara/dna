@@ -327,12 +327,13 @@ impl BlockStoreWriter {
         &self,
         first_cursor: &Cursor,
         group: &SegmentGroup,
-    ) -> Result<ObjectETag, BlockStoreError> {
+    ) -> Result<(usize, ObjectETag), BlockStoreError> {
         let serialized = rkyv::to_bytes::<rkyv::rancor::Error>(group)
             .change_context(BlockStoreError)
             .attach_printable("failed to serialize segment group")?;
 
         let bytes = Bytes::copy_from_slice(serialized.as_slice());
+        let size = bytes.len();
 
         let response = self
             .client
@@ -346,7 +347,7 @@ impl BlockStoreWriter {
             .attach_printable("failed to put segment group")
             .attach_printable_lazy(|| format!("cursor: {}", first_cursor))?;
 
-        Ok(response.etag)
+        Ok((size, response.etag))
     }
 }
 

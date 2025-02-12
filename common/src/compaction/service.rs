@@ -11,7 +11,7 @@ use crate::{
     object_store::ObjectStore,
 };
 
-use super::{error::CompactionError, segment::SegmentService};
+use super::{error::CompactionError, metrics::CompactionMetrics, segment::SegmentService};
 
 #[derive(Debug, Clone)]
 pub struct CompactionServiceOptions {
@@ -27,6 +27,7 @@ pub struct CompactionService {
     block_store_writer: BlockStoreWriter,
     state_client: IngestionStateClient,
     chain_view: tokio::sync::watch::Receiver<Option<ChainView>>,
+    metrics: CompactionMetrics,
 }
 
 impl CompactionService {
@@ -35,6 +36,7 @@ impl CompactionService {
         object_store: ObjectStore,
         chain_view: tokio::sync::watch::Receiver<Option<ChainView>>,
         options: CompactionServiceOptions,
+        metrics: CompactionMetrics,
     ) -> Self {
         let block_store_reader = UncachedBlockStoreReader::new(object_store.clone());
         let block_store_writer = BlockStoreWriter::new(object_store);
@@ -46,6 +48,7 @@ impl CompactionService {
             block_store_writer,
             chain_view,
             state_client,
+            metrics,
         }
     }
 
@@ -75,6 +78,7 @@ impl CompactionService {
             self.block_store_reader.clone(),
             self.block_store_writer.clone(),
             self.state_client.clone(),
+            self.metrics.clone(),
         );
 
         let group_service = SegmentGroupService::new(
@@ -84,6 +88,7 @@ impl CompactionService {
             self.block_store_reader.clone(),
             self.block_store_writer.clone(),
             self.state_client.clone(),
+            self.metrics.clone(),
         );
 
         let segment_service_handle = tokio::spawn(segment_service.start(ct.clone()));
