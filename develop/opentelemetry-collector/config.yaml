@@ -9,15 +9,15 @@ processors:
 
 exporters:
   debug:
-  debug/detailed:
-    verbosity: detailed
+  prometheusremotewrite:
+    endpoint: http://prometheus:9090/api/v1/write
 
 service:
   pipelines:
     metrics:
       receivers: [otlp]
       processors: [batch]
-      exporters: [debug/detailed]
+      exporters: [debug, prometheusremotewrite]
     traces:
       receivers: [otlp]
       processors: [batch]
