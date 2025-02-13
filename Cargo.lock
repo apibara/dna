@@ -559,7 +559,7 @@ dependencies = [
 
 [[package]]
 name = "apibara-dna-beaconchain"
-version = "2.0.0-beta.18"
+version = "2.0.0-beta.19"
 dependencies = [
  "alloy-consensus",
  "alloy-eips",
@@ -644,7 +644,7 @@ dependencies = [
 
 [[package]]
 name = "apibara-dna-evm"
-version = "2.0.0-beta.18"
+version = "2.0.0-beta.19"
 dependencies = [
  "alloy-primitives",
  "alloy-provider",
@@ -694,7 +694,7 @@ dependencies = [
 
 [[package]]
 name = "apibara-dna-starknet"
-version = "2.0.0-beta.18"
+version = "2.0.0-beta.19"
 dependencies = [
  "apibara-dna-common",
  "apibara-dna-protocol",
