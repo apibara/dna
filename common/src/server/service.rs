@@ -27,6 +27,8 @@ static STREAM_SEMAPHORE_ACQUIRE_TIMEOUT: Duration = Duration::from_secs(1);
 pub struct StreamServiceOptions {
     /// Maximum number of concurrent streams.
     pub max_concurrent_streams: usize,
+    /// Number of segments to prefetch.
+    pub prefetch_segment_count: usize,
 }
 
 pub struct StreamService<BFF>
@@ -201,6 +203,7 @@ where
             chain_view,
             self.fragment_id_to_name.clone(),
             self.block_store.clone(),
+            self.options.prefetch_segment_count,
             permit,
             self.metrics.clone(),
         );

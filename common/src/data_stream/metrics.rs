@@ -5,6 +5,7 @@ pub struct DataStreamMetrics {
     pub active: UpDownCounter<i64>,
     pub block_size: Histogram<u64>,
     pub fragment_size: Histogram<u64>,
+    pub time_in_queue: Histogram<f64>,
     pub block: RequestMetrics,
     pub segment: RequestMetrics,
     pub group: RequestMetrics,
@@ -52,6 +53,15 @@ impl Default for DataStreamMetrics {
                     50_000_000.0,
                     100_000_000.0,
                     1_000_000_000.0,
+                ])
+                .build(),
+            time_in_queue: meter
+                .f64_histogram("dna.data_stream.time_in_queue")
+                .with_description("time (in seconds) spent in the prefetch queue")
+                .with_unit("s")
+                .with_boundaries(vec![
+                    0.0001, 0.00025, 0.0005, 0.001, 0.0025, 0.005, 0.0075, 0.01, 0.025, 0.05,
+                    0.075, 0.1, 0.25, 0.5, 0.75, 1.0, 2.5, 5.0, 10.0, 20.0, 30.0, 60.0, 120.0,
                 ])
                 .build(),
             block: RequestMetrics::new_with_boundaries(

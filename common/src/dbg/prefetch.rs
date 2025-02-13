@@ -67,12 +67,14 @@ pub async fn run_debug_prefetch_stream(
         .await
         .change_context(DebugCommandError)?;
 
+    let metrics = DataStreamMetrics::default();
+
     let segment_stream = SegmentStream::new(
         vec![filter],
         fragment_id_to_name,
         block_store,
         chain_view,
-        DataStreamMetrics::default(),
+        metrics.clone(),
     );
 
     let (tx, rx) = mpsc::channel(queue_size);
@@ -80,7 +82,7 @@ pub async fn run_debug_prefetch_stream(
     let mut segment_stream_handle =
         tokio::spawn(segment_stream.start(starting_cursor, tx, ct.clone())).fuse();
 
-    let mut consumer_handle = tokio::spawn(run_consumer(rx));
+    let mut consumer_handle = tokio::spawn(run_consumer(rx, metrics));
 
     loop {
         tokio::select! {
@@ -104,12 +106,15 @@ pub async fn run_debug_prefetch_stream(
     Ok(())
 }
 
-async fn run_consumer(mut rx: mpsc::Receiver<SegmentAccessFetch>) -> Result<(), DebugCommandError> {
+async fn run_consumer(
+    mut rx: mpsc::Receiver<SegmentAccessFetch>,
+    metrics: DataStreamMetrics,
+) -> Result<(), DebugCommandError> {
     let mut block_count = 0;
     let time = Instant::now();
     while let Some(segment_fetch) = rx.recv().await {
         let segment_access = segment_fetch
-            .wait()
+            .wait(&metrics)
             .await
             .change_context(DebugCommandError)?;
         let elapsed = time.elapsed();

@@ -37,6 +37,7 @@ pub struct DataStream {
     chain_view: ChainView,
     store: BlockStoreReader,
     fragment_id_to_name: HashMap<FragmentId, String>,
+    prefetch_segment_count: usize,
     metrics: DataStreamMetrics,
     _permit: tokio::sync::OwnedSemaphorePermit,
 }
@@ -44,7 +45,6 @@ pub struct DataStream {
 type DataStreamMessage = tonic::Result<StreamDataResponse, tonic::Status>;
 
 const DEFAULT_BLOCKS_BUFFER_SIZE: usize = 1024 * 1024;
-const SEGMENT_CHANNEL_SIZE: usize = 128;
 
 impl DataStream {
     #[allow(clippy::too_many_arguments)]
@@ -56,6 +56,7 @@ impl DataStream {
         chain_view: ChainView,
         fragment_id_to_name: HashMap<FragmentId, String>,
         store: BlockStoreReader,
+        prefetch_segment_count: usize,
         permit: tokio::sync::OwnedSemaphorePermit,
         metrics: DataStreamMetrics,
     ) -> Self {
@@ -66,6 +67,7 @@ impl DataStream {
             finality,
             chain_view,
             fragment_id_to_name,
+            prefetch_segment_count,
             store,
             metrics,
             _permit: permit,
@@ -199,7 +201,7 @@ impl DataStream {
             self.metrics.clone(),
         );
 
-        let (segment_tx, segment_rx) = mpsc::channel(SEGMENT_CHANNEL_SIZE);
+        let (segment_tx, segment_rx) = mpsc::channel(self.prefetch_segment_count);
         let segment_rx = ReceiverStream::new(segment_rx);
         tokio::pin!(segment_rx);
 
@@ -221,7 +223,7 @@ impl DataStream {
                         return Ok(());
                     };
 
-                    let segment_access = segment_fetch.wait()
+                    let segment_access = segment_fetch.wait(&self.metrics)
                         .record_request(self.metrics.segment.clone())
                         .await.change_context(DataStreamError)
                             .attach_printable("Failed to wait for segment fetch")?;
