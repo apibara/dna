@@ -225,6 +225,7 @@ impl DataStream {
                         debug!("tick: segment stream consumer finished");
                         return Ok(());
                     };
+
                     let segment_access = segment_fetch.wait()
                         .record_request(self.metrics.segment.clone())
                         .await.change_context(DataStreamError)
@@ -234,6 +235,9 @@ impl DataStream {
 
                     for block_access in segment_access.iter() {
                         let block_end_cursor = block_access.cursor();
+                        if block_end_cursor.number < cursor.number {
+                            continue;
+                        }
 
                         let proto_cursor = None;
                         let proto_end_cursor: Option<ProtoCursor> = Some(block_end_cursor.clone().into());
