@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Instant};
 
 use bytes::Bytes;
 use error_stack::{Result, ResultExt};
@@ -15,7 +15,7 @@ use crate::{
     segment::Segment,
 };
 
-use super::fragment_access::FragmentAccessError;
+use super::{fragment_access::FragmentAccessError, DataStreamMetrics};
 
 pub type FileEntry = CacheEntry<String, Bytes>;
 
@@ -23,6 +23,7 @@ pub struct SegmentAccessFetch {
     first_block: u64,
     blocks: RoaringBitmap,
     fragments: HashMap<FragmentId, FileFetch>,
+    created_at: Instant,
 }
 
 pub struct SegmentAccess {
@@ -47,6 +48,7 @@ impl SegmentAccessFetch {
             first_block,
             blocks,
             fragments: HashMap::new(),
+            created_at: Instant::now(),
         }
     }
 
@@ -54,7 +56,12 @@ impl SegmentAccessFetch {
         self.fragments.insert(fragment_id, fetch);
     }
 
-    pub async fn wait(self) -> Result<SegmentAccess, FragmentAccessError> {
+    pub async fn wait(
+        self,
+        metrics: &DataStreamMetrics,
+    ) -> Result<SegmentAccess, FragmentAccessError> {
+        let elapsed = self.created_at.elapsed();
+
         let mut access = SegmentAccess {
             first_block: self.first_block,
             blocks: self.blocks,
@@ -68,6 +75,8 @@ impl SegmentAccessFetch {
                 .change_context(FragmentAccessError)?;
             access.fragments.insert(fragment_id, file);
         }
+
+        metrics.time_in_queue.record(elapsed.as_secs_f64(), &[]);
 
         Ok(access)
     }

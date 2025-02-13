@@ -48,6 +48,12 @@
               "7007/tcp" = { };
             };
           };
+
+          benchmark = {
+            description = "Apibara benchmark";
+            path = ./benchmark;
+            ports = { };
+          };
         };
 
         builtCrates = pkgs.callPackage ./nix/crates.nix {

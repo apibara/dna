@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
+use apibara_observability::RecordRequest;
 use error_stack::{Result, ResultExt};
 use roaring::RoaringBitmap;
 use tokio::sync::mpsc;
@@ -17,13 +18,14 @@ use crate::{
     Cursor,
 };
 
-use super::DataStreamError;
+use super::{DataStreamError, DataStreamMetrics};
 
 pub struct SegmentStream {
     block_filter: Vec<BlockFilter>,
     fragment_id_to_name: HashMap<FragmentId, String>,
     store: BlockStoreReader,
     chain_view: ChainView,
+    metrics: DataStreamMetrics,
 }
 
 impl SegmentStream {
@@ -32,12 +34,14 @@ impl SegmentStream {
         fragment_id_to_name: HashMap<FragmentId, String>,
         store: BlockStoreReader,
         chain_view: ChainView,
+        metrics: DataStreamMetrics,
     ) -> Self {
         Self {
             block_filter,
             fragment_id_to_name,
             store,
             chain_view,
+            metrics,
         }
     }
 
@@ -85,6 +89,7 @@ impl SegmentStream {
                 let group_entry = self
                     .store
                     .get_group(&group_cursor)
+                    .record_request(self.metrics.group.clone())
                     .await
                     .map_err(FileCacheError::Foyer)
                     .change_context(DataStreamError)

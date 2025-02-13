@@ -4,7 +4,7 @@ use apibara_dna_protocol::dna::stream::{
     stream_data_response::Message, Data, DataFinality, DataProduction, Finalize, Invalidate,
     StreamDataResponse,
 };
-use apibara_observability::{Histogram, KeyValue, RecordRequest, RequestMetrics, UpDownCounter};
+use apibara_observability::{KeyValue, RecordRequest};
 use bytes::{BufMut, Bytes, BytesMut};
 use error_stack::{Result, ResultExt};
 use futures::FutureExt;
@@ -24,16 +24,10 @@ use crate::{
     Cursor,
 };
 
+use super::DataStreamMetrics;
+
 #[derive(Debug)]
 pub struct DataStreamError;
-
-#[derive(Debug, Clone)]
-pub struct DataStreamMetrics {
-    pub active: UpDownCounter<i64>,
-    pub block_size: Histogram<u64>,
-    pub fragment_size: Histogram<u64>,
-    pub segment: RequestMetrics,
-}
 
 pub struct DataStream {
     block_filter: Vec<BlockFilter>,
@@ -43,6 +37,7 @@ pub struct DataStream {
     chain_view: ChainView,
     store: BlockStoreReader,
     fragment_id_to_name: HashMap<FragmentId, String>,
+    prefetch_segment_count: usize,
     metrics: DataStreamMetrics,
     _permit: tokio::sync::OwnedSemaphorePermit,
 }
@@ -50,7 +45,6 @@ pub struct DataStream {
 type DataStreamMessage = tonic::Result<StreamDataResponse, tonic::Status>;
 
 const DEFAULT_BLOCKS_BUFFER_SIZE: usize = 1024 * 1024;
-const SEGMENT_CHANNEL_SIZE: usize = 128;
 
 impl DataStream {
     #[allow(clippy::too_many_arguments)]
@@ -62,6 +56,7 @@ impl DataStream {
         chain_view: ChainView,
         fragment_id_to_name: HashMap<FragmentId, String>,
         store: BlockStoreReader,
+        prefetch_segment_count: usize,
         permit: tokio::sync::OwnedSemaphorePermit,
         metrics: DataStreamMetrics,
     ) -> Self {
@@ -72,6 +67,7 @@ impl DataStream {
             finality,
             chain_view,
             fragment_id_to_name,
+            prefetch_segment_count,
             store,
             metrics,
             _permit: permit,
@@ -202,9 +198,10 @@ impl DataStream {
             self.fragment_id_to_name.clone(),
             self.store.clone(),
             self.chain_view.clone(),
+            self.metrics.clone(),
         );
 
-        let (segment_tx, segment_rx) = mpsc::channel(SEGMENT_CHANNEL_SIZE);
+        let (segment_tx, segment_rx) = mpsc::channel(self.prefetch_segment_count);
         let segment_rx = ReceiverStream::new(segment_rx);
         tokio::pin!(segment_rx);
 
@@ -225,7 +222,8 @@ impl DataStream {
                         debug!("tick: segment stream consumer finished");
                         return Ok(());
                     };
-                    let segment_access = segment_fetch.wait()
+
+                    let segment_access = segment_fetch.wait(&self.metrics)
                         .record_request(self.metrics.segment.clone())
                         .await.change_context(DataStreamError)
                             .attach_printable("Failed to wait for segment fetch")?;
@@ -234,6 +232,9 @@ impl DataStream {
 
                     for block_access in segment_access.iter() {
                         let block_end_cursor = block_access.cursor();
+                        if block_end_cursor.number < cursor.number {
+                            continue;
+                        }
 
                         let proto_cursor = None;
                         let proto_end_cursor: Option<ProtoCursor> = Some(block_end_cursor.clone().into());
@@ -297,6 +298,7 @@ impl DataStream {
         let block_entry: BlockAccess = self
             .store
             .get_block(&cursor)
+            .record_request(self.metrics.block.clone())
             .await
             .map_err(FileCacheError::Foyer)
             .change_context(DataStreamError)
@@ -670,62 +672,6 @@ impl error_stack::Context for DataStreamError {}
 impl std::fmt::Display for DataStreamError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "data stream error")
-    }
-}
-
-impl Default for DataStreamMetrics {
-    fn default() -> Self {
-        let meter = apibara_observability::meter("dna_data_stream");
-
-        Self {
-            active: meter
-                .i64_up_down_counter("dna.data_stream.active")
-                .with_description("number of active data streams")
-                .with_unit("{connection}")
-                .build(),
-            block_size: meter
-                .u64_histogram("dna.data_stream.block_size")
-                .with_description("size (in bytes) of blocks sent to the client")
-                .with_unit("By")
-                .with_boundaries(vec![
-                    1_000.0,
-                    10_000.0,
-                    100_000.0,
-                    1_000_000.0,
-                    5_000_000.0,
-                    10_000_000.0,
-                    25_000_000.0,
-                    50_000_000.0,
-                    100_000_000.0,
-                    1_000_000_000.0,
-                ])
-                .build(),
-            fragment_size: meter
-                .u64_histogram("dna.data_stream.fragment_size")
-                .with_description("size (in bytes) of fragments sent to the client")
-                .with_unit("By")
-                .with_boundaries(vec![
-                    1_000.0,
-                    10_000.0,
-                    100_000.0,
-                    1_000_000.0,
-                    5_000_000.0,
-                    10_000_000.0,
-                    25_000_000.0,
-                    50_000_000.0,
-                    100_000_000.0,
-                    1_000_000_000.0,
-                ])
-                .build(),
-            segment: RequestMetrics::new_with_boundaries(
-                "dna_data_stream",
-                "dna.data_stream.segment",
-                vec![
-                    0.0001, 0.00025, 0.0005, 0.001, 0.0025, 0.005, 0.0075, 0.01, 0.025, 0.05,
-                    0.075, 0.1, 0.25, 0.5, 0.75, 1.0, 2.5, 5.0, 10.0, 20.0, 30.0, 60.0, 120.0,
-                ],
-            ),
-        }
     }
 }
 
