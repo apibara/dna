@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 
 use apibara_dna_protocol::dna::stream::dna_stream_file_descriptor_set;
+use apibara_observability::Gauge;
 use error::ServerError;
 use error_stack::{Result, ResultExt};
 use service::StreamService;
@@ -30,6 +31,10 @@ pub struct ServerOptions {
     pub stream_service_options: StreamServiceOptions,
 }
 
+pub struct ServerMetrics {
+    pub up: Gauge<u64>,
+}
+
 pub async fn server_loop<BFF>(
     filter_factory: BFF,
     chain_view: tokio::sync::watch::Receiver<Option<ChainView>>,
@@ -41,6 +46,8 @@ pub async fn server_loop<BFF>(
 where
     BFF: BlockFilterFactory + Send + Sync + 'static,
 {
+    let metrics = ServerMetrics::default();
+
     let (_health_reporter, health_service) = tonic_health::server::health_reporter();
 
     let reflection_service = tonic_reflection::server::Builder::configure()
@@ -61,6 +68,8 @@ where
 
     info!(address = %options.address, "starting DNA server");
 
+    metrics.up.record(1, &[]);
+
     TonicServer::builder()
         .add_service(health_service)
         .add_service(reflection_service)
@@ -71,4 +80,17 @@ where
         })
         .await
         .change_context(ServerError)
+}
+
+impl Default for ServerMetrics {
+    fn default() -> Self {
+        let meter = apibara_observability::meter("dna_server");
+
+        Self {
+            up: meter
+                .u64_gauge("dna.server.up")
+                .with_description("server is up")
+                .build(),
+        }
+    }
 }

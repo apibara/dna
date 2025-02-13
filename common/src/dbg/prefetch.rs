@@ -10,7 +10,7 @@ use crate::{
     block_store::BlockStoreReader,
     chain_view::chain_view_sync_loop,
     cli::{EtcdArgs, ObjectStoreArgs},
-    data_stream::{SegmentAccessFetch, SegmentStream},
+    data_stream::{DataStreamMetrics, SegmentAccessFetch, SegmentStream},
     file_cache::FileCacheArgs,
     fragment::FragmentId,
     query::BlockFilter,
@@ -67,8 +67,13 @@ pub async fn run_debug_prefetch_stream(
         .await
         .change_context(DebugCommandError)?;
 
-    let segment_stream =
-        SegmentStream::new(vec![filter], fragment_id_to_name, block_store, chain_view);
+    let segment_stream = SegmentStream::new(
+        vec![filter],
+        fragment_id_to_name,
+        block_store,
+        chain_view,
+        DataStreamMetrics::default(),
+    );
 
     let (tx, rx) = mpsc::channel(queue_size);
 
