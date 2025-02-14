@@ -278,7 +278,7 @@ impl DataStream {
     ) -> Result<(), DataStreamError> {
         use apibara_dna_protocol::dna::stream::Cursor as ProtoCursor;
 
-        debug!(cursor = %cursor, "tick: single block");
+        debug!(cursor = %cursor, is_head, "tick: single block");
 
         let proto_cursor: Option<ProtoCursor> = self.current.clone().map(Into::into);
         let proto_end_cursor: Option<ProtoCursor> = Some(cursor.clone().into());
