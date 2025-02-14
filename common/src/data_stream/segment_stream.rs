@@ -1,8 +1,9 @@
 use std::collections::{HashMap, HashSet};
 
-use apibara_observability::RecordRequest;
+use apibara_observability::{KeyValue, RecordRequest};
 use error_stack::{Result, ResultExt};
-use futures::StreamExt;
+use foyer::FetchState;
+use futures::TryStreamExt;
 use futures_buffered::FuturesOrderedBounded;
 use roaring::RoaringBitmap;
 use tokio::sync::mpsc;
@@ -96,15 +97,16 @@ impl SegmentStream {
                     debug!(next_group_to_fetch = %next_group_to_fetch, "segment_stream: pushing group future to queue");
                     group_queue.push_back({
                         let store = self.store.clone();
-                        let group_metrics = self.metrics.group.clone();
+                        let group_download_metrics = self.metrics.group_download.clone();
                         async move {
                             let group_cursor = Cursor::new_finalized(next_group_to_fetch);
-                            let entry = store
-                                .get_group(&group_cursor)
-                                .record_request(group_metrics)
+                            let entry = store.get_group(&group_cursor);
+                            let cache_hit = entry.state() == FetchState::Hit;
+                            let entry = entry
+                                .record_request(group_download_metrics)
                                 .await
                                 .map_err(FileCacheError::Foyer)?;
-                            Ok::<_, FileCacheError>((group_cursor, entry))
+                            Ok::<_, FileCacheError>((group_cursor, entry, cache_hit))
                         }
                     });
 
@@ -113,18 +115,23 @@ impl SegmentStream {
 
                 let expected_group_cursor = Cursor::new_finalized(current_block_number);
 
-                let (fetched_group_cursor, group_entry) = group_queue
-                    .next()
+                let (fetched_group_cursor, group_entry, cache_hit) = group_queue
+                    .try_next()
+                    .record_request(self.metrics.group_wait.clone())
                     .await
-                    .ok_or(DataStreamError)
-                    .attach_printable("group queue is empty")?
                     .change_context(DataStreamError)
                     .attach_printable("failed to get group future")
-                    .attach_printable_lazy(|| format!("cursor: {current_block_number}"))?;
+                    .attach_printable_lazy(|| format!("cursor: {current_block_number}"))?
+                    .ok_or(DataStreamError)
+                    .attach_printable("group queue is empty")?;
 
                 if expected_group_cursor != fetched_group_cursor {
                     return Err(DataStreamError).attach_printable("expected and fetched group cursors do not match")
                         .attach_printable_lazy(|| format!("expected: {expected_group_cursor}, fetched: {fetched_group_cursor}"));
+                }
+
+                if cache_hit {
+                    self.metrics.group_cache_hit.add(1, &[]);
                 }
 
                 let group = unsafe {
@@ -205,7 +212,13 @@ impl SegmentStream {
                             .ok_or(DataStreamError)
                             .attach_printable("expected fragment id to have a name")
                             .attach_printable_lazy(|| format!("fragment_id: {fragment_id}"))?;
-                        let fragment_fetch = self.store.get_segment(&segment_cursor, segment_name);
+                        let fragment_fetch = self
+                            .store
+                            .get_segment(&segment_cursor, segment_name)
+                            .record_request_with_attributes(
+                                self.metrics.segment_download.clone(),
+                                &[KeyValue::new("name", segment_name.clone())],
+                            );
                         segment_fetch.insert_fragment(*fragment_id, fragment_fetch);
                     }
 
@@ -273,7 +286,13 @@ impl SegmentStream {
                         .ok_or(DataStreamError)
                         .attach_printable("expected fragment id to have a name")
                         .attach_printable_lazy(|| format!("fragment_id: {fragment_id}"))?;
-                    let fragment_fetch = self.store.get_segment(&segment_cursor, segment_name);
+                    let fragment_fetch = self
+                        .store
+                        .get_segment(&segment_cursor, segment_name)
+                        .record_request_with_attributes(
+                            self.metrics.segment_download.clone(),
+                            &[KeyValue::new("name", segment_name.clone())],
+                        );
                     segment_fetch.insert_fragment(*fragment_id, fragment_fetch);
                 }
 

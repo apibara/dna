@@ -224,7 +224,7 @@ impl DataStream {
                     };
 
                     let segment_access = segment_fetch.wait(&self.metrics)
-                        .record_request(self.metrics.segment.clone())
+                        .record_request(self.metrics.segment_wait.clone())
                         .await.change_context(DataStreamError)
                             .attach_printable("Failed to wait for segment fetch")?;
 
@@ -298,7 +298,7 @@ impl DataStream {
         let block_entry: BlockAccess = self
             .store
             .get_block(&cursor)
-            .record_request(self.metrics.block.clone())
+            .record_request(self.metrics.block_download.clone())
             .await
             .map_err(FileCacheError::Foyer)
             .change_context(DataStreamError)

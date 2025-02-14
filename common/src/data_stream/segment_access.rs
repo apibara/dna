@@ -1,5 +1,6 @@
 use std::{collections::HashMap, time::Instant};
 
+use apibara_observability::RecordedRequest;
 use bytes::Bytes;
 use error_stack::{Result, ResultExt};
 use foyer::CacheEntry;
@@ -22,7 +23,7 @@ pub type FileEntry = CacheEntry<String, Bytes>;
 pub struct SegmentAccessFetch {
     first_block: u64,
     blocks: RoaringBitmap,
-    fragments: HashMap<FragmentId, FileFetch>,
+    fragments: HashMap<FragmentId, RecordedRequest<FileFetch>>,
     created_at: Instant,
 }
 
@@ -52,7 +53,7 @@ impl SegmentAccessFetch {
         }
     }
 
-    pub fn insert_fragment(&mut self, fragment_id: FragmentId, fetch: FileFetch) {
+    pub fn insert_fragment(&mut self, fragment_id: FragmentId, fetch: RecordedRequest<FileFetch>) {
         self.fragments.insert(fragment_id, fetch);
     }
 

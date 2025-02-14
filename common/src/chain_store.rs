@@ -99,6 +99,7 @@ impl ChainStore {
 
         if let Some(existing) = self
             .cache
+            .general
             .get(&key)
             .await
             .map_err(FileCacheError::Foyer)
@@ -115,7 +116,7 @@ impl ChainStore {
                 return Ok(None);
             };
 
-            let entry = self.cache.insert(key, bytes);
+            let entry = self.cache.general.insert(key, bytes);
 
             let segment = rkyv::from_bytes::<_, rkyv::rancor::Error>(entry.value())
                 .change_context(ChainStoreError)

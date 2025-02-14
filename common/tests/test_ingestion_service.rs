@@ -58,12 +58,13 @@ async fn init_anvil() -> (ContainerAsync<AnvilServer>, Arc<AnvilProvider>) {
 }
 
 async fn init_file_cache() -> FileCache {
-    HybridCacheBuilder::default()
+    let general = HybridCacheBuilder::default()
         .memory(1024 * 1024)
         .storage(foyer::Engine::Large)
         .build()
         .await
-        .expect("failed to create file cache")
+        .expect("failed to create file cache");
+    FileCache { general }
 }
 
 #[tokio::test]
