@@ -2,6 +2,8 @@ use std::collections::{HashMap, HashSet};
 
 use apibara_observability::RecordRequest;
 use error_stack::{Result, ResultExt};
+use futures::StreamExt;
+use futures_buffered::FuturesOrderedBounded;
 use roaring::RoaringBitmap;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
@@ -19,6 +21,10 @@ use crate::{
 };
 
 use super::{DataStreamError, DataStreamMetrics};
+
+// Production workloads have ~10k blocks per group and size ~100MiB.
+// Set the queue size to be small enough to not consume too much memory.
+const GROUP_QUEUE_SIZE: usize = 4;
 
 pub struct SegmentStream {
     block_filter: Vec<BlockFilter>,
@@ -72,6 +78,9 @@ impl SegmentStream {
                 .get_group_start_block(starting_cursor.number)
                 .await;
 
+            let mut group_queue = FuturesOrderedBounded::new(GROUP_QUEUE_SIZE);
+            let mut next_group_to_fetch = current_block_number;
+
             while current_block_number <= grouped.number {
                 if ct.is_cancelled() {
                     return Ok(());
@@ -82,19 +91,41 @@ impl SegmentStream {
                     "segment_stream: fetching block"
                 );
 
-                // Yes, we could pre-fetch the group in a previous iteration and
-                // just await it here, but for now let's keep it simple since groups
-                // should be cached anyway.
-                let group_cursor = Cursor::new_finalized(current_block_number);
-                let group_entry = self
-                    .store
-                    .get_group(&group_cursor)
-                    .record_request(self.metrics.group.clone())
+                while group_queue.len() < GROUP_QUEUE_SIZE && next_group_to_fetch <= grouped.number
+                {
+                    debug!(next_group_to_fetch = %next_group_to_fetch, "segment_stream: pushing group future to queue");
+                    group_queue.push_back({
+                        let store = self.store.clone();
+                        let group_metrics = self.metrics.group.clone();
+                        async move {
+                            let group_cursor = Cursor::new_finalized(next_group_to_fetch);
+                            let entry = store
+                                .get_group(&group_cursor)
+                                .record_request(group_metrics)
+                                .await
+                                .map_err(FileCacheError::Foyer)?;
+                            Ok::<_, FileCacheError>((group_cursor, entry))
+                        }
+                    });
+
+                    next_group_to_fetch += group_size * segment_size;
+                }
+
+                let expected_group_cursor = Cursor::new_finalized(current_block_number);
+
+                let (fetched_group_cursor, group_entry) = group_queue
+                    .next()
                     .await
-                    .map_err(FileCacheError::Foyer)
+                    .ok_or(DataStreamError)
+                    .attach_printable("group queue is empty")?
                     .change_context(DataStreamError)
-                    .attach_printable("failed to get group")
+                    .attach_printable("failed to get group future")
                     .attach_printable_lazy(|| format!("cursor: {current_block_number}"))?;
+
+                if expected_group_cursor != fetched_group_cursor {
+                    return Err(DataStreamError).attach_printable("expected and fetched group cursors do not match")
+                        .attach_printable_lazy(|| format!("expected: {expected_group_cursor}, fetched: {fetched_group_cursor}"));
+                }
 
                 let group = unsafe {
                     rkyv::access_unchecked::<rkyv::Archived<SegmentGroup>>(group_entry.value())
