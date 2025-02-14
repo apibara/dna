@@ -144,9 +144,9 @@ where
     // export traces and metrics to otel
     let otel_trace_layer = tracing_opentelemetry::layer().with_tracer(tracer);
     let otel_metrics_layer = MetricsLayer::new(meter_provider);
-    let otel_layer = otel_trace_layer
+    let otel_layer = otel_env_filter
         .and_then(otel_metrics_layer)
-        .and_then(otel_env_filter)
+        .and_then(otel_trace_layer)
         .boxed();
 
     Ok(otel_layer)
