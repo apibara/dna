@@ -75,7 +75,7 @@ pub struct FileCacheArgs {
     #[clap(
         long = "cache.compression",
         env = "DNA_CACHE_COMPRESSION",
-        default_value = "none"
+        default_value = "zstd"
     )]
     pub cache_compression: String,
     /// Enable `sync` after writes.
