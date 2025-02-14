@@ -7,7 +7,7 @@ use error_stack::{Result, ResultExt};
 use foyer::{
     AdmissionPicker, AdmitAllPicker, CacheEntry, Compression, DirectFsDeviceOptions, Engine,
     HybridCache, HybridCacheBuilder, HybridFetch, LargeEngineOptions, RateLimitPicker, RecoverMode,
-    RuntimeOptions, TokioRuntimeOptions,
+    RuntimeOptions, S3FifoConfig, TokioRuntimeOptions,
 };
 
 #[derive(Debug)]
@@ -75,7 +75,7 @@ pub struct FileCacheArgs {
     #[clap(
         long = "cache.compression",
         env = "DNA_CACHE_COMPRESSION",
-        default_value = "none"
+        default_value = "zstd"
     )]
     pub cache_compression: String,
     /// Enable `sync` after writes.
@@ -166,6 +166,7 @@ impl FileCacheArgs {
             .with_name("global")
             .with_metrics_registry(mixtrics_registry("file_cache"))
             .memory(max_size_memory_bytes as usize)
+            .with_eviction_config(S3FifoConfig::default())
             .with_weighter(|_: &String, bytes: &Bytes| bytes.len())
             .storage(Engine::Large)
             .with_compression(compression)
@@ -194,8 +195,6 @@ impl FileCacheArgs {
             .with_recover_mode(RecoverMode::Quiet);
 
         let cache = builder.build().await.map_err(FileCacheError::Foyer)?;
-
-        cache.enable_tracing();
 
         Ok(cache)
     }

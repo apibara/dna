@@ -143,6 +143,6 @@ impl std::fmt::Display for FilterError {
 
 impl Default for HeaderFilter {
     fn default() -> Self {
-        Self::OnData
+        Self::OnDataOrOnNewBlock
     }
 }
