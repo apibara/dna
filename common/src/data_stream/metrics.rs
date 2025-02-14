@@ -1,4 +1,4 @@
-use apibara_observability::{Histogram, RequestMetrics, UpDownCounter};
+use apibara_observability::{Counter, Histogram, RequestMetrics, UpDownCounter};
 
 #[derive(Debug, Clone)]
 pub struct DataStreamMetrics {
@@ -6,9 +6,12 @@ pub struct DataStreamMetrics {
     pub block_size: Histogram<u64>,
     pub fragment_size: Histogram<u64>,
     pub time_in_queue: Histogram<f64>,
-    pub block: RequestMetrics,
-    pub segment: RequestMetrics,
-    pub group: RequestMetrics,
+    pub block_download: RequestMetrics,
+    pub segment_download: RequestMetrics,
+    pub segment_wait: RequestMetrics,
+    pub group_download: RequestMetrics,
+    pub group_wait: RequestMetrics,
+    pub group_cache_hit: Counter<u64>,
 }
 
 impl Default for DataStreamMetrics {
@@ -64,30 +67,50 @@ impl Default for DataStreamMetrics {
                     0.075, 0.1, 0.25, 0.5, 0.75, 1.0, 2.5, 5.0, 10.0, 20.0, 30.0, 60.0, 120.0,
                 ])
                 .build(),
-            block: RequestMetrics::new_with_boundaries(
+            block_download: RequestMetrics::new_with_boundaries(
                 "dna_data_stream",
-                "dna.data_stream.block",
+                "dna.data_stream.block_download",
                 vec![
                     0.0001, 0.00025, 0.0005, 0.001, 0.0025, 0.005, 0.0075, 0.01, 0.025, 0.05,
                     0.075, 0.1, 0.25, 0.5, 0.75, 1.0, 2.5, 5.0, 10.0, 20.0, 30.0, 60.0, 120.0,
                 ],
             ),
-            segment: RequestMetrics::new_with_boundaries(
+            segment_download: RequestMetrics::new_with_boundaries(
                 "dna_data_stream",
-                "dna.data_stream.segment",
+                "dna.data_stream.segment_download",
                 vec![
                     0.0001, 0.00025, 0.0005, 0.001, 0.0025, 0.005, 0.0075, 0.01, 0.025, 0.05,
                     0.075, 0.1, 0.25, 0.5, 0.75, 1.0, 2.5, 5.0, 10.0, 20.0, 30.0, 60.0, 120.0,
                 ],
             ),
-            group: RequestMetrics::new_with_boundaries(
+            segment_wait: RequestMetrics::new_with_boundaries(
                 "dna_data_stream",
-                "dna.data_stream.group",
+                "dna.data_stream.segment_wait",
                 vec![
                     0.0001, 0.00025, 0.0005, 0.001, 0.0025, 0.005, 0.0075, 0.01, 0.025, 0.05,
                     0.075, 0.1, 0.25, 0.5, 0.75, 1.0, 2.5, 5.0, 10.0, 20.0, 30.0, 60.0, 120.0,
                 ],
             ),
+            group_download: RequestMetrics::new_with_boundaries(
+                "dna_data_stream",
+                "dna.data_stream.group_download",
+                vec![
+                    0.0001, 0.00025, 0.0005, 0.001, 0.0025, 0.005, 0.0075, 0.01, 0.025, 0.05,
+                    0.075, 0.1, 0.25, 0.5, 0.75, 1.0, 2.5, 5.0, 10.0, 20.0, 30.0, 60.0, 120.0,
+                ],
+            ),
+            group_wait: RequestMetrics::new_with_boundaries(
+                "dna_data_stream",
+                "dna.data_stream.group_wait",
+                vec![
+                    0.0001, 0.00025, 0.0005, 0.001, 0.0025, 0.005, 0.0075, 0.01, 0.025, 0.05,
+                    0.075, 0.1, 0.25, 0.5, 0.75, 1.0, 2.5, 5.0, 10.0, 20.0, 30.0, 60.0, 120.0,
+                ],
+            ),
+            group_cache_hit: meter
+                .u64_counter("dna.data_stream.group_cache_hit")
+                .with_description("number of group cache hits")
+                .build(),
         }
     }
 }

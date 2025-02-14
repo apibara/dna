@@ -81,7 +81,7 @@ impl BlockStoreReader {
                 }
             }
         };
-        let entry = self.file_cache.fetch(key, fetch_block);
+        let entry = self.file_cache.general.fetch(key, fetch_block);
 
         match entry.state() {
             FetchState::Miss => current_span.record("cache_hit", 0),
@@ -113,7 +113,7 @@ impl BlockStoreReader {
                 }
             }
         };
-        let entry = self.file_cache.fetch(key, fetch_block);
+        let entry = self.file_cache.general.fetch(key, fetch_block);
 
         match entry.state() {
             FetchState::Miss => current_span.record("cache_hit", 0),
@@ -154,7 +154,7 @@ impl BlockStoreReader {
             }
         };
 
-        let entry = self.file_cache.fetch(key, fetch_segment);
+        let entry = self.file_cache.general.fetch(key, fetch_segment);
 
         match entry.state() {
             FetchState::Miss => current_span.record("cache_hit", 0),
@@ -188,7 +188,7 @@ impl BlockStoreReader {
                 }
             }
         };
-        let entry = self.file_cache.fetch(key, fetch_group);
+        let entry = self.file_cache.general.fetch(key, fetch_group);
 
         match entry.state() {
             FetchState::Miss => current_span.record("cache_hit", 0),

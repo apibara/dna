@@ -17,7 +17,10 @@ pub enum FileCacheError {
 }
 
 /// A cache with the content of remote files.
-pub type FileCache = HybridCache<String, Bytes>;
+#[derive(Clone)]
+pub struct FileCache {
+    pub general: HybridCache<String, Bytes>,
+}
 
 pub type FileFetch = HybridFetch<String, Bytes>;
 
@@ -162,8 +165,8 @@ impl FileCacheArgs {
             })?
             .as_u64();
 
-        let builder = HybridCacheBuilder::new()
-            .with_name("global")
+        let general = HybridCacheBuilder::new()
+            .with_name("general")
             .with_metrics_registry(mixtrics_registry("file_cache"))
             .memory(max_size_memory_bytes as usize)
             .with_eviction_config(S3FifoConfig::default())
@@ -188,15 +191,16 @@ impl FileCacheArgs {
             )
             .with_flush(self.cache_flush)
             .with_device_options(
-                DirectFsDeviceOptions::new(cache_dir)
+                DirectFsDeviceOptions::new(cache_dir.join("general"))
                     .with_capacity(max_size_disk_bytes as usize)
                     .with_file_size(file_size as usize),
             )
-            .with_recover_mode(RecoverMode::Quiet);
+            .with_recover_mode(RecoverMode::Quiet)
+            .build()
+            .await
+            .map_err(FileCacheError::Foyer)?;
 
-        let cache = builder.build().await.map_err(FileCacheError::Foyer)?;
-
-        Ok(cache)
+        Ok(FileCache { general })
     }
 }
 
