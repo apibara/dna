@@ -31,11 +31,3 @@ jobs:
       os: ubuntu-latest-arm64-8x
     secrets:
       cachix-token: "${{ secrets.CACHIX_AUTH_TOKEN }}"
-
-  # build-macos-aarch64:
-  #   name: "MacOS aarch64: Build"
-  #   uses: ./.github/workflows/build.yml
-  #   with:
-  #     os: warp-macos-latest-arm64-6x
-  #   secrets:
-  #     cachix-token: "${{ secrets.CACHIX_AUTH_TOKEN }}"

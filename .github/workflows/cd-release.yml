@@ -47,15 +47,6 @@ jobs:
     secrets:
       cachix-token: "${{ secrets.cachix-token }}"
 
-  # build-macos-aarch64:
-  #   name: "MacOS aarch64: Build"
-  #   uses: ./.github/workflows/build.yml
-  #   with:
-  #     os: warp-macos-latest-arm64-6x
-  #     target: ${{ inputs.target }}
-  #   secrets:
-  #     cachix-token: "${{ secrets.cachix-token }}"
-
   # Step 2a: create release archive for all platforms
 
   build-linux-x86_64-archive:
@@ -79,17 +70,6 @@ jobs:
       artifact_name: "${{ inputs.target }}-aarch64-linux"
     secrets:
       cachix-token: "${{ secrets.cachix-token }}"
-
-  # build-macos-aarch64-archive:
-  #   name: "MacOS aarch64: Build archive"
-  #   needs: build-macos-aarch64
-  #   uses: ./.github/workflows/build.yml
-  #   with:
-  #     os: warp-macos-latest-arm64-6x
-  #     target: ${{ inputs.target }}-archive
-  #     artifact_name: "${{ inputs.target }}-aarch64-macos"
-  #   secrets:
-  #     cachix-token: "${{ secrets.cachix-token }}"
 
   # Step 2b: create Docker image for all (Linux) platforms.
 
@@ -160,37 +140,30 @@ jobs:
 
   # Step 3b: publish binaries
 
-  # publish-binaries:
-  #   name: "Publish binaries"
-  #   needs:
-  #     - build-linux-x86_64-archive
-  #     - build-linux-aarch64-archive
-  #     - build-macos-aarch64-archive
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - name: Download binary for Linux x86_64
-  #       uses: actions/download-artifact@v4
-  #       with:
-  #         name: ${{ inputs.target }}-x86_64-linux
-  #         path: /tmp/bin/x86_64-linux
-  #     - name: Download binary for Linux aarch64
-  #       uses: actions/download-artifact@v4
-  #       with:
-  #         name: ${{ inputs.target }}-aarch64-linux
-  #         path: /tmp/bin/aarch64-linux
-  #     - name: Download binary for MacOS aarch64
-  #       uses: actions/download-artifact@v4
-  #       with:
-  #         name: ${{ inputs.target }}-aarch64-macos
-  #         path: /tmp/bin/aarch64-macos
-  #     - name: Rename binaries
-  #       run: |
-  #         mkdir /tmp/artifacts
-  #         cp /tmp/bin/x86_64-linux/${{ inputs.target }}.gz /tmp/artifacts/${{ inputs.target }}-x86_64-linux.gz
-  #         cp /tmp/bin/aarch64-linux/${{ inputs.target }}.gz /tmp/artifacts/${{ inputs.target }}-aarch64-linux.gz
-  #         cp /tmp/bin/aarch64-macos/${{ inputs.target }}.gz /tmp/artifacts/${{ inputs.target }}-aarch64-macos.gz
-  #     - name: Upload binaries to release
-  #       uses: svenstaro/upload-release-action@v2
-  #       with:
-  #         file: /tmp/artifacts/*
-  #         file_glob: true
+  publish-binaries:
+    name: "Publish binaries"
+    needs:
+      - build-linux-x86_64-archive
+      - build-linux-aarch64-archive
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download binary for Linux x86_64
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.target }}-x86_64-linux
+          path: /tmp/bin/x86_64-linux
+      - name: Download binary for Linux aarch64
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.target }}-aarch64-linux
+          path: /tmp/bin/aarch64-linux
+      - name: Rename binaries
+        run: |
+          mkdir /tmp/artifacts
+          cp /tmp/bin/x86_64-linux/${{ inputs.target }}.gz /tmp/artifacts/${{ inputs.target }}-x86_64-linux.gz
+          cp /tmp/bin/aarch64-linux/${{ inputs.target }}.gz /tmp/artifacts/${{ inputs.target }}-aarch64-linux.gz
+      - name: Upload binaries to release
+        uses: svenstaro/upload-release-action@v2
+        with:
+          file: /tmp/artifacts/*
+          file_glob: true
