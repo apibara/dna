@@ -33,7 +33,7 @@ jobs:
     name: "Linux x86_64: Build"
     uses: ./.github/workflows/build.yml
     with:
-      os: ubuntu-latest-x64-4x
+      os: warp-ubuntu-latest-x64-4x
       target: ${{ inputs.target }}
     secrets:
       cachix-token: "${{ secrets.cachix-token }}"
@@ -42,7 +42,7 @@ jobs:
     name: "Linux aarch64: Build"
     uses: ./.github/workflows/build.yml
     with:
-      os: ubuntu-latest-arm64-8x
+      os: warp-ubuntu-latest-arm64-8x
       target: ${{ inputs.target }}
     secrets:
       cachix-token: "${{ secrets.cachix-token }}"
@@ -54,7 +54,7 @@ jobs:
     needs: build-linux-x86_64
     uses: ./.github/workflows/build.yml
     with:
-      os: ubuntu-latest-x64-4x
+      os: warp-ubuntu-latest-x64-4x
       target: ${{ inputs.target }}-archive
       artifact_name: "${{ inputs.target }}-x86_64-linux"
     secrets:
@@ -65,7 +65,7 @@ jobs:
     needs: build-linux-aarch64
     uses: ./.github/workflows/build.yml
     with:
-      os: ubuntu-latest-arm64-8x
+      os: warp-ubuntu-latest-arm64-8x
       target: ${{ inputs.target }}-archive
       artifact_name: "${{ inputs.target }}-aarch64-linux"
     secrets:
@@ -78,7 +78,7 @@ jobs:
     needs: build-linux-x86_64
     uses: ./.github/workflows/build.yml
     with:
-      os: ubuntu-latest-x64-4x
+      os: warp-ubuntu-latest-x64-4x
       target: ${{ inputs.target }}-image
       artifact_name: "${{ inputs.target }}-x86_64-image"
     secrets:
@@ -89,7 +89,7 @@ jobs:
     needs: build-linux-aarch64
     uses: ./.github/workflows/build.yml
     with:
-      os: ubuntu-latest-arm64-8x
+      os: warp-ubuntu-latest-arm64-8x
       target: ${{ inputs.target }}-image
       artifact_name: "${{ inputs.target }}-aarch64-image"
     secrets:
