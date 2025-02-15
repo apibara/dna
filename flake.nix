@@ -56,25 +56,27 @@
           };
         };
 
-        builtCrates = pkgs.callPackage ./nix/crates.nix {
+        buildArtifacts = pkgs.callPackage ./nix/build.nix {
           inherit crane crates;
           workspaceDir = ./.;
         };
+
+        ci = pkgs.callPackage ./nix/ci.nix { };
       in
       {
         # format with `nix fmt`
         formatter = pkgs.nixpkgs-fmt;
 
         # checks. run with `nix flake check`.
-        checks = builtCrates.checks;
+        checks = buildArtifacts.checks;
 
         # development shells. start with `nix develop`.
-        devShells = builtCrates.shell;
+        devShells = (buildArtifacts.shell // ci.shell // { });
 
         # all packages.
         # show them with `nix flake show`.
         # build with `nix build .#<name>`.
-        packages = (builtCrates.packages // { });
+        packages = (buildArtifacts.packages // { });
       }
     );
 
