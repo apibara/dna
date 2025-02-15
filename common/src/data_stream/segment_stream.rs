@@ -139,8 +139,13 @@ impl SegmentStream {
                 };
 
                 let mut blocks_with_data = RoaringBitmap::default();
-                let mut fragment_ids_needed =
-                    HashSet::from([INDEX_FRAGMENT_ID, JOIN_FRAGMENT_ID, HEADER_FRAGMENT_ID]);
+
+                // Some users stream block headers to benchmark the service. Avoid fetching useless index and join fragments.
+                let mut fragment_ids_needed = if self.block_filter.is_empty() {
+                    HashSet::from([HEADER_FRAGMENT_ID])
+                } else {
+                    HashSet::from([INDEX_FRAGMENT_ID, JOIN_FRAGMENT_ID, HEADER_FRAGMENT_ID])
+                };
 
                 // Use the group indices to compute which blocks have data for the client-provided filters.
                 for block_filter in self.block_filter.iter() {
