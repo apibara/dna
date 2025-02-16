@@ -62,7 +62,12 @@ impl BlockStoreReader {
         }
     }
 
-    #[tracing::instrument(name = "block_store_get_block", skip_all, fields(cache_hit))]
+    #[tracing::instrument(
+        name = "block_store_get_block",
+        skip_all,
+        fields(cache_hit),
+        level = "debug"
+    )]
     pub fn get_block(&self, cursor: &Cursor) -> FileFetch {
         let current_span = tracing::Span::current();
         let key = format_block_key(cursor);
@@ -94,7 +99,12 @@ impl BlockStoreReader {
         entry
     }
 
-    #[tracing::instrument(name = "block_store_get_pending_block", skip_all, fields(cache_hit))]
+    #[tracing::instrument(
+        name = "block_store_get_pending_block",
+        skip_all,
+        fields(cache_hit),
+        level = "debug"
+    )]
     pub fn get_pending_block(&self, cursor: &Cursor, generation: u64) -> FileFetch {
         let current_span = tracing::Span::current();
         let key = format_pending_block_key(cursor.number, generation);
@@ -130,7 +140,12 @@ impl BlockStoreReader {
         self.get_segment(first_cursor, "index")
     }
 
-    #[tracing::instrument(name = "block_store_get_segment", skip_all, fields(name, cache_hit))]
+    #[tracing::instrument(
+        name = "block_store_get_segment",
+        skip_all,
+        fields(name, cache_hit),
+        level = "debug"
+    )]
     pub fn get_segment(&self, first_cursor: &Cursor, name: impl Into<String>) -> FileFetch {
         let current_span = tracing::Span::current();
         let name = name.into();
@@ -169,7 +184,12 @@ impl BlockStoreReader {
         entry
     }
 
-    #[tracing::instrument(name = "block_store_get_group", skip_all, fields(cache_hit))]
+    #[tracing::instrument(
+        name = "block_store_get_group",
+        skip_all,
+        fields(cache_hit),
+        level = "debug"
+    )]
     pub fn get_group(&self, cursor: &Cursor) -> FileFetch {
         let current_span = tracing::Span::current();
         let key = format_group_key(cursor);
@@ -188,7 +208,7 @@ impl BlockStoreReader {
                 }
             }
         };
-        let entry = self.file_cache.general.fetch(key, fetch_group);
+        let entry = self.file_cache.index.fetch(key, fetch_group);
 
         match entry.state() {
             FetchState::Miss => current_span.record("cache_hit", 0),
@@ -207,7 +227,7 @@ impl UncachedBlockStoreReader {
         Self { client }
     }
 
-    #[tracing::instrument(name = "uncached_block_store_get_block", skip_all)]
+    #[tracing::instrument(name = "uncached_block_store_get_block", skip_all, level = "debug")]
     pub async fn get_block(&self, cursor: &Cursor) -> Result<Bytes, BlockStoreError> {
         let key = format_block_key(cursor);
         let response = self
@@ -221,7 +241,7 @@ impl UncachedBlockStoreReader {
         Ok(response.body)
     }
 
-    #[tracing::instrument(name = "uncached_block_store_get_block", skip_all)]
+    #[tracing::instrument(name = "uncached_block_store_get_block", skip_all, level = "debug")]
     pub async fn get_block_and_cursor(
         &self,
         cursor: Cursor,
@@ -250,7 +270,12 @@ impl UncachedBlockStoreReader {
         Ok((first_cursor, segment))
     }
 
-    #[tracing::instrument(name = "uncached_block_store_get_segment", skip_all, fields(name))]
+    #[tracing::instrument(
+        name = "uncached_block_store_get_segment",
+        skip_all,
+        fields(name),
+        level = "debug"
+    )]
     pub async fn get_segment(
         &self,
         first_cursor: &Cursor,
@@ -274,7 +299,7 @@ impl UncachedBlockStoreReader {
         Ok(response.body)
     }
 
-    #[tracing::instrument(name = "uncached_block_store_get_group", skip_all)]
+    #[tracing::instrument(name = "uncached_block_store_get_group", skip_all, level = "debug")]
     pub async fn get_group(&self, cursor: &Cursor) -> Result<Bytes, BlockStoreError> {
         let key = format_group_key(cursor);
         let response = self

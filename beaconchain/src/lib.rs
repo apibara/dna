@@ -22,7 +22,7 @@ pub struct BeaconChainChainSupport {
 
 #[derive(Debug, Clone)]
 pub struct BeaconChainOptions {
-    pub ingest_validators: bool,
+    pub sample_validators: u64,
 }
 
 impl BeaconChainChainSupport {

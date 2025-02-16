@@ -114,7 +114,7 @@ impl ObjectStore {
         Ok(())
     }
 
-    #[tracing::instrument(name = "object_store_get", skip(self, options))]
+    #[tracing::instrument(name = "object_store_get", skip(self, options), level = "debug")]
     pub async fn get(
         &self,
         path: &str,
@@ -171,7 +171,12 @@ impl ObjectStore {
         Ok(GetResult { body, etag })
     }
 
-    #[tracing::instrument(name = "object_store_put", skip_all, fields(key, compression_ratio))]
+    #[tracing::instrument(
+        name = "object_store_put",
+        skip_all,
+        fields(key, compression_ratio),
+        level = "debug"
+    )]
     pub async fn put(
         &self,
         path: &str,
@@ -231,7 +236,7 @@ impl ObjectStore {
         Ok(PutResult { etag })
     }
 
-    #[tracing::instrument(name = "object_store_delete", skip(self, _options))]
+    #[tracing::instrument(name = "object_store_delete", skip(self, _options), level = "debug")]
     pub async fn delete(
         &self,
         path: &str,

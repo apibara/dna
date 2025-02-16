@@ -20,12 +20,16 @@ pub struct StartCommand {
 
 #[derive(Args, Clone, Debug)]
 pub struct BeaconChainArgs {
-    /// Whether to ingest validators or not.
+    /// Collect validators at this block interval.
+    ///
+    /// Defaults to sampling at the beginning of each epoch (every 32 blocks).
+    /// Set to `1` to disable sampling, and set to `0` to not ingest validators.
     #[clap(
-        long = "beaconchain.ingest-validators",
-        env = "BEACONCHAIN_INGEST_VALIDATORS"
+        long = "beaconchain.sample-validators",
+        env = "BEACON_SAMPLE_VALIDATORS",
+        default_value = "32"
     )]
-    pub ingest_validators: bool,
+    pub sample_validators: u64,
 }
 
 impl StartCommand {
@@ -44,7 +48,7 @@ impl StartCommand {
 impl BeaconChainArgs {
     pub fn to_beacon_chain_options(&self) -> BeaconChainOptions {
         BeaconChainOptions {
-            ingest_validators: self.ingest_validators,
+            sample_validators: self.sample_validators,
         }
     }
 }

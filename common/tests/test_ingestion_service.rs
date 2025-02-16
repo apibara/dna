@@ -64,7 +64,13 @@ async fn init_file_cache() -> FileCache {
         .build()
         .await
         .expect("failed to create file cache");
-    FileCache { general }
+    let index = HybridCacheBuilder::default()
+        .memory(1024 * 1024)
+        .storage(foyer::Engine::Large)
+        .build()
+        .await
+        .expect("failed to create file cache");
+    FileCache { general, index }
 }
 
 #[tokio::test]
