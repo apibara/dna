@@ -42,10 +42,12 @@ impl BeaconChainBlockIngestion {
         Self { provider, options }
     }
 
-    async fn ingest_block_by_id(
+    async fn ingest_slot(
         &self,
-        block_id: BlockId,
+        block_number: u64,
     ) -> Result<Option<(BlockInfo, Block)>, IngestionError> {
+        let block_id = BlockId::Slot(block_number);
+
         // Fetch all data using the block root to avoid issues with reorgs.
         // Except for the validators since it won't work with the block root.
         let original_block_id = block_id.clone();
@@ -71,7 +73,7 @@ impl BeaconChainBlockIngestion {
                     .attach_printable_lazy(|| format!("block id: {block_id:?}"))
             }
         })
-        .instrument(tracing::info_span!("beaconchain_get_block"));
+        .instrument(tracing::debug_span!("beaconchain_get_block"));
 
         let blob_sidecar = tokio::spawn({
             let provider = self.provider.clone();
@@ -85,14 +87,15 @@ impl BeaconChainBlockIngestion {
                     .attach_printable_lazy(|| format!("block id: {block_id:?}"))
             }
         })
-        .instrument(tracing::info_span!("beaconchain_get_blob_sidecar"));
+        .instrument(tracing::debug_span!("beaconchain_get_blob_sidecar"));
 
         let validators = tokio::spawn({
             let provider = self.provider.clone();
             let block_id = original_block_id.clone();
-            let ingest_validators = self.options.ingest_validators;
+            let should_ingest = self.options.sample_validators > 0
+                && block_number % self.options.sample_validators == 0;
             async move {
-                if ingest_validators {
+                if should_ingest {
                     match provider.get_validators(block_id.clone()).await {
                         Ok(response) => Ok(response.data),
                         Err(err) if err.is_not_found() => Ok(Vec::new()),
@@ -106,7 +109,7 @@ impl BeaconChainBlockIngestion {
                 }
             }
         })
-        .instrument(tracing::info_span!("beaconchain_get_validators"));
+        .instrument(tracing::debug_span!("beaconchain_get_validators"));
 
         let block = block.await.change_context(IngestionError::RpcRequest)??;
 
@@ -258,7 +261,7 @@ impl BlockIngestion for BeaconChainBlockIngestion {
         block_number: u64,
     ) -> Result<(BlockInfo, Block), IngestionError> {
         let block = self
-            .ingest_block_by_id(BlockId::Slot(block_number))
+            .ingest_slot(block_number)
             .change_context(IngestionError::RpcRequest)
             .attach_printable("failed to get block by number")
             .attach_printable_lazy(|| format!("block number: {}", block_number))
