@@ -67,7 +67,7 @@ impl BlockIngestion for StarknetBlockIngestion {
         self.options.ingest_pending
     }
 
-    #[tracing::instrument("starknet_get_head_cursor", skip_all, err(Debug))]
+    #[tracing::instrument("starknet_get_head_cursor", skip_all, err(Debug), level = "debug")]
     async fn get_head_cursor(&self) -> Result<Cursor, IngestionError> {
         let cursor = self
             .provider
@@ -82,7 +82,7 @@ impl BlockIngestion for StarknetBlockIngestion {
         Ok(cursor)
     }
 
-    #[tracing::instrument("starknet_get_finalized_cursor", skip_all, err(Debug))]
+    #[tracing::instrument("starknet_get_finalized_cursor", skip_all, err(Debug), level = "debug")]
     async fn get_finalized_cursor(&self) -> Result<Cursor, IngestionError> {
         let mut finalized_hint_guard = self.finalized_hint.lock().await;
 
@@ -130,7 +130,12 @@ impl BlockIngestion for StarknetBlockIngestion {
         Ok(finalized)
     }
 
-    #[tracing::instrument("starknet_get_block_info_by_number", skip(self), err(Debug))]
+    #[tracing::instrument(
+        "starknet_get_block_info_by_number",
+        skip(self),
+        err(Debug),
+        level = "debug"
+    )]
     async fn get_block_info_by_number(
         &self,
         block_number: u64,
@@ -169,7 +174,12 @@ impl BlockIngestion for StarknetBlockIngestion {
         })
     }
 
-    #[tracing::instrument("starknet_ingest_pending_block", skip(self), err(Debug))]
+    #[tracing::instrument(
+        "starknet_ingest_pending_block",
+        skip(self),
+        err(Debug),
+        level = "debug"
+    )]
     async fn ingest_pending_block(
         &self,
         parent: &Cursor,
@@ -255,7 +265,12 @@ impl BlockIngestion for StarknetBlockIngestion {
         Ok(Some((pending_block_info, block)))
     }
 
-    #[tracing::instrument("starknet_ingest_block_by_number", skip(self), err(Debug))]
+    #[tracing::instrument(
+        "starknet_ingest_block_by_number",
+        skip(self),
+        err(Debug),
+        level = "debug"
+    )]
     async fn ingest_block_by_number(
         &self,
         block_number: u64,

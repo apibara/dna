@@ -50,7 +50,7 @@ impl BlockIngestion for EvmBlockIngestion {
         self.options.ingest_pending
     }
 
-    #[tracing::instrument("evm_get_head_cursor", skip_all, err(Debug))]
+    #[tracing::instrument("evm_get_head_cursor", skip_all, err(Debug), level = "debug")]
     async fn get_head_cursor(&self) -> Result<Cursor, IngestionError> {
         let block = self
             .provider
@@ -61,7 +61,7 @@ impl BlockIngestion for EvmBlockIngestion {
         Ok(block.cursor())
     }
 
-    #[tracing::instrument("evm_get_finalized_cursor", skip_all, err(Debug))]
+    #[tracing::instrument("evm_get_finalized_cursor", skip_all, err(Debug), level = "debug")]
     async fn get_finalized_cursor(&self) -> Result<Cursor, IngestionError> {
         let block = self
             .provider
@@ -72,7 +72,12 @@ impl BlockIngestion for EvmBlockIngestion {
         Ok(block.cursor())
     }
 
-    #[tracing::instrument("evm_get_block_info_by_number", skip(self), err(Debug))]
+    #[tracing::instrument(
+        "evm_get_block_info_by_number",
+        skip(self),
+        err(Debug),
+        level = "debug"
+    )]
     async fn get_block_info_by_number(
         &self,
         block_number: u64,
@@ -90,7 +95,7 @@ impl BlockIngestion for EvmBlockIngestion {
         }
     }
 
-    #[tracing::instrument("evm_ingest_block_by_number", skip(self), err(Debug))]
+    #[tracing::instrument("evm_ingest_block_by_number", skip(self), err(Debug), level = "debug")]
     async fn ingest_block_by_number(
         &self,
         block_number: u64,
@@ -156,7 +161,7 @@ impl BlockIngestion for EvmBlockIngestion {
         Ok((block_info, block))
     }
 
-    #[tracing::instrument("evm_ingest_pending_block", skip(self), err(Debug))]
+    #[tracing::instrument("evm_ingest_pending_block", skip(self), err(Debug), level = "debug")]
     async fn ingest_pending_block(
         &self,
         parent: &Cursor,

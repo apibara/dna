@@ -184,7 +184,7 @@ impl BeaconChainBlockIngestion {
 }
 
 impl BlockIngestion for BeaconChainBlockIngestion {
-    #[tracing::instrument("beaconchain_get_head_cursor", skip(self), err(Debug))]
+    #[tracing::instrument("beaconchain_get_head_cursor", skip(self), err(Debug), level = "debug")]
     async fn get_head_cursor(&self) -> Result<Cursor, IngestionError> {
         let cursor = self
             .provider
@@ -196,7 +196,12 @@ impl BlockIngestion for BeaconChainBlockIngestion {
         Ok(cursor)
     }
 
-    #[tracing::instrument("beaconchain_get_finalized_cursor", skip(self), err(Debug))]
+    #[tracing::instrument(
+        "beaconchain_get_finalized_cursor",
+        skip(self),
+        err(Debug),
+        level = "debug"
+    )]
     async fn get_finalized_cursor(&self) -> Result<Cursor, IngestionError> {
         let cursor = self
             .provider
@@ -208,7 +213,12 @@ impl BlockIngestion for BeaconChainBlockIngestion {
         Ok(cursor)
     }
 
-    #[tracing::instrument("beaconchain_get_block_info_by_number", skip(self), err(Debug))]
+    #[tracing::instrument(
+        "beaconchain_get_block_info_by_number",
+        skip(self),
+        err(Debug),
+        level = "debug"
+    )]
     async fn get_block_info_by_number(
         &self,
         block_number: u64,
@@ -237,7 +247,12 @@ impl BlockIngestion for BeaconChainBlockIngestion {
         })
     }
 
-    #[tracing::instrument("beaconchain_ingest_block_by_number", skip(self), err(Debug))]
+    #[tracing::instrument(
+        "beaconchain_ingest_block_by_number",
+        skip(self),
+        err(Debug),
+        level = "debug"
+    )]
     async fn ingest_block_by_number(
         &self,
         block_number: u64,
