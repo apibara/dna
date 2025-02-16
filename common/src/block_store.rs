@@ -208,7 +208,7 @@ impl BlockStoreReader {
                 }
             }
         };
-        let entry = self.file_cache.general.fetch(key, fetch_group);
+        let entry = self.file_cache.index.fetch(key, fetch_group);
 
         match entry.state() {
             FetchState::Miss => current_span.record("cache_hit", 0),
