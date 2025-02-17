@@ -211,7 +211,9 @@ let
           caCertificates
         ];
         config = {
-          Entrypoint = [ ];
+          Entrypoint = [
+            "${crate.out}/bin/apibara-${name}"
+          ];
           ExposedPorts = crate.meta.ports;
           Labels = ({
             "org.opencontainers.image.source" = "https://github.com/apibara/dna";
