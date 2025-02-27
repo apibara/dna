@@ -236,7 +236,11 @@ impl DataStream {
                             continue;
                         }
 
-                        let proto_cursor = None;
+                        let proto_cursor = if block_end_cursor.number == 0 {
+                            None
+                        } else {
+                            Some(Cursor::new_finalized(block_end_cursor.number - 1).into())
+                        };
                         let proto_end_cursor: Option<ProtoCursor> = Some(block_end_cursor.clone().into());
 
                         let fragment_access = FragmentAccess::Segment(block_access);
