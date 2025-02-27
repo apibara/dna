@@ -1,4 +1,7 @@
-use std::time::{Duration, Instant};
+use std::{
+    str::FromStr,
+    time::{Duration, Instant},
+};
 
 use apibara_dna_protocol::{
     dna::stream::{dna_stream_client::DnaStreamClient, Cursor, StreamDataRequest},
@@ -11,7 +14,8 @@ use futures::{StreamExt, TryStreamExt};
 use prost::Message;
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
-use tracing::info;
+use tonic::{metadata::AsciiMetadataValue, IntoRequest};
+use tracing::{info, warn};
 
 #[derive(Debug)]
 pub struct BenchmarkError;
@@ -39,6 +43,9 @@ pub struct CommonArgs {
     /// Stream URL.
     #[clap(long, default_value = "http://localhost:7007")]
     pub stream_url: String,
+    /// Bearer token used for authentication.
+    #[clap(long)]
+    pub bearer_token: Option<String>,
     /// Start streaming from this block.
     #[clap(long)]
     pub starting_block: Option<u64>,
@@ -109,12 +116,25 @@ where
         unique_key: Vec::new(),
     });
 
+    let mut request = StreamDataRequest {
+        filter: vec![filter.encode_to_vec()],
+        starting_cursor,
+        ..Default::default()
+    }
+    .into_request();
+
+    if let Some(bearer_token) = args.bearer_token {
+        let authorization_value = format!("Bearer {bearer_token}");
+        let authorization_value = AsciiMetadataValue::from_str(&authorization_value)
+            .change_context(BenchmarkError)
+            .attach_printable("failed to parse authorization value")?;
+        request
+            .metadata_mut()
+            .insert("authorization", authorization_value);
+    }
+
     let stream = client
-        .stream_data(StreamDataRequest {
-            filter: vec![filter.encode_to_vec()],
-            starting_cursor,
-            ..Default::default()
-        })
+        .stream_data(request)
         .await
         .change_context(BenchmarkError)?
         .into_inner()
@@ -129,31 +149,43 @@ where
 
     while let Some(message) = stream.try_next().await.change_context(BenchmarkError)? {
         use apibara_dna_protocol::dna::stream::stream_data_response::Message as ProtoMessage;
-        if let Some(ProtoMessage::Data(data_message)) = message.message {
-            let block_number = data_message
-                .end_cursor
-                .as_ref()
-                .map(|c| c.order_key)
-                .unwrap_or_default();
+        match message.message {
+            Some(ProtoMessage::Data(data_message)) => {
+                let block_number = data_message
+                    .end_cursor
+                    .as_ref()
+                    .map(|c| c.order_key)
+                    .unwrap_or_default();
 
-            if let Some(block_data) = data_message.data.first() {
-                let block = S::Block::decode(block_data.as_ref())
-                    .change_context(BenchmarkError)
-                    .attach_printable("failed to decode block")?;
-                stats.record(block);
+                if let Some(block_data) = data_message.data.first() {
+                    let block = S::Block::decode(block_data.as_ref())
+                        .change_context(BenchmarkError)
+                        .attach_printable("failed to decode block")?;
+                    stats.record(block);
 
-                if last_print.elapsed() > print_interval {
-                    last_print = Instant::now();
-                    stats.print_summary();
+                    if last_print.elapsed() > print_interval {
+                        last_print = Instant::now();
+                        stats.print_summary();
+                    }
+                }
+
+                if let Some(end_block) = args.ending_block {
+                    if block_number >= end_block {
+                        info!(block_number, "reached ending block");
+                        break;
+                    }
                 }
             }
+            Some(ProtoMessage::SystemMessage(system_message)) => {
+                use apibara_dna_protocol::dna::stream::system_message::Output;
 
-            if let Some(end_block) = args.ending_block {
-                if block_number >= end_block {
-                    info!(block_number, "reached ending block");
-                    break;
+                match system_message.output {
+                    Some(Output::Stdout(stdout)) => info!("{}", stdout),
+                    Some(Output::Stderr(stderr)) => warn!("{}", stderr),
+                    _ => {}
                 }
             }
+            _ => {}
         }
     }
 
