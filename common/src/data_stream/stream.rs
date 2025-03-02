@@ -474,11 +474,6 @@ impl DataStream {
         Ok(())
     }
 
-    #[tracing::instrument(
-        name = "send_data",
-        skip_all,
-        fields(blocks_count, blocks_size_bytes, fragments_count, fragments_size_bytes)
-    )]
     async fn filter_fragment<'a>(
         &self,
         fragment_access: FragmentAccess<'a>,
