@@ -1,4 +1,8 @@
-use std::{future::Future, sync::Arc, time::Duration};
+use std::{
+    future::Future,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use apibara_etcd::{EtcdClient, Lock};
 use apibara_observability::{KeyValue, RecordRequest};
@@ -801,6 +805,8 @@ where
 
     #[tracing::instrument("ingestion_ingest_block", skip(self), err(Debug))]
     async fn ingest_block_by_number(&self, block_number: u64) -> Result<BlockInfo, IngestionError> {
+        let ingestion_start_time = Instant::now();
+
         let ingestion = self.ingestion.clone();
         let store = self.block_store.clone();
         let rpc_metrics = self.metrics.rpc.clone();
@@ -835,6 +841,11 @@ where
             )
             .await
             .change_context(IngestionError::BlockStoreRequest)?;
+
+        let ingestion_elapsed = ingestion_start_time.elapsed();
+        self.metrics
+            .ingestion_latency
+            .record(ingestion_elapsed.as_secs_f64(), &[]);
 
         self.metrics
             .block_size
