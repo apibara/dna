@@ -10,6 +10,7 @@ pub struct IngestionMetrics {
     pub block_size: Histogram<u64>,
     pub rpc: RequestMetrics,
     pub block_upload: RequestMetrics,
+    pub ingestion_latency: Histogram<f64>,
 }
 
 impl Default for IngestionMetrics {
@@ -63,6 +64,17 @@ impl Default for IngestionMetrics {
                 .build(),
             rpc: RequestMetrics::new("dna_ingestion", "dna.ingestion.rpc"),
             block_upload: RequestMetrics::new("dna_ingestion", "dna.ingestion.block_upload"),
+            ingestion_latency: meter
+                .f64_histogram("dna.ingestion.latency")
+                .with_description(
+                    "end-to-end time it takes from queueing ingestion to finishing it",
+                )
+                .with_unit("s")
+                .with_boundaries(vec![
+                    0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1.0, 2.5, 5.0, 7.5,
+                    10.0, 20.0, 30.0, 60.0, 120.0,
+                ])
+                .build(),
         }
     }
 }

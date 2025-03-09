@@ -4,3 +4,6 @@ rustflags = ["--cfg", "tracing_unstable"]
 [profile.profiling]
 inherits = "release"
 debug = true
+
+[profile.release]
+debug = true
