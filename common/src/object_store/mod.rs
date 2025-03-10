@@ -1,14 +1,17 @@
 use apibara_etcd::normalize_prefix;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
-use client::ObjectStoreClient;
 use error_stack::{Result, ResultExt};
 use tracing::debug;
 
 mod aws_s3;
+mod azure_blob;
 mod client;
 mod error;
+pub mod testing;
 
 pub use self::aws_s3::AwsS3Client;
+pub use self::azure_blob::AzureBlobClient;
+pub use self::client::ObjectStoreClient;
 pub use self::error::{ObjectStoreError, ObjectStoreResultExt, ToObjectStoreResult};
 
 /// Options for the object store.
@@ -71,14 +74,22 @@ pub struct PutResult {
 pub struct DeleteResult;
 
 impl ObjectStore {
-    pub fn new_s3(s3_client: AwsS3Client, options: ObjectStoreOptions) -> Self {
+    pub fn new(client: ObjectStoreClient, options: ObjectStoreOptions) -> Self {
         let prefix = normalize_prefix(options.prefix);
 
         Self {
-            client: s3_client.into(),
+            client,
             bucket: options.bucket,
             prefix,
         }
+    }
+
+    pub fn new_s3(s3_client: AwsS3Client, options: ObjectStoreOptions) -> Self {
+        Self::new(s3_client.into(), options)
+    }
+
+    pub fn new_azure_blob(client: AzureBlobClient, options: ObjectStoreOptions) -> Self {
+        Self::new(client.into(), options)
     }
 
     /// Ensure the currently configured bucket exists.
@@ -197,66 +208,5 @@ impl From<String> for ObjectETag {
 impl Default for PutMode {
     fn default() -> Self {
         Self::Overwrite
-    }
-}
-
-pub mod testing {
-    use aws_config::{meta::region::RegionProviderChain, BehaviorVersion};
-    use aws_sdk_s3::config::Credentials;
-    use futures::Future;
-    use testcontainers::{core::WaitFor, ContainerAsync, Image};
-
-    pub struct MinIO;
-
-    pub trait MinIOExt {
-        fn s3_config(&self) -> impl Future<Output = aws_sdk_s3::Config> + Send;
-    }
-
-    impl Image for MinIO {
-        fn name(&self) -> &str {
-            "minio/minio"
-        }
-
-        fn tag(&self) -> &str {
-            "latest"
-        }
-
-        fn ready_conditions(&self) -> Vec<WaitFor> {
-            Vec::default()
-        }
-
-        fn cmd(&self) -> impl IntoIterator<Item = impl Into<std::borrow::Cow<'_, str>>> {
-            vec!["server", "/data"]
-        }
-    }
-
-    pub fn minio_container() -> MinIO {
-        MinIO
-    }
-
-    impl MinIOExt for ContainerAsync<MinIO> {
-        async fn s3_config(&self) -> aws_sdk_s3::Config {
-            let port = self
-                .get_host_port_ipv4(9000)
-                .await
-                .expect("MinIO port 9000");
-            s3_config_at_port(port).await
-        }
-    }
-
-    pub async fn s3_config_at_port(port: u16) -> aws_sdk_s3::Config {
-        let endpoint = format!("http://localhost:{}", port);
-        let region_provider = RegionProviderChain::default_provider().or_else("us-east-1");
-        let credentials = Credentials::new("minioadmin", "minioadmin", None, None, "test");
-
-        let config = aws_config::defaults(BehaviorVersion::latest())
-            .region(region_provider)
-            .endpoint_url(endpoint)
-            .credentials_provider(credentials)
-            .load()
-            .await;
-
-        let config: aws_sdk_s3::Config = (&config).into();
-        config.to_builder().force_path_style(true).build()
     }
 }

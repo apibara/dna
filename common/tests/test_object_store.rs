@@ -1,24 +1,32 @@
-use testcontainers::runners::AsyncRunner;
+use testcontainers::{runners::AsyncRunner, ContainerAsync};
 
 use apibara_dna_common::object_store::{
-    testing::{minio_container, MinIOExt},
-    DeleteOptions, GetOptions, ObjectETag, ObjectStore, ObjectStoreOptions, ObjectStoreResultExt,
-    PutMode, PutOptions,
+    testing::{self, azurite_container, minio_container, AzuriteExt, MinIOExt},
+    AwsS3Client, AzureBlobClient, DeleteOptions, GetOptions, ObjectETag, ObjectStore,
+    ObjectStoreClient, ObjectStoreOptions, ObjectStoreResultExt, PutMode, PutOptions,
 };
 
-#[tokio::test]
-async fn test_put_and_get_no_prefix_no_precondition() {
+async fn start_minio() -> (ContainerAsync<testing::MinIO>, ObjectStoreClient) {
     let minio = minio_container().start().await.unwrap();
     let config = minio.s3_config().await;
+    let client = AwsS3Client::new_from_config(config);
+    (minio, client.into())
+}
 
-    let client = ObjectStore::new_from_config(
-        config,
+async fn start_azurite() -> (ContainerAsync<testing::Azurite>, ObjectStoreClient) {
+    let azurite = azurite_container().start().await.unwrap();
+    let client = AzureBlobClient::new(azurite.location().await, azurite.credentials());
+    (azurite, client.into())
+}
+
+async fn dot_put_and_get_no_prefix_no_precondition(inner: ObjectStoreClient) {
+    let client = ObjectStore::new(
+        inner,
         ObjectStoreOptions {
             bucket: "test".to_string(),
             ..Default::default()
         },
     );
-
     client.ensure_bucket().await.unwrap();
 
     let put_res = client
@@ -26,10 +34,7 @@ async fn test_put_and_get_no_prefix_no_precondition() {
         .await
         .unwrap();
 
-    assert_eq!(
-        put_res.etag,
-        ObjectETag("\"600335e986d6c8ce1e348d20d6d16045\"".to_string())
-    );
+    assert!(!put_res.etag.0.is_empty());
 
     let get_res = client.get("test", GetOptions::default()).await.unwrap();
     assert_eq!(get_res.etag, put_res.etag);
@@ -37,15 +42,23 @@ async fn test_put_and_get_no_prefix_no_precondition() {
 }
 
 #[tokio::test]
-async fn test_put_and_get_with_prefix_no_precondition() {
-    let minio = minio_container().start().await.unwrap();
-    let config = minio.s3_config().await;
+async fn test_s3_put_and_get_no_prefix_no_precondition() {
+    let (_minio, client) = start_minio().await;
+    dot_put_and_get_no_prefix_no_precondition(client).await;
+}
 
-    // Put an object in the bucket with prefix.
-    // Put an object with the same filename in the bucket without prefix.
-    // Check that they are indeed different.
-    let client = ObjectStore::new_from_config(
-        config.clone(),
+#[tokio::test]
+async fn test_azure_blob_put_and_get_no_prefix_no_precondition() {
+    let (_azurite, client) = start_azurite().await;
+    dot_put_and_get_no_prefix_no_precondition(client).await;
+}
+
+// Put an object in the bucket with prefix.
+// Put an object with the same filename in the bucket without prefix.
+// Check that they are indeed different.
+async fn do_put_and_get_with_prefix_no_precondition(inner: ObjectStoreClient) {
+    let client = ObjectStore::new(
+        inner.clone(),
         ObjectStoreOptions {
             bucket: "test".to_string(),
             prefix: Some("my-prefix".to_string()),
@@ -60,8 +73,8 @@ async fn test_put_and_get_with_prefix_no_precondition() {
         .unwrap();
 
     {
-        let client = ObjectStore::new_from_config(
-            config,
+        let client = ObjectStore::new(
+            inner,
             ObjectStoreOptions {
                 bucket: "test".to_string(),
                 prefix: None,
@@ -78,12 +91,20 @@ async fn test_put_and_get_with_prefix_no_precondition() {
 }
 
 #[tokio::test]
-async fn test_get_with_etag() {
-    let minio = minio_container().start().await.unwrap();
-    let config = minio.s3_config().await;
+async fn test_s3_put_and_get_with_prefix_no_precondition() {
+    let (_minio, client) = start_minio().await;
+    do_put_and_get_with_prefix_no_precondition(client).await;
+}
 
-    let client = ObjectStore::new_from_config(
-        config.clone(),
+#[tokio::test]
+async fn test_azure_put_and_get_with_prefix_no_precondition() {
+    let (_azurite, client) = start_azurite().await;
+    do_put_and_get_with_prefix_no_precondition(client).await;
+}
+
+async fn do_test_get_with_etag(inner: ObjectStoreClient) {
+    let client = ObjectStore::new(
+        inner,
         ObjectStoreOptions {
             bucket: "test".to_string(),
             ..Default::default()
@@ -121,12 +142,20 @@ async fn test_get_with_etag() {
 }
 
 #[tokio::test]
-async fn test_put_with_overwrite() {
-    let minio = minio_container().start().await.unwrap();
-    let config = minio.s3_config().await;
+async fn test_s3_get_with_etag() {
+    let (_minio, client) = start_minio().await;
+    do_test_get_with_etag(client).await;
+}
 
-    let client = ObjectStore::new_from_config(
-        config.clone(),
+#[tokio::test]
+async fn test_azure_get_with_etag() {
+    let (_azurite, client) = start_azurite().await;
+    do_test_get_with_etag(client).await;
+}
+
+async fn do_put_with_overwrite(inner: ObjectStoreClient) {
+    let client = ObjectStore::new(
+        inner,
         ObjectStoreOptions {
             bucket: "test".to_string(),
             ..Default::default()
@@ -157,12 +186,20 @@ async fn test_put_with_overwrite() {
 }
 
 #[tokio::test]
-async fn test_put_with_create() {
-    let minio = minio_container().start().await.unwrap();
-    let config = minio.s3_config().await;
+async fn test_s3_put_with_overwrite() {
+    let (_minio, client) = start_minio().await;
+    do_put_with_overwrite(client).await;
+}
 
-    let client = ObjectStore::new_from_config(
-        config.clone(),
+#[tokio::test]
+async fn test_azure_put_with_overwrite() {
+    let (_azurite, client) = start_azurite().await;
+    do_put_with_overwrite(client).await;
+}
+
+async fn do_put_with_create(inner: ObjectStoreClient) {
+    let client = ObjectStore::new(
+        inner,
         ObjectStoreOptions {
             bucket: "test".to_string(),
             ..Default::default()
@@ -197,12 +234,20 @@ async fn test_put_with_create() {
 }
 
 #[tokio::test]
-async fn test_put_with_update() {
-    let minio = minio_container().start().await.unwrap();
-    let config = minio.s3_config().await;
+async fn test_s3_put_with_create() {
+    let (_minio, client) = start_minio().await;
+    do_put_with_create(client).await;
+}
 
-    let client = ObjectStore::new_from_config(
-        config.clone(),
+#[tokio::test]
+async fn test_azure_put_with_create() {
+    let (_azurite, client) = start_azurite().await;
+    do_put_with_create(client).await;
+}
+
+async fn do_put_with_update(inner: ObjectStoreClient) {
+    let client = ObjectStore::new(
+        inner,
         ObjectStoreOptions {
             bucket: "test".to_string(),
             ..Default::default()
@@ -251,12 +296,20 @@ async fn test_put_with_update() {
 }
 
 #[tokio::test]
-async fn test_delete() {
-    let minio = minio_container().start().await.unwrap();
-    let config = minio.s3_config().await;
+async fn test_s3_put_with_update() {
+    let (_minio, inner) = start_minio().await;
+    do_put_with_update(inner).await;
+}
 
-    let client = ObjectStore::new_from_config(
-        config.clone(),
+#[tokio::test]
+async fn test_azure_put_with_update() {
+    let (_azurite, inner) = start_azurite().await;
+    do_put_with_update(inner).await;
+}
+
+async fn do_delete(inner: ObjectStoreClient) {
+    let client = ObjectStore::new(
+        inner,
         ObjectStoreOptions {
             bucket: "test".to_string(),
             ..Default::default()
@@ -278,4 +331,16 @@ async fn test_delete() {
     let response = client.get("test", GetOptions::default()).await;
     assert!(response.is_err());
     assert!(response.unwrap_err().is_not_found());
+}
+
+#[tokio::test]
+async fn test_s3_delete() {
+    let (_minio, inner) = start_minio().await;
+    do_delete(inner).await;
+}
+
+#[tokio::test]
+async fn test_azure_delete() {
+    let (_azurite, inner) = start_azurite().await;
+    do_delete(inner).await;
 }

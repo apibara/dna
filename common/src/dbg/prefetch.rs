@@ -27,7 +27,10 @@ pub async fn run_debug_prefetch_stream(
     cache: FileCacheArgs,
     ct: CancellationToken,
 ) -> Result<(), DebugCommandError> {
-    let object_store = object_store.into_object_store_client().await;
+    let object_store = object_store
+        .into_object_store_client()
+        .await
+        .change_context(DebugCommandError)?;
     let file_cache = cache
         .to_file_cache()
         .await

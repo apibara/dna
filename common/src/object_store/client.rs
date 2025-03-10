@@ -1,18 +1,22 @@
-use aws_sdk_s3::primitives::AggregatedBytes;
 use bytes::Bytes;
 use error_stack::Result;
 
-use super::{AwsS3Client, DeleteOptions, GetOptions, ObjectETag, ObjectStoreError, PutOptions};
+use super::{
+    azure_blob::AzureBlobClient, AwsS3Client, DeleteOptions, GetOptions, ObjectETag,
+    ObjectStoreError, PutOptions,
+};
 
 #[derive(Clone)]
 pub enum ObjectStoreClient {
     AwsS3(AwsS3Client),
+    AzureBlob(AzureBlobClient),
 }
 
 impl ObjectStoreClient {
     pub async fn create_bucket(&self, name: &str) -> Result<(), ObjectStoreError> {
         match self {
             Self::AwsS3(client) => client.create_bucket(name).await,
+            Self::AzureBlob(client) => client.create_bucket(name).await,
         }
     }
 
@@ -21,9 +25,10 @@ impl ObjectStoreClient {
         bucket: &str,
         key: &str,
         options: GetOptions,
-    ) -> Result<(ObjectETag, AggregatedBytes), ObjectStoreError> {
+    ) -> Result<(ObjectETag, Bytes), ObjectStoreError> {
         match self {
             Self::AwsS3(client) => client.get_object(bucket, key, options).await,
+            Self::AzureBlob(client) => client.get_object(bucket, key, options).await,
         }
     }
 
@@ -36,6 +41,7 @@ impl ObjectStoreClient {
     ) -> Result<ObjectETag, ObjectStoreError> {
         match self {
             Self::AwsS3(client) => client.put_object(bucket, key, body, options).await,
+            Self::AzureBlob(client) => client.put_object(bucket, key, body, options).await,
         }
     }
 
@@ -47,6 +53,7 @@ impl ObjectStoreClient {
     ) -> Result<(), ObjectStoreError> {
         match self {
             Self::AwsS3(client) => client.delete_object(bucket, key, _options).await,
+            Self::AzureBlob(client) => client.delete_object(bucket, key, _options).await,
         }
     }
 }
@@ -54,5 +61,11 @@ impl ObjectStoreClient {
 impl From<AwsS3Client> for ObjectStoreClient {
     fn from(client: AwsS3Client) -> Self {
         Self::AwsS3(client)
+    }
+}
+
+impl From<AzureBlobClient> for ObjectStoreClient {
+    fn from(client: AzureBlobClient) -> Self {
+        Self::AzureBlob(client)
     }
 }

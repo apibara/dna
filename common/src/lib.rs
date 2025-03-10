@@ -70,7 +70,11 @@ mod server_impl {
     {
         emit_dna_up_metric(version);
 
-        let object_store = args.object_store.into_object_store_client().await;
+        let object_store = args
+            .object_store
+            .into_object_store_client()
+            .await
+            .change_context(ServerError)?;
         let mut etcd_client = args
             .etcd
             .into_etcd_client()

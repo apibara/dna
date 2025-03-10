@@ -3,6 +3,8 @@ use error_stack::{Context, Report, Result, ResultExt};
 
 #[derive(Debug)]
 pub enum ObjectStoreError {
+    /// Configuration error.
+    Configuration,
     /// Precondition failed.
     Precondition,
     /// Not modified.
@@ -22,6 +24,7 @@ impl Context for ObjectStoreError {}
 impl std::fmt::Display for ObjectStoreError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            ObjectStoreError::Configuration => write!(f, "configuration error"),
             ObjectStoreError::Precondition => write!(f, "precondition failed"),
             ObjectStoreError::NotModified => write!(f, "not modified"),
             ObjectStoreError::NotFound => write!(f, "not found"),

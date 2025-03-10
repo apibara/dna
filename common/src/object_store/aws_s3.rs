@@ -1,4 +1,3 @@
-use aws_sdk_s3::primitives::AggregatedBytes;
 use bytes::Bytes;
 use error_stack::{Result, ResultExt};
 
@@ -40,7 +39,7 @@ impl AwsS3Client {
         bucket: &str,
         key: &str,
         options: GetOptions,
-    ) -> Result<(ObjectETag, AggregatedBytes), ObjectStoreError> {
+    ) -> Result<(ObjectETag, Bytes), ObjectStoreError> {
         let response = self
             .0
             .get_object()
@@ -67,7 +66,8 @@ impl AwsS3Client {
             .collect()
             .await
             .change_context(ObjectStoreError::Request)
-            .attach_printable("failed to read object body")?;
+            .attach_printable("failed to read object body")?
+            .into_bytes();
 
         Ok((etag, body))
     }
