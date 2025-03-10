@@ -9,7 +9,7 @@ use crate::{
     compaction::CompactionArgs,
     file_cache::FileCacheArgs,
     ingestion::IngestionArgs,
-    object_store::{ObjectStore, ObjectStoreOptions},
+    object_store::{AwsS3Client, ObjectStore, ObjectStoreOptions},
     server::ServerArgs,
 };
 
@@ -99,7 +99,8 @@ impl ObjectStoreArgs {
             prefix: self.s3_prefix,
         };
 
-        ObjectStore::new_from_config(s3_config, options)
+        let s3_client = AwsS3Client::new_from_config(s3_config);
+        ObjectStore::new_s3(s3_client, options)
     }
 }
 

@@ -1,10 +1,14 @@
 use apibara_etcd::normalize_prefix;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
+use client::ObjectStoreClient;
 use error_stack::{Result, ResultExt};
 use tracing::debug;
 
+mod aws_s3;
+mod client;
 mod error;
 
+pub use self::aws_s3::AwsS3Client;
 pub use self::error::{ObjectStoreError, ObjectStoreResultExt, ToObjectStoreResult};
 
 /// Options for the object store.
@@ -19,7 +23,7 @@ pub struct ObjectStoreOptions {
 /// This is an opinionated object store client.
 #[derive(Clone)]
 pub struct ObjectStore {
-    client: aws_sdk_s3::Client,
+    client: ObjectStoreClient,
     prefix: String,
     bucket: String,
 }
@@ -67,38 +71,23 @@ pub struct PutResult {
 pub struct DeleteResult;
 
 impl ObjectStore {
-    pub fn new(config: aws_config::SdkConfig, options: ObjectStoreOptions) -> Self {
-        Self::new_from_config((&config).into(), options)
-    }
-
-    pub fn new_from_config(config: aws_sdk_s3::Config, options: ObjectStoreOptions) -> Self {
-        let client = aws_sdk_s3::Client::from_conf(config);
-
+    pub fn new_s3(s3_client: AwsS3Client, options: ObjectStoreOptions) -> Self {
         let prefix = normalize_prefix(options.prefix);
 
         Self {
-            client,
+            client: s3_client.into(),
             bucket: options.bucket,
             prefix,
         }
     }
 
-    pub async fn new_from_env(options: ObjectStoreOptions) -> Self {
-        let config = aws_config::load_from_env().await;
-        Self::new(config, options)
-    }
-
     /// Ensure the currently configured bucket exists.
     pub async fn ensure_bucket(&self) -> Result<(), ObjectStoreError> {
         self.client
-            .create_bucket()
-            .bucket(&self.bucket)
-            .send()
+            .create_bucket(&self.bucket)
             .await
-            .change_to_object_store_context()
             .attach_printable("failed to create bucket")
-            .attach_printable_lazy(|| format!("bucket name: {}", self.bucket))?;
-        Ok(())
+            .attach_printable_lazy(|| format!("bucket name: {}", self.bucket))
     }
 
     #[tracing::instrument(name = "object_store_get", skip(self, options), level = "debug")]
@@ -108,35 +97,12 @@ impl ObjectStore {
         options: GetOptions,
     ) -> Result<GetResult, ObjectStoreError> {
         let key = self.full_key(path);
-        let response = self
+        let (etag, body) = self
             .client
-            .get_object()
-            .bucket(&self.bucket)
-            .key(&key)
-            .customize()
-            .mutate_request(move |request| {
-                if let Some(etag) = &options.etag {
-                    request.headers_mut().insert("If-Match", etag.0.clone());
-                }
-            })
-            .send()
+            .get_object(&self.bucket, &key, options)
             .await
-            .change_to_object_store_context()
             .attach_printable("failed to get object")
             .attach_printable_lazy(|| format!("key: {key}"))?;
-
-        let etag = response
-            .e_tag
-            .ok_or(ObjectStoreError::Metadata)
-            .attach_printable("missing etag")?
-            .into();
-
-        let body = response
-            .body
-            .collect()
-            .await
-            .change_context(ObjectStoreError::Request)
-            .attach_printable("failed to read object body")?;
 
         let decompressed = BytesMut::with_capacity(body.remaining());
         let mut writer = decompressed.writer();
@@ -191,34 +157,12 @@ impl ObjectStore {
         current_span.record("compression_ratio", compression_ratio);
         debug!(compression_ratio, key, "compressed object");
 
-        let response = self
+        let etag = self
             .client
-            .put_object()
-            .bucket(&self.bucket)
-            .key(&key)
-            .body(compressed.freeze().into())
-            .customize()
-            .mutate_request(move |request| match &options.mode {
-                PutMode::Overwrite => {}
-                PutMode::Create => {
-                    // If-None-Match: "*" seems to be better supported than If-Match: "".
-                    request.headers_mut().insert("If-None-Match", "*");
-                }
-                PutMode::Update(etag) => {
-                    request.headers_mut().insert("If-Match", etag.0.clone());
-                }
-            })
-            .send()
+            .put_object(&self.bucket, &key, compressed.freeze(), options)
             .await
-            .change_to_object_store_context()
             .attach_printable("failed to put object")
             .attach_printable_lazy(|| format!("key: {key}"))?;
-
-        let etag = response
-            .e_tag
-            .ok_or(ObjectStoreError::Metadata)
-            .attach_printable("missing etag")?
-            .into();
 
         Ok(PutResult { etag })
     }
@@ -231,12 +175,8 @@ impl ObjectStore {
     ) -> Result<DeleteResult, ObjectStoreError> {
         let key = self.full_key(path);
         self.client
-            .delete_object()
-            .bucket(&self.bucket)
-            .key(&key)
-            .send()
+            .delete_object(&self.bucket, &key, _options)
             .await
-            .change_to_object_store_context()
             .attach_printable("failed to delete object")
             .attach_printable_lazy(|| format!("key: {key}"))?;
 
