@@ -1,24 +1,11 @@
 use apibara_etcd::normalize_prefix;
-use aws_sdk_s3::{config::http::HttpResponse, error::SdkError};
 use bytes::{Buf, BufMut, Bytes, BytesMut};
-use error_stack::{Report, Result, ResultExt};
+use error_stack::{Result, ResultExt};
 use tracing::debug;
 
-#[derive(Debug)]
-pub enum ObjectStoreError {
-    /// Precondition failed.
-    Precondition,
-    /// Not modified.
-    NotModified,
-    /// Not found.
-    NotFound,
-    /// Request error.
-    Request,
-    /// Metadata is missing.
-    Metadata,
-    /// Checksum mismatch.
-    ChecksumMismatch,
-}
+mod error;
+
+pub use self::error::{ObjectStoreError, ObjectStoreResultExt, ToObjectStoreResult};
 
 /// Options for the object store.
 #[derive(Default, Clone, Debug)]
@@ -261,41 +248,6 @@ impl ObjectStore {
     }
 }
 
-impl error_stack::Context for ObjectStoreError {}
-
-impl std::fmt::Display for ObjectStoreError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ObjectStoreError::Precondition => write!(f, "object store: precondition failed"),
-            ObjectStoreError::NotModified => write!(f, "object store: not modified"),
-            ObjectStoreError::NotFound => write!(f, "object store: not found"),
-            ObjectStoreError::Request => write!(f, "object store: request error"),
-            ObjectStoreError::Metadata => write!(f, "object store: metadata is missing or invalid"),
-            ObjectStoreError::ChecksumMismatch => write!(f, "object store: checksum mismatch"),
-        }
-    }
-}
-
-pub trait ObjectStoreResultExt {
-    fn is_precondition(&self) -> bool;
-    fn is_not_modified(&self) -> bool;
-    fn is_not_found(&self) -> bool;
-}
-
-impl ObjectStoreResultExt for Report<ObjectStoreError> {
-    fn is_precondition(&self) -> bool {
-        matches!(self.current_context(), ObjectStoreError::Precondition)
-    }
-
-    fn is_not_modified(&self) -> bool {
-        matches!(self.current_context(), ObjectStoreError::NotModified)
-    }
-
-    fn is_not_found(&self) -> bool {
-        matches!(self.current_context(), ObjectStoreError::NotFound)
-    }
-}
-
 impl From<String> for ObjectETag {
     fn from(value: String) -> Self {
         Self(value)
@@ -305,31 +257,6 @@ impl From<String> for ObjectETag {
 impl Default for PutMode {
     fn default() -> Self {
         Self::Overwrite
-    }
-}
-
-trait ToObjectStoreResult: Sized {
-    type Ok;
-
-    fn change_to_object_store_context(self) -> Result<Self::Ok, ObjectStoreError>;
-}
-
-impl<T, E> ToObjectStoreResult for std::result::Result<T, SdkError<E, HttpResponse>>
-where
-    SdkError<E, HttpResponse>: error_stack::Context,
-{
-    type Ok = T;
-
-    fn change_to_object_store_context(self) -> Result<T, ObjectStoreError> {
-        match self {
-            Ok(value) => Ok(value),
-            Err(err) => match err.raw_response().map(|r| r.status().as_u16()) {
-                Some(412) => Err(err).change_context(ObjectStoreError::Precondition),
-                Some(304) => Err(err).change_context(ObjectStoreError::NotModified),
-                Some(404) => Err(err).change_context(ObjectStoreError::NotFound),
-                _ => Err(err).change_context(ObjectStoreError::Request),
-            },
-        }
     }
 }
 
