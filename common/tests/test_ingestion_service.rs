@@ -17,7 +17,7 @@ use apibara_dna_common::{
     },
     object_store::{
         testing::{minio_container, MinIO, MinIOExt},
-        ObjectStore, ObjectStoreOptions,
+        AwsS3Client, ObjectStore, ObjectStoreOptions,
     },
     Cursor, Hash,
 };
@@ -29,9 +29,10 @@ use tokio_util::sync::CancellationToken;
 async fn init_minio() -> (ContainerAsync<MinIO>, ObjectStore) {
     let minio = minio_container().start().await.unwrap();
     let config = minio.s3_config().await;
+    let s3_client = AwsS3Client::new_from_config(config);
 
-    let client = ObjectStore::new_from_config(
-        config,
+    let client = ObjectStore::new_s3(
+        s3_client,
         ObjectStoreOptions {
             bucket: "test".to_string(),
             ..Default::default()
