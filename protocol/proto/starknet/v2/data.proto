@@ -24,6 +24,8 @@ message Block {
   repeated ContractChange contract_changes = 7;
   // List of nonce updates.
   repeated NonceUpdate nonce_updates = 8;
+  // List of transaction traces.
+  repeated Trace traces = 9;
 }
 
 // Block header.
@@ -454,4 +456,69 @@ message NonceUpdate {
   FieldElement contract_address = 2;
   // New nonce value.
   FieldElement nonce = 3;
+}
+
+message Trace {
+  repeated uint32 filter_ids = 1;
+  // Transaction hash.
+  FieldElement transaction_hash = 2;
+
+  oneof trace_root {
+    InvokeTransactionTrace invoke = 3;
+    DeclareTransactionTrace declare = 4;
+    DeployAccountTransactionTrace deploy_account = 5;
+    L1HandlerTransactionTrace l1_handler = 6;
+  }
+}
+
+message InvokeTransactionTrace {
+  FunctionInvocation validate_invocation = 1;
+
+  oneof execute_invocation {
+    FunctionInvocation success = 2;
+    ExecutionReverted reverted = 3;
+  }
+
+  FunctionInvocation fee_transfer_invocation = 4;
+}
+
+message DeclareTransactionTrace {
+  FunctionInvocation validate_invocation = 1;
+  FunctionInvocation fee_transfer_invocation = 2;
+}
+
+message DeployAccountTransactionTrace {
+  FunctionInvocation validate_invocation = 1;
+  FunctionInvocation constructor_invocation = 2;
+  FunctionInvocation fee_transfer_invocation = 3;
+}
+
+message L1HandlerTransactionTrace {
+  FunctionInvocation function_invocation = 2;
+}
+
+message FunctionInvocation {
+  FieldElement contract_address = 1;
+  FieldElement entry_point_selector = 2;
+  repeated FieldElement calldata = 3;
+  FieldElement caller_address = 4;
+  FieldElement class_hash = 5;
+  CallType call_type = 6;
+  repeated FieldElement result = 7;
+  repeated FunctionInvocation calls = 8;
+  repeated uint32 events = 9;
+  repeated uint32 messages = 10;
+}
+
+message FunctionCall {
+  FieldElement contract_address = 1;
+  FieldElement entry_point_selector = 2;
+  repeated FieldElement calldata = 3;
+}
+
+enum CallType {
+  CALL_TYPE_UNSPECIFIED = 0;
+  CALL_TYPE_LIBRARY_CALL = 1;
+  CALL_TYPE_CALL = 2;
+  CALL_TYPE_DELEGATE = 3;
 }

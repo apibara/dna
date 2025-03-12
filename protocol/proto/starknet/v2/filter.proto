@@ -60,6 +60,10 @@ message EventFilter {
   //
   // Defaults to false.
   optional bool include_siblings = 9;
+  // Include the trace of the transaction that emitted the event.
+  //
+  // Defaults to false.
+  optional bool include_transaction_trace = 10;
 }
 
 message Key {
@@ -94,6 +98,10 @@ message MessageToL1Filter {
   //
   // Defaults to false.
   optional bool include_siblings = 8;
+  // Include the trace of the transaction that sent the message.
+  //
+  // Defaults to false.
+  optional bool include_transaction_trace = 9;
 }
 
 // Filter transactions.
@@ -129,6 +137,11 @@ message TransactionFilter {
     DeployAccountV1TransactionFilter deploy_account_v1 = 15;
     DeployAccountV3TransactionFilter deploy_account_v3 = 16;
   }
+
+  // Flag to request the transaction's trace.
+  //
+  // Defaults to `false``.
+  optional bool include_trace = 17;
 }
 
 message InvokeTransactionV0Filter {}

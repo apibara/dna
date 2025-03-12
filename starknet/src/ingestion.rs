@@ -28,7 +28,7 @@ use crate::{
         INDEX_TRANSACTION_BY_TYPE, MESSAGE_FRAGMENT_ID, MESSAGE_FRAGMENT_NAME,
         NONCE_UPDATE_FRAGMENT_ID, NONCE_UPDATE_FRAGMENT_NAME, RECEIPT_FRAGMENT_ID,
         RECEIPT_FRAGMENT_NAME, STORAGE_DIFF_FRAGMENT_ID, STORAGE_DIFF_FRAGMENT_NAME,
-        TRANSACTION_FRAGMENT_ID, TRANSACTION_FRAGMENT_NAME,
+        TRACE_FRAGMENT_ID, TRACE_FRAGMENT_NAME, TRANSACTION_FRAGMENT_ID, TRANSACTION_FRAGMENT_NAME,
     },
     proto::{convert_block_header, convert_pending_block_header, ModelExt},
     provider::{models, BlockExt, BlockId, StarknetProvider, StarknetProviderErrorExt},
@@ -37,6 +37,7 @@ use crate::{
 #[derive(Clone, Debug)]
 pub struct StarknetBlockIngestionOptions {
     pub ingest_pending: bool,
+    pub ingest_traces: bool,
 }
 
 pub struct StarknetBlockIngestion {
@@ -210,16 +211,44 @@ impl BlockIngestion for StarknetBlockIngestion {
             return Ok(None);
         }
 
-        let state_update = self
-            .provider
-            .get_state_update(&block_id)
-            .await
-            .change_context(IngestionError::RpcRequest)?;
+        let state_update = tokio::spawn({
+            let provider = self.provider.clone();
+            let block_id = block_id.clone();
+            async move {
+                provider
+                    .get_state_update(&block_id)
+                    .await
+                    .change_context(IngestionError::RpcRequest)
+            }
+        });
 
-        let models::MaybePendingStateUpdate::PendingUpdate(state_update) = state_update else {
+        let transaction_traces = tokio::spawn({
+            let provider = self.provider.clone();
+            let block_id = block_id.clone();
+            let should_ingest = self.options.ingest_traces;
+            async move {
+                if should_ingest {
+                    provider
+                        .get_block_transaction_traces(&block_id)
+                        .await
+                        .change_context(IngestionError::RpcRequest)
+                } else {
+                    Ok(Vec::default())
+                }
+            }
+        });
+
+        let models::MaybePendingStateUpdate::PendingUpdate(state_update) = state_update
+            .await
+            .change_context(IngestionError::RpcRequest)??
+        else {
             return Err(IngestionError::RpcRequest)
                 .attach_printable("unexpected non-pending state update");
         };
+
+        let transaction_traces = transaction_traces
+            .await
+            .change_context(IngestionError::RpcRequest)??;
 
         let pending_block_info = PendingBlockInfo {
             number: parent.number + 1,
@@ -234,7 +263,8 @@ impl BlockIngestion for StarknetBlockIngestion {
             }
         };
 
-        let body_ingestion_result = collect_block_body_and_index(&block.transactions)?;
+        let body_ingestion_result =
+            collect_block_body_and_index(&block.transactions, &transaction_traces)?;
 
         let state_update_ingestion_result =
             collect_state_update_body_and_index(&state_update.state_diff)?;
@@ -301,17 +331,45 @@ impl BlockIngestion for StarknetBlockIngestion {
         // Use the block hash to avoid issues with reorgs.
         let block_id = BlockId::Hash(block.block_hash);
 
-        let state_update = self
-            .provider
-            .get_state_update(&block_id)
-            .await
-            .change_context(IngestionError::RpcRequest)?;
+        let state_update = tokio::spawn({
+            let provider = self.provider.clone();
+            let block_id = block_id.clone();
+            async move {
+                provider
+                    .get_state_update(&block_id)
+                    .await
+                    .change_context(IngestionError::RpcRequest)
+            }
+        });
 
-        let models::MaybePendingStateUpdate::Update(state_update) = state_update else {
+        let transaction_traces = tokio::spawn({
+            let provider = self.provider.clone();
+            let block_id = block_id.clone();
+            let should_ingest = self.options.ingest_traces;
+            async move {
+                if should_ingest {
+                    provider
+                        .get_block_transaction_traces(&block_id)
+                        .await
+                        .change_context(IngestionError::RpcRequest)
+                } else {
+                    Ok(Vec::default())
+                }
+            }
+        });
+
+        let models::MaybePendingStateUpdate::Update(state_update) = state_update
+            .await
+            .change_context(IngestionError::RpcRequest)??
+        else {
             return Err(IngestionError::RpcRequest)
                 .attach_printable("unexpected pending state update")
                 .attach_printable_lazy(|| format!("block number: {}", block_number));
         };
+
+        let transaction_traces = transaction_traces
+            .await
+            .change_context(IngestionError::RpcRequest)??;
 
         let hash = block.block_hash.to_bytes_be().to_vec();
         let parent = block.parent_hash.to_bytes_be().to_vec();
@@ -330,7 +388,8 @@ impl BlockIngestion for StarknetBlockIngestion {
             }
         };
 
-        let body_ingestion_result = collect_block_body_and_index(&block.transactions)?;
+        let body_ingestion_result =
+            collect_block_body_and_index(&block.transactions, &transaction_traces)?;
 
         let state_update_ingestion_result =
             collect_state_update_body_and_index(&state_update.state_diff)?;
@@ -374,17 +433,20 @@ impl Clone for StarknetBlockIngestion {
 
 fn collect_block_body_and_index(
     transactions: &[models::TransactionWithReceipt],
+    transaction_traces: &[models::TransactionTraceWithHash],
 ) -> Result<BlockIngestionResult, IngestionError> {
     let mut block_transactions = Vec::new();
     let mut block_receipts = Vec::new();
     let mut block_events = Vec::new();
     let mut block_messages = Vec::new();
+    let mut block_traces = Vec::new();
 
     let mut index_transaction_by_status = BitmapIndexBuilder::default();
     let mut index_transaction_by_type = BitmapIndexBuilder::default();
     let mut join_transaction_to_receipt = JoinToOneIndexBuilder::default();
     let mut join_transaction_to_events = JoinToManyIndexBuilder::default();
     let mut join_transaction_to_messages = JoinToManyIndexBuilder::default();
+    let mut join_transaction_to_trace = JoinToOneIndexBuilder::default();
 
     let mut index_event_by_address = BitmapIndexBuilder::default();
     let mut index_event_by_key0 = BitmapIndexBuilder::default();
@@ -397,6 +459,7 @@ fn collect_block_body_and_index(
     let mut join_event_to_receipt = JoinToOneIndexBuilder::default();
     let mut join_event_to_siblings = JoinToManyIndexBuilder::default();
     let mut join_event_to_messages = JoinToManyIndexBuilder::default();
+    let mut join_event_to_trace = JoinToOneIndexBuilder::default();
 
     let mut index_message_by_from_address = BitmapIndexBuilder::default();
     let mut index_message_by_to_address = BitmapIndexBuilder::default();
@@ -405,6 +468,16 @@ fn collect_block_body_and_index(
     let mut join_message_to_receipt = JoinToOneIndexBuilder::default();
     let mut join_message_to_events = JoinToManyIndexBuilder::default();
     let mut join_message_to_siblings = JoinToManyIndexBuilder::default();
+    let mut join_message_to_trace = JoinToOneIndexBuilder::default();
+
+    for transaction_trace in transaction_traces.iter() {
+        let transaction_index = block_traces.len() as u32;
+        let trace = transaction_trace.to_proto();
+
+        join_transaction_to_trace.insert(transaction_index, transaction_index);
+
+        block_traces.push(trace);
+    }
 
     for (transaction_index, transaction_with_receipt) in transactions.iter().enumerate() {
         let transaction_index = transaction_index as u32;
@@ -441,6 +514,9 @@ fn collect_block_body_and_index(
             join_transaction_to_events.insert(transaction_index, event.event_index);
             join_event_to_transaction.insert(event.event_index, transaction_index);
             join_event_to_receipt.insert(event.event_index, transaction_index);
+            if !block_traces.is_empty() {
+                join_event_to_trace.insert(event.event_index, transaction_index);
+            }
 
             transaction_events_id.push(event.event_index);
 
@@ -497,6 +573,9 @@ fn collect_block_body_and_index(
             join_transaction_to_messages.insert(transaction_index, message.message_index);
             join_message_to_transaction.insert(message.message_index, transaction_index);
             join_message_to_receipt.insert(message.message_index, transaction_index);
+            if !block_traces.is_empty() {
+                join_message_to_trace.insert(message.message_index, transaction_index);
+            }
 
             transaction_messages_id.push(message.message_index);
 
@@ -640,12 +719,18 @@ fn collect_block_body_and_index(
                 .into(),
         };
 
+        let join_transaction_to_trace = Join {
+            to_fragment_id: TRACE_FRAGMENT_ID,
+            index: join_transaction_to_trace.build().into(),
+        };
+
         JoinFragment {
             fragment_id: TRANSACTION_FRAGMENT_ID,
             joins: vec![
                 join_transaction_to_receipt,
                 join_transaction_to_events,
                 join_transaction_to_messages,
+                join_transaction_to_trace,
             ],
         }
     };
@@ -772,6 +857,11 @@ fn collect_block_body_and_index(
                 .into(),
         };
 
+        let join_event_to_trace = Join {
+            to_fragment_id: TRACE_FRAGMENT_ID,
+            index: join_event_to_trace.build().into(),
+        };
+
         JoinFragment {
             fragment_id: EVENT_FRAGMENT_ID,
             joins: vec![
@@ -779,6 +869,7 @@ fn collect_block_body_and_index(
                 join_event_to_receipt,
                 join_event_to_siblings,
                 join_event_to_messages,
+                join_event_to_trace,
             ],
         }
     };
@@ -851,6 +942,11 @@ fn collect_block_body_and_index(
                 .into(),
         };
 
+        let join_message_to_trace = Join {
+            to_fragment_id: TRACE_FRAGMENT_ID,
+            index: join_message_to_trace.build().into(),
+        };
+
         JoinFragment {
             fragment_id: MESSAGE_FRAGMENT_ID,
             joins: vec![
@@ -858,6 +954,7 @@ fn collect_block_body_and_index(
                 join_message_to_receipt,
                 join_message_to_events,
                 join_message_to_siblings,
+                join_message_to_trace,
             ],
         }
     };
@@ -868,15 +965,47 @@ fn collect_block_body_and_index(
         data: block_messages.iter().map(Message::encode_to_vec).collect(),
     };
 
+    // Empty since no transaction filter.
+    let trace_index = IndexFragment {
+        fragment_id: TRACE_FRAGMENT_ID,
+        range_start: 0,
+        range_len: block_traces.len() as u32,
+        indexes: Vec::default(),
+    };
+
+    let trace_join = JoinFragment {
+        fragment_id: TRACE_FRAGMENT_ID,
+        joins: Vec::default(),
+    };
+
+    let trace_fragment = BodyFragment {
+        fragment_id: TRACE_FRAGMENT_ID,
+        name: TRACE_FRAGMENT_NAME.to_string(),
+        data: block_traces.iter().map(Message::encode_to_vec).collect(),
+    };
+
     Ok(BlockIngestionResult {
         body: vec![
             transaction_fragment,
             receipt_fragment,
             event_fragment,
             message_fragment,
+            trace_fragment,
         ],
-        index: vec![transaction_index, receipt_index, event_index, message_index],
-        join: vec![transaction_join, receipt_join, event_join, message_join],
+        index: vec![
+            transaction_index,
+            receipt_index,
+            event_index,
+            message_index,
+            trace_index,
+        ],
+        join: vec![
+            transaction_join,
+            receipt_join,
+            event_join,
+            message_join,
+            trace_join,
+        ],
     })
 }
 

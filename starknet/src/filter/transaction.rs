@@ -6,7 +6,7 @@ use apibara_dna_protocol::starknet;
 
 use crate::fragment::{
     EVENT_FRAGMENT_ID, INDEX_TRANSACTION_BY_STATUS, INDEX_TRANSACTION_BY_TYPE, MESSAGE_FRAGMENT_ID,
-    RECEIPT_FRAGMENT_ID, TRANSACTION_FRAGMENT_ID,
+    RECEIPT_FRAGMENT_ID, TRACE_FRAGMENT_ID, TRANSACTION_FRAGMENT_ID,
 };
 
 use super::helpers::FragmentFilterExt;
@@ -96,6 +96,10 @@ impl FragmentFilterExt for starknet::TransactionFilter {
 
         if let Some(true) = self.include_messages {
             joins.push(MESSAGE_FRAGMENT_ID);
+        }
+
+        if let Some(true) = self.include_trace {
+            joins.push(TRACE_FRAGMENT_ID);
         }
 
         Ok(Filter {

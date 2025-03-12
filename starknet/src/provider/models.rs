@@ -1,17 +1,20 @@
 use apibara_dna_common::{Cursor, Hash};
 pub use starknet::core::types::{
-    BlockWithReceipts, ComputationResources, ContractStorageDiffItem, DataAvailabilityMode,
-    DataResources, DeclareTransaction, DeclareTransactionReceipt, DeclareTransactionV0,
-    DeclareTransactionV1, DeclareTransactionV2, DeclareTransactionV3, DeclaredClassItem,
-    DeployAccountTransaction, DeployAccountTransactionReceipt, DeployAccountTransactionV1,
+    BlockWithReceipts, CallType, ComputationResources, ContractStorageDiffItem,
+    DataAvailabilityMode, DataResources, DeclareTransaction, DeclareTransactionReceipt,
+    DeclareTransactionTrace, DeclareTransactionV0, DeclareTransactionV1, DeclareTransactionV2,
+    DeclareTransactionV3, DeclaredClassItem, DeployAccountTransaction,
+    DeployAccountTransactionReceipt, DeployAccountTransactionTrace, DeployAccountTransactionV1,
     DeployAccountTransactionV3, DeployTransaction, DeployTransactionReceipt, DeployedContractItem,
-    Event, ExecutionResources, ExecutionResult, FeePayment, Felt as FieldElement,
-    InvokeTransaction, InvokeTransactionReceipt, InvokeTransactionV0, InvokeTransactionV1,
+    Event, ExecuteInvocation, ExecutionResources, ExecutionResult, FeePayment,
+    Felt as FieldElement, FunctionCall, FunctionInvocation, InvokeTransaction,
+    InvokeTransactionReceipt, InvokeTransactionTrace, InvokeTransactionV0, InvokeTransactionV1,
     InvokeTransactionV3, L1DataAvailabilityMode, L1HandlerTransaction, L1HandlerTransactionReceipt,
-    MaybePendingBlockWithReceipts, MaybePendingBlockWithTxHashes, MaybePendingStateUpdate, MsgToL1,
-    NonceUpdate, PendingBlockWithReceipts, PendingStateUpdate, PriceUnit, ReplacedClassItem,
-    ResourceBounds, ResourceBoundsMapping, ResourcePrice, StateDiff, StateUpdate, StorageEntry,
-    Transaction, TransactionReceipt, TransactionWithReceipt,
+    L1HandlerTransactionTrace, MaybePendingBlockWithReceipts, MaybePendingBlockWithTxHashes,
+    MaybePendingStateUpdate, MsgToL1, NonceUpdate, PendingBlockWithReceipts, PendingStateUpdate,
+    PriceUnit, ReplacedClassItem, ResourceBounds, ResourceBoundsMapping, ResourcePrice, StateDiff,
+    StateUpdate, StorageEntry, Transaction, TransactionReceipt, TransactionTrace,
+    TransactionTraceWithHash, TransactionWithReceipt,
 };
 
 pub trait BlockExt {
