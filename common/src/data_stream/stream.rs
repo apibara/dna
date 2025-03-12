@@ -474,9 +474,9 @@ impl DataStream {
         Ok(())
     }
 
-    async fn filter_fragment<'a>(
+    async fn filter_fragment(
         &self,
-        fragment_access: FragmentAccess<'a>,
+        fragment_access: FragmentAccess<'_>,
         _finality: &DataFinality,
         is_live: bool,
         output: &mut Vec<Bytes>,
