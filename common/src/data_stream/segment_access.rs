@@ -73,7 +73,8 @@ impl SegmentAccessFetch {
             let file = fetch
                 .await
                 .map_err(FileCacheError::Foyer)
-                .change_context(FragmentAccessError)?;
+                .change_context(FragmentAccessError)
+                .attach_printable_lazy(|| format!("fragment id: {fragment_id}"))?;
             access.fragments.insert(fragment_id, file);
         }
 

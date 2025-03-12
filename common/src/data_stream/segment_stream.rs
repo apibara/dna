@@ -63,7 +63,13 @@ impl SegmentStream {
 
         debug!(starting_cursor = %starting_cursor, "segment_stream: starting");
 
-        let mut current_block_number = starting_cursor.number;
+        // Align current block number with the group once at the beginning.
+        // It's the job of the consumer to ensure that no block before the
+        // starting one is sent.
+        let mut current_block_number = self
+            .chain_view
+            .get_group_start_block(starting_cursor.number)
+            .await;
 
         if let Some(mut grouped) = self
             .chain_view
@@ -71,14 +77,6 @@ impl SegmentStream {
             .await
             .change_context(DataStreamError)?
         {
-            // Align current block number with the group once at the beginning.
-            // It's the job of the consumer to ensure that no block before the
-            // starting one is sent.
-            current_block_number = self
-                .chain_view
-                .get_group_start_block(starting_cursor.number)
-                .await;
-
             let mut group_queue = FuturesOrderedBounded::new(GROUP_QUEUE_SIZE);
             let mut next_group_to_fetch = current_block_number;
 
@@ -271,6 +269,10 @@ impl SegmentStream {
                 let segment_block_range =
                     RoaringBitmap::from_sorted_iter(segment_start..segment_end_non_inclusive)
                         .expect("failed to create bitmap from sorted iter");
+                debug!(
+                    segment_start,
+                    segment_end_non_inclusive, " filter single segment"
+                );
 
                 let mut fragment_ids_needed =
                     HashSet::from([INDEX_FRAGMENT_ID, JOIN_FRAGMENT_ID, HEADER_FRAGMENT_ID]);
