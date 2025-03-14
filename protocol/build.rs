@@ -35,7 +35,7 @@ fn main() -> Result<()> {
         .build_client(true)
         .build_server(true)
         .boxed(".starknet.v2.InvokeTransactionTrace.execute_invocation.success")
-        .boxed(".starknet.v2.Trace.trace_root.deploy_account")
+        .boxed(".starknet.v2.TransactionTrace.trace_root.deploy_account")
         .file_descriptor_set_path(out_dir.join(STARKNET_DESCRIPTOR_FILE))
         .compile_protos(
             &[

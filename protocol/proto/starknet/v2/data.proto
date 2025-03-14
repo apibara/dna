@@ -25,7 +25,7 @@ message Block {
   // List of nonce updates.
   repeated NonceUpdate nonce_updates = 8;
   // List of transaction traces.
-  repeated Trace traces = 9;
+  repeated TransactionTrace traces = 9;
 }
 
 // Block header.
@@ -458,7 +458,7 @@ message NonceUpdate {
   FieldElement nonce = 3;
 }
 
-message Trace {
+message TransactionTrace {
   repeated uint32 filter_ids = 1;
   // Index of the transaction in the block.
   uint32 transaction_index = 2;

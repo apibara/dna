@@ -827,10 +827,10 @@ impl ModelExt for models::NonceUpdate {
 }
 
 impl ModelExt for models::TransactionTraceWithHash {
-    type Proto = starknet::Trace;
+    type Proto = starknet::TransactionTrace;
 
     fn to_proto(&self) -> Self::Proto {
-        starknet::Trace {
+        starknet::TransactionTrace {
             filter_ids: Vec::default(),
             transaction_index: u32::MAX,
             transaction_hash: self.transaction_hash.to_proto().into(),
@@ -840,7 +840,7 @@ impl ModelExt for models::TransactionTraceWithHash {
 }
 
 impl ModelExt for models::TransactionTrace {
-    type Proto = starknet::trace::TraceRoot;
+    type Proto = starknet::transaction_trace::TraceRoot;
 
     fn to_proto(&self) -> Self::Proto {
         use models::TransactionTrace::*;
@@ -855,7 +855,7 @@ impl ModelExt for models::TransactionTrace {
 }
 
 impl ModelExt for models::InvokeTransactionTrace {
-    type Proto = starknet::trace::TraceRoot;
+    type Proto = starknet::transaction_trace::TraceRoot;
 
     fn to_proto(&self) -> Self::Proto {
         let inner = starknet::InvokeTransactionTrace {
@@ -867,12 +867,12 @@ impl ModelExt for models::InvokeTransactionTrace {
                 .map(ModelExt::to_proto),
         };
 
-        starknet::trace::TraceRoot::Invoke(inner)
+        starknet::transaction_trace::TraceRoot::Invoke(inner)
     }
 }
 
 impl ModelExt for models::DeployAccountTransactionTrace {
-    type Proto = starknet::trace::TraceRoot;
+    type Proto = starknet::transaction_trace::TraceRoot;
 
     fn to_proto(&self) -> Self::Proto {
         let inner = starknet::DeployAccountTransactionTrace {
@@ -884,24 +884,24 @@ impl ModelExt for models::DeployAccountTransactionTrace {
                 .map(ModelExt::to_proto),
         };
 
-        starknet::trace::TraceRoot::DeployAccount(inner.into())
+        starknet::transaction_trace::TraceRoot::DeployAccount(inner.into())
     }
 }
 
 impl ModelExt for models::L1HandlerTransactionTrace {
-    type Proto = starknet::trace::TraceRoot;
+    type Proto = starknet::transaction_trace::TraceRoot;
 
     fn to_proto(&self) -> Self::Proto {
         let inner = starknet::L1HandlerTransactionTrace {
             function_invocation: self.function_invocation.to_proto().into(),
         };
 
-        starknet::trace::TraceRoot::L1Handler(inner)
+        starknet::transaction_trace::TraceRoot::L1Handler(inner)
     }
 }
 
 impl ModelExt for models::DeclareTransactionTrace {
-    type Proto = starknet::trace::TraceRoot;
+    type Proto = starknet::transaction_trace::TraceRoot;
 
     fn to_proto(&self) -> Self::Proto {
         let inner = starknet::DeclareTransactionTrace {
@@ -912,7 +912,7 @@ impl ModelExt for models::DeclareTransactionTrace {
                 .map(ModelExt::to_proto),
         };
 
-        starknet::trace::TraceRoot::Declare(inner)
+        starknet::transaction_trace::TraceRoot::Declare(inner)
     }
 }
 
