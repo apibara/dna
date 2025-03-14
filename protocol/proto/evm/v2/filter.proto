@@ -47,6 +47,8 @@ message TransactionFilter {
   optional bool include_receipt = 6;
   // Flag to request the transaction's logs. Defaults to `false`.
   optional bool include_logs = 7;
+  // Flag to request the transaction's trace. Defaults to `false`.
+  optional bool include_transaction_trace = 8;
 }
 
 message LogFilter {
@@ -71,6 +73,8 @@ message LogFilter {
   //
   // Defaults to false.
   optional bool include_siblings = 8;
+  // Flag to request the log's trace. Defaults to `false`.
+  optional bool include_transaction_trace = 9;
 }
 
 // Topic filter.

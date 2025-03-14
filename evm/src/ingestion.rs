@@ -21,8 +21,9 @@ use crate::{
         INDEX_TRANSACTION_BY_CREATE, INDEX_TRANSACTION_BY_FROM_ADDRESS,
         INDEX_TRANSACTION_BY_STATUS, INDEX_TRANSACTION_BY_TO_ADDRESS, INDEX_WITHDRAWAL_BY_ADDRESS,
         INDEX_WITHDRAWAL_BY_VALIDATOR_INDEX, LOG_FRAGMENT_ID, LOG_FRAGMENT_NAME,
-        RECEIPT_FRAGMENT_ID, RECEIPT_FRAGMENT_NAME, TRANSACTION_FRAGMENT_ID,
-        TRANSACTION_FRAGMENT_NAME, WITHDRAWAL_FRAGMENT_ID, WITHDRAWAL_FRAGMENT_NAME,
+        RECEIPT_FRAGMENT_ID, RECEIPT_FRAGMENT_NAME, TRACE_FRAGMENT_ID, TRACE_FRAGMENT_NAME,
+        TRANSACTION_FRAGMENT_ID, TRANSACTION_FRAGMENT_NAME, WITHDRAWAL_FRAGMENT_ID,
+        WITHDRAWAL_FRAGMENT_NAME,
     },
     proto::{convert_block_header, ModelExt},
     provider::{models, BlockExt, JsonRpcProvider, JsonRpcProviderErrorExt},
@@ -31,6 +32,7 @@ use crate::{
 #[derive(Clone, Debug)]
 pub struct EvmBlockIngestionOptions {
     pub ingest_pending: bool,
+    pub ingest_traces: bool,
 }
 
 #[derive(Clone)]
@@ -119,17 +121,47 @@ impl BlockIngestion for EvmBlockIngestion {
 
         let block_id = BlockId::hash(block_with_transactions.header.hash);
 
-        let block_receipts = self
-            .provider
-            .get_block_receipts(block_id)
-            .await
-            .change_context(IngestionError::RpcRequest)
-            .attach_printable("failed to get block receipts")
-            .attach_printable_lazy(|| format!("block number: {}", block_number))
-            .attach_printable_lazy(|| {
-                format!("block hash: {}", block_with_transactions.header.hash)
-            })?;
+        let block_receipts = tokio::spawn({
+            let provider = self.provider.clone();
+            async move {
+                provider
+                    .get_block_receipts(block_id)
+                    .await
+                    .change_context(IngestionError::RpcRequest)
+                    .attach_printable("failed to get block receipts")
+                    .attach_printable_lazy(|| format!("block number: {}", block_number))
+                    .attach_printable_lazy(|| {
+                        format!("block hash: {}", block_with_transactions.header.hash)
+                    })
+            }
+        });
 
+        let block_transaction_traces = tokio::spawn({
+            let provider = self.provider.clone();
+            let should_ingest_traces = self.options.ingest_traces;
+            async move {
+                if should_ingest_traces {
+                    provider
+                        .trace_block_transactions(block_id)
+                        .await
+                        .change_context(IngestionError::RpcRequest)
+                        .attach_printable("failed to get block transaction traces")
+                        .attach_printable_lazy(|| format!("block number: {}", block_number))
+                        .attach_printable_lazy(|| {
+                            format!("block hash: {}", block_with_transactions.header.hash)
+                        })
+                } else {
+                    Ok(Vec::default())
+                }
+            }
+        });
+
+        let block_receipts = block_receipts
+            .await
+            .change_context(IngestionError::RpcRequest)??;
+        let block_transaction_traces = block_transaction_traces
+            .await
+            .change_context(IngestionError::RpcRequest)??;
         let block_transactions = std::mem::take(&mut block_with_transactions.transactions);
         let Some(block_transactions) = block_transactions.as_transactions() else {
             return Err(IngestionError::RpcRequest)
@@ -148,8 +180,12 @@ impl BlockIngestion for EvmBlockIngestion {
             }
         };
 
-        let (body, index, join) =
-            collect_block_body_and_index(block_transactions, &block_withdrawals, &block_receipts)?;
+        let (body, index, join) = collect_block_body_and_index(
+            block_transactions,
+            &block_withdrawals,
+            &block_receipts,
+            &block_transaction_traces,
+        )?;
 
         let block = Block {
             header: header_fragment,
@@ -191,15 +227,25 @@ impl BlockIngestion for EvmBlockIngestion {
             return Ok(None);
         }
 
-        let block_receipts = self
-            .provider
-            .get_block_receipts(block_id)
+        let block_receipts = tokio::spawn({
+            let provider = self.provider.clone();
+            async move {
+                provider
+                    .get_block_receipts(block_id)
+                    .await
+                    .change_context(IngestionError::RpcRequest)
+                    .attach_printable("failed to get pending block receipts")
+                    .attach_printable_lazy(|| {
+                        format!("block hash: {}", block_with_transactions.header.hash)
+                    })
+            }
+        });
+
+        let block_receipts = block_receipts
             .await
-            .change_context(IngestionError::RpcRequest)
-            .attach_printable("failed to get pending block receipts")
-            .attach_printable_lazy(|| {
-                format!("block hash: {}", block_with_transactions.header.hash)
-            })?;
+            .change_context(IngestionError::RpcRequest)??;
+        // Nodes struggle to server traces for pending blocks, so we don't collect them.
+        let block_transaction_traces = Vec::default();
 
         let block_transactions = std::mem::take(&mut block_with_transactions.transactions);
         let Some(block_transactions) = block_transactions.as_transactions() else {
@@ -217,8 +263,12 @@ impl BlockIngestion for EvmBlockIngestion {
             }
         };
 
-        let (body, index, join) =
-            collect_block_body_and_index(block_transactions, &block_withdrawals, &block_receipts)?;
+        let (body, index, join) = collect_block_body_and_index(
+            block_transactions,
+            &block_withdrawals,
+            &block_receipts,
+            &block_transaction_traces,
+        )?;
 
         let pending_block_info = PendingBlockInfo {
             number: parent.number + 1,
@@ -241,11 +291,13 @@ fn collect_block_body_and_index(
     transactions: &[models::Transaction],
     withdrawals: &[models::Withdrawal],
     receipts: &[models::TransactionReceipt],
+    transaction_traces: &[models::TraceResultsWithTransactionHash],
 ) -> Result<(Vec<BodyFragment>, IndexGroupFragment, JoinGroupFragment), IngestionError> {
     let mut block_withdrawals = Vec::new();
     let mut block_transactions = Vec::new();
     let mut block_receipts = Vec::new();
     let mut block_logs = Vec::new();
+    let mut block_traces = Vec::new();
 
     let mut index_withdrawal_by_validator_index = BitmapIndexBuilder::default();
     let mut index_withdrawal_by_address = BitmapIndexBuilder::default();
@@ -256,6 +308,7 @@ fn collect_block_body_and_index(
     let mut index_transaction_by_status = BitmapIndexBuilder::default();
     let mut join_transaction_to_receipt = JoinToOneIndexBuilder::default();
     let mut join_transaction_to_logs = JoinToManyIndexBuilder::default();
+    let mut join_transaction_to_trace = JoinToOneIndexBuilder::default();
 
     let mut index_log_by_address = BitmapIndexBuilder::default();
     let mut index_log_by_topic0 = BitmapIndexBuilder::default();
@@ -267,6 +320,7 @@ fn collect_block_body_and_index(
     let mut join_log_to_transaction = JoinToOneIndexBuilder::default();
     let mut join_log_to_receipt = JoinToOneIndexBuilder::default();
     let mut join_log_to_siblings = JoinToManyIndexBuilder::default();
+    let mut join_log_to_trace = JoinToOneIndexBuilder::default();
 
     for (withdrawal_index, withdrawal) in withdrawals.iter().enumerate() {
         let withdrawal_index = withdrawal_index as u32;
@@ -286,6 +340,20 @@ fn collect_block_body_and_index(
         }
 
         block_withdrawals.push(withdrawal);
+    }
+
+    for (transaction_index, transaction_trace) in transaction_traces.iter().enumerate() {
+        let transaction_index = transaction_index as u32;
+        let transaction_hash = transaction_trace.transaction_hash.to_proto();
+
+        let mut trace = transaction_trace.full_trace.to_proto();
+
+        trace.transaction_index = transaction_index;
+        trace.transaction_hash = Some(transaction_hash);
+
+        join_transaction_to_trace.insert(transaction_index, transaction_index);
+
+        block_traces.push(trace);
     }
 
     for (transaction_index, (transaction, receipt)) in
@@ -389,6 +457,9 @@ fn collect_block_body_and_index(
             join_log_to_transaction.insert(log_index, transaction_index);
             join_log_to_receipt.insert(log_index, transaction_index);
             join_transaction_to_logs.insert(transaction_index, log_index);
+            if !block_traces.is_empty() {
+                join_log_to_trace.insert(log_index, transaction_index);
+            }
 
             transaction_logs_id.push(log_index);
 
@@ -479,6 +550,24 @@ fn collect_block_body_and_index(
             .collect(),
     };
 
+    let trace_index = IndexFragment {
+        fragment_id: TRACE_FRAGMENT_ID,
+        range_start: 0,
+        range_len: block_traces.len() as u32,
+        indexes: Vec::default(),
+    };
+
+    let trace_join = JoinFragment {
+        fragment_id: TRACE_FRAGMENT_ID,
+        joins: Vec::default(),
+    };
+
+    let trace_fragment = BodyFragment {
+        fragment_id: TRACE_FRAGMENT_ID,
+        name: TRACE_FRAGMENT_NAME.to_string(),
+        data: block_traces.iter().map(Message::encode_to_vec).collect(),
+    };
+
     let transaction_index = {
         let index_transaction_by_from_address = Index {
             index_id: INDEX_TRANSACTION_BY_FROM_ADDRESS,
@@ -539,9 +628,18 @@ fn collect_block_body_and_index(
                 .into(),
         };
 
+        let join_transaction_to_trace = Join {
+            to_fragment_id: TRACE_FRAGMENT_ID,
+            index: join_transaction_to_trace.build().into(),
+        };
+
         JoinFragment {
             fragment_id: TRANSACTION_FRAGMENT_ID,
-            joins: vec![join_transaction_to_receipt, join_transaction_to_logs],
+            joins: vec![
+                join_transaction_to_receipt,
+                join_transaction_to_logs,
+                join_transaction_to_trace,
+            ],
         }
     };
 
@@ -665,12 +763,18 @@ fn collect_block_body_and_index(
                 .into(),
         };
 
+        let join_log_to_trace = Join {
+            to_fragment_id: TRACE_FRAGMENT_ID,
+            index: join_log_to_trace.build().into(),
+        };
+
         JoinFragment {
             fragment_id: LOG_FRAGMENT_ID,
             joins: vec![
                 join_log_to_transaction,
                 join_log_to_receipt,
                 join_log_to_siblings,
+                join_log_to_trace,
             ],
         }
     };
@@ -687,11 +791,18 @@ fn collect_block_body_and_index(
             transaction_index,
             receipt_index,
             log_index,
+            trace_index,
         ],
     };
 
     let join_group = JoinGroupFragment {
-        joins: vec![withdrawal_join, transaction_join, receipt_join, log_join],
+        joins: vec![
+            withdrawal_join,
+            transaction_join,
+            receipt_join,
+            log_join,
+            trace_join,
+        ],
     };
 
     Ok((
@@ -700,6 +811,7 @@ fn collect_block_body_and_index(
             transaction_fragment,
             receipt_fragment,
             log_fragment,
+            trace_fragment,
         ],
         index_group,
         join_group,

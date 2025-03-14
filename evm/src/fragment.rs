@@ -14,6 +14,9 @@ pub const RECEIPT_FRAGMENT_NAME: &str = "receipt";
 pub const LOG_FRAGMENT_ID: u8 = 5;
 pub const LOG_FRAGMENT_NAME: &str = "log";
 
+pub const TRACE_FRAGMENT_ID: u8 = 6;
+pub const TRACE_FRAGMENT_NAME: &str = "trace";
+
 pub const INDEX_WITHDRAWAL_BY_VALIDATOR_INDEX: u8 = 0;
 pub const INDEX_WITHDRAWAL_BY_ADDRESS: u8 = 1;
 

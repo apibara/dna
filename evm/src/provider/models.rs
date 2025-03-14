@@ -2,6 +2,11 @@ pub use alloy_primitives::{Address, Bloom, B256, U128, U256};
 pub use alloy_rpc_types::{
     AccessListItem, Block, Header, Log, Signature, Transaction, TransactionReceipt, Withdrawal,
 };
+pub use alloy_rpc_types_trace::parity::{
+    Action, CallAction, CallOutput, CallType, CreateAction, CreateOutput, RewardAction, RewardType,
+    SelfdestructAction, TraceOutput, TraceResults, TraceResultsWithTransactionHash,
+    TransactionTrace,
+};
 use apibara_dna_common::{chain::BlockInfo, Cursor, Hash};
 
 pub type BlockWithTxHashes = Block<B256>;
