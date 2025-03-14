@@ -832,6 +832,7 @@ impl ModelExt for models::TransactionTraceWithHash {
     fn to_proto(&self) -> Self::Proto {
         starknet::Trace {
             filter_ids: Vec::default(),
+            transaction_index: u32::MAX,
             transaction_hash: self.transaction_hash.to_proto().into(),
             trace_root: self.trace_root.to_proto().into(),
         }

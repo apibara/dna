@@ -472,7 +472,9 @@ fn collect_block_body_and_index(
 
     for transaction_trace in transaction_traces.iter() {
         let transaction_index = block_traces.len() as u32;
-        let trace = transaction_trace.to_proto();
+        let mut trace = transaction_trace.to_proto();
+
+        trace.transaction_index = transaction_index;
 
         join_transaction_to_trace.insert(transaction_index, transaction_index);
 

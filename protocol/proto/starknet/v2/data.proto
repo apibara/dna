@@ -460,14 +460,16 @@ message NonceUpdate {
 
 message Trace {
   repeated uint32 filter_ids = 1;
+  // Index of the transaction in the block.
+  uint32 transaction_index = 2;
   // Transaction hash.
-  FieldElement transaction_hash = 2;
+  FieldElement transaction_hash = 3;
 
   oneof trace_root {
-    InvokeTransactionTrace invoke = 3;
-    DeclareTransactionTrace declare = 4;
-    DeployAccountTransactionTrace deploy_account = 5;
-    L1HandlerTransactionTrace l1_handler = 6;
+    InvokeTransactionTrace invoke = 4;
+    DeclareTransactionTrace declare = 5;
+    DeployAccountTransactionTrace deploy_account = 6;
+    L1HandlerTransactionTrace l1_handler = 7;
   }
 }
 
