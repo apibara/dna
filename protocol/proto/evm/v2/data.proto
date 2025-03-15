@@ -18,6 +18,8 @@ message Block {
   repeated TransactionReceipt receipts = 4;
   // List of logs.
   repeated Log logs = 5;
+  // List of transaction traces.
+  repeated TransactionTrace traces = 6;
 }
 
 // Block header.
@@ -201,4 +203,120 @@ enum TransactionStatus {
   TRANSACTION_STATUS_UNSPECIFIED = 0;
   TRANSACTION_STATUS_SUCCEEDED = 1;
   TRANSACTION_STATUS_REVERTED = 2;
+}
+
+message TransactionTrace {
+  repeated uint32 filter_ids = 1;
+  // Index of the transaction in the block.
+  uint32 transaction_index = 2;
+  // Transaction hash.
+  B256 transaction_hash = 3;
+  // Traces.
+  repeated Trace traces = 4;
+}
+
+message Trace {
+  // Represent the kind of action.
+  oneof action {
+    CallAction call = 1;
+    CreateAction create = 2;
+    SelfDestructAction self_destruct = 3;
+    RewardAction reward = 4;
+  }
+  // Error message if the transaction failed.
+  optional string error = 5;
+  oneof output {
+    // Output of a regular call.
+    CallOutput call_output = 6;
+    // Output of a create call.
+    CreateOutput create_output = 7;
+  }
+  // Number of sub traces.
+  uint32 subtraces = 8;
+  // The identifier of this trace in the trace tree.
+  repeated uint32 trace_address = 9;
+}
+
+message CallAction {
+  // Address of the sending account.
+  Address from_address = 1;
+  // Call type.
+  CallType type = 2;
+  // The gas available to execute the call.
+  uint64 gas = 3;
+  // Input data provided by the call.
+  bytes input = 4;
+  // Target of the destination address.
+  Address to_address = 5;
+  // Value transferred to the destination account.
+  U256 value = 6;
+}
+
+message CreateAction {
+  // Address of the sending account.
+  Address from_address = 1;
+  // The gas available to execute the call.
+  uint64 gas = 2;
+  // Input data provided by the call.
+  bytes init = 3;
+  // Value transferred to the ne account.
+  U256 value = 4;
+  // Contract creation method.
+  CreationMethod creation_method = 5;
+}
+
+message SelfDestructAction {
+  // The destroyed address.
+  Address address = 1;
+  // Balance of the destroyed account before destruct.
+  U256 balance = 2;
+  // The heir address.
+  Address refund_address = 3;
+}
+
+message RewardAction {
+  // The author's address.
+  Address author = 1;
+  // Reward type.
+  RewardType type = 2;
+  // The reward's value.
+  U256 value = 3;
+}
+
+message CallOutput {
+  // Gas used.
+  uint64 gas_used = 1;
+  // Output data.
+  bytes output = 2;
+}
+
+message CreateOutput {
+  // Contract address.
+  Address address = 1;
+  // Code
+  bytes code = 2;
+  // Gas used.
+  uint64 gas_used = 3;
+}
+
+enum CallType {
+  CALL_TYPE_UNSPECIFIED = 0;
+  CALL_TYPE_CALL = 1;
+  CALL_TYPE_CALL_CODE = 2;
+  CALL_TYPE_DELEGATE_CALL = 3;
+  CALL_TYPE_STATIC_CALL = 4;
+  CALL_TYPE_AUTH_CALL = 5;
+}
+
+enum CreationMethod {
+  CREATION_METHOD_UNSPECIFIED = 0;
+  CREATION_METHOD_CREATE = 1;
+  CREATION_METHOD_CREATE2 = 2;
+  CREATION_METHOD_EOF_CREATE = 3;
+}
+
+enum RewardType {
+  REWARD_TYPE_UNSPECIFIED = 0;
+  REWARD_TYPE_BLOCK = 1;
+  REWARD_TYPE_UNCLE = 2;
 }

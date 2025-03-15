@@ -168,7 +168,9 @@ impl FullCanonicalChain {
             .change_context(ChainViewError)
             .attach_printable("failed to get chain segment")?
             .ok_or(ChainViewError)
-            .attach_printable("chain segment not found")?;
+            .attach_printable("chain segment not found")
+            .attach_printable_lazy(|| format!("block number: {}", block_number))
+            .attach_printable_lazy(|| format!("starting block: {}", chain_segment_start))?;
 
         Ok(segment)
     }

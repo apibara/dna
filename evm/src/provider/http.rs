@@ -1,8 +1,9 @@
 use std::{sync::Arc, time::Duration};
 
 use alloy_primitives::BlockHash;
-use alloy_provider::{network::Ethereum, Provider, ProviderBuilder};
+use alloy_provider::{ext::TraceApi, network::Ethereum, Provider, ProviderBuilder};
 use alloy_rpc_client::ClientBuilder;
+use alloy_rpc_types_trace::parity::TraceType;
 use alloy_transport::BoxTransport;
 use error_stack::{Report, Result, ResultExt};
 use reqwest::header::{HeaderMap, HeaderValue};
@@ -28,9 +29,19 @@ pub struct JsonRpcProviderOptions {
     pub headers: HeaderMap<HeaderValue>,
 }
 
+pub trait ProviderWithTraceApi:
+    Provider<BoxTransport, Ethereum> + TraceApi<Ethereum, BoxTransport>
+{
+}
+
+impl<T> ProviderWithTraceApi for T where
+    T: Provider<BoxTransport, Ethereum> + TraceApi<Ethereum, BoxTransport>
+{
+}
+
 #[derive(Clone)]
 pub struct JsonRpcProvider {
-    provider: Arc<dyn Provider<BoxTransport, Ethereum>>,
+    provider: Arc<dyn ProviderWithTraceApi>,
     options: JsonRpcProviderOptions,
 }
 
@@ -124,6 +135,23 @@ impl JsonRpcProvider {
         response
             .change_context(JsonRpcProviderError::Request)?
             .ok_or(JsonRpcProviderError::NotFound.into())
+    }
+
+    pub async fn trace_block_transactions(
+        &self,
+        block_id: BlockId,
+    ) -> Result<Vec<models::TraceResultsWithTransactionHash>, JsonRpcProviderError> {
+        let request = self
+            .provider
+            .trace_replay_block_transactions(block_id, &[TraceType::Trace]);
+
+        let Ok(response) = tokio::time::timeout(self.options.timeout, request).await else {
+            return Err(JsonRpcProviderError::Timeout)
+                .attach_printable("failed to get block transaction traces")
+                .attach_printable_lazy(|| format!("block id: {block_id:?}"));
+        };
+
+        response.change_context(JsonRpcProviderError::Request)
     }
 }
 

@@ -15,7 +15,7 @@ pub enum StarknetProviderError {
     Configuration,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum BlockId {
     /// Head block.
     Head,
@@ -117,6 +117,25 @@ impl StarknetProvider {
         response
             .or_else(convert_error)
             .attach_printable("failed to get block state update")
+            .attach_printable_lazy(|| format!("block id: {block_id:?}"))
+    }
+
+    pub async fn get_block_transaction_traces(
+        &self,
+        block_id: &BlockId,
+    ) -> Result<Vec<models::TransactionTraceWithHash>, StarknetProviderError> {
+        let starknet_block_id: starknet::core::types::BlockId = block_id.into();
+
+        let request = self.client.trace_block_transactions(starknet_block_id);
+        let Ok(response) = tokio::time::timeout(self.options.timeout, request).await else {
+            return Err(StarknetProviderError::Timeout)
+                .attach_printable("failed to get block traces")
+                .attach_printable_lazy(|| format!("block id: {block_id:?}"));
+        };
+
+        response
+            .or_else(convert_error)
+            .attach_printable("failed to get block traces")
             .attach_printable_lazy(|| format!("block id: {block_id:?}"))
     }
 }

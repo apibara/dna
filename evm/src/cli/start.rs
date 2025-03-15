@@ -22,6 +22,14 @@ pub struct StartCommand {
         default_value = "false"
     )]
     no_ingest_pending: bool,
+
+    /// Ingest transaction traces.
+    #[arg(
+        long = "evm.ingest-traces",
+        env = "EVM_INGEST_TRACES",
+        default_value = "false"
+    )]
+    ingest_traces: bool,
 }
 
 impl StartCommand {
@@ -30,6 +38,7 @@ impl StartCommand {
         let provider = self.rpc.to_json_rpc_provider()?;
         let evm_ingestion_options = EvmBlockIngestionOptions {
             ingest_pending: !self.no_ingest_pending,
+            ingest_traces: self.ingest_traces,
         };
         let evm_chain = EvmChainSupport::new(provider, evm_ingestion_options);
 

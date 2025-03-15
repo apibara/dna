@@ -23,6 +23,9 @@ pub const CONTRACT_CHANGE_FRAGMENT_NAME: &str = "contract_change";
 pub const NONCE_UPDATE_FRAGMENT_ID: u8 = 8;
 pub const NONCE_UPDATE_FRAGMENT_NAME: &str = "nonce_update";
 
+pub const TRACE_FRAGMENT_ID: u8 = 9;
+pub const TRACE_FRAGMENT_NAME: &str = "trace";
+
 pub const INDEX_TRANSACTION_BY_STATUS: u8 = 0;
 pub const INDEX_TRANSACTION_BY_TYPE: u8 = 1;
 
@@ -45,3 +48,5 @@ pub const INDEX_STORAGE_DIFF_BY_CONTRACT_ADDRESS: u8 = 0;
 pub const INDEX_CONTRACT_CHANGE_BY_TYPE: u8 = 0;
 
 pub const INDEX_NONCE_UPDATE_BY_CONTRACT_ADDRESS: u8 = 0;
+
+// No trace indexes.

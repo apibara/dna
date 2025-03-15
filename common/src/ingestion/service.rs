@@ -230,6 +230,7 @@ where
         fields(head, finalized, starting_block)
     )]
     pub async fn initialize(&mut self) -> Result<IngestionState, IngestionError> {
+        debug!("initializing ingestion");
         let head = self.ingestion.get_head_cursor().await?;
         let finalized = self.ingestion.get_finalized_cursor().await?;
 
@@ -237,6 +238,7 @@ where
 
         current_span.record("head", head.number);
         current_span.record("finalized", finalized.number);
+        debug!(head = %head, finalized = %finalized, "received head and finalized blocks");
 
         self.state_client
             .put_finalized(finalized.number)

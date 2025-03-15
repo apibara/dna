@@ -7,6 +7,7 @@ pub mod proto;
 pub mod provider;
 
 use apibara_dna_common::{fragment::FragmentInfo, ChainSupport};
+use fragment::{TRACE_FRAGMENT_ID, TRACE_FRAGMENT_NAME};
 
 use crate::{
     filter::EvmFilterFactory,
@@ -53,6 +54,10 @@ impl ChainSupport for EvmChainSupport {
             FragmentInfo {
                 fragment_id: LOG_FRAGMENT_ID,
                 name: LOG_FRAGMENT_NAME.to_string(),
+            },
+            FragmentInfo {
+                fragment_id: TRACE_FRAGMENT_ID,
+                name: TRACE_FRAGMENT_NAME.to_string(),
             },
         ]
     }

@@ -165,6 +165,167 @@ impl ModelExt for models::AccessListItem {
     }
 }
 
+impl ModelExt for models::TraceResults {
+    type Proto = evm::TransactionTrace;
+
+    fn to_proto(&self) -> Self::Proto {
+        evm::TransactionTrace {
+            filter_ids: Vec::default(),
+            transaction_index: u32::MAX,
+            transaction_hash: None,
+            traces: self.trace.iter().map(ModelExt::to_proto).collect(),
+        }
+    }
+}
+
+impl ModelExt for models::TransactionTrace {
+    type Proto = evm::Trace;
+
+    fn to_proto(&self) -> Self::Proto {
+        evm::Trace {
+            action: self.action.to_proto().into(),
+            error: self.error.clone(),
+            output: self.result.as_ref().map(ModelExt::to_proto),
+            subtraces: self.subtraces as u32,
+            trace_address: self.trace_address.iter().map(|a| *a as u32).collect(),
+        }
+    }
+}
+
+impl ModelExt for models::Action {
+    type Proto = evm::trace::Action;
+
+    fn to_proto(&self) -> Self::Proto {
+        use models::Action::*;
+
+        match self {
+            Create(action) => evm::trace::Action::Create(action.to_proto()),
+            Call(action) => evm::trace::Action::Call(action.to_proto()),
+            Selfdestruct(action) => evm::trace::Action::SelfDestruct(action.to_proto()),
+            Reward(action) => evm::trace::Action::Reward(action.to_proto()),
+        }
+    }
+}
+
+impl ModelExt for models::CallAction {
+    type Proto = evm::CallAction;
+
+    fn to_proto(&self) -> Self::Proto {
+        evm::CallAction {
+            from_address: self.from.to_proto().into(),
+            r#type: self.call_type.to_proto(),
+            gas: self.gas,
+            input: self.input.to_vec(),
+            to_address: self.to.to_proto().into(),
+            value: self.value.to_proto().into(),
+        }
+    }
+}
+
+impl ModelExt for models::CreateAction {
+    type Proto = evm::CreateAction;
+
+    fn to_proto(&self) -> Self::Proto {
+        evm::CreateAction {
+            from_address: self.from.to_proto().into(),
+            gas: self.gas,
+            init: self.init.to_vec(),
+            value: self.value.to_proto().into(),
+            creation_method: 0,
+        }
+    }
+}
+
+impl ModelExt for models::SelfdestructAction {
+    type Proto = evm::SelfDestructAction;
+
+    fn to_proto(&self) -> Self::Proto {
+        evm::SelfDestructAction {
+            address: self.address.to_proto().into(),
+            balance: self.balance.to_proto().into(),
+            refund_address: self.refund_address.to_proto().into(),
+        }
+    }
+}
+
+impl ModelExt for models::RewardAction {
+    type Proto = evm::RewardAction;
+
+    fn to_proto(&self) -> Self::Proto {
+        evm::RewardAction {
+            author: self.author.to_proto().into(),
+            r#type: self.reward_type.to_proto(),
+            value: self.value.to_proto().into(),
+        }
+    }
+}
+
+impl ModelExt for models::TraceOutput {
+    type Proto = evm::trace::Output;
+
+    fn to_proto(&self) -> Self::Proto {
+        use models::TraceOutput::*;
+
+        match self {
+            Call(output) => evm::trace::Output::CallOutput(output.to_proto()),
+            Create(output) => evm::trace::Output::CreateOutput(output.to_proto()),
+        }
+    }
+}
+
+impl ModelExt for models::CallOutput {
+    type Proto = evm::CallOutput;
+
+    fn to_proto(&self) -> Self::Proto {
+        evm::CallOutput {
+            gas_used: self.gas_used,
+            output: self.output.to_vec(),
+        }
+    }
+}
+
+impl ModelExt for models::CreateOutput {
+    type Proto = evm::CreateOutput;
+
+    fn to_proto(&self) -> Self::Proto {
+        evm::CreateOutput {
+            address: self.address.to_proto().into(),
+            code: self.code.to_vec(),
+            gas_used: self.gas_used,
+        }
+    }
+}
+
+impl ModelExt for models::CallType {
+    type Proto = i32;
+
+    fn to_proto(&self) -> Self::Proto {
+        use models::CallType::*;
+
+        match self {
+            None => evm::CallType::Unspecified as i32,
+            Call => evm::CallType::Call as i32,
+            CallCode => evm::CallType::CallCode as i32,
+            DelegateCall => evm::CallType::DelegateCall as i32,
+            StaticCall => evm::CallType::StaticCall as i32,
+            AuthCall => evm::CallType::AuthCall as i32,
+        }
+    }
+}
+
+impl ModelExt for models::RewardType {
+    type Proto = i32;
+
+    fn to_proto(&self) -> Self::Proto {
+        use models::RewardType::*;
+
+        match self {
+            Block => evm::RewardType::Block as i32,
+            Uncle => evm::RewardType::Uncle as i32,
+        }
+    }
+}
+
 impl ModelExt for models::B256 {
     type Proto = evm::B256;
 

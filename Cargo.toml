@@ -29,8 +29,9 @@ incremental = false
 alloy-primitives = "0.8"
 alloy-eips = "0.3.6"
 alloy-rpc-client = "0.3.6"
-alloy-provider = "0.3.6"
+alloy-provider = { version = "0.3.6", features = ["trace-api"] }
 alloy-rpc-types = "0.3.6"
+alloy-rpc-types-trace = "0.3.6"
 alloy-transport = "0.3.6"
 alloy-transport-http = "0.3.6"
 bytes = { version = "1.7.1", features = ["serde"] }

@@ -1,4 +1,4 @@
-use anyhow::anyhow;
+use anyhow::{anyhow, Context};
 use apibara_observability::{Counter, KeyValue};
 use bytes::Bytes;
 use error_stack::{Result, ResultExt};
@@ -81,7 +81,7 @@ impl BlockStoreReader {
                 async move {
                     match client.get(&key, GetOptions::default()).await {
                         Ok(response) => Ok(response.body),
-                        Err(err) => Err(anyhow!(err)),
+                        Err(err) => Err(anyhow!(err)).with_context(|| format!("block key: {key}")),
                     }
                 }
             }
@@ -118,7 +118,9 @@ impl BlockStoreReader {
                 async move {
                     match client.get(&key, GetOptions::default()).await {
                         Ok(response) => Ok(response.body),
-                        Err(err) => Err(anyhow!(err)),
+                        Err(err) => {
+                            Err(anyhow!(err)).with_context(|| format!("pending block key: {key}"))
+                        }
                     }
                 }
             }
@@ -163,7 +165,9 @@ impl BlockStoreReader {
                 async move {
                     match client.get(&key, GetOptions::default()).await {
                         Ok(response) => Ok(response.body),
-                        Err(err) => Err(anyhow!(err)),
+                        Err(err) => {
+                            Err(anyhow!(err)).with_context(|| format!("segment key: {key}"))
+                        }
                     }
                 }
             }
@@ -203,7 +207,7 @@ impl BlockStoreReader {
                 async move {
                     match client.get(&key, GetOptions::default()).await {
                         Ok(response) => Ok(response.body),
-                        Err(err) => Err(anyhow!(err)),
+                        Err(err) => Err(anyhow!(err)).with_context(|| format!("group key: {key}")),
                     }
                 }
             }

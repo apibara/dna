@@ -825,3 +825,158 @@ impl ModelExt for models::NonceUpdate {
         }
     }
 }
+
+impl ModelExt for models::TransactionTraceWithHash {
+    type Proto = starknet::TransactionTrace;
+
+    fn to_proto(&self) -> Self::Proto {
+        starknet::TransactionTrace {
+            filter_ids: Vec::default(),
+            transaction_index: u32::MAX,
+            transaction_hash: self.transaction_hash.to_proto().into(),
+            trace_root: self.trace_root.to_proto().into(),
+        }
+    }
+}
+
+impl ModelExt for models::TransactionTrace {
+    type Proto = starknet::transaction_trace::TraceRoot;
+
+    fn to_proto(&self) -> Self::Proto {
+        use models::TransactionTrace::*;
+
+        match self {
+            Invoke(inner) => inner.to_proto(),
+            DeployAccount(inner) => inner.to_proto(),
+            L1Handler(inner) => inner.to_proto(),
+            Declare(inner) => inner.to_proto(),
+        }
+    }
+}
+
+impl ModelExt for models::InvokeTransactionTrace {
+    type Proto = starknet::transaction_trace::TraceRoot;
+
+    fn to_proto(&self) -> Self::Proto {
+        let inner = starknet::InvokeTransactionTrace {
+            validate_invocation: self.validate_invocation.as_ref().map(ModelExt::to_proto),
+            execute_invocation: self.execute_invocation.to_proto().into(),
+            fee_transfer_invocation: self
+                .fee_transfer_invocation
+                .as_ref()
+                .map(ModelExt::to_proto),
+        };
+
+        starknet::transaction_trace::TraceRoot::Invoke(inner)
+    }
+}
+
+impl ModelExt for models::DeployAccountTransactionTrace {
+    type Proto = starknet::transaction_trace::TraceRoot;
+
+    fn to_proto(&self) -> Self::Proto {
+        let inner = starknet::DeployAccountTransactionTrace {
+            validate_invocation: self.validate_invocation.as_ref().map(ModelExt::to_proto),
+            constructor_invocation: self.constructor_invocation.to_proto().into(),
+            fee_transfer_invocation: self
+                .fee_transfer_invocation
+                .as_ref()
+                .map(ModelExt::to_proto),
+        };
+
+        starknet::transaction_trace::TraceRoot::DeployAccount(inner.into())
+    }
+}
+
+impl ModelExt for models::L1HandlerTransactionTrace {
+    type Proto = starknet::transaction_trace::TraceRoot;
+
+    fn to_proto(&self) -> Self::Proto {
+        let inner = starknet::L1HandlerTransactionTrace {
+            function_invocation: self.function_invocation.to_proto().into(),
+        };
+
+        starknet::transaction_trace::TraceRoot::L1Handler(inner)
+    }
+}
+
+impl ModelExt for models::DeclareTransactionTrace {
+    type Proto = starknet::transaction_trace::TraceRoot;
+
+    fn to_proto(&self) -> Self::Proto {
+        let inner = starknet::DeclareTransactionTrace {
+            validate_invocation: self.validate_invocation.as_ref().map(ModelExt::to_proto),
+            fee_transfer_invocation: self
+                .fee_transfer_invocation
+                .as_ref()
+                .map(ModelExt::to_proto),
+        };
+
+        starknet::transaction_trace::TraceRoot::Declare(inner)
+    }
+}
+
+impl ModelExt for models::ExecuteInvocation {
+    type Proto = starknet::invoke_transaction_trace::ExecuteInvocation;
+
+    fn to_proto(&self) -> Self::Proto {
+        use models::ExecuteInvocation::*;
+
+        match self {
+            Success(invocation) => starknet::invoke_transaction_trace::ExecuteInvocation::Success(
+                invocation.to_proto().into(),
+            ),
+            Reverted(reason) => {
+                let inner = starknet::ExecutionReverted {
+                    reason: reason.revert_reason.clone(),
+                };
+                starknet::invoke_transaction_trace::ExecuteInvocation::Reverted(inner)
+            }
+        }
+    }
+}
+
+impl ModelExt for models::FunctionInvocation {
+    type Proto = starknet::FunctionInvocation;
+
+    fn to_proto(&self) -> Self::Proto {
+        starknet::FunctionInvocation {
+            contract_address: self.contract_address.to_proto().into(),
+            entry_point_selector: self.entry_point_selector.to_proto().into(),
+            calldata: self.calldata.iter().map(ModelExt::to_proto).collect(),
+            caller_address: self.caller_address.to_proto().into(),
+            class_hash: self.class_hash.to_proto().into(),
+            call_type: self.call_type.to_proto(),
+            result: self.result.iter().map(ModelExt::to_proto).collect(),
+            calls: self.calls.iter().map(ModelExt::to_proto).collect(),
+            events: self.events.iter().map(|ev| ev.order as u32).collect(),
+            messages: self.messages.iter().map(|msg| msg.order as u32).collect(),
+        }
+    }
+}
+
+impl ModelExt for models::FunctionCall {
+    type Proto = starknet::FunctionCall;
+
+    fn to_proto(&self) -> Self::Proto {
+        starknet::FunctionCall {
+            contract_address: self.contract_address.to_proto().into(),
+            entry_point_selector: self.entry_point_selector.to_proto().into(),
+            calldata: self.calldata.iter().map(ModelExt::to_proto).collect(),
+        }
+    }
+}
+
+impl ModelExt for models::CallType {
+    type Proto = i32;
+
+    fn to_proto(&self) -> Self::Proto {
+        use models::CallType::*;
+
+        match *self {
+            LibraryCall => starknet::CallType::LibraryCall as i32,
+            Call => starknet::CallType::Call as i32,
+            Delegate => starknet::CallType::Delegate as i32,
+        }
+    }
+}
