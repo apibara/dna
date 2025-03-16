@@ -4,6 +4,9 @@ use azure_storage_blobs::prelude::ClientBuilder;
 use bytes::{Bytes, BytesMut};
 use error_stack::{Result, ResultExt};
 use futures::TryStreamExt;
+use tracing::debug;
+
+use crate::object_store::ObjectStoreResultExt;
 
 use super::{
     error::ToObjectStoreResult, DeleteOptions, GetOptions, ObjectETag, ObjectStoreError, PutMode,
@@ -20,6 +23,25 @@ impl AzureBlobClient {
     ) -> Self {
         let inner = ClientBuilder::with_location(location.into(), credentials.into());
         AzureBlobClient(inner)
+    }
+
+    pub async fn has_bucket(&self, name: &str) -> Result<bool, ObjectStoreError> {
+        let properties = match self
+            .0
+            .clone()
+            .container_client(name)
+            .get_properties()
+            .await
+            .change_to_object_store_context()
+        {
+            Ok(properties) => properties,
+            Err(err) if err.is_not_found() => return Ok(false),
+            Err(err) => return Err(err),
+        };
+
+        debug!(properties = ?properties, "azure blob storage container exists");
+
+        Ok(true)
     }
 
     pub async fn create_bucket(&self, name: &str) -> Result<(), ObjectStoreError> {
@@ -114,7 +136,6 @@ impl<T> ToObjectStoreResult for std::result::Result<T, azure_storage::Error> {
             Ok(value) => Ok(value),
             Err(err) => match err.kind() {
                 ErrorKind::HttpResponse { status, .. } => {
-                    println!("status {status:?}");
                     let status_code: u16 = (*status).into();
                     match status_code {
                         409 | 412 => Err(err).change_context(ObjectStoreError::Precondition),

@@ -1,7 +1,7 @@
 use apibara_etcd::normalize_prefix;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use error_stack::{Result, ResultExt};
-use tracing::debug;
+use tracing::{debug, info};
 
 mod aws_s3;
 mod azure_blob;
@@ -94,6 +94,13 @@ impl ObjectStore {
 
     /// Ensure the currently configured bucket exists.
     pub async fn ensure_bucket(&self) -> Result<(), ObjectStoreError> {
+        if self.client.has_bucket(&self.bucket).await? {
+            debug!("bucket already exists");
+            return Ok(());
+        }
+
+        info!(name = self.bucket, "S3 bucket does not exist. Creating.");
+
         self.client
             .create_bucket(&self.bucket)
             .await
