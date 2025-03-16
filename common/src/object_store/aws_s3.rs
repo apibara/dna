@@ -2,8 +2,8 @@ use bytes::Bytes;
 use error_stack::{Result, ResultExt};
 
 use super::{
-    error::ObjectStoreError, DeleteOptions, GetOptions, ObjectETag, PutMode, PutOptions,
-    ToObjectStoreResult,
+    error::ObjectStoreError, DeleteOptions, GetOptions, ObjectETag, ObjectStoreResultExt, PutMode,
+    PutOptions, ToObjectStoreResult,
 };
 
 #[derive(Clone)]
@@ -22,6 +22,21 @@ impl AwsS3Client {
     pub async fn new_from_env() -> Self {
         let config = aws_config::load_from_env().await;
         Self::new(config)
+    }
+
+    pub async fn has_bucket(&self, name: &str) -> Result<bool, ObjectStoreError> {
+        match self
+            .0
+            .head_bucket()
+            .bucket(name)
+            .send()
+            .await
+            .change_to_object_store_context()
+        {
+            Ok(_) => Ok(true),
+            Err(err) if err.is_not_found() => Ok(false),
+            Err(err) => Err(err),
+        }
     }
 
     pub async fn create_bucket(&self, name: &str) -> Result<(), ObjectStoreError> {

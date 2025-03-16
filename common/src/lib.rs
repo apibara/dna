@@ -75,6 +75,13 @@ mod server_impl {
             .into_object_store_client()
             .await
             .change_context(ServerError)?;
+
+        object_store
+            .ensure_bucket()
+            .await
+            .change_context(ServerError)
+            .attach_printable("failed to ensure bucket exists")?;
+
         let mut etcd_client = args
             .etcd
             .into_etcd_client()

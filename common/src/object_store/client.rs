@@ -13,6 +13,13 @@ pub enum ObjectStoreClient {
 }
 
 impl ObjectStoreClient {
+    pub async fn has_bucket(&self, name: &str) -> Result<bool, ObjectStoreError> {
+        match self {
+            Self::AwsS3(client) => client.has_bucket(name).await,
+            Self::AzureBlob(client) => client.has_bucket(name).await,
+        }
+    }
+
     pub async fn create_bucket(&self, name: &str) -> Result<(), ObjectStoreError> {
         match self {
             Self::AwsS3(client) => client.create_bucket(name).await,
