@@ -57,7 +57,13 @@ pub struct PutOptions {
 }
 
 #[derive(Default, Clone, Debug)]
-pub struct DeleteOptions {}
+pub struct DeleteOptions {
+    /// The provided path is already inclusive of the prefix.
+    pub fullpath: Option<bool>,
+}
+
+#[derive(Default, Clone, Debug)]
+pub struct ListOptions {}
 
 #[derive(Debug)]
 pub struct GetResult {
@@ -72,6 +78,11 @@ pub struct PutResult {
 
 #[derive(Debug)]
 pub struct DeleteResult;
+
+#[derive(Debug)]
+pub struct ListResult {
+    pub object_ids: Vec<String>,
+}
 
 impl ObjectStore {
     pub fn new(client: ObjectStoreClient, options: ObjectStoreOptions) -> Self {
@@ -185,20 +196,41 @@ impl ObjectStore {
         Ok(PutResult { etag })
     }
 
-    #[tracing::instrument(name = "object_store_delete", skip(self, _options), level = "debug")]
+    #[tracing::instrument(name = "object_store_delete", skip(self, options), level = "debug")]
     pub async fn delete(
         &self,
         path: &str,
-        _options: DeleteOptions,
+        options: DeleteOptions,
     ) -> Result<DeleteResult, ObjectStoreError> {
-        let key = self.full_key(path);
+        let key = if let Some(true) = options.fullpath {
+            path.to_string()
+        } else {
+            self.full_key(path)
+        };
         self.client
-            .delete_object(&self.bucket, &key, _options)
+            .delete_object(&self.bucket, &key, options)
             .await
             .attach_printable("failed to delete object")
             .attach_printable_lazy(|| format!("key: {key}"))?;
 
         Ok(DeleteResult)
+    }
+
+    #[tracing::instrument(name = "object_store_list", skip(self), level = "debug")]
+    pub async fn list(
+        &self,
+        prefix: &str,
+        _options: ListOptions,
+    ) -> Result<ListResult, ObjectStoreError> {
+        let key = self.full_key(prefix);
+        let object_ids = self
+            .client
+            .list_objects(&self.bucket, &key)
+            .await
+            .attach_printable("failed to list objects")
+            .attach_printable_lazy(|| format!("prefix: {key}"))?;
+
+        Ok(ListResult { object_ids })
     }
 
     fn full_key(&self, path: &str) -> String {

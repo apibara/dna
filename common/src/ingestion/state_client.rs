@@ -13,6 +13,9 @@ pub static FINALIZED_KEY: &str = "ingestion/finalized";
 pub static SEGMENTED_KEY: &str = "ingestion/segmented";
 pub static GROUPED_KEY: &str = "ingestion/grouped";
 
+// Use a different prefix for pruned blocks to avoid overwhelming the compaction state store
+pub static PRUNED_KEY: &str = "compaction/pruned";
+
 #[derive(Debug)]
 pub struct IngestionStateClientError;
 
@@ -269,6 +272,41 @@ impl IngestionStateClient {
             .await
             .change_context(IngestionStateClientError)
             .attach_printable("failed to put grouped block")?;
+
+        Ok(())
+    }
+
+    pub async fn get_pruned(&mut self) -> Result<Option<u64>, IngestionStateClientError> {
+        let response = self
+            .kv_client
+            .get(PRUNED_KEY)
+            .await
+            .change_context(IngestionStateClientError)
+            .attach_printable("failed to get pruned block")?;
+
+        let Some(kv) = response.kvs().first() else {
+            return Ok(None);
+        };
+
+        let value = String::from_utf8(kv.value().to_vec())
+            .change_context(IngestionStateClientError)
+            .attach_printable("failed to decode pruned block")?;
+
+        let block = value
+            .parse::<u64>()
+            .change_context(IngestionStateClientError)
+            .attach_printable("failed to parse pruned block")?;
+
+        Ok(Some(block))
+    }
+
+    pub async fn put_pruned(&mut self, block: u64) -> Result<(), IngestionStateClientError> {
+        let value = block.to_string();
+        self.kv_client
+            .put(PRUNED_KEY, value.as_bytes())
+            .await
+            .change_context(IngestionStateClientError)
+            .attach_printable("failed to put pruned block")?;
 
         Ok(())
     }

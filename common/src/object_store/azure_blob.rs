@@ -110,6 +110,29 @@ impl AzureBlobClient {
         Ok(response.etag.into())
     }
 
+    pub async fn list_objects(
+        &self,
+        bucket: &str,
+        prefix: &str,
+    ) -> Result<Vec<String>, ObjectStoreError> {
+        let mut response = self
+            .0
+            .clone()
+            .container_client(bucket)
+            .list_blobs()
+            .prefix(prefix.to_string())
+            .into_stream();
+
+        let mut object_ids = Vec::new();
+        while let Some(response) = response.try_next().await.change_to_object_store_context()? {
+            for blob in response.blobs.blobs() {
+                object_ids.push(blob.name.to_string());
+            }
+        }
+
+        Ok(object_ids)
+    }
+
     pub async fn delete_object(
         &self,
         bucket: &str,
