@@ -124,6 +124,32 @@ impl AwsS3Client {
         Ok(etag)
     }
 
+    pub async fn list_objects(
+        &self,
+        bucket: &str,
+        prefix: &str,
+    ) -> Result<Vec<String>, ObjectStoreError> {
+        let response = self
+            .0
+            .list_objects()
+            .bucket(bucket)
+            .prefix(prefix)
+            .send()
+            .await
+            .change_to_object_store_context()?;
+
+        let mut object_ids = Vec::default();
+        for object in response.contents() {
+            let object_id = object
+                .key()
+                .ok_or(ObjectStoreError::Metadata)
+                .attach_printable("missing key")?;
+            object_ids.push(object_id.to_string());
+        }
+
+        Ok(object_ids)
+    }
+
     pub async fn delete_object(
         &self,
         bucket: &str,

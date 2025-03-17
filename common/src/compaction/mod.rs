@@ -3,6 +3,7 @@ mod error;
 mod group;
 mod group_builder;
 mod metrics;
+mod prune;
 mod segment;
 mod segment_builder;
 mod service;

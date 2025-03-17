@@ -52,6 +52,17 @@ impl ObjectStoreClient {
         }
     }
 
+    pub async fn list_objects(
+        &self,
+        bucket: &str,
+        prefix: &str,
+    ) -> Result<Vec<String>, ObjectStoreError> {
+        match self {
+            Self::AwsS3(client) => client.list_objects(bucket, prefix).await,
+            Self::AzureBlob(client) => client.list_objects(bucket, prefix).await,
+        }
+    }
+
     pub async fn delete_object(
         &self,
         bucket: &str,

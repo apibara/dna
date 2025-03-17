@@ -5,6 +5,7 @@ pub struct CompactionMetrics {
     pub up: Gauge<u64>,
     pub segmented: Gauge<u64>,
     pub grouped: Gauge<u64>,
+    pub pruned: Gauge<u64>,
     pub block_download: RequestMetrics,
     pub segment_creation: RequestMetrics,
     pub segment_upload: RequestMetrics,
@@ -31,6 +32,10 @@ impl Default for CompactionMetrics {
             grouped: meter
                 .u64_gauge("dna.compaction.grouped")
                 .with_description("dna compaction most recent grouped block")
+                .build(),
+            pruned: meter
+                .u64_gauge("dna.compaction.pruned")
+                .with_description("dna compaction most recent pruned block")
                 .build(),
             block_download: RequestMetrics::new("dna_compaction", "dna.compaction.block_download"),
             segment_creation: RequestMetrics::new(

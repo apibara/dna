@@ -6,7 +6,7 @@ use tracing::{debug, info};
 use crate::{
     block_store::{BlockStoreWriter, UncachedBlockStoreReader},
     chain_view::ChainView,
-    compaction::group::SegmentGroupService,
+    compaction::{group::SegmentGroupService, prune::PruneService},
     ingestion::IngestionStateClient,
     object_store::ObjectStore,
 };
@@ -91,8 +91,17 @@ impl CompactionService {
             self.metrics.clone(),
         );
 
+        let prune_service = PruneService::new(
+            self.options.segment_size,
+            chain_view.clone(),
+            self.block_store_writer.clone(),
+            self.state_client.clone(),
+            self.metrics.clone(),
+        );
+
         let segment_service_handle = tokio::spawn(segment_service.start(ct.clone()));
         let group_service_handle = tokio::spawn(group_service.start(ct.clone()));
+        let prune_service_handle = tokio::spawn(prune_service.start(ct.clone()));
 
         let lock_handle = lock_keep_alive_loop(lock, ct.clone());
 
@@ -111,6 +120,10 @@ impl CompactionService {
             group_service = group_service_handle => {
                 info!("compaction group service loop terminated");
                 group_service.change_context(CompactionError)?.change_context(CompactionError)
+            }
+            prune_service = prune_service_handle => {
+                info!("compaction prune service loop terminated");
+                prune_service.change_context(CompactionError)?.change_context(CompactionError)
             }
         }
     }

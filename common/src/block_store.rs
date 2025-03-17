@@ -8,7 +8,7 @@ use crate::{
     chain::PendingBlockInfo,
     file_cache::{FileCache, FileFetch},
     fragment,
-    object_store::{GetOptions, ObjectETag, ObjectStore, PutOptions},
+    object_store::{DeleteOptions, GetOptions, ObjectETag, ObjectStore, PutOptions},
     segment::{SegmentGroup, SerializedSegment},
     Cursor,
 };
@@ -373,6 +373,33 @@ impl BlockStoreWriter {
         Ok((size, response.etag))
     }
 
+    pub async fn delete_block_with_prefix(&self, block_number: u64) -> Result<(), BlockStoreError> {
+        let prefix = format_block_prefix(block_number);
+
+        for object_id in self
+            .client
+            .list(&prefix, Default::default())
+            .await
+            .change_context(BlockStoreError)?
+            .object_ids
+            .iter()
+        {
+            self.client
+                .delete(
+                    object_id,
+                    DeleteOptions {
+                        fullpath: Some(true),
+                    },
+                )
+                .await
+                .change_context(BlockStoreError)
+                .attach_printable("failed to delete block")
+                .attach_printable_lazy(|| format!("object_id: {}", object_id))?;
+        }
+
+        Ok(())
+    }
+
     pub async fn put_segment(
         &self,
         first_cursor: &Cursor,
@@ -422,15 +449,20 @@ impl BlockStoreWriter {
     }
 }
 
-fn format_pending_block_key(number: u64, generation: u64) -> String {
+fn format_block_prefix(block_number: u64) -> String {
+    format!("{}/{:0>10}", BLOCK_PREFIX, block_number)
+}
+
+fn format_pending_block_key(block_number: u64, generation: u64) -> String {
     format!(
-        "{}/{:0>10}/pending-{:0>4}",
-        BLOCK_PREFIX, number, generation
+        "{}/pending-{:0>4}",
+        format_block_prefix(block_number),
+        generation
     )
 }
 
 fn format_block_key(cursor: &Cursor) -> String {
-    format!("{}/{:0>10}/{}", BLOCK_PREFIX, cursor.number, cursor.hash)
+    format!("{}/{}", format_block_prefix(cursor.number), cursor.hash)
 }
 
 fn format_segment_key(first_block: &Cursor, name: &str) -> String {
