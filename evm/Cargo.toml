@@ -15,6 +15,7 @@ name = "apibara-dna-evm"
 path = "src/bin.rs"
 
 [dependencies]
+alloy-consensus.workspace = true
 alloy-rpc-client.workspace = true
 alloy-provider.workspace = true
 alloy-primitives.workspace = true

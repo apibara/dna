@@ -7,7 +7,9 @@ pub use alloy_consensus::{
     TxLegacy, TxType,
 };
 pub use alloy_eips::eip2930::AccessListItem;
-pub use alloy_primitives::{ruint::aliases::B384, Address, Bytes, Signature, TxKind, B256, U256};
+pub use alloy_primitives::{
+    ruint::aliases::B384, Address, Bytes, PrimitiveSignature, TxKind, B256, U256,
+};
 pub use alloy_rpc_types_beacon::header::HeaderResponse;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

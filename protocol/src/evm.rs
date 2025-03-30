@@ -22,6 +22,16 @@ impl_scalar_traits!(U128);
 impl_from_to_bytes!(U128, 16);
 impl_scalar_helpers!(U128, 16);
 
+impl U128 {
+    pub fn from_u64(value: u64) -> Self {
+        Self { x0: 0, x1: value }
+    }
+
+    pub fn from_u128(value: u128) -> Self {
+        Self::from_bytes(&value.to_be_bytes())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -56,5 +66,9 @@ mod tests {
         let u256 = U128::from_hex(hex).unwrap();
         let back = u256.to_hex();
         assert_eq!(hex, &back);
+
+        let x = U128::from_u64(1234);
+        let h = x.to_hex();
+        assert_eq!("0x000000000000000000000000000004d2", &h);
     }
 }

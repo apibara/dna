@@ -17,8 +17,8 @@ path = "src/bin.rs"
 [dependencies]
 alloy-primitives.workspace = true
 alloy-eips.workspace = true
-alloy-consensus = { version = "0.3.6", features = ["k256"] }
-alloy-rpc-types-beacon = "0.3.6"
+alloy-consensus.workspace = true
+alloy-rpc-types-beacon.workspace = true
 apibara-observability = { path = "../observability" }
 apibara-dna-common = { path = "../common" }
 apibara-dna-protocol = { path = "../protocol" }

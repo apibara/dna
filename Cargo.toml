@@ -26,14 +26,16 @@ lto = "fat"
 incremental = false
 
 [workspace.dependencies]
+alloy-consensus = { version = "0.13.0", features = ["k256"] }
+alloy-eips = "0.13.0"
+alloy-rpc-client = "0.13.0"
 alloy-primitives = "0.8"
-alloy-eips = "0.3.6"
-alloy-rpc-client = "0.3.6"
-alloy-provider = { version = "0.3.6", features = ["trace-api"] }
-alloy-rpc-types = "0.3.6"
-alloy-rpc-types-trace = "0.3.6"
-alloy-transport = "0.3.6"
-alloy-transport-http = "0.3.6"
+alloy-provider = { version = "0.13.0", features = ["trace-api"] }
+alloy-rpc-types = "0.13.0"
+alloy-rpc-types-trace = "0.13.0"
+alloy-rpc-types-beacon = "0.13.0"
+alloy-transport = "0.13.0"
+alloy-transport-http = "0.13.0"
 bytes = { version = "1.7.1", features = ["serde"] }
 byte-unit = "5.1.4"
 clap = { version = "4.5.13", features = [

@@ -3,8 +3,6 @@ use std::{sync::Arc, time::Duration};
 use alloy_primitives::BlockHash;
 use alloy_provider::{ext::TraceApi, network::Ethereum, Provider, ProviderBuilder};
 use alloy_rpc_client::ClientBuilder;
-use alloy_rpc_types_trace::parity::TraceType;
-use alloy_transport::BoxTransport;
 use error_stack::{Report, Result, ResultExt};
 use reqwest::header::{HeaderMap, HeaderValue};
 use url::Url;
@@ -29,15 +27,9 @@ pub struct JsonRpcProviderOptions {
     pub headers: HeaderMap<HeaderValue>,
 }
 
-pub trait ProviderWithTraceApi:
-    Provider<BoxTransport, Ethereum> + TraceApi<Ethereum, BoxTransport>
-{
-}
+pub trait ProviderWithTraceApi: Provider<Ethereum> + TraceApi<Ethereum> {}
 
-impl<T> ProviderWithTraceApi for T where
-    T: Provider<BoxTransport, Ethereum> + TraceApi<Ethereum, BoxTransport>
-{
-}
+impl<T> ProviderWithTraceApi for T where T: Provider<Ethereum> + TraceApi<Ethereum> {}
 
 #[derive(Clone)]
 pub struct JsonRpcProvider {
@@ -57,7 +49,7 @@ impl JsonRpcProvider {
         }
 
         let client = ClientBuilder::default().http(url);
-        let provider = ProviderBuilder::default().on_client(client).boxed();
+        let provider = ProviderBuilder::default().on_client(client);
 
         Ok(Self {
             provider: Arc::new(provider),
@@ -105,9 +97,7 @@ impl JsonRpcProvider {
         &self,
         block_id: BlockId,
     ) -> Result<models::Block, JsonRpcProviderError> {
-        let request = self
-            .provider
-            .get_block(block_id, alloy_rpc_types::BlockTransactionsKind::Full);
+        let request = self.provider.get_block(block_id).full();
 
         let Ok(response) = tokio::time::timeout(self.options.timeout, request).await else {
             return Err(JsonRpcProviderError::Timeout)
@@ -143,7 +133,8 @@ impl JsonRpcProvider {
     ) -> Result<Vec<models::TraceResultsWithTransactionHash>, JsonRpcProviderError> {
         let request = self
             .provider
-            .trace_replay_block_transactions(block_id, &[TraceType::Trace]);
+            .trace_replay_block_transactions(block_id)
+            .trace();
 
         let Ok(response) = tokio::time::timeout(self.options.timeout, request).await else {
             return Err(JsonRpcProviderError::Timeout)

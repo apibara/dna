@@ -846,16 +846,14 @@ pub mod testing {
 
     use alloy_provider::{network::Ethereum, Provider, ProviderBuilder, RootProvider};
     use alloy_rpc_client::ClientBuilder;
-    use alloy_rpc_types::{BlockId, BlockNumberOrTag, BlockTransactionsKind, Header};
-    use alloy_transport_http::Http;
+    use alloy_rpc_types::{BlockId, BlockNumberOrTag, Header};
     use futures::Future;
-    use reqwest::Client;
     use testcontainers::{core::ContainerPort, ContainerAsync, Image};
     use url::Url;
 
     pub struct AnvilServer;
 
-    pub type AnvilProvider = RootProvider<Http<Client>, Ethereum>;
+    pub type AnvilProvider = RootProvider<Ethereum>;
 
     pub trait AnvilServerExt {
         fn alloy_provider(&self) -> impl Future<Output = Arc<AnvilProvider>> + Send;
@@ -923,7 +921,7 @@ pub mod testing {
 
     impl AnvilProviderExt for Arc<AnvilProvider> {
         async fn get_maybe_header(&self, block: BlockNumberOrTag) -> Option<Header> {
-            self.get_block(BlockId::Number(block), BlockTransactionsKind::Hashes)
+            self.get_block(BlockId::Number(block))
                 .await
                 .expect("get_header request failed")
                 .map(|response| response.header)
