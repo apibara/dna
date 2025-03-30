@@ -74,6 +74,9 @@ message BlockHeader {
   U128 excess_blob_gas = 21;
   // Parent beacon block root.
   B256 parent_beacon_block_root = 22;
+  // The Keccak 256-bit hash of the an RLP encoded list with each EIP-7685
+  // request in the block body.
+  B256 requests_hash = 23;
 }
 
 // A validator's withdrawal from the consensus layer.

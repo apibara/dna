@@ -28,6 +28,12 @@ impl From<u128> for U128 {
     }
 }
 
+impl From<u64> for U128 {
+    fn from(x: u64) -> Self {
+        Self { x0: 0, x1: x }
+    }
+}
+
 impl_scalar_traits!(B384);
 impl_from_to_bytes!(B384, 48);
 impl_scalar_helpers!(B384, 48);
@@ -66,6 +72,10 @@ mod tests {
         let u256 = U128::from_hex(hex).unwrap();
         let back = u256.to_hex();
         assert_eq!(hex, &back);
+
+        let x = U128::from(1234u64);
+        let h = x.to_hex();
+        assert_eq!("0x000000000000000000000000000004d2", &h);
     }
 
     #[test]

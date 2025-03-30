@@ -101,7 +101,7 @@ impl FallibleModelExt for models::Signed<models::TxLegacy> {
             to: tx.to.to_option(),
             value: tx.value.to_proto().into(),
             gas_price: tx.gas_price.to_proto().into(),
-            gas_limit: tx.gas_limit.to_proto().into(),
+            gas_limit: Some(tx.gas_limit.into()),
             max_fee_per_gas: None,
             max_priority_fee_per_gas: None,
             max_fee_per_blob_gas: None,
@@ -134,7 +134,7 @@ impl FallibleModelExt for models::Signed<models::TxEip2930> {
             to: tx.to.to_option(),
             value: tx.value.to_proto().into(),
             gas_price: tx.gas_price.to_proto().into(),
-            gas_limit: tx.gas_limit.to_proto().into(),
+            gas_limit: Some(tx.gas_limit.into()),
             max_fee_per_gas: None,
             max_priority_fee_per_gas: None,
             max_fee_per_blob_gas: None,
@@ -167,7 +167,7 @@ impl FallibleModelExt for models::Signed<models::TxEip1559> {
             to: tx.to.to_option(),
             value: tx.value.to_proto().into(),
             gas_price: None,
-            gas_limit: tx.gas_limit.to_proto().into(),
+            gas_limit: Some(tx.gas_limit.into()),
             max_fee_per_gas: tx.max_fee_per_gas.to_proto().into(),
             max_priority_fee_per_gas: tx.max_priority_fee_per_gas.to_proto().into(),
             max_fee_per_blob_gas: None,
@@ -200,7 +200,7 @@ impl FallibleModelExt for models::Signed<models::TxEip4844Variant> {
             to: tx.to.to_proto().into(),
             value: tx.value.to_proto().into(),
             gas_price: None,
-            gas_limit: tx.gas_limit.to_proto().into(),
+            gas_limit: Some(tx.gas_limit.into()),
             max_fee_per_gas: tx.max_fee_per_gas.to_proto().into(),
             max_priority_fee_per_gas: tx.max_priority_fee_per_gas.to_proto().into(),
             max_fee_per_blob_gas: tx.max_fee_per_blob_gas.to_proto().into(),
@@ -217,7 +217,7 @@ impl FallibleModelExt for models::Signed<models::TxEip4844Variant> {
     }
 }
 
-impl ModelExt for models::Signature {
+impl ModelExt for models::PrimitiveSignature {
     type Proto = beaconchain::Signature;
 
     fn to_proto(&self) -> Self::Proto {

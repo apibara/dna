@@ -1,3 +1,4 @@
+use alloy_consensus::{Transaction, Typed2718};
 use apibara_dna_protocol::evm;
 
 use crate::provider::models;
@@ -17,28 +18,29 @@ pub fn convert_block_header(block: models::Header) -> evm::BlockHeader {
         block_number: block.number,
         block_hash: block.hash.to_proto().into(),
         parent_block_hash: block.parent_hash.to_proto().into(),
-        uncles_hash: block.uncles_hash.to_proto().into(),
-        miner: block.miner.to_proto().into(),
+        uncles_hash: block.ommers_hash.to_proto().into(),
+        miner: block.beneficiary.to_proto().into(),
         state_root: block.state_root.to_proto().into(),
         transactions_root: block.transactions_root.to_proto().into(),
         receipts_root: block.receipts_root.to_proto().into(),
         logs_bloom: block.logs_bloom.to_proto().into(),
         difficulty: block.difficulty.to_proto().into(),
-        gas_limit: block.gas_limit.to_proto().into(),
-        gas_used: block.gas_used.to_proto().into(),
+        gas_limit: evm::U128::from_u64(block.gas_limit).into(),
+        gas_used: evm::U128::from_u64(block.gas_used).into(),
         timestamp: timestamp.into(),
         extra_data: block.extra_data.to_vec(),
-        mix_hash: block.mix_hash.as_ref().map(ModelExt::to_proto),
-        nonce: block.nonce.map(|n| u64::from_be_bytes(n.0)),
-        base_fee_per_gas: block.base_fee_per_gas.as_ref().map(ModelExt::to_proto),
+        mix_hash: block.mix_hash.to_proto().into(),
+        nonce: u64::from_be_bytes(block.nonce.0).into(),
+        base_fee_per_gas: block.base_fee_per_gas.map(evm::U128::from_u64),
         withdrawals_root: block.withdrawals_root.as_ref().map(ModelExt::to_proto),
         total_difficulty: block.total_difficulty.as_ref().map(ModelExt::to_proto),
-        blob_gas_used: block.blob_gas_used.as_ref().map(ModelExt::to_proto),
-        excess_blob_gas: block.excess_blob_gas.as_ref().map(ModelExt::to_proto),
+        blob_gas_used: block.blob_gas_used.map(evm::U128::from_u64),
+        excess_blob_gas: block.excess_blob_gas.map(evm::U128::from_u64),
         parent_beacon_block_root: block
             .parent_beacon_block_root
             .as_ref()
             .map(ModelExt::to_proto),
+        requests_hash: block.requests_hash.as_ref().map(ModelExt::to_proto),
     }
 }
 
@@ -46,36 +48,213 @@ impl ModelExt for models::Transaction {
     type Proto = evm::Transaction;
 
     fn to_proto(&self) -> Self::Proto {
+        use models::EthereumTxEnvelope;
+        let signer = self.as_recovered().signer();
+        let mut tx = match self.inner.as_ref() {
+            EthereumTxEnvelope::Legacy(tx) => tx.to_proto(),
+            EthereumTxEnvelope::Eip2930(tx) => tx.to_proto(),
+            EthereumTxEnvelope::Eip1559(tx) => tx.to_proto(),
+            EthereumTxEnvelope::Eip4844(tx) => tx.to_proto(),
+            EthereumTxEnvelope::Eip7702(tx) => tx.to_proto(),
+        };
+
+        tx.from = signer.to_proto().into();
+
+        tx
+    }
+}
+
+impl ModelExt for models::TxKind {
+    type Proto = Option<evm::Address>;
+
+    fn to_proto(&self) -> Self::Proto {
+        match self {
+            models::TxKind::Create => None,
+            models::TxKind::Call(to) => to.to_proto().into(),
+        }
+    }
+}
+
+impl ModelExt for models::Signed<models::TxLegacy> {
+    type Proto = evm::Transaction;
+
+    fn to_proto(&self) -> Self::Proto {
+        let tx = self.tx();
+        let signature = self.signature();
         evm::Transaction {
             filter_ids: Vec::new(),
             transaction_index: u32::MAX,
             transaction_hash: None,
-            nonce: self.nonce,
-            from: self.from.to_proto().into(),
-            to: self.to.as_ref().map(ModelExt::to_proto),
-            value: self.value.to_proto().into(),
-            gas_price: self.gas_price.as_ref().map(ModelExt::to_proto),
-            gas: self.gas.to_proto().into(),
-            max_fee_per_gas: self.max_fee_per_gas.as_ref().map(ModelExt::to_proto),
-            max_priority_fee_per_gas: self
-                .max_priority_fee_per_gas
-                .as_ref()
-                .map(ModelExt::to_proto),
-            input: self.input.to_vec(),
-            signature: self.signature.as_ref().map(ModelExt::to_proto),
-            chain_id: self.chain_id,
-            access_list: self
-                .access_list
-                .as_ref()
+            nonce: tx.nonce,
+            from: None, // Filled later
+            to: tx.to.to_proto(),
+            value: tx.value.to_proto().into(),
+            gas_price: evm::U128::from_u128(tx.gas_price).into(),
+            gas: evm::U128::from_u64(tx.gas_limit).into(),
+            max_fee_per_gas: None,
+            max_priority_fee_per_gas: None,
+            input: tx.input.to_vec(),
+            signature: signature.to_proto().into(),
+            chain_id: tx.chain_id,
+            access_list: tx.access_list().map(ModelExt::to_proto).unwrap_or_default(),
+            transaction_type: self.ty() as u64,
+            max_fee_per_blob_gas: None,
+            blob_versioned_hashes: tx
+                .blob_versioned_hashes()
                 .map(|l| l.iter().map(ModelExt::to_proto).collect())
                 .unwrap_or_default(),
-            transaction_type: self.transaction_type.unwrap_or_default() as u64,
-            max_fee_per_blob_gas: self.max_fee_per_blob_gas.as_ref().map(ModelExt::to_proto),
-            blob_versioned_hashes: self
-                .blob_versioned_hashes
-                .as_ref()
+            transaction_status: 0,
+        }
+    }
+}
+
+impl ModelExt for models::Signed<models::TxEip2930> {
+    type Proto = evm::Transaction;
+
+    fn to_proto(&self) -> Self::Proto {
+        let tx = self.tx();
+        let signature = self.signature();
+
+        evm::Transaction {
+            filter_ids: Vec::new(),
+            transaction_index: u32::MAX,
+            transaction_hash: None,
+            nonce: tx.nonce,
+            from: None, // Filled later
+            to: tx.to.to_proto(),
+            value: tx.value.to_proto().into(),
+            gas_price: evm::U128::from_u128(tx.gas_price).into(),
+            gas: evm::U128::from_u64(tx.gas_limit).into(),
+            max_fee_per_gas: None,
+            max_priority_fee_per_gas: None,
+            input: tx.input.to_vec(),
+            signature: signature.to_proto().into(),
+            chain_id: tx.chain_id.into(),
+            access_list: tx.access_list().map(ModelExt::to_proto).unwrap_or_default(),
+            transaction_type: self.ty() as u64,
+            max_fee_per_blob_gas: None,
+            blob_versioned_hashes: tx
+                .blob_versioned_hashes()
                 .map(|l| l.iter().map(ModelExt::to_proto).collect())
                 .unwrap_or_default(),
+            transaction_status: 0,
+        }
+    }
+}
+
+impl ModelExt for models::Signed<models::TxEip1559> {
+    type Proto = evm::Transaction;
+
+    fn to_proto(&self) -> Self::Proto {
+        let tx = self.tx();
+        let signature = self.signature();
+
+        evm::Transaction {
+            filter_ids: Vec::new(),
+            transaction_index: u32::MAX,
+            transaction_hash: None,
+            nonce: tx.nonce,
+            from: None, // Filled later
+            to: tx.to.to_proto(),
+            value: tx.value.to_proto().into(),
+            gas_price: None,
+            gas: evm::U128::from_u64(tx.gas_limit).into(),
+            max_fee_per_gas: evm::U128::from_u128(tx.max_fee_per_gas).into(),
+            max_priority_fee_per_gas: evm::U128::from_u128(tx.max_priority_fee_per_gas).into(),
+            input: tx.input.to_vec(),
+            signature: signature.to_proto().into(),
+            chain_id: tx.chain_id.into(),
+            access_list: tx.access_list().map(ModelExt::to_proto).unwrap_or_default(),
+            transaction_type: self.ty() as u64,
+            max_fee_per_blob_gas: None,
+            blob_versioned_hashes: tx
+                .blob_versioned_hashes()
+                .map(|l| l.iter().map(ModelExt::to_proto).collect())
+                .unwrap_or_default(),
+            transaction_status: 0,
+        }
+    }
+}
+
+impl ModelExt for models::Signed<models::TxEip4844Variant> {
+    type Proto = evm::Transaction;
+
+    fn to_proto(&self) -> Self::Proto {
+        use models::TxEip4844Variant;
+        let mut tx = match self.tx() {
+            TxEip4844Variant::TxEip4844(tx) => tx.to_proto(),
+            TxEip4844Variant::TxEip4844WithSidecar(tx) => tx.tx().to_proto(),
+        };
+
+        tx.signature = self.signature().to_proto().into();
+
+        tx
+    }
+}
+
+impl ModelExt for models::TxEip4844 {
+    type Proto = evm::Transaction;
+
+    fn to_proto(&self) -> Self::Proto {
+        let tx = self;
+
+        evm::Transaction {
+            filter_ids: Vec::new(),
+            transaction_index: u32::MAX,
+            transaction_hash: None,
+            nonce: tx.nonce,
+            from: None, // Filled later
+            to: tx.to.to_proto().into(),
+            value: tx.value.to_proto().into(),
+            gas_price: None,
+            gas: evm::U128::from_u64(tx.gas_limit).into(),
+            max_fee_per_gas: evm::U128::from_u128(tx.max_fee_per_gas).into(),
+            max_priority_fee_per_gas: evm::U128::from_u128(tx.max_priority_fee_per_gas).into(),
+            input: tx.input.to_vec(),
+            signature: None,
+            chain_id: tx.chain_id.into(),
+            access_list: tx.access_list().map(ModelExt::to_proto).unwrap_or_default(),
+            transaction_type: self.ty() as u64,
+            max_fee_per_blob_gas: evm::U128::from_u128(tx.max_fee_per_blob_gas).into(),
+            blob_versioned_hashes: tx
+                .blob_versioned_hashes()
+                .map(|l| l.iter().map(ModelExt::to_proto).collect())
+                .unwrap_or_default(),
+            transaction_status: 0,
+        }
+    }
+}
+
+impl ModelExt for models::Signed<models::TxEip7702> {
+    type Proto = evm::Transaction;
+
+    fn to_proto(&self) -> Self::Proto {
+        let tx = self.tx();
+        let signature = self.signature();
+
+        evm::Transaction {
+            filter_ids: Vec::new(),
+            transaction_index: u32::MAX,
+            transaction_hash: None,
+            nonce: tx.nonce,
+            from: None, // Filled later
+            to: tx.to.to_proto().into(),
+            value: tx.value.to_proto().into(),
+            gas_price: None,
+            gas: evm::U128::from_u64(tx.gas_limit).into(),
+            max_fee_per_gas: evm::U128::from_u128(tx.max_fee_per_gas).into(),
+            max_priority_fee_per_gas: evm::U128::from_u128(tx.max_priority_fee_per_gas).into(),
+            input: tx.input.to_vec(),
+            signature: signature.to_proto().into(),
+            chain_id: tx.chain_id.into(),
+            access_list: tx.access_list().map(ModelExt::to_proto).unwrap_or_default(),
+            transaction_type: self.ty() as u64,
+            max_fee_per_blob_gas: None,
+            blob_versioned_hashes: tx
+                .blob_versioned_hashes()
+                .map(|l| l.iter().map(ModelExt::to_proto).collect())
+                .unwrap_or_default(),
+            // SKIP: authorization list
             transaction_status: 0,
         }
     }
@@ -104,15 +283,15 @@ impl ModelExt for models::TransactionReceipt {
             filter_ids: Vec::new(),
             transaction_index: u32::MAX,
             transaction_hash: self.transaction_hash.to_proto().into(),
-            cumulative_gas_used: self.inner.cumulative_gas_used().to_proto().into(),
-            gas_used: self.gas_used.to_proto().into(),
+            cumulative_gas_used: evm::U128::from_u64(self.inner.cumulative_gas_used()).into(),
+            gas_used: evm::U128::from_u64(self.gas_used).into(),
             effective_gas_price: self.effective_gas_price.to_proto().into(),
             from: self.from.to_proto().into(),
             to: self.to.as_ref().map(ModelExt::to_proto),
             contract_address: self.contract_address.as_ref().map(ModelExt::to_proto),
             logs_bloom: self.inner.logs_bloom().to_proto().into(),
             transaction_type: self.transaction_type() as u8 as u64,
-            blob_gas_used: self.blob_gas_used.as_ref().map(ModelExt::to_proto),
+            blob_gas_used: self.blob_gas_used.map(evm::U128::from_u64),
             blob_gas_price: self.blob_gas_price.as_ref().map(ModelExt::to_proto),
             transaction_status: if self.status() {
                 evm::TransactionStatus::Succeeded as i32
@@ -141,16 +320,24 @@ impl ModelExt for models::Log {
     }
 }
 
-impl ModelExt for models::Signature {
+impl ModelExt for models::PrimitiveSignature {
     type Proto = evm::Signature;
 
     fn to_proto(&self) -> Self::Proto {
         evm::Signature {
-            r: self.r.to_proto().into(),
-            s: self.s.to_proto().into(),
-            v: self.v.to_proto().into(),
-            y_parity: self.y_parity.map(|p| p.0),
+            r: self.r().to_proto().into(),
+            s: self.s().to_proto().into(),
+            v: None,
+            y_parity: self.v().into(),
         }
+    }
+}
+
+impl ModelExt for models::AccessList {
+    type Proto = Vec<evm::AccessListItem>;
+
+    fn to_proto(&self) -> Self::Proto {
+        self.0.iter().map(|l| l.to_proto()).collect()
     }
 }
 
