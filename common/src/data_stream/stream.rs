@@ -1,4 +1,7 @@
-use std::collections::{BTreeMap, HashMap};
+use std::{
+    collections::{BTreeMap, HashMap},
+    time::Duration,
+};
 
 use apibara_dna_protocol::dna::stream::{
     stream_data_response::Message, Data, DataFinality, DataProduction, Finalize, Invalidate,
@@ -11,7 +14,7 @@ use futures::FutureExt;
 use tokio::sync::mpsc;
 use tokio_stream::{wrappers::ReceiverStream, StreamExt};
 use tokio_util::sync::CancellationToken;
-use tracing::debug;
+use tracing::{debug, error, warn};
 
 use crate::{
     block_store::BlockStoreReader,
@@ -213,7 +216,11 @@ impl DataStream {
                 _ = ct.cancelled() => return Ok(()),
                 segment_stream_result = &mut segment_stream_handle => {
                     debug!(result = ?segment_stream_result, "tick: segment stream finished");
-                    segment_stream_result.change_context(DataStreamError)?.change_context(DataStreamError)?;
+                    segment_stream_result
+                        .change_context(DataStreamError)
+                        .inspect_err(|e| error!("tick: segment stream error: {}", e))?
+                        .change_context(DataStreamError)
+                        .inspect_err(|e| error!("tick: segment stream error: {}", e))?;
                 }
                 segment_result = segment_rx.next() => {
                     use apibara_dna_protocol::dna::stream::Cursor as ProtoCursor;
@@ -349,9 +356,18 @@ impl DataStream {
         tx: &mpsc::Sender<DataStreamMessage>,
         ct: &CancellationToken,
     ) -> Result<(), DataStreamError> {
+        // There is an issue where the stream gets stuck at head because `head_changed` never happens.
+        // This timeout is to avoid spending eternity into this loop
+        let timeout = tokio::time::sleep(Duration::from_millis(30_000));
+        tokio::pin!(timeout);
+
         loop {
             tokio::select! {
                 _ = ct.cancelled() => return Ok(()),
+                _ = &mut timeout => {
+                    warn!("stream did not receive head_changed");
+                    return Ok(());
+                },
                 _ = self.chain_view.head_changed() => {
                     debug!("head changed (at head)");
                     return Ok(());

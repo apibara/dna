@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use error_stack::Result;
 use tokio::sync::{Notify, RwLock};
+use tracing::debug;
 
 use crate::Cursor;
 
@@ -240,6 +241,7 @@ impl ChainView {
         let prev_head = inner.canonical.get_head().await?;
         inner.canonical.refresh_recent().await?;
         let new_head = inner.canonical.get_head().await?;
+        debug!(?prev_head, ?new_head, "refresh recent head");
 
         if prev_head != new_head {
             inner.metrics.head.record(new_head.number, &[]);
