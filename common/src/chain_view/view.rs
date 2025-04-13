@@ -238,15 +238,12 @@ impl ChainView {
     pub(crate) async fn refresh_recent(&self) -> Result<(), ChainViewError> {
         let mut inner = self.0.write().await;
 
-        let prev_head = inner.canonical.get_head().await?;
         inner.canonical.refresh_recent().await?;
         let new_head = inner.canonical.get_head().await?;
-        debug!(?prev_head, ?new_head, "refresh recent head");
+        debug!(?new_head, "refresh recent head");
 
-        if prev_head != new_head {
-            inner.metrics.head.record(new_head.number, &[]);
-            inner.head_notify.notify_waiters();
-        }
+        inner.metrics.head.record(new_head.number, &[]);
+        inner.head_notify.notify_waiters();
 
         Ok(())
     }
