@@ -264,6 +264,18 @@ impl ChainView {
 
         Ok(())
     }
+
+    pub async fn record_is_down(&self) -> Result<(), ChainViewError> {
+        let inner = self.0.write().await;
+        inner.metrics.up.record(0, &[]);
+        Ok(())
+    }
+
+    pub async fn record_is_up(&self) -> Result<(), ChainViewError> {
+        let inner = self.0.write().await;
+        inner.metrics.up.record(1, &[]);
+        Ok(())
+    }
 }
 
 impl ChainViewInner {
