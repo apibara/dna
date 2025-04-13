@@ -4,7 +4,7 @@ use apibara_etcd::EtcdClient;
 use error_stack::{Result, ResultExt};
 use futures::TryStreamExt;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::{
     chain_store::ChainStore,
@@ -38,7 +38,7 @@ impl ChainViewSyncService {
     }
 
     pub async fn start(self, ct: CancellationToken) -> Result<(), ChainViewError> {
-        info!("starting chain view sync service");
+        info!("chain_view: starting chain view sync service");
         let mut ingestion_state_client = IngestionStateClient::new(&self.etcd_client);
 
         let starting_block = loop {
@@ -55,7 +55,10 @@ impl ChainViewSyncService {
                 break starting_block;
             }
 
-            info!(step = "starting_block", "waiting for ingestion to start");
+            info!(
+                step = "starting_block",
+                "chain_view: waiting for ingestion to start"
+            );
             tokio::time::sleep(Duration::from_secs(10)).await;
         };
 
@@ -73,7 +76,10 @@ impl ChainViewSyncService {
                 break finalized;
             }
 
-            info!(step = "finalized_block", "waiting for ingestion to start");
+            info!(
+                step = "finalized_block",
+                "chain_view: waiting for ingestion to start"
+            );
             tokio::time::sleep(Duration::from_secs(10)).await;
         };
 
@@ -101,7 +107,10 @@ impl ChainViewSyncService {
                 break;
             }
 
-            info!(step = "recent", "waiting for ingestion to start");
+            info!(
+                step = "recent",
+                "chain_view: waiting for ingestion to start"
+            );
             tokio::time::sleep(Duration::from_secs(10)).await;
         }
 
@@ -156,62 +165,78 @@ impl ChainViewSyncService {
             .send(Some(chain_view.clone()))
             .change_context(ChainViewError)?;
 
-        info!("finished initializing chain view");
+        info!("chain_view: initialized");
 
         if ct.is_cancelled() {
             return Ok(());
         }
 
-        let state_changes = ingestion_state_client
-            .watch_changes(ct.clone())
-            .await
-            .change_context(ChainViewError)?;
+        loop {
+            let loop_result: Result<(), ChainViewError> = async {
+                let state_changes = ingestion_state_client
+                    .watch_changes(ct.clone())
+                    .await
+                    .change_context(ChainViewError)?;
 
-        tokio::pin!(state_changes);
+                tokio::pin!(state_changes);
 
-        while let Some(update) = state_changes
-            .try_next()
-            .await
-            .change_context(ChainViewError)?
-        {
-            if !update.is_pending() {
-                info!(update = ?update, "chain view sync update");
-            } else {
-                debug!(update = ?update, "chain view sync update");
+                info!("chain_view: streaming state changes");
+                chain_view.record_is_up().await?;
+                while let Some(update) = state_changes
+                    .try_next()
+                    .await
+                    .change_context(ChainViewError)?
+                {
+                    if !update.is_pending() {
+                        info!(update = ?update, "chain_view: sync update");
+                    } else {
+                        debug!(update = ?update, "chain_view: sync update");
+                    }
+
+                    match update {
+                        IngestionStateUpdate::StartingBlock(block) => {
+                            // The starting block should never be updated.
+                            warn!(starting_block = block, "chain view starting block updated");
+                        }
+                        IngestionStateUpdate::Finalized(block) => {
+                            chain_view.set_finalized_block(block).await;
+                        }
+                        IngestionStateUpdate::Segmented(block) => {
+                            chain_view.set_segmented_block(block).await;
+                        }
+                        IngestionStateUpdate::Grouped(block) => {
+                            chain_view.set_grouped_block(block).await;
+                        }
+                        IngestionStateUpdate::Pending(generation) => {
+                            chain_view.set_pending_generation(generation).await;
+                        }
+                        IngestionStateUpdate::Ingested(_etag) => {
+                            chain_view.refresh_recent().await?;
+                        }
+                    }
+
+                    self.tx
+                        .send(Some(chain_view.clone()))
+                        .change_context(ChainViewError)?;
+                }
+
+                Err(ChainViewError).attach_printable("chain view loop ended")
+            }
+            .await;
+
+            if ct.is_cancelled() {
+                return Ok(());
             }
 
-            match update {
-                IngestionStateUpdate::StartingBlock(block) => {
-                    // The starting block should never be updated.
-                    warn!(starting_block = block, "chain view starting block updated");
-                }
-                IngestionStateUpdate::Finalized(block) => {
-                    chain_view.set_finalized_block(block).await;
-                }
-                IngestionStateUpdate::Segmented(block) => {
-                    chain_view.set_segmented_block(block).await;
-                }
-                IngestionStateUpdate::Grouped(block) => {
-                    chain_view.set_grouped_block(block).await;
-                }
-                IngestionStateUpdate::Pending(generation) => {
-                    chain_view.set_pending_generation(generation).await;
-                }
-                IngestionStateUpdate::Ingested(_etag) => {
-                    chain_view.refresh_recent().await?;
-                }
+            chain_view.record_is_down().await?;
+
+            if let Err(inner_error) = loop_result {
+                error!(error = ?inner_error, "chain_view: error");
             }
 
-            self.tx
-                .send(Some(chain_view.clone()))
-                .change_context(ChainViewError)?;
+            tokio::time::sleep(Duration::from_secs(5)).await;
+            info!("chain_view: retrying chain view loop");
         }
-
-        if ct.is_cancelled() {
-            return Ok(());
-        }
-
-        Err(ChainViewError).attach_printable("etcd sync stream ended unexpectedly")
     }
 }
 

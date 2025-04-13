@@ -440,14 +440,30 @@ impl CanonicalChainSegment {
                     .attach_printable_lazy(|| format!("last block: {:?}", self.info.last_block));
             };
 
-            let siblings = reorgs.reorgs.values().cloned().collect::<Vec<_>>();
+            // Reorgs is a map between block hash (the block that was reorged)
+            // and reorg target cursor (the most recent common block between the
+            // old and new chain).
+            let siblings = reorgs
+                .reorgs
+                .keys()
+                .cloned()
+                .map(|hash| Cursor::new(cursor.number, hash))
+                .collect::<Vec<_>>();
             return Ok(siblings);
         }
 
         let offset = cursor.number - self.info.first_block.number;
 
         let canonical = &self.canonical[offset as usize];
-        let siblings = canonical.reorgs.values().cloned().collect::<Vec<_>>();
+        // Reorgs is a map between block hash (the block that was reorged) and
+        // reorg target cursor (the most recent common block between the old and
+        // new chain).
+        let siblings = canonical
+            .reorgs
+            .keys()
+            .cloned()
+            .map(|hash| Cursor::new(cursor.number, hash))
+            .collect::<Vec<_>>();
         Ok(siblings)
     }
 

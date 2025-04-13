@@ -78,7 +78,13 @@ impl AzureBlobClient {
                 let content = response.blob.properties.etag.as_ref().to_string();
                 etag = Some(ObjectETag(content));
             }
-            while let Some(data) = response.data.try_next().await.unwrap() {
+
+            while let Some(data) = response
+                .data
+                .try_next()
+                .await
+                .change_to_object_store_context()?
+            {
                 output.extend_from_slice(&data);
             }
         }

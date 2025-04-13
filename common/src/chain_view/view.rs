@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use error_stack::Result;
 use tokio::sync::{Notify, RwLock};
+use tracing::debug;
 
 use crate::Cursor;
 
@@ -237,14 +238,12 @@ impl ChainView {
     pub(crate) async fn refresh_recent(&self) -> Result<(), ChainViewError> {
         let mut inner = self.0.write().await;
 
-        let prev_head = inner.canonical.get_head().await?;
         inner.canonical.refresh_recent().await?;
         let new_head = inner.canonical.get_head().await?;
+        debug!(?new_head, "refresh recent head");
 
-        if prev_head != new_head {
-            inner.metrics.head.record(new_head.number, &[]);
-            inner.head_notify.notify_waiters();
-        }
+        inner.metrics.head.record(new_head.number, &[]);
+        inner.head_notify.notify_waiters();
 
         Ok(())
     }
@@ -263,6 +262,18 @@ impl ChainView {
             inner.metrics.grouped.record(grouped, &[]);
         }
 
+        Ok(())
+    }
+
+    pub async fn record_is_down(&self) -> Result<(), ChainViewError> {
+        let inner = self.0.write().await;
+        inner.metrics.up.record(0, &[]);
+        Ok(())
+    }
+
+    pub async fn record_is_up(&self) -> Result<(), ChainViewError> {
+        let inner = self.0.write().await;
+        inner.metrics.up.record(1, &[]);
         Ok(())
     }
 }

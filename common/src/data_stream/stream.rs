@@ -11,7 +11,7 @@ use futures::FutureExt;
 use tokio::sync::mpsc;
 use tokio_stream::{wrappers::ReceiverStream, StreamExt};
 use tokio_util::sync::CancellationToken;
-use tracing::debug;
+use tracing::{debug, error};
 
 use crate::{
     block_store::BlockStoreReader,
@@ -213,7 +213,11 @@ impl DataStream {
                 _ = ct.cancelled() => return Ok(()),
                 segment_stream_result = &mut segment_stream_handle => {
                     debug!(result = ?segment_stream_result, "tick: segment stream finished");
-                    segment_stream_result.change_context(DataStreamError)?.change_context(DataStreamError)?;
+                    segment_stream_result
+                        .change_context(DataStreamError)
+                        .inspect_err(|e| error!("tick: segment stream error: {}", e))?
+                        .change_context(DataStreamError)
+                        .inspect_err(|e| error!("tick: segment stream error: {}", e))?;
                 }
                 segment_result = segment_rx.next() => {
                     use apibara_dna_protocol::dna::stream::Cursor as ProtoCursor;
