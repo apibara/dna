@@ -7,6 +7,7 @@ mod aws_s3;
 mod azure_blob;
 mod client;
 mod error;
+mod metrics;
 pub mod testing;
 
 pub use self::aws_s3::AwsS3Client;
