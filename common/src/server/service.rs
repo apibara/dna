@@ -19,8 +19,6 @@ use crate::{
     Cursor,
 };
 
-const CHANNEL_SIZE: usize = 1024;
-
 static STREAM_SEMAPHORE_ACQUIRE_TIMEOUT: Duration = Duration::from_secs(1);
 
 #[derive(Debug, Clone)]
@@ -29,6 +27,8 @@ pub struct StreamServiceOptions {
     pub max_concurrent_streams: usize,
     /// Number of segments to prefetch.
     pub prefetch_segment_count: usize,
+    /// Size of the channel used to send data to the stream.
+    pub channel_size: usize,
 }
 
 pub struct StreamService<BFF>
@@ -207,7 +207,7 @@ where
             permit,
             self.metrics.clone(),
         );
-        let (tx, rx) = mpsc::channel(CHANNEL_SIZE);
+        let (tx, rx) = mpsc::channel(self.options.channel_size);
 
         tokio::spawn(ds.start(tx, self.ct.clone()).inspect_err(|err| {
             error!(error = ?err, "data stream error");

@@ -33,6 +33,13 @@ pub struct ServerArgs {
         default_value = "128"
     )]
     pub server_prefetch_segment_count: usize,
+    /// Size of the channel used to send data to the stream.
+    #[clap(
+        long = "server.channel-size",
+        env = "DNA_SERVER_CHANNEL_SIZE",
+        default_value = "128"
+    )]
+    pub server_channel_size: usize,
 }
 
 impl ServerArgs {
@@ -47,6 +54,7 @@ impl ServerArgs {
         let stream_service_options = StreamServiceOptions {
             max_concurrent_streams: self.server_max_concurrent_streams,
             prefetch_segment_count: self.server_prefetch_segment_count,
+            channel_size: self.server_channel_size,
         };
 
         Ok(ServerOptions {

@@ -9,25 +9,31 @@ use tracing::debug;
 use crate::object_store::ObjectStoreResultExt;
 
 use super::{
-    error::ToObjectStoreResult, DeleteOptions, GetOptions, ObjectETag, ObjectStoreError, PutMode,
-    PutOptions,
+    error::ToObjectStoreResult, metrics::ObjectStoreMetrics, DeleteOptions, GetOptions, ObjectETag,
+    ObjectStoreError, PutMode, PutOptions,
 };
 
 #[derive(Clone)]
-pub struct AzureBlobClient(ClientBuilder);
+pub struct AzureBlobClient {
+    client: ClientBuilder,
+    metrics: ObjectStoreMetrics,
+}
 
 impl AzureBlobClient {
     pub fn new(
         location: impl Into<CloudLocation>,
         credentials: impl Into<StorageCredentials>,
     ) -> Self {
-        let inner = ClientBuilder::with_location(location.into(), credentials.into());
-        AzureBlobClient(inner)
+        let client = ClientBuilder::with_location(location.into(), credentials.into());
+        AzureBlobClient {
+            client,
+            metrics: ObjectStoreMetrics::default(),
+        }
     }
 
     pub async fn has_bucket(&self, name: &str) -> Result<bool, ObjectStoreError> {
         let properties = match self
-            .0
+            .client
             .clone()
             .container_client(name)
             .get_properties()
@@ -45,7 +51,7 @@ impl AzureBlobClient {
     }
 
     pub async fn create_bucket(&self, name: &str) -> Result<(), ObjectStoreError> {
-        self.0
+        self.client
             .clone()
             .container_client(name)
             .create()
@@ -61,7 +67,9 @@ impl AzureBlobClient {
         key: &str,
         options: GetOptions,
     ) -> Result<(ObjectETag, Bytes), ObjectStoreError> {
-        let request = self.0.clone().blob_client(bucket, key).get();
+        self.metrics.get.add(1, &[]);
+
+        let request = self.client.clone().blob_client(bucket, key).get();
         let request = if let Some(etag) = options.etag {
             request.if_match(IfMatchCondition::Match(etag.0))
         } else {
@@ -103,7 +111,13 @@ impl AzureBlobClient {
         body: Bytes,
         options: PutOptions,
     ) -> Result<ObjectETag, ObjectStoreError> {
-        let request = self.0.clone().blob_client(bucket, key).put_block_blob(body);
+        self.metrics.put.add(1, &[]);
+
+        let request = self
+            .client
+            .clone()
+            .blob_client(bucket, key)
+            .put_block_blob(body);
         let request = match options.mode {
             PutMode::Overwrite => request,
             PutMode::Create => request.if_match(IfMatchCondition::NotMatch("*".to_string())),
@@ -121,8 +135,10 @@ impl AzureBlobClient {
         bucket: &str,
         prefix: &str,
     ) -> Result<Vec<String>, ObjectStoreError> {
+        self.metrics.list.add(1, &[]);
+
         let mut response = self
-            .0
+            .client
             .clone()
             .container_client(bucket)
             .list_blobs()
@@ -145,7 +161,9 @@ impl AzureBlobClient {
         key: &str,
         _options: DeleteOptions,
     ) -> Result<(), ObjectStoreError> {
-        self.0
+        self.metrics.delete.add(1, &[]);
+
+        self.client
             .clone()
             .blob_client(bucket, key)
             .delete()

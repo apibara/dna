@@ -2,17 +2,23 @@ use bytes::Bytes;
 use error_stack::{Result, ResultExt};
 
 use super::{
-    error::ObjectStoreError, DeleteOptions, GetOptions, ObjectETag, ObjectStoreResultExt, PutMode,
-    PutOptions, ToObjectStoreResult,
+    error::ObjectStoreError, metrics::ObjectStoreMetrics, DeleteOptions, GetOptions, ObjectETag,
+    ObjectStoreResultExt, PutMode, PutOptions, ToObjectStoreResult,
 };
 
 #[derive(Clone)]
-pub struct AwsS3Client(aws_sdk_s3::Client);
+pub struct AwsS3Client {
+    client: aws_sdk_s3::Client,
+    metrics: ObjectStoreMetrics,
+}
 
 impl AwsS3Client {
     pub fn new_from_config(config: aws_sdk_s3::Config) -> Self {
         let client = aws_sdk_s3::Client::from_conf(config);
-        Self(client)
+        Self {
+            client,
+            metrics: ObjectStoreMetrics::default(),
+        }
     }
 
     pub fn new(config: aws_config::SdkConfig) -> Self {
@@ -26,7 +32,7 @@ impl AwsS3Client {
 
     pub async fn has_bucket(&self, name: &str) -> Result<bool, ObjectStoreError> {
         match self
-            .0
+            .client
             .head_bucket()
             .bucket(name)
             .send()
@@ -40,7 +46,7 @@ impl AwsS3Client {
     }
 
     pub async fn create_bucket(&self, name: &str) -> Result<(), ObjectStoreError> {
-        self.0
+        self.client
             .create_bucket()
             .bucket(name)
             .send()
@@ -55,8 +61,10 @@ impl AwsS3Client {
         key: &str,
         options: GetOptions,
     ) -> Result<(ObjectETag, Bytes), ObjectStoreError> {
+        self.metrics.get.add(1, &[]);
+
         let response = self
-            .0
+            .client
             .get_object()
             .bucket(bucket)
             .key(key)
@@ -94,8 +102,10 @@ impl AwsS3Client {
         body: Bytes,
         options: PutOptions,
     ) -> Result<ObjectETag, ObjectStoreError> {
+        self.metrics.put.add(1, &[]);
+
         let response = self
-            .0
+            .client
             .put_object()
             .bucket(bucket)
             .key(key)
@@ -129,8 +139,10 @@ impl AwsS3Client {
         bucket: &str,
         prefix: &str,
     ) -> Result<Vec<String>, ObjectStoreError> {
+        self.metrics.list.add(1, &[]);
+
         let response = self
-            .0
+            .client
             .list_objects()
             .bucket(bucket)
             .prefix(prefix)
@@ -156,7 +168,9 @@ impl AwsS3Client {
         key: &str,
         _options: DeleteOptions,
     ) -> Result<(), ObjectStoreError> {
-        self.0
+        self.metrics.delete.add(1, &[]);
+
+        self.client
             .delete_object()
             .bucket(bucket)
             .key(key)
