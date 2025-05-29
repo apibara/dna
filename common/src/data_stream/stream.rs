@@ -439,8 +439,11 @@ impl DataStream {
         let fragment_access = FragmentAccess::Block(block_entry);
 
         let mut blocks = Vec::new();
+        // We send pending blocks only if they contain data.
+        // This avoids a bug where an empty pending block is not followed by its
+        // accepted version, but by the block after it.
         if self
-            .filter_fragment(fragment_access, &finality, true, &mut blocks)
+            .filter_fragment(fragment_access, &finality, false, &mut blocks)
             .await?
         {
             use sha2::Digest;
