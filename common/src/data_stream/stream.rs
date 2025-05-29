@@ -513,6 +513,10 @@ impl DataStream {
                     let rows = filter.filter(indexes).change_context(DataStreamError)?;
                     filter_match.add_match(filter.filter_id, &rows);
 
+                    if rows.is_empty() {
+                        continue;
+                    }
+
                     for join_with_fragment_id in filter.joins.iter() {
                         joins
                             .entry((*fragment_id, *join_with_fragment_id))
