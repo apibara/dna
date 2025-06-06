@@ -365,6 +365,8 @@ message DataAvailabilityResources {
   uint64 l1_gas = 1;
   // The data gas consumed by this transaction's data, 0 if it uses gas for DA.
   uint64 l1_data_gas = 2;
+  // The L2 gas used by this transaction's data.
+  uint64 l2_gas = 3;
 }
 
 message ResourceBoundsMapping {

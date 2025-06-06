@@ -92,7 +92,7 @@ impl BlockIngestion for StarknetBlockIngestion {
         let finalized_hint = if let Some(finalized_hint) = finalized_hint_guard.as_ref() {
             Cursor::new_finalized(*finalized_hint)
         } else {
-            let mut number = head.number - 50;
+            let mut number = head.number.saturating_sub(50);
             loop {
                 let block = self
                     .provider
@@ -111,8 +111,7 @@ impl BlockIngestion for StarknetBlockIngestion {
 
                 let step_size = 200;
                 if number == 0 {
-                    return Err(IngestionError::RpcRequest)
-                        .attach_printable("failed to find finalized block");
+                    return Ok(Cursor::new_finalized(0));
                 } else if number < step_size {
                     number = 0;
                 } else {
@@ -484,7 +483,7 @@ fn collect_block_body_and_index(
     for (transaction_index, transaction_with_receipt) in transactions.iter().enumerate() {
         let transaction_index = transaction_index as u32;
         let transaction_hash = transaction_with_receipt
-            .transaction
+            .receipt
             .transaction_hash()
             .to_proto();
 
@@ -623,7 +622,12 @@ fn collect_block_body_and_index(
         }
 
         let mut transaction = transaction_with_receipt.transaction.to_proto();
-        set_transaction_index_and_status(&mut transaction, transaction_index, transaction_status);
+        set_transaction_meta(
+            &mut transaction,
+            transaction_hash,
+            transaction_index,
+            transaction_status,
+        );
 
         use starknet::transaction::Transaction;
         let transaction_type = match transaction.transaction {
@@ -1218,8 +1222,9 @@ fn collect_state_update_body_and_index(
     })
 }
 
-fn set_transaction_index_and_status(
+fn set_transaction_meta(
     transaction: &mut starknet::Transaction,
+    transaction_hash: starknet::FieldElement,
     index: u32,
     status: starknet::TransactionStatus,
 ) {
@@ -1227,6 +1232,7 @@ fn set_transaction_index_and_status(
         return;
     };
 
+    meta.transaction_hash = transaction_hash.into();
     meta.transaction_index = index;
     meta.transaction_status = status as i32;
 }

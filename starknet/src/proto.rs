@@ -81,11 +81,11 @@ impl ModelExt for models::L1DataAvailabilityMode {
     }
 }
 
-impl ModelExt for models::Transaction {
+impl ModelExt for models::TransactionContent {
     type Proto = starknet::Transaction;
 
     fn to_proto(&self) -> Self::Proto {
-        use models::Transaction::*;
+        use models::TransactionContent::*;
 
         match self {
             Invoke(tx) => tx.to_proto(),
@@ -97,11 +97,11 @@ impl ModelExt for models::Transaction {
     }
 }
 
-impl ModelExt for models::InvokeTransaction {
+impl ModelExt for models::InvokeTransactionContent {
     type Proto = starknet::Transaction;
 
     fn to_proto(&self) -> Self::Proto {
-        use models::InvokeTransaction::*;
+        use models::InvokeTransactionContent::*;
 
         match self {
             V0(tx) => tx.to_proto(),
@@ -111,12 +111,12 @@ impl ModelExt for models::InvokeTransaction {
     }
 }
 
-impl ModelExt for models::InvokeTransactionV0 {
+impl ModelExt for models::InvokeTransactionV0Content {
     type Proto = starknet::Transaction;
 
     fn to_proto(&self) -> Self::Proto {
         let meta = starknet::TransactionMeta {
-            transaction_hash: self.transaction_hash.to_proto().into(),
+            transaction_hash: None,
             transaction_index: u32::MAX,
             transaction_status: 0,
         };
@@ -137,12 +137,12 @@ impl ModelExt for models::InvokeTransactionV0 {
     }
 }
 
-impl ModelExt for models::InvokeTransactionV1 {
+impl ModelExt for models::InvokeTransactionV1Content {
     type Proto = starknet::Transaction;
 
     fn to_proto(&self) -> Self::Proto {
         let meta = starknet::TransactionMeta {
-            transaction_hash: self.transaction_hash.to_proto().into(),
+            transaction_hash: None,
             transaction_index: u32::MAX,
             transaction_status: 0,
         };
@@ -163,12 +163,12 @@ impl ModelExt for models::InvokeTransactionV1 {
     }
 }
 
-impl ModelExt for models::InvokeTransactionV3 {
+impl ModelExt for models::InvokeTransactionV3Content {
     type Proto = starknet::Transaction;
 
     fn to_proto(&self) -> Self::Proto {
         let meta = starknet::TransactionMeta {
-            transaction_hash: self.transaction_hash.to_proto().into(),
+            transaction_hash: None,
             transaction_index: u32::MAX,
             transaction_status: 0,
         };
@@ -198,12 +198,12 @@ impl ModelExt for models::InvokeTransactionV3 {
     }
 }
 
-impl ModelExt for models::L1HandlerTransaction {
+impl ModelExt for models::L1HandlerTransactionContent {
     type Proto = starknet::Transaction;
 
     fn to_proto(&self) -> Self::Proto {
         let meta = starknet::TransactionMeta {
-            transaction_hash: self.transaction_hash.to_proto().into(),
+            transaction_hash: None,
             transaction_index: u32::MAX,
             transaction_status: 0,
         };
@@ -223,11 +223,11 @@ impl ModelExt for models::L1HandlerTransaction {
     }
 }
 
-impl ModelExt for models::DeclareTransaction {
+impl ModelExt for models::DeclareTransactionContent {
     type Proto = starknet::Transaction;
 
     fn to_proto(&self) -> Self::Proto {
-        use models::DeclareTransaction::*;
+        use models::DeclareTransactionContent::*;
 
         match self {
             V0(tx) => tx.to_proto(),
@@ -238,12 +238,12 @@ impl ModelExt for models::DeclareTransaction {
     }
 }
 
-impl ModelExt for models::DeclareTransactionV0 {
+impl ModelExt for models::DeclareTransactionV0Content {
     type Proto = starknet::Transaction;
 
     fn to_proto(&self) -> Self::Proto {
         let meta = starknet::TransactionMeta {
-            transaction_hash: self.transaction_hash.to_proto().into(),
+            transaction_hash: None,
             transaction_index: u32::MAX,
             transaction_status: 0,
         };
@@ -263,12 +263,12 @@ impl ModelExt for models::DeclareTransactionV0 {
     }
 }
 
-impl ModelExt for models::DeclareTransactionV1 {
+impl ModelExt for models::DeclareTransactionV1Content {
     type Proto = starknet::Transaction;
 
     fn to_proto(&self) -> Self::Proto {
         let meta = starknet::TransactionMeta {
-            transaction_hash: self.transaction_hash.to_proto().into(),
+            transaction_hash: None,
             transaction_index: u32::MAX,
             transaction_status: 0,
         };
@@ -289,12 +289,12 @@ impl ModelExt for models::DeclareTransactionV1 {
     }
 }
 
-impl ModelExt for models::DeclareTransactionV2 {
+impl ModelExt for models::DeclareTransactionV2Content {
     type Proto = starknet::Transaction;
 
     fn to_proto(&self) -> Self::Proto {
         let meta = starknet::TransactionMeta {
-            transaction_hash: self.transaction_hash.to_proto().into(),
+            transaction_hash: None,
             transaction_index: u32::MAX,
             transaction_status: 0,
         };
@@ -316,12 +316,12 @@ impl ModelExt for models::DeclareTransactionV2 {
     }
 }
 
-impl ModelExt for models::DeclareTransactionV3 {
+impl ModelExt for models::DeclareTransactionV3Content {
     type Proto = starknet::Transaction;
 
     fn to_proto(&self) -> Self::Proto {
         let meta = starknet::TransactionMeta {
-            transaction_hash: self.transaction_hash.to_proto().into(),
+            transaction_hash: None,
             transaction_index: u32::MAX,
             transaction_status: 0,
         };
@@ -352,12 +352,12 @@ impl ModelExt for models::DeclareTransactionV3 {
     }
 }
 
-impl ModelExt for models::DeployTransaction {
+impl ModelExt for models::DeployTransactionContent {
     type Proto = starknet::Transaction;
 
     fn to_proto(&self) -> Self::Proto {
         let meta = starknet::TransactionMeta {
-            transaction_hash: self.transaction_hash.to_proto().into(),
+            transaction_hash: None,
             transaction_index: u32::MAX,
             transaction_status: 0,
         };
@@ -380,11 +380,11 @@ impl ModelExt for models::DeployTransaction {
     }
 }
 
-impl ModelExt for models::DeployAccountTransaction {
+impl ModelExt for models::DeployAccountTransactionContent {
     type Proto = starknet::Transaction;
 
     fn to_proto(&self) -> Self::Proto {
-        use models::DeployAccountTransaction::*;
+        use models::DeployAccountTransactionContent::*;
 
         match self {
             V1(tx) => tx.to_proto(),
@@ -393,12 +393,12 @@ impl ModelExt for models::DeployAccountTransaction {
     }
 }
 
-impl ModelExt for models::DeployAccountTransactionV1 {
+impl ModelExt for models::DeployAccountTransactionV1Content {
     type Proto = starknet::Transaction;
 
     fn to_proto(&self) -> Self::Proto {
         let meta = starknet::TransactionMeta {
-            transaction_hash: self.transaction_hash.to_proto().into(),
+            transaction_hash: None,
             transaction_index: u32::MAX,
             transaction_status: 0,
         };
@@ -424,12 +424,12 @@ impl ModelExt for models::DeployAccountTransactionV1 {
     }
 }
 
-impl ModelExt for models::DeployAccountTransactionV3 {
+impl ModelExt for models::DeployAccountTransactionV3Content {
     type Proto = starknet::Transaction;
 
     fn to_proto(&self) -> Self::Proto {
         let meta = starknet::TransactionMeta {
-            transaction_hash: self.transaction_hash.to_proto().into(),
+            transaction_hash: None,
             transaction_index: u32::MAX,
             transaction_status: 0,
         };
@@ -674,39 +674,14 @@ impl ModelExt for models::ExecutionResources {
     type Proto = starknet::ExecutionResources;
 
     fn to_proto(&self) -> Self::Proto {
+        let data_availability = starknet::DataAvailabilityResources {
+            l1_gas: self.l1_gas,
+            l1_data_gas: self.l1_data_gas,
+            l2_gas: self.l2_gas,
+        };
         starknet::ExecutionResources {
-            computation: self.computation_resources.to_proto().into(),
-            data_availability: self.data_resources.to_proto().into(),
-        }
-    }
-}
-
-impl ModelExt for models::ComputationResources {
-    type Proto = starknet::ComputationResources;
-
-    fn to_proto(&self) -> Self::Proto {
-        starknet::ComputationResources {
-            steps: self.steps,
-            memory_holes: self.memory_holes,
-            range_check_builtin_applications: self.range_check_builtin_applications,
-            pedersen_builtin_applications: self.pedersen_builtin_applications,
-            poseidon_builtin_applications: self.poseidon_builtin_applications,
-            ec_op_builtin_applications: self.ec_op_builtin_applications,
-            ecdsa_builtin_applications: self.ecdsa_builtin_applications,
-            bitwise_builtin_applications: self.bitwise_builtin_applications,
-            keccak_builtin_applications: self.keccak_builtin_applications,
-            segment_arena_builtin: self.segment_arena_builtin,
-        }
-    }
-}
-
-impl ModelExt for models::DataResources {
-    type Proto = starknet::DataAvailabilityResources;
-
-    fn to_proto(&self) -> Self::Proto {
-        starknet::DataAvailabilityResources {
-            l1_gas: self.data_availability.l1_gas,
-            l1_data_gas: self.data_availability.l1_data_gas,
+            computation: None,
+            data_availability: data_availability.into(),
         }
     }
 }
