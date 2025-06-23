@@ -18,6 +18,7 @@ let
       cargo-nextest
       cargo-flamegraph
       cargo-edit
+      cargo-outdated
 
       clang
       cmake
