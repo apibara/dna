@@ -21,6 +21,7 @@ arrow-schema = "55.1.0"
 clap.workspace = true
 datafusion = "48.0.0"
 error-stack.workspace = true
+hex = "0.4.3"
 reqwest = "0.12.20"
 tokio.workspace = true
 tokio-util.workspace = true
