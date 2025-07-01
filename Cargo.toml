@@ -6,7 +6,7 @@ license = "Apache-2.0"
 
 [workspace]
 resolver = "2"
-members = ["producer/evm"]
+members = ["metadata/core"]
 
 [profile.maxperf]
 inherits = "release"

@@ -1,0 +1,11 @@
+[package]
+name = "wings-metadata-core"
+version = "0.1.0"
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[lib]
+name = "wings_metadata_core"
+path = "src/lib.rs"
