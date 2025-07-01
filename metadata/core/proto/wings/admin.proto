@@ -1,0 +1,195 @@
+syntax = "proto3";
+
+package wings.v1;
+
+import "google/longrunning/operations.proto";
+import "google/protobuf/empty.proto";
+
+// AdminService is the service for managing tenants, namespaces, and topics.
+service AdminService {
+  // Create a new tenant.
+  rpc CreateTenant(CreateTenantRequest) returns (Tenant) {}
+  // Return the specified tenant.
+  rpc GetTenant(GetTenantRequest) returns (Tenant) {}
+  // List all tenants.
+  rpc ListTenants(ListTenantsRequest) returns (ListTenantsResponse) {}
+  // Delete a tenant.
+  //
+  // The request fails if the tenant has any namespace.
+  rpc DeleteTenant(DeleteTenantRequest) returns (google.protobuf.Empty) {}
+
+  // Create a new namespace belonging to a tenant.
+  rpc CreateNamespace(CreateNamespaceRequest) returns (Namespace) {}
+  // Return the specified namespace.
+  rpc GetNamespace(GetNamespaceRequest) returns (Namespace) {}
+  // List all namespaces belonging to a tenant.
+  rpc ListNamespaces(ListNamespacesRequest) returns (ListNamespacesResponse) {}
+  // Delete a namespace.
+  //
+  // The request fails if the namespace has any topic.
+  rpc DeleteNamespace(DeleteNamespaceRequest) returns (google.protobuf.Empty) {}
+
+  // Create a new topic belonging to a namespace.
+  rpc CreateTopic(CreateTopicRequest) returns (Topic) {}
+  // Return the specified topic.
+  rpc GetTopic(GetTopicRequest) returns (Topic) {}
+  // List all topics belonging to a namespace.
+  rpc ListTopics(ListTopicsRequest) returns (ListTopicsResponse) {}
+  // Delete a topic.
+  rpc DeleteTopic(DeleteTopicRequest) returns (google.longrunning.Operation) {}
+}
+
+message CreateTenantRequest {
+  // The tenant id.
+  string tenant_id = 1;
+
+  // The tenant metadata.
+  Tenant tenant = 2;
+}
+
+message GetTenantRequest {
+  // The tenant name.
+  //
+  // Format: tenants/{tenant}
+  string name = 1;
+}
+
+message ListTenantsRequest {
+  // The number of tenants to return.
+  //
+  // Default: 100
+  // Maximum: 1000.
+  int32 page_size = 1;
+
+  // The continuation token.
+  string page_token = 2;
+}
+
+message ListTenantsResponse {
+  // The tenants.
+  repeated Tenant tenants = 1;
+
+  // The continuation token.
+  string next_page_token = 2;
+}
+
+message DeleteTenantRequest {
+  // The tenant name.
+  //
+  // Format: tenants/{tenant}
+  string name = 1;
+}
+
+message Tenant {
+}
+
+message CreateNamespaceRequest {
+  // The tenant that owns the namespace.
+  //
+  // Format: tenants/{tenant}
+  string parent = 1;
+
+  // The namespace id.
+  string namespace_id = 2;
+
+  // The namespace metadata.
+  Namespace namespace = 3;
+}
+
+message GetNamespaceRequest {
+  // The namespace name.
+  //
+  // Format: tenants/{tenant}/namespaces/{namespace}
+  string name = 1;
+}
+
+message ListNamespacesRequest {
+  // The parent tenant.
+  //
+  // Format: tenants/{tenant}
+  string parent = 1;
+
+  // The number of namespaces to return.
+  //
+  // Default: 100
+  // Maximum: 1000.
+  int32 page_size = 2;
+
+  // The continuation token.
+  string page_token = 3;
+}
+
+message ListNamespacesResponse {
+  // The namespaces.
+  repeated Namespace namespaces = 1;
+
+  // The continuation token.
+  string next_page_token = 2;
+}
+
+message DeleteNamespaceRequest {
+  // The namespace name.
+  //
+  // Format: tenants/{tenant}/namespaces/{namespace}
+  string name = 1;
+}
+
+message Namespace {
+}
+
+message CreateTopicRequest {
+  // The namespace that owns the topic.
+  //
+  // Format: tenants/{tenant}/namespaces/{namespace}
+  string parent = 1;
+
+  // The topic id.
+  string topic_id = 2;
+
+  // The topic metadata.
+  Topic topic = 3;
+}
+
+message GetTopicRequest {
+  // The topic name.
+  //
+  // Format: tenants/{tenant}/namespaces/{namespace}/topics/{topic}
+  string name = 1;
+}
+
+message ListTopicsRequest {
+  // The parent namespace.
+  //
+  // Format: tenants/{tenant}/namespaces/{namespace}
+  string parent = 1;
+
+  // The number of topics to return.
+  //
+  // Default: 100
+  // Maximum: 1000.
+  int32 page_size = 2;
+
+  // The continuation token.
+  string page_token = 3;
+}
+
+message ListTopicsResponse {
+  // The topics.
+  repeated Topic topics = 1;
+
+  // The continuation token.
+  string next_page_token = 2;
+}
+
+message DeleteTopicRequest {
+  // The topic name.
+  //
+  // Format: tenants/{tenant}/namespaces/{namespace}/topics/{topic}
+  string name = 1;
+
+  // If set to true, also delete data associated with the topic.
+  bool force = 2;
+}
+
+message Topic {
+}

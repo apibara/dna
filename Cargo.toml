@@ -15,8 +15,8 @@ lto = "fat"
 incremental = false
 
 [workspace.dependencies]
-alloy = "1.0.12"
-clap = { version = "4.5.13", features = [
+alloy = "1.0.16"
+clap = { version = "4.5.40", features = [
     "derive",
     "env",
     "cargo",
@@ -24,7 +24,8 @@ clap = { version = "4.5.13", features = [
     "color",
     "unstable-styles",
 ] }
-ctrlc = { version = "3.4.5", features = ["termination"] }
+ctrlc = { version = "3.4.7", features = ["termination"] }
 error-stack = "0.5.0"
+tonic-build = "0.13.1"
 tokio = { version = "1.45.1", features = ["full", "rt-multi-thread"] }
 tokio-util = "0.7.15"
