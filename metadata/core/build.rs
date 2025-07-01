@@ -9,6 +9,7 @@ fn main() -> Result<()> {
     tonic_build::configure()
         .build_client(true)
         .build_server(true)
+        .include_file("mod.rs")
         .file_descriptor_set_path(out_dir.join(ADMIN_DESCRIPTOR_FILE))
         .compile_protos(&["proto/wings/admin.proto"], &["proto/"])?;
 

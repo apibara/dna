@@ -10,5 +10,10 @@ license.workspace = true
 name = "wings_metadata_core"
 path = "src/lib.rs"
 
+[dependencies]
+prost.workspace = true
+prost-types.workspace = true
+tonic.workspace = true
+
 [build-dependencies]
 tonic-build.workspace = true
