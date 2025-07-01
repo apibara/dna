@@ -1,9 +1,11 @@
 //! The metadata admin trait and related types.
 
 pub mod error;
+pub mod memory;
 pub mod types;
 
 pub use error::{AdminError, AdminResult};
+pub use memory::InMemoryAdminService;
 pub use types::*;
 
 use async_trait::async_trait;
@@ -18,10 +20,10 @@ pub trait Admin: Send + Sync {
     // Tenant operations
 
     /// Create a new tenant.
-    async fn create_tenant(&self, request: CreateTenantRequest) -> AdminResult<Tenant>;
+    async fn create_tenant(&self, name: TenantName) -> AdminResult<Tenant>;
 
     /// Return the specified tenant.
-    async fn get_tenant(&self, request: GetTenantRequest) -> AdminResult<Tenant>;
+    async fn get_tenant(&self, name: TenantName) -> AdminResult<Tenant>;
 
     /// List all tenants.
     async fn list_tenants(&self, request: ListTenantsRequest) -> AdminResult<ListTenantsResponse>;
@@ -29,15 +31,15 @@ pub trait Admin: Send + Sync {
     /// Delete a tenant.
     ///
     /// The request fails if the tenant has any namespace.
-    async fn delete_tenant(&self, request: DeleteTenantRequest) -> AdminResult<()>;
+    async fn delete_tenant(&self, name: TenantName) -> AdminResult<()>;
 
     // Namespace operations
 
     /// Create a new namespace belonging to a tenant.
-    async fn create_namespace(&self, request: CreateNamespaceRequest) -> AdminResult<Namespace>;
+    async fn create_namespace(&self, name: NamespaceName) -> AdminResult<Namespace>;
 
     /// Return the specified namespace.
-    async fn get_namespace(&self, request: GetNamespaceRequest) -> AdminResult<Namespace>;
+    async fn get_namespace(&self, name: NamespaceName) -> AdminResult<Namespace>;
 
     /// List all namespaces belonging to a tenant.
     async fn list_namespaces(
@@ -48,15 +50,15 @@ pub trait Admin: Send + Sync {
     /// Delete a namespace.
     ///
     /// The request fails if the namespace has any topic.
-    async fn delete_namespace(&self, request: DeleteNamespaceRequest) -> AdminResult<()>;
+    async fn delete_namespace(&self, name: NamespaceName) -> AdminResult<()>;
 
     // Topic operations
 
     /// Create a new topic belonging to a namespace.
-    async fn create_topic(&self, request: CreateTopicRequest) -> AdminResult<Topic>;
+    async fn create_topic(&self, name: TopicName, options: TopicOptions) -> AdminResult<Topic>;
 
     /// Return the specified topic.
-    async fn get_topic(&self, request: GetTopicRequest) -> AdminResult<Topic>;
+    async fn get_topic(&self, name: TopicName) -> AdminResult<Topic>;
 
     /// List all topics belonging to a namespace.
     async fn list_topics(&self, request: ListTopicsRequest) -> AdminResult<ListTopicsResponse>;
@@ -64,6 +66,6 @@ pub trait Admin: Send + Sync {
     /// Delete a topic.
     ///
     /// This operation may take a long time to complete as it involves deleting
-    /// data from object storage when force is true.
-    async fn delete_topic(&self, request: DeleteTopicRequest) -> AdminResult<()>;
+    /// data from object storage.
+    async fn delete_topic(&self, name: TopicName, force: bool) -> AdminResult<()>;
 }

@@ -17,6 +17,7 @@ paste.workspace = true
 prost.workspace = true
 prost-types.workspace = true
 thiserror.workspace = true
+tokio.workspace = true
 tonic.workspace = true
 
 [build-dependencies]

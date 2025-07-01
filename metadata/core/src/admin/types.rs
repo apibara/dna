@@ -49,20 +49,10 @@ impl Topic {
     }
 }
 
-/// Request to create a new tenant.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CreateTenantRequest {
-    /// The tenant ID.
-    pub tenant_id: String,
-    /// The tenant metadata.
-    pub tenant: Tenant,
-}
-
-/// Request to get a tenant.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct GetTenantRequest {
-    /// The tenant name.
-    pub name: TenantName,
+/// Options for creating a topic.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct TopicOptions {
+    // Empty for now, will be extended in the future
 }
 
 /// Request to list tenants.
@@ -91,31 +81,6 @@ pub struct ListTenantsResponse {
     pub tenants: Vec<Tenant>,
     /// The continuation token.
     pub next_page_token: Option<String>,
-}
-
-/// Request to delete a tenant.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DeleteTenantRequest {
-    /// The tenant name.
-    pub name: TenantName,
-}
-
-/// Request to create a new namespace.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CreateNamespaceRequest {
-    /// The tenant that owns the namespace.
-    pub parent: TenantName,
-    /// The namespace ID.
-    pub namespace_id: String,
-    /// The namespace metadata.
-    pub namespace: Namespace,
-}
-
-/// Request to get a namespace.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct GetNamespaceRequest {
-    /// The namespace name.
-    pub name: NamespaceName,
 }
 
 /// Request to list namespaces.
@@ -150,31 +115,6 @@ pub struct ListNamespacesResponse {
     pub next_page_token: Option<String>,
 }
 
-/// Request to delete a namespace.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DeleteNamespaceRequest {
-    /// The namespace name.
-    pub name: NamespaceName,
-}
-
-/// Request to create a new topic.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CreateTopicRequest {
-    /// The namespace that owns the topic.
-    pub parent: NamespaceName,
-    /// The topic ID.
-    pub topic_id: String,
-    /// The topic metadata.
-    pub topic: Topic,
-}
-
-/// Request to get a topic.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct GetTopicRequest {
-    /// The topic name.
-    pub name: TopicName,
-}
-
 /// Request to list topics.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ListTopicsRequest {
@@ -205,15 +145,6 @@ pub struct ListTopicsResponse {
     pub topics: Vec<Topic>,
     /// The continuation token.
     pub next_page_token: Option<String>,
-}
-
-/// Request to delete a topic.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DeleteTopicRequest {
-    /// The topic name.
-    pub name: TopicName,
-    /// If set to true, also delete data associated with the topic.
-    pub force: bool,
 }
 
 #[cfg(test)]
@@ -262,19 +193,6 @@ mod tests {
     }
 
     #[test]
-    fn test_create_tenant_request() {
-        let tenant_name = TenantName::new("test-tenant");
-        let tenant = Tenant::new(tenant_name.clone());
-        let request = CreateTenantRequest {
-            tenant_id: "test-tenant".to_string(),
-            tenant,
-        };
-
-        assert_eq!(request.tenant_id, "test-tenant");
-        assert_eq!(request.tenant.name, tenant_name);
-    }
-
-    #[test]
     fn test_list_namespaces_request() {
         let tenant_name = TenantName::new("test-tenant");
         let request = ListNamespacesRequest::new(tenant_name.clone());
@@ -293,19 +211,5 @@ mod tests {
         assert_eq!(request.parent, namespace_name);
         assert_eq!(request.page_size, Some(100));
         assert_eq!(request.page_token, None);
-    }
-
-    #[test]
-    fn test_delete_topic_request() {
-        let tenant_name = TenantName::new("test-tenant");
-        let namespace_name = NamespaceName::new("test-namespace", tenant_name);
-        let topic_name = TopicName::new("test-topic", namespace_name);
-        let request = DeleteTopicRequest {
-            name: topic_name.clone(),
-            force: true,
-        };
-
-        assert_eq!(request.name, topic_name);
-        assert_eq!(request.force, true);
     }
 }
