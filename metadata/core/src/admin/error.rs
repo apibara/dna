@@ -23,6 +23,8 @@ pub enum AdminError {
     TopicNotFound { topic_id: String },
     #[error("topic already exists: {topic_id}")]
     TopicAlreadyExists { topic_id: String },
+    #[error("invalid topic options: {message}")]
+    InvalidTopicOptions { message: String },
 
     #[error("invalid resource name: {name}")]
     InvalidResourceName { name: String },

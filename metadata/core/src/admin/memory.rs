@@ -6,6 +6,7 @@
 //! # Example
 //!
 //! ```rust
+//! use arrow::datatypes::{DataType, Field};
 //! use wings_metadata_core::admin::{
 //!     Admin, InMemoryAdminService, TenantName, NamespaceName, NamespaceOptions, TopicName, TopicOptions
 //! };
@@ -26,7 +27,8 @@
 //!
 //! // Create a topic
 //! let topic_name = TopicName::new("my-topic", namespace_name.clone());
-//! let topic = service.create_topic(topic_name.clone(), TopicOptions::default()).await?;
+//! let topic_options = TopicOptions::new(vec![Field::new("key", DataType::Utf8, false)]);
+//! let topic = service.create_topic(topic_name.clone(), topic_options).await?;
 //! println!("Created topic: {}", topic.name);
 //!
 //! // Get the topic
@@ -338,7 +340,7 @@ impl Admin for InMemoryAdminService {
 
     // Topic operations
 
-    async fn create_topic(&self, name: TopicName, _options: TopicOptions) -> AdminResult<Topic> {
+    async fn create_topic(&self, name: TopicName, options: TopicOptions) -> AdminResult<Topic> {
         let mut store = self.store.write().await;
 
         let topic_key = name.name();
@@ -359,8 +361,31 @@ impl Admin for InMemoryAdminService {
             }));
         }
 
+        // Validate partition keys
+        let mut partition_keys = options.partition_keys;
+        for &key_index in &partition_keys {
+            if key_index >= options.fields.len() {
+                return Err(error_stack::Report::new(AdminError::InvalidTopicOptions {
+                    message: format!(
+                        "partition key index {} is out of bounds for fields (length: {})",
+                        key_index,
+                        options.fields.len()
+                    ),
+                }));
+            }
+        }
+
+        // Sort partition keys for consistent storage
+        partition_keys.sort_unstable();
+
+        // Create topic options with sorted partition keys
+        let validated_options = TopicOptions {
+            fields: options.fields,
+            partition_keys,
+        };
+
         // Create and store the topic
-        let topic = Topic::new(name);
+        let topic = Topic::new(name, validated_options);
         store.topics.insert(topic_key, topic.clone());
 
         Ok(topic)
@@ -460,6 +485,8 @@ impl Admin for InMemoryAdminService {
 
 #[cfg(test)]
 mod tests {
+    use arrow::datatypes::{DataType, Field};
+
     use super::*;
     use crate::admin::{NamespaceName, TenantName};
 
@@ -490,8 +517,9 @@ mod tests {
         let tenant_name = TenantName::new(tenant_id);
         let namespace_name = NamespaceName::new(namespace_id, tenant_name);
         let topic_name = TopicName::new(topic_id, namespace_name);
+        let topic_options = TopicOptions::new(vec![Field::new("key", DataType::Utf8, false)]);
         service
-            .create_topic(topic_name, TopicOptions::default())
+            .create_topic(topic_name, topic_options)
             .await
             .unwrap()
     }
@@ -866,7 +894,11 @@ mod tests {
         // (since we haven't implemented topic creation yet)
         use crate::admin::TopicName;
         let topic_name = TopicName::new("test-topic", namespace_name.clone());
-        let topic = Topic::new(topic_name.clone());
+        let topic_options = TopicOptions::new(vec![Field::new("key", DataType::Utf8, false)]);
+        let topic = service
+            .create_topic(topic_name.clone(), topic_options)
+            .await
+            .unwrap();
         {
             let mut store = service.store.write().await;
             store.topics.insert(topic_name.name(), topic);
@@ -890,8 +922,9 @@ mod tests {
         let tenant_name = TenantName::new("test-tenant");
         let namespace_name = NamespaceName::new("test-namespace", tenant_name);
         let topic_name = TopicName::new("test-topic", namespace_name.clone());
+        let topic_options = TopicOptions::new(vec![Field::new("key", DataType::Utf8, false)]);
         let topic = service
-            .create_topic(topic_name.clone(), TopicOptions::default())
+            .create_topic(topic_name.clone(), topic_options)
             .await
             .unwrap();
 
@@ -911,9 +944,8 @@ mod tests {
         let namespace_name = NamespaceName::new("nonexistent-namespace", tenant_name);
         let topic_name = TopicName::new("test-topic", namespace_name);
 
-        let result = service
-            .create_topic(topic_name, TopicOptions::default())
-            .await;
+        let topic_options = TopicOptions::new(vec![Field::new("key", DataType::Utf8, false)]);
+        let result = service.create_topic(topic_name, topic_options).await;
         assert!(matches!(
             result.unwrap_err().current_context(),
             AdminError::NamespaceNotFound { .. }
@@ -931,15 +963,14 @@ mod tests {
         let topic_name = TopicName::new("test-topic", namespace_name);
 
         // Create topic first time
+        let topic_options = TopicOptions::new(vec![Field::new("key", DataType::Utf8, false)]);
         service
-            .create_topic(topic_name.clone(), TopicOptions::default())
+            .create_topic(topic_name.clone(), topic_options.clone())
             .await
             .unwrap();
 
         // Try to create the same topic again
-        let result = service
-            .create_topic(topic_name, TopicOptions::default())
-            .await;
+        let result = service.create_topic(topic_name, topic_options).await;
         assert!(matches!(
             result.unwrap_err().current_context(),
             AdminError::TopicAlreadyExists { .. }
@@ -955,8 +986,9 @@ mod tests {
         let tenant_name = TenantName::new("test-tenant");
         let namespace_name = NamespaceName::new("test-namespace", tenant_name);
         let topic_name = TopicName::new("test-topic", namespace_name);
+        let topic_options = TopicOptions::new(vec![Field::new("key", DataType::Utf8, false)]);
         let created_topic = service
-            .create_topic(topic_name.clone(), TopicOptions::default())
+            .create_topic(topic_name.clone(), topic_options)
             .await
             .unwrap();
 
@@ -1073,8 +1105,9 @@ mod tests {
         let tenant_name = TenantName::new("test-tenant");
         let namespace_name = NamespaceName::new("test-namespace", tenant_name);
         let topic_name = TopicName::new("test-topic", namespace_name);
+        let topic_options = TopicOptions::new(vec![Field::new("key", DataType::Utf8, false)]);
         service
-            .create_topic(topic_name.clone(), TopicOptions::default())
+            .create_topic(topic_name.clone(), topic_options)
             .await
             .unwrap();
 
@@ -1114,8 +1147,10 @@ mod tests {
         let tenant_name = TenantName::new("test-tenant");
         let namespace_name = NamespaceName::new("test-namespace", tenant_name);
         let topic_name = TopicName::new("test-topic", namespace_name);
+        let topic_options = TopicOptions::new(vec![Field::new("key", DataType::Utf8, false)]);
+
         service
-            .create_topic(topic_name.clone(), TopicOptions::default())
+            .create_topic(topic_name.clone(), topic_options)
             .await
             .unwrap();
 

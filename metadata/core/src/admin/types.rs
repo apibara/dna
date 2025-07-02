@@ -1,6 +1,7 @@
 //! Data types for admin operations.
 
 use crate::resource_type;
+use arrow::datatypes::Fields;
 use bytesize::ByteSize;
 use std::time::Duration;
 
@@ -50,12 +51,20 @@ impl Namespace {
 pub struct Topic {
     /// The topic name.
     pub name: TopicName,
+    /// The fields in the topic messages.
+    pub fields: Fields,
+    /// The indices of the fields that are used to partition the topic.
+    pub partition_keys: Vec<usize>,
 }
 
 impl Topic {
-    /// Create a new topic with the given name.
-    pub fn new(name: TopicName) -> Self {
-        Self { name }
+    /// Create a new topic with the given name and options.
+    pub fn new(name: TopicName, options: TopicOptions) -> Self {
+        Self {
+            name,
+            fields: options.fields,
+            partition_keys: options.partition_keys,
+        }
     }
 }
 
@@ -78,9 +87,28 @@ impl Default for NamespaceOptions {
 }
 
 /// Options for creating a topic.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TopicOptions {
-    // Empty for now, will be extended in the future
+    /// The fields in the topic messages.
+    pub fields: Fields,
+    /// The indices of the fields that are used to partition the topic.
+    pub partition_keys: Vec<usize>,
+}
+
+impl TopicOptions {
+    pub fn new(fields: impl Into<Fields>) -> Self {
+        Self {
+            fields: fields.into(),
+            partition_keys: Vec::new(),
+        }
+    }
+
+    pub fn new_with_partition_keys(fields: impl Into<Fields>, partition_keys: Vec<usize>) -> Self {
+        Self {
+            fields: fields.into(),
+            partition_keys,
+        }
+    }
 }
 
 /// Request to list tenants.
@@ -177,6 +205,8 @@ pub struct ListTopicsResponse {
 
 #[cfg(test)]
 mod tests {
+    use arrow::datatypes::{DataType, Field};
+
     use super::*;
 
     #[test]
@@ -212,7 +242,8 @@ mod tests {
         let tenant_name = TenantName::new("test-tenant");
         let namespace_name = NamespaceName::new("test-namespace", tenant_name);
         let topic_name = TopicName::new("test-topic", namespace_name.clone());
-        let topic = Topic::new(topic_name.clone());
+        let options = TopicOptions::new(vec![Field::new("test", DataType::Utf8, false)]);
+        let topic = Topic::new(topic_name.clone(), options);
 
         assert_eq!(topic.name, topic_name);
         assert_eq!(topic.name.id(), "test-topic");
@@ -221,6 +252,8 @@ mod tests {
             topic.name.name(),
             "tenants/test-tenant/namespaces/test-namespace/topics/test-topic"
         );
+        assert_eq!(topic.fields.len(), 1);
+        assert_eq!(topic.partition_keys.len(), 0);
     }
 
     #[test]
