@@ -11,8 +11,12 @@ name = "wings_metadata_core"
 path = "src/lib.rs"
 
 [dependencies]
+arrow.workspace = true
 async-trait.workspace = true
+datafusion.workspace = true
 error-stack.workspace = true
+object_store.workspace = true
+parquet.workspace = true
 paste.workspace = true
 prost.workspace = true
 prost-types.workspace = true
