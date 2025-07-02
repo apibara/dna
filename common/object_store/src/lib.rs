@@ -12,7 +12,7 @@ use std::sync::Arc;
 use object_store::ObjectStore;
 use wings_metadata_core::admin::SecretName;
 
-pub use local::LocalFileSystemFactory;
+pub use local::{LocalFileSystemFactory, TemporaryFileSystemFactory};
 
 /// Factory trait for creating ObjectStore instances from secret configurations.
 ///
