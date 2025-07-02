@@ -6,7 +6,7 @@ license = "Apache-2.0"
 
 [workspace]
 resolver = "2"
-members = ["metadata/core"]
+members = ["common/object_store", "metadata/core"]
 
 [profile.maxperf]
 inherits = "release"

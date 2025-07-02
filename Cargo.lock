@@ -3504,6 +3504,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "wings-object-store"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "object_store",
+ "tempfile",
+ "tokio",
+ "wings-metadata-core",
+]
+
+[[package]]
 name = "wit-bindgen-rt"
 version = "0.39.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

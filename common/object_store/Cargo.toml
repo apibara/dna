@@ -1,0 +1,20 @@
+[package]
+name = "wings-object-store"
+version = "0.1.0"
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[lib]
+name = "wings_object_store"
+path = "src/lib.rs"
+
+[dependencies]
+async-trait.workspace = true
+object_store.workspace = true
+wings-metadata-core = { path = "../../metadata/core" }
+
+[dev-dependencies]
+tempfile = "3.0"
+tokio = { workspace = true, features = ["rt", "macros"] }
