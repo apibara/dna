@@ -9,6 +9,7 @@ use std::time::Duration;
 resource_type!(Tenant, "tenants");
 resource_type!(Namespace, "namespaces", Tenant);
 resource_type!(Topic, "topics", Namespace);
+resource_type!(Secret, "secrets");
 
 /// A tenant in the Wings system.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -33,6 +34,10 @@ pub struct Namespace {
     pub flush_size: ByteSize,
     /// The maximum interval at which the current segment is flushed to object storage.
     pub flush_interval: Duration,
+    /// The default object store configuration for the namespace.
+    pub default_object_store_config: SecretName,
+    /// If specified, use this configuration to store data for long term storage.
+    pub frozen_object_store_config: Option<SecretName>,
 }
 
 impl Namespace {
@@ -42,6 +47,8 @@ impl Namespace {
             name,
             flush_size: options.flush_size,
             flush_interval: options.flush_interval,
+            default_object_store_config: options.default_object_store_config,
+            frozen_object_store_config: options.frozen_object_store_config,
         }
     }
 }
@@ -75,13 +82,20 @@ pub struct NamespaceOptions {
     pub flush_size: ByteSize,
     /// The maximum interval at which the current segment is flushed to object storage.
     pub flush_interval: Duration,
+    /// The default object store configuration for the namespace.
+    pub default_object_store_config: SecretName,
+    /// If specified, use this configuration to store data for long term storage.
+    pub frozen_object_store_config: Option<SecretName>,
 }
 
-impl Default for NamespaceOptions {
-    fn default() -> Self {
+impl NamespaceOptions {
+    /// Create new namespace options with the given default object store config.
+    pub fn new(default_object_store_config: SecretName) -> Self {
         Self {
             flush_size: ByteSize::mb(8),
             flush_interval: Duration::from_millis(250),
+            default_object_store_config,
+            frozen_object_store_config: None,
         }
     }
 }
@@ -223,7 +237,7 @@ mod tests {
     fn test_namespace_creation() {
         let tenant_name = TenantName::new("test-tenant");
         let namespace_name = NamespaceName::new("test-namespace", tenant_name.clone());
-        let options = NamespaceOptions::default();
+        let options = NamespaceOptions::new(SecretName::new("test-config"));
         let namespace = Namespace::new(namespace_name.clone(), options.clone());
 
         assert_eq!(namespace.name, namespace_name);
@@ -235,6 +249,14 @@ mod tests {
         );
         assert_eq!(namespace.flush_size, options.flush_size);
         assert_eq!(namespace.flush_interval, options.flush_interval);
+        assert_eq!(
+            namespace.default_object_store_config,
+            options.default_object_store_config
+        );
+        assert_eq!(
+            namespace.frozen_object_store_config,
+            options.frozen_object_store_config
+        );
     }
 
     #[test]
@@ -275,5 +297,43 @@ mod tests {
         assert_eq!(request.parent, namespace_name);
         assert_eq!(request.page_size, Some(100));
         assert_eq!(request.page_token, None);
+    }
+
+    #[test]
+    fn test_secret_name() {
+        let secret_name = SecretName::new("test-secret");
+
+        assert_eq!(secret_name.id(), "test-secret");
+        assert_eq!(secret_name.name(), "secrets/test-secret");
+    }
+
+    #[test]
+    fn test_namespace_options_with_secrets() {
+        let default_secret = SecretName::new("default-config");
+        let frozen_secret = SecretName::new("frozen-config");
+
+        let mut options = NamespaceOptions::new(default_secret.clone());
+        options.flush_size = ByteSize::mb(16);
+        options.flush_interval = Duration::from_millis(500);
+        options.frozen_object_store_config = Some(frozen_secret.clone());
+
+        assert_eq!(options.flush_size, ByteSize::mb(16));
+        assert_eq!(options.flush_interval, Duration::from_millis(500));
+        assert_eq!(options.default_object_store_config, default_secret);
+        assert_eq!(options.frozen_object_store_config, Some(frozen_secret));
+    }
+
+    #[test]
+    fn test_namespace_options_new_method() {
+        let secret_name = SecretName::new("my-secret");
+        let options = NamespaceOptions::new(secret_name.clone());
+
+        // Check that the secret is set correctly
+        assert_eq!(options.default_object_store_config, secret_name);
+
+        // Check that defaults are applied
+        assert_eq!(options.flush_size, ByteSize::mb(8));
+        assert_eq!(options.flush_interval, Duration::from_millis(250));
+        assert_eq!(options.frozen_object_store_config, None);
     }
 }

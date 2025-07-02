@@ -8,7 +8,7 @@
 //! ```rust
 //! use arrow::datatypes::{DataType, Field};
 //! use wings_metadata_core::admin::{
-//!     Admin, InMemoryAdminService, TenantName, NamespaceName, NamespaceOptions, TopicName, TopicOptions
+//!     Admin, InMemoryAdminService, TenantName, NamespaceName, SecretName, NamespaceOptions, TopicName, TopicOptions
 //! };
 //!
 //! # #[tokio::main]
@@ -22,7 +22,8 @@
 //!
 //! // Create a namespace
 //! let namespace_name = NamespaceName::new("my-namespace", tenant_name.clone());
-//! let namespace = service.create_namespace(namespace_name.clone(), NamespaceOptions::default()).await?;
+//! let namespace_options = NamespaceOptions::new(SecretName::new("default-config"));
+//! let namespace = service.create_namespace(namespace_name.clone(), namespace_options).await?;
 //! println!("Created namespace: {}", namespace.name);
 //!
 //! // Create a topic
@@ -488,7 +489,7 @@ mod tests {
     use arrow::datatypes::{DataType, Field};
 
     use super::*;
-    use crate::admin::{NamespaceName, TenantName};
+    use crate::admin::{NamespaceName, SecretName, TenantName};
 
     async fn create_test_tenant(service: &InMemoryAdminService, tenant_id: &str) -> Tenant {
         let tenant_name = TenantName::new(tenant_id);
@@ -503,7 +504,10 @@ mod tests {
         let tenant_name = TenantName::new(tenant_id);
         let namespace_name = NamespaceName::new(namespace_id, tenant_name);
         service
-            .create_namespace(namespace_name, NamespaceOptions::default())
+            .create_namespace(
+                namespace_name,
+                NamespaceOptions::new(SecretName::new("test-config")),
+            )
             .await
             .unwrap()
     }
@@ -670,7 +674,10 @@ mod tests {
         // Manually add a namespace to simulate the tenant having namespaces
         // (since we haven't implemented namespace creation yet)
         let namespace_name = NamespaceName::new("test-namespace", tenant_name.clone());
-        let namespace = Namespace::new(namespace_name.clone(), NamespaceOptions::default());
+        let namespace = Namespace::new(
+            namespace_name.clone(),
+            NamespaceOptions::new(SecretName::new("test-config")),
+        );
         {
             let mut store = service.store.write().await;
             store.namespaces.insert(namespace_name.name(), namespace);
@@ -693,7 +700,10 @@ mod tests {
         let tenant_name = TenantName::new("test-tenant");
         let namespace_name = NamespaceName::new("test-namespace", tenant_name.clone());
         let namespace = service
-            .create_namespace(namespace_name.clone(), NamespaceOptions::default())
+            .create_namespace(
+                namespace_name.clone(),
+                NamespaceOptions::new(SecretName::new("test-config")),
+            )
             .await
             .unwrap();
 
@@ -713,7 +723,10 @@ mod tests {
         let namespace_name = NamespaceName::new("test-namespace", tenant_name);
 
         let result = service
-            .create_namespace(namespace_name, NamespaceOptions::default())
+            .create_namespace(
+                namespace_name,
+                NamespaceOptions::new(SecretName::new("test-config")),
+            )
             .await;
         assert!(matches!(
             result.unwrap_err().current_context(),
@@ -731,13 +744,19 @@ mod tests {
 
         // Create namespace first time
         service
-            .create_namespace(namespace_name.clone(), NamespaceOptions::default())
+            .create_namespace(
+                namespace_name.clone(),
+                NamespaceOptions::new(SecretName::new("test-config")),
+            )
             .await
             .unwrap();
 
         // Try to create the same namespace again
         let result = service
-            .create_namespace(namespace_name, NamespaceOptions::default())
+            .create_namespace(
+                namespace_name,
+                NamespaceOptions::new(SecretName::new("test-config")),
+            )
             .await;
         assert!(matches!(
             result.unwrap_err().current_context(),
@@ -753,7 +772,10 @@ mod tests {
         let tenant_name = TenantName::new("test-tenant");
         let namespace_name = NamespaceName::new("test-namespace", tenant_name);
         let created_namespace = service
-            .create_namespace(namespace_name.clone(), NamespaceOptions::default())
+            .create_namespace(
+                namespace_name.clone(),
+                NamespaceOptions::new(SecretName::new("test-config")),
+            )
             .await
             .unwrap();
 
@@ -848,7 +870,10 @@ mod tests {
         let tenant_name = TenantName::new("test-tenant");
         let namespace_name = NamespaceName::new("test-namespace", tenant_name);
         service
-            .create_namespace(namespace_name.clone(), NamespaceOptions::default())
+            .create_namespace(
+                namespace_name.clone(),
+                NamespaceOptions::new(SecretName::new("test-config")),
+            )
             .await
             .unwrap();
 
@@ -886,7 +911,10 @@ mod tests {
         let tenant_name = TenantName::new("test-tenant");
         let namespace_name = NamespaceName::new("test-namespace", tenant_name);
         service
-            .create_namespace(namespace_name.clone(), NamespaceOptions::default())
+            .create_namespace(
+                namespace_name.clone(),
+                NamespaceOptions::new(SecretName::new("test-config")),
+            )
             .await
             .unwrap();
 
