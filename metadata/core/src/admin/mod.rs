@@ -36,7 +36,11 @@ pub trait Admin: Send + Sync {
     // Namespace operations
 
     /// Create a new namespace belonging to a tenant.
-    async fn create_namespace(&self, name: NamespaceName) -> AdminResult<Namespace>;
+    async fn create_namespace(
+        &self,
+        name: NamespaceName,
+        options: NamespaceOptions,
+    ) -> AdminResult<Namespace>;
 
     /// Return the specified namespace.
     async fn get_namespace(&self, name: NamespaceName) -> AdminResult<Namespace>;

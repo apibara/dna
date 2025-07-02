@@ -17,6 +17,7 @@ incremental = false
 [workspace.dependencies]
 arrow = "55.2.0"
 async-trait = "0.1.88"
+bytesize = "2.0.1"
 clap = { version = "4.5.40", features = [
     "derive",
     "env",

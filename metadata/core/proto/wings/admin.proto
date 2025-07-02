@@ -94,6 +94,9 @@ message CreateNamespaceRequest {
 
   // The namespace metadata.
   Namespace namespace = 3;
+
+  // The namespace options.
+  NamespaceOptions options = 4;
 }
 
 message GetNamespaceRequest {
@@ -135,6 +138,11 @@ message DeleteNamespaceRequest {
 }
 
 message Namespace {
+  // The size at which the current segment is flushed to object storage.
+  uint64 flush_size_bytes = 1;
+
+  // The maximum interval at which the current segment is flushed to object storage (in milliseconds).
+  uint64 flush_interval_millis = 2;
 }
 
 message CreateTopicRequest {
@@ -189,6 +197,14 @@ message DeleteTopicRequest {
 
   // If set to true, also delete data associated with the topic.
   bool force = 2;
+}
+
+message NamespaceOptions {
+  // The size at which the current segment is flushed to object storage.
+  uint64 flush_size_bytes = 1;
+
+  // The maximum interval at which the current segment is flushed to object storage (in seconds).
+  uint64 flush_interval_seconds = 2;
 }
 
 message Topic {

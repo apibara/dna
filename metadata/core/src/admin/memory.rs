@@ -7,7 +7,7 @@
 //!
 //! ```rust
 //! use wings_metadata_core::admin::{
-//!     Admin, InMemoryAdminService, TenantName, NamespaceName, TopicName, TopicOptions
+//!     Admin, InMemoryAdminService, TenantName, NamespaceName, NamespaceOptions, TopicName, TopicOptions
 //! };
 //!
 //! # #[tokio::main]
@@ -21,7 +21,7 @@
 //!
 //! // Create a namespace
 //! let namespace_name = NamespaceName::new("my-namespace", tenant_name.clone());
-//! let namespace = service.create_namespace(namespace_name.clone()).await?;
+//! let namespace = service.create_namespace(namespace_name.clone(), NamespaceOptions::default()).await?;
 //! println!("Created namespace: {}", namespace.name);
 //!
 //! // Create a topic
@@ -47,7 +47,7 @@ use tokio::sync::RwLock;
 use crate::admin::{
     Admin, AdminError, AdminResult, ListNamespacesRequest, ListNamespacesResponse,
     ListTenantsRequest, ListTenantsResponse, ListTopicsRequest, ListTopicsResponse, Namespace,
-    NamespaceName, Tenant, TenantName, Topic, TopicName, TopicOptions,
+    NamespaceName, NamespaceOptions, Tenant, TenantName, Topic, TopicName, TopicOptions,
 };
 use async_trait::async_trait;
 
@@ -193,7 +193,11 @@ impl Admin for InMemoryAdminService {
 
     // Namespace operations
 
-    async fn create_namespace(&self, name: NamespaceName) -> AdminResult<Namespace> {
+    async fn create_namespace(
+        &self,
+        name: NamespaceName,
+        options: NamespaceOptions,
+    ) -> AdminResult<Namespace> {
         let mut store = self.store.write().await;
 
         let namespace_key = name.name();
@@ -217,7 +221,7 @@ impl Admin for InMemoryAdminService {
         }
 
         // Create and store the namespace
-        let namespace = Namespace::new(name);
+        let namespace = Namespace::new(name, options);
         store.namespaces.insert(namespace_key, namespace.clone());
 
         Ok(namespace)
@@ -471,7 +475,10 @@ mod tests {
     ) -> Namespace {
         let tenant_name = TenantName::new(tenant_id);
         let namespace_name = NamespaceName::new(namespace_id, tenant_name);
-        service.create_namespace(namespace_name).await.unwrap()
+        service
+            .create_namespace(namespace_name, NamespaceOptions::default())
+            .await
+            .unwrap()
     }
 
     async fn create_test_topic(
@@ -635,7 +642,7 @@ mod tests {
         // Manually add a namespace to simulate the tenant having namespaces
         // (since we haven't implemented namespace creation yet)
         let namespace_name = NamespaceName::new("test-namespace", tenant_name.clone());
-        let namespace = Namespace::new(namespace_name.clone());
+        let namespace = Namespace::new(namespace_name.clone(), NamespaceOptions::default());
         {
             let mut store = service.store.write().await;
             store.namespaces.insert(namespace_name.name(), namespace);
@@ -658,7 +665,7 @@ mod tests {
         let tenant_name = TenantName::new("test-tenant");
         let namespace_name = NamespaceName::new("test-namespace", tenant_name.clone());
         let namespace = service
-            .create_namespace(namespace_name.clone())
+            .create_namespace(namespace_name.clone(), NamespaceOptions::default())
             .await
             .unwrap();
 
@@ -677,7 +684,9 @@ mod tests {
         let tenant_name = TenantName::new("nonexistent-tenant");
         let namespace_name = NamespaceName::new("test-namespace", tenant_name);
 
-        let result = service.create_namespace(namespace_name).await;
+        let result = service
+            .create_namespace(namespace_name, NamespaceOptions::default())
+            .await;
         assert!(matches!(
             result.unwrap_err().current_context(),
             AdminError::TenantNotFound { .. }
@@ -694,12 +703,14 @@ mod tests {
 
         // Create namespace first time
         service
-            .create_namespace(namespace_name.clone())
+            .create_namespace(namespace_name.clone(), NamespaceOptions::default())
             .await
             .unwrap();
 
         // Try to create the same namespace again
-        let result = service.create_namespace(namespace_name).await;
+        let result = service
+            .create_namespace(namespace_name, NamespaceOptions::default())
+            .await;
         assert!(matches!(
             result.unwrap_err().current_context(),
             AdminError::NamespaceAlreadyExists { .. }
@@ -714,7 +725,7 @@ mod tests {
         let tenant_name = TenantName::new("test-tenant");
         let namespace_name = NamespaceName::new("test-namespace", tenant_name);
         let created_namespace = service
-            .create_namespace(namespace_name.clone())
+            .create_namespace(namespace_name.clone(), NamespaceOptions::default())
             .await
             .unwrap();
 
@@ -809,7 +820,7 @@ mod tests {
         let tenant_name = TenantName::new("test-tenant");
         let namespace_name = NamespaceName::new("test-namespace", tenant_name);
         service
-            .create_namespace(namespace_name.clone())
+            .create_namespace(namespace_name.clone(), NamespaceOptions::default())
             .await
             .unwrap();
 
@@ -847,7 +858,7 @@ mod tests {
         let tenant_name = TenantName::new("test-tenant");
         let namespace_name = NamespaceName::new("test-namespace", tenant_name);
         service
-            .create_namespace(namespace_name.clone())
+            .create_namespace(namespace_name.clone(), NamespaceOptions::default())
             .await
             .unwrap();
 

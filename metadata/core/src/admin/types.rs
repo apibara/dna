@@ -1,6 +1,8 @@
 //! Data types for admin operations.
 
 use crate::resource_type;
+use bytesize::ByteSize;
+use std::time::Duration;
 
 // Define admin-specific resource types
 resource_type!(Tenant, "tenants");
@@ -26,12 +28,20 @@ impl Tenant {
 pub struct Namespace {
     /// The namespace name.
     pub name: NamespaceName,
+    /// The size at which the current segment is flushed to object storage.
+    pub flush_size: ByteSize,
+    /// The maximum interval at which the current segment is flushed to object storage.
+    pub flush_interval: Duration,
 }
 
 impl Namespace {
-    /// Create a new namespace with the given name.
-    pub fn new(name: NamespaceName) -> Self {
-        Self { name }
+    /// Create a new namespace with the given name and options.
+    pub fn new(name: NamespaceName, options: NamespaceOptions) -> Self {
+        Self {
+            name,
+            flush_size: options.flush_size,
+            flush_interval: options.flush_interval,
+        }
     }
 }
 
@@ -46,6 +56,24 @@ impl Topic {
     /// Create a new topic with the given name.
     pub fn new(name: TopicName) -> Self {
         Self { name }
+    }
+}
+
+/// Options for creating a namespace.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NamespaceOptions {
+    /// The size at which the current segment is flushed to object storage.
+    pub flush_size: ByteSize,
+    /// The maximum interval at which the current segment is flushed to object storage.
+    pub flush_interval: Duration,
+}
+
+impl Default for NamespaceOptions {
+    fn default() -> Self {
+        Self {
+            flush_size: ByteSize::mb(8),
+            flush_interval: Duration::from_millis(250),
+        }
     }
 }
 
@@ -165,7 +193,8 @@ mod tests {
     fn test_namespace_creation() {
         let tenant_name = TenantName::new("test-tenant");
         let namespace_name = NamespaceName::new("test-namespace", tenant_name.clone());
-        let namespace = Namespace::new(namespace_name.clone());
+        let options = NamespaceOptions::default();
+        let namespace = Namespace::new(namespace_name.clone(), options.clone());
 
         assert_eq!(namespace.name, namespace_name);
         assert_eq!(namespace.name.id(), "test-namespace");
@@ -174,6 +203,8 @@ mod tests {
             namespace.name.name(),
             "tenants/test-tenant/namespaces/test-namespace"
         );
+        assert_eq!(namespace.flush_size, options.flush_size);
+        assert_eq!(namespace.flush_interval, options.flush_interval);
     }
 
     #[test]
