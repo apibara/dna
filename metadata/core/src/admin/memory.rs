@@ -347,7 +347,6 @@ impl Admin for InMemoryAdminService {
         let topic_key = name.name();
         let namespace_key = name.parent().name();
 
-        // Check if the parent namespace exists
         if !store.namespaces.contains_key(&namespace_key) {
             return Err(error_stack::Report::new(AdminError::NamespaceNotFound {
                 namespace_id: name.parent().id().to_string(),
@@ -355,16 +354,13 @@ impl Admin for InMemoryAdminService {
             .attach_printable("parent namespace must exist before creating topic"));
         }
 
-        // Check if topic already exists
         if store.topics.contains_key(&topic_key) {
             return Err(error_stack::Report::new(AdminError::TopicAlreadyExists {
                 topic_id: name.id().to_string(),
             }));
         }
 
-        // Validate partition keys
-        let mut partition_keys = options.partition_keys;
-        for &key_index in &partition_keys {
+        if let Some(key_index) = options.partition_key {
             if key_index >= options.fields.len() {
                 return Err(error_stack::Report::new(AdminError::InvalidTopicOptions {
                     message: format!(
@@ -376,17 +372,7 @@ impl Admin for InMemoryAdminService {
             }
         }
 
-        // Sort partition keys for consistent storage
-        partition_keys.sort_unstable();
-
-        // Create topic options with sorted partition keys
-        let validated_options = TopicOptions {
-            fields: options.fields,
-            partition_keys,
-        };
-
-        // Create and store the topic
-        let topic = Topic::new(name, validated_options);
+        let topic = Topic::new(name, options);
         store.topics.insert(topic_key, topic.clone());
 
         Ok(topic)
@@ -1194,5 +1180,74 @@ mod tests {
             result.unwrap_err().current_context(),
             AdminError::TopicNotFound { .. }
         ));
+    }
+
+    #[tokio::test]
+    async fn test_create_topic_with_valid_partition_key() {
+        let service = InMemoryAdminService::new();
+        create_test_tenant(&service, "test-tenant").await;
+        create_test_namespace(&service, "test-tenant", "test-namespace").await;
+
+        let tenant_name = TenantName::new("test-tenant");
+        let namespace_name = NamespaceName::new("test-namespace", tenant_name);
+        let topic_name = TopicName::new("test-topic", namespace_name);
+
+        let fields = vec![
+            Field::new("id", DataType::Int64, false),
+            Field::new("name", DataType::Utf8, false),
+        ];
+        let topic_options = TopicOptions::new_with_partition_key(fields, Some(0));
+
+        let topic = service
+            .create_topic(topic_name.clone(), topic_options)
+            .await
+            .unwrap();
+
+        assert_eq!(topic.name, topic_name);
+        assert_eq!(topic.fields.len(), 2);
+        assert_eq!(topic.partition_key, Some(0));
+    }
+
+    #[tokio::test]
+    async fn test_create_topic_with_invalid_partition_key() {
+        let service = InMemoryAdminService::new();
+        create_test_tenant(&service, "test-tenant").await;
+        create_test_namespace(&service, "test-tenant", "test-namespace").await;
+
+        let tenant_name = TenantName::new("test-tenant");
+        let namespace_name = NamespaceName::new("test-namespace", tenant_name);
+        let topic_name = TopicName::new("test-topic", namespace_name);
+
+        let fields = vec![Field::new("name", DataType::Utf8, false)];
+        let topic_options = TopicOptions::new_with_partition_key(fields, Some(5)); // Invalid index
+
+        let result = service.create_topic(topic_name, topic_options).await;
+        assert!(matches!(
+            result.unwrap_err().current_context(),
+            AdminError::InvalidTopicOptions { .. }
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_create_topic_without_partition_key() {
+        let service = InMemoryAdminService::new();
+        create_test_tenant(&service, "test-tenant").await;
+        create_test_namespace(&service, "test-tenant", "test-namespace").await;
+
+        let tenant_name = TenantName::new("test-tenant");
+        let namespace_name = NamespaceName::new("test-namespace", tenant_name);
+        let topic_name = TopicName::new("test-topic", namespace_name);
+
+        let fields = vec![Field::new("data", DataType::Utf8, false)];
+        let topic_options = TopicOptions::new(fields);
+
+        let topic = service
+            .create_topic(topic_name.clone(), topic_options)
+            .await
+            .unwrap();
+
+        assert_eq!(topic.name, topic_name);
+        assert_eq!(topic.fields.len(), 1);
+        assert_eq!(topic.partition_key, None);
     }
 }

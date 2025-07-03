@@ -60,8 +60,8 @@ pub struct Topic {
     pub name: TopicName,
     /// The fields in the topic messages.
     pub fields: Fields,
-    /// The indices of the fields that are used to partition the topic.
-    pub partition_keys: Vec<usize>,
+    /// The index of the field that is used to partition the topic.
+    pub partition_key: Option<usize>,
 }
 
 impl Topic {
@@ -70,7 +70,7 @@ impl Topic {
         Self {
             name,
             fields: options.fields,
-            partition_keys: options.partition_keys,
+            partition_key: options.partition_key,
         }
     }
 }
@@ -105,22 +105,22 @@ impl NamespaceOptions {
 pub struct TopicOptions {
     /// The fields in the topic messages.
     pub fields: Fields,
-    /// The indices of the fields that are used to partition the topic.
-    pub partition_keys: Vec<usize>,
+    /// The index of the field that is used to partition the topic.
+    pub partition_key: Option<usize>,
 }
 
 impl TopicOptions {
     pub fn new(fields: impl Into<Fields>) -> Self {
         Self {
             fields: fields.into(),
-            partition_keys: Vec::new(),
+            partition_key: None,
         }
     }
 
-    pub fn new_with_partition_keys(fields: impl Into<Fields>, partition_keys: Vec<usize>) -> Self {
+    pub fn new_with_partition_key(fields: impl Into<Fields>, partition_key: Option<usize>) -> Self {
         Self {
             fields: fields.into(),
-            partition_keys,
+            partition_key,
         }
     }
 }
@@ -275,7 +275,7 @@ mod tests {
             "tenants/test-tenant/namespaces/test-namespace/topics/test-topic"
         );
         assert_eq!(topic.fields.len(), 1);
-        assert_eq!(topic.partition_keys.len(), 0);
+        assert_eq!(topic.partition_key, None);
     }
 
     #[test]
@@ -335,5 +335,46 @@ mod tests {
         assert_eq!(options.flush_size, ByteSize::mb(8));
         assert_eq!(options.flush_interval, Duration::from_millis(250));
         assert_eq!(options.frozen_object_store_config, None);
+    }
+
+    #[test]
+    fn test_topic_options_with_partition_key() {
+        let fields = vec![
+            Field::new("id", DataType::Int64, false),
+            Field::new("name", DataType::Utf8, false),
+            Field::new("value", DataType::Float64, true),
+        ];
+
+        let options = TopicOptions::new_with_partition_key(fields.clone(), Some(1));
+
+        assert_eq!(options.fields.len(), 3);
+        assert_eq!(options.partition_key, Some(1));
+    }
+
+    #[test]
+    fn test_topic_options_without_partition_key() {
+        let fields = vec![Field::new("data", DataType::Utf8, false)];
+        let options = TopicOptions::new(fields.clone());
+
+        assert_eq!(options.fields.len(), 1);
+        assert_eq!(options.partition_key, None);
+    }
+
+    #[test]
+    fn test_topic_with_partition_key() {
+        let tenant_name = TenantName::new("test-tenant");
+        let namespace_name = NamespaceName::new("test-namespace", tenant_name);
+        let topic_name = TopicName::new("test-topic", namespace_name.clone());
+
+        let fields = vec![
+            Field::new("id", DataType::Int64, false),
+            Field::new("message", DataType::Utf8, false),
+        ];
+        let options = TopicOptions::new_with_partition_key(fields, Some(0));
+        let topic = Topic::new(topic_name.clone(), options);
+
+        assert_eq!(topic.name, topic_name);
+        assert_eq!(topic.fields.len(), 2);
+        assert_eq!(topic.partition_key, Some(0));
     }
 }

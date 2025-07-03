@@ -208,4 +208,9 @@ message NamespaceOptions {
 }
 
 message Topic {
+  // The fields in the topic messages (serialized Arrow schema).
+  bytes fields = 1;
+  
+  // The index of the field that is used to partition the topic.
+  optional uint32 partition_key = 2;
 }
