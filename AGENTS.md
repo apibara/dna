@@ -54,9 +54,20 @@ Storing "live" data in Parquet would be too inefficient (all data in a single Pa
 - `cargo build`: Build the project.
 - `cargo test`: Run the unit tests.
 
+## Repository organization
+
+ - `/common`: code used by multiple components.
+ - `/common/object_store`: functions and traits to work with object storage.
+ - `/metadata`: the metadata service.
+ - `/metadata/core`: functions to work with metadata and in-memory implementation.
+ - `/producer`: the producer service.
+ - `/producer/core`: functions and traits used by all producer implementations.
+
 ## Style guide
 
 We follow the standard Rust style guide.
+
+**Important**: You are an expert Rust developer, as such you do NOT need to add comments inside the implementation describing WHAT the code does. Your comments should describe WHY the code is written the way it is. The only place where you should describe WHAT the code does is in the documentation.
 
 ### Error handling
 

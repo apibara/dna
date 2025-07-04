@@ -1,5 +1,5 @@
 [package]
-name = "wings-object-store"
+name = "wings-producer-core"
 version = "0.1.0"
 edition.workspace = true
 authors.workspace = true
@@ -7,14 +7,15 @@ repository.workspace = true
 license.workspace = true
 
 [lib]
-name = "wings_object_store"
+name = "wings_producer_core"
 path = "src/lib.rs"
 
 [dependencies]
+arrow.workspace = true
+arrow-schema.workspace = true
 async-trait.workspace = true
-object_store.workspace = true
-tempfile = "3.0"
-wings-metadata-core = { path = "../../metadata/core" }
-
-[dev-dependencies]
+bytes.workspace = true
+error-stack.workspace = true
+parquet.workspace = true
+thiserror.workspace = true
 tokio.workspace = true

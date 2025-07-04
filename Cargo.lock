@@ -3515,6 +3515,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "wings-producer-core"
+version = "0.1.0"
+dependencies = [
+ "arrow",
+ "arrow-schema",
+ "async-trait",
+ "bytes",
+ "error-stack",
+ "parquet",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "wit-bindgen-rt"
 version = "0.39.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

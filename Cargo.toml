@@ -6,7 +6,7 @@ license = "Apache-2.0"
 
 [workspace]
 resolver = "2"
-members = ["common/object_store", "metadata/core"]
+members = ["common/object_store", "metadata/core", "producer/core"]
 
 [profile.maxperf]
 inherits = "release"
@@ -16,7 +16,9 @@ incremental = false
 
 [workspace.dependencies]
 arrow = "55.2.0"
+arrow-schema = "55.2.0"
 async-trait = "0.1.88"
+bytes = "1.0"
 bytesize = "2.0.1"
 clap = { version = "4.5.40", features = [
     "derive",
