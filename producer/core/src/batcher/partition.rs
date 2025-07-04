@@ -7,6 +7,12 @@ use crate::batcher::{BatcherError, BatcherResult};
 
 const DEFAULT_BUFFER_CAPACITY: usize = 8 * 1024 * 1024;
 
+/// Result of finishing a partition batch, containing both data and metadata.
+pub struct PartitionBatch<D> {
+    pub data: Vec<u8>,
+    pub metadata: Vec<(usize, D)>,
+}
+
 /// Batches data for a single partition.
 pub struct PartitionBatcher<D> {
     writer: ArrowWriter<Vec<u8>>,
@@ -54,12 +60,18 @@ impl<D> PartitionBatcher<D> {
         self.batches.len()
     }
 
-    /// Closes the writer and returns the final parquet data.
-    pub fn finish(self) -> BatcherResult<Vec<u8>> {
-        self.writer
+    /// Closes the writer and returns the final parquet data with metadata.
+    pub fn finish(self) -> BatcherResult<PartitionBatch<D>> {
+        let data = self
+            .writer
             .into_inner()
             .change_context(BatcherError::ParquetWriter)
-            .attach_printable("failed to get parquet data from writer")
+            .attach_printable("failed to get parquet data from writer")?;
+
+        Ok(PartitionBatch {
+            data,
+            metadata: self.batches,
+        })
     }
 }
 
@@ -118,6 +130,13 @@ mod tests {
             batcher.buffer_size(),
             bytes_written1 + bytes_written2 + bytes_written3
         );
+
+        // Test that finish returns both data and metadata for multiple batches
+        let result = batcher.finish().unwrap();
+        assert_eq!(result.metadata.len(), 3);
+        assert_eq!(result.metadata[0], (5, "metadata1".to_string()));
+        assert_eq!(result.metadata[1], (10, "metadata2".to_string()));
+        assert_eq!(result.metadata[2], (3, "metadata3".to_string()));
     }
 
     #[test]
@@ -136,6 +155,11 @@ mod tests {
 
         // Buffer size should remain the same or grow depending on internal buffering
         assert!(size_after_write >= initial_size);
+
+        // Test that finish returns both data and metadata
+        let result = batcher.finish().unwrap();
+        assert_eq!(result.metadata.len(), 1);
+        assert_eq!(result.metadata[0], (1000, "metadata".to_string()));
     }
 
     #[test]
@@ -146,12 +170,15 @@ mod tests {
         let batch = generate_test_batch(10);
         batcher.write_batch(&batch, "metadata".to_string()).unwrap();
 
-        let parquet_data = batcher.finish().unwrap();
+        let result = batcher.finish().unwrap();
 
         // The finished parquet data should contain a valid parquet file
-        assert!(!parquet_data.is_empty());
+        assert!(!result.data.is_empty());
         // Check that it contains parquet magic bytes
-        assert!(parquet_data.len() > 4);
+        assert!(result.data.len() > 4);
+        // Check that metadata is preserved
+        assert_eq!(result.metadata.len(), 1);
+        assert_eq!(result.metadata[0], (10, "metadata".to_string()));
     }
 
     #[test]
@@ -162,11 +189,16 @@ mod tests {
         let batch = generate_test_batch(5);
         let metadata = ("test".to_string(), 42u64);
 
-        let _bytes_written = batcher.write_batch(&batch, metadata).unwrap();
+        let _bytes_written = batcher.write_batch(&batch, metadata.clone()).unwrap();
 
         assert_eq!(batcher.batch_count(), 1);
         // ArrowWriter may buffer data internally, so bytes_written might be 0 initially
         // Just verify that we got a valid response
+
+        // Test that finish returns both data and metadata with correct types
+        let result = batcher.finish().unwrap();
+        assert_eq!(result.metadata.len(), 1);
+        assert_eq!(result.metadata[0], (5, metadata));
     }
 
     #[test]
@@ -180,5 +212,36 @@ mod tests {
         assert_eq!(batcher.batch_count(), 1);
         // Even empty batches might write some metadata or nothing at all
         assert_eq!(batcher.buffer_size(), bytes_written);
+
+        // Test that finish returns both data and metadata for empty batch
+        let result = batcher.finish().unwrap();
+        assert_eq!(result.metadata.len(), 1);
+        assert_eq!(result.metadata[0], (0, "empty".to_string()));
+    }
+
+    #[test]
+    fn test_partition_batch_structure() {
+        let schema = schema();
+        let mut batcher: PartitionBatcher<String> = PartitionBatcher::new(schema).unwrap();
+
+        // Write multiple batches with different metadata
+        let batch1 = generate_test_batch(5);
+        let batch2 = generate_test_batch(10);
+
+        batcher.write_batch(&batch1, "first".to_string()).unwrap();
+        batcher.write_batch(&batch2, "second".to_string()).unwrap();
+
+        let result = batcher.finish().unwrap();
+
+        // Verify the structure contains both data and metadata
+        assert!(!result.data.is_empty());
+        assert_eq!(result.metadata.len(), 2);
+
+        // Verify metadata is correctly structured as (batch_size, metadata)
+        assert_eq!(result.metadata[0], (5, "first".to_string()));
+        assert_eq!(result.metadata[1], (10, "second".to_string()));
+
+        // Verify data is valid parquet format
+        assert!(result.data.len() > 4);
     }
 }
