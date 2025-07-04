@@ -1,7 +1,7 @@
 use thiserror::Error;
 
 /// Producer core errors.
-#[derive(Error, Debug)]
+#[derive(Error, Debug, Clone)]
 pub enum BatcherError {
     #[error("validation error: {message}")]
     Validation { message: &'static str },

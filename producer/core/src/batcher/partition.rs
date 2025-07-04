@@ -64,17 +64,21 @@ impl<D> PartitionBatcher<D> {
     }
 
     /// Closes the writer and returns the final parquet data with metadata.
-    pub fn finish(self) -> BatcherResult<PartitionBatch<D>> {
-        let data = self
-            .writer
-            .into_inner()
-            .change_context(BatcherError::ParquetWriter)
-            .attach_printable("failed to get parquet data from writer")?;
-
-        Ok(PartitionBatch {
-            data,
-            metadata: self.batches,
-        })
+    pub fn finish(self) -> std::result::Result<PartitionBatch<D>, (Vec<D>, ParquetError)> {
+        match self.writer.into_inner() {
+            Ok(data) => Ok(PartitionBatch {
+                data,
+                metadata: self.batches,
+            }),
+            Err(err) => {
+                let metadata = self
+                    .batches
+                    .into_iter()
+                    .map(|(_, metadata)| metadata)
+                    .collect();
+                Err((metadata, err))
+            }
+        }
     }
 }
 

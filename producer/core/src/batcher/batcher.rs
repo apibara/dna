@@ -117,11 +117,18 @@ impl<D> Batcher<D> {
                         continue;
                     };
 
-                    // TODO: we need to handle the case where the `expire_namespace` call fails.
-                    // In that case, we need to iterate over all reply channels and send an error.
-                    if let Ok(Some(namespace_batch)) = state.expire_namespace(entry.into_inner()) {
+                    let (namespace_batch, errors) = state.expire_namespace(entry.into_inner());
+
+                    if let Some(namespace_batch) = namespace_batch {
                         let _ = self.output_sender.send(namespace_batch);
                     };
+
+                    // TODO: propagate the error
+                    for (replies, _err) in errors {
+                        for reply in replies {
+                            let _ = reply.send(Err(BatcherError::ParquetWriter.into()));
+                        }
+                    }
                 }
                 msg = self.input_receiver.recv() => {
                     let Some(batch) = msg else {
@@ -153,9 +160,19 @@ impl<D> Batcher<D> {
                             continue;
                         }
                         Ok(None) => {},
-                        Ok(Some((namespace_batch, timer_key))) => {
+                        Ok(Some((namespace_batch, timer_key, errors))) => {
                             timers.remove(&timer_key);
-                            let _ = self.output_sender.send(namespace_batch);
+
+                            if let Some(namespace_batch) = namespace_batch {
+                                let _ = self.output_sender.send(namespace_batch);
+                            }
+
+                            // TODO: propagate the error
+                            for (replies, _err) in errors {
+                                for reply in replies {
+                                    let _ = reply.send(Err(BatcherError::ParquetWriter.into()));
+                                }
+                            }
                         }
                     }
                 }
@@ -184,7 +201,11 @@ impl<D> InnerBatcher<D> {
         batch: Batch<D>,
         delay_queue: &mut DelayQueue<NamespaceName>,
     ) -> std::result::Result<
-        Option<(NamespaceBatch<D>, delay_queue::Key)>,
+        Option<(
+            Option<NamespaceBatch<D>>,
+            delay_queue::Key,
+            Vec<(Vec<BatchReply<D>>, ParquetError)>,
+        )>,
         (BatchReply<D>, ParquetError),
     > {
         let namespace = batch.namespace.name.clone();
@@ -221,8 +242,8 @@ impl<D> InnerBatcher<D> {
                 return Ok(None);
             };
             // TODO: fix error handling
-            let (batch, timer_key) = state.into_namespace_batch(namespace).unwrap();
-            return Ok(Some((batch, timer_key)));
+            let (batch, timer_key, errors) = state.into_namespace_batch(namespace);
+            return Ok(Some((batch, timer_key, errors)));
         }
 
         Ok(None)
@@ -231,14 +252,16 @@ impl<D> InnerBatcher<D> {
     fn expire_namespace(
         &mut self,
         namespace: NamespaceName,
-    ) -> BatcherResult<Option<NamespaceBatch<D>>> {
+    ) -> (
+        Option<NamespaceBatch<D>>,
+        Vec<(Vec<BatchReply<D>>, ParquetError)>,
+    ) {
         let Some(state) = self.batches.remove(&namespace) else {
-            return Ok(None);
+            return (None, Vec::new());
         };
 
-        state
-            .into_namespace_batch(namespace)
-            .map(|(batch, _)| Some(batch))
+        let (batch, _timer_key, errors) = state.into_namespace_batch(namespace);
+        (batch, errors)
     }
 }
 
@@ -246,16 +269,28 @@ impl<D> NamespaceBatchState<D> {
     pub fn into_namespace_batch(
         self,
         namespace: NamespaceName,
-    ) -> BatcherResult<(NamespaceBatch<D>, delay_queue::Key)> {
+    ) -> (
+        Option<NamespaceBatch<D>>,
+        delay_queue::Key,
+        Vec<(Vec<BatchReply<D>>, ParquetError)>,
+    ) {
         let mut batches = Vec::with_capacity(self.partitions.len());
+        let mut errors = Vec::new();
+
         for (key, partition_batcher) in self.partitions.into_iter() {
             let (topic_name, partition) = key;
-            let batch_data = partition_batcher
-                .finish()
-                .attach_printable_lazy(|| format!("topic_name: {topic_name}"))?;
-            batches.push((topic_name, partition, batch_data));
+            match partition_batcher.finish() {
+                Ok(batch) => batches.push((topic_name, partition, batch)),
+                Err((replies, err)) => errors.push((replies, err)),
+            }
         }
 
-        Ok((NamespaceBatch { namespace, batches }, self.timer_key))
+        let batch = if batches.is_empty() {
+            None
+        } else {
+            Some(NamespaceBatch { namespace, batches })
+        };
+
+        (batch, self.timer_key, errors)
     }
 }
