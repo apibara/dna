@@ -2957,6 +2957,7 @@ dependencies = [
  "futures-core",
  "futures-sink",
  "pin-project-lite",
+ "slab",
  "tokio",
 ]
 
@@ -3522,10 +3523,14 @@ dependencies = [
  "arrow-schema",
  "async-trait",
  "bytes",
+ "datafusion",
  "error-stack",
+ "futures-util",
  "parquet",
  "thiserror",
  "tokio",
+ "tokio-util",
+ "wings-metadata-core",
 ]
 
 [[package]]

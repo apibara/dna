@@ -15,7 +15,11 @@ arrow.workspace = true
 arrow-schema.workspace = true
 async-trait.workspace = true
 bytes.workspace = true
+datafusion.workspace = true
 error-stack.workspace = true
+futures-util.workspace = true
 parquet.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
+tokio-util.workspace = true
+wings-metadata-core = { path = "../../metadata/core" }

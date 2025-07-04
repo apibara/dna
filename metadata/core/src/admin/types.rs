@@ -1,9 +1,9 @@
 //! Data types for admin operations.
 
 use crate::resource_type;
-use arrow::datatypes::Fields;
+use arrow::datatypes::{Fields, Schema, SchemaRef};
 use bytesize::ByteSize;
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 // Define admin-specific resource types
 resource_type!(Tenant, "tenants");
@@ -40,6 +40,8 @@ pub struct Namespace {
     pub frozen_object_store_config: Option<SecretName>,
 }
 
+pub type NamespaceRef = Arc<Namespace>;
+
 impl Namespace {
     /// Create a new namespace with the given name and options.
     pub fn new(name: NamespaceName, options: NamespaceOptions) -> Self {
@@ -64,6 +66,8 @@ pub struct Topic {
     pub partition_key: Option<usize>,
 }
 
+pub type TopicRef = Arc<Topic>;
+
 impl Topic {
     /// Create a new topic with the given name and options.
     pub fn new(name: TopicName, options: TopicOptions) -> Self {
@@ -72,6 +76,10 @@ impl Topic {
             fields: options.fields,
             partition_key: options.partition_key,
         }
+    }
+
+    pub fn schema(&self) -> SchemaRef {
+        Arc::new(Schema::new(self.fields.clone()))
     }
 }
 

@@ -1,7 +1,7 @@
 use arrow::record_batch::RecordBatch;
 use arrow_schema::SchemaRef;
 use error_stack::ResultExt;
-use parquet::arrow::ArrowWriter;
+use parquet::{arrow::ArrowWriter, errors::ParquetError};
 
 use crate::batcher::{BatcherError, BatcherResult};
 
@@ -21,11 +21,9 @@ pub struct PartitionBatcher<D> {
 
 impl<D> PartitionBatcher<D> {
     /// Creates a new partition batcher with the given schema.
-    pub fn new(schema: SchemaRef) -> BatcherResult<Self> {
+    pub fn new(schema: SchemaRef) -> std::result::Result<Self, ParquetError> {
         let buffer = Vec::with_capacity(DEFAULT_BUFFER_CAPACITY);
-        let writer = ArrowWriter::try_new(buffer, schema, None)
-            .change_context(BatcherError::ParquetWriter)
-            .attach_printable("failed to create arrow writer")?;
+        let writer = ArrowWriter::try_new(buffer, schema, None)?;
 
         Ok(Self {
             writer,
@@ -35,13 +33,18 @@ impl<D> PartitionBatcher<D> {
 
     /// Writes a batch to the partition batcher.
     /// Returns the number of bytes written to the parquet buffer.
-    pub fn write_batch(&mut self, batch: &RecordBatch, metadata: D) -> BatcherResult<usize> {
+    ///
+    /// On error, returns the metadata and the error.
+    pub fn write_batch(
+        &mut self,
+        batch: &RecordBatch,
+        metadata: D,
+    ) -> std::result::Result<usize, (D, ParquetError)> {
         let initial_size = self.buffer_size();
 
-        self.writer
-            .write(batch)
-            .change_context(BatcherError::ParquetWriter)
-            .attach_printable("failed to write batch to parquet writer")?;
+        if let Err(err) = self.writer.write(batch) {
+            return Err((metadata, err));
+        };
 
         self.batches.push((batch.num_rows(), metadata));
 
