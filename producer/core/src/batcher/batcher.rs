@@ -27,8 +27,8 @@ pub struct Batch<D> {
 }
 
 pub struct NamespaceBatch<D> {
-    namespace: NamespaceName,
-    batches: Vec<(
+    pub namespace: NamespaceName,
+    pub batches: Vec<(
         TopicName,
         Option<ScalarValue>,
         PartitionBatch<BatchReply<D>>,
@@ -108,23 +108,29 @@ impl<D> Batcher<D> {
         let mut timers = DelayQueue::<NamespaceName>::new();
 
         loop {
+            println!("timer empty? {:?}", timers.is_empty());
             tokio::select! {
                 _ = ct.cancelled() => {
                     break;
                 }
                 expired = timers.next(), if !timers.is_empty() => {
+                    println!("expired {:?}", expired);
                     let Some(entry) = expired else {
                         continue;
                     };
 
                     let (namespace_batch, errors) = state.expire_namespace(entry.into_inner());
 
+                    println!("namespace_batch: {:?}", namespace_batch.is_some());
                     if let Some(namespace_batch) = namespace_batch {
-                        let _ = self.output_sender.send(namespace_batch);
+                        let _ = self.output_sender.send(namespace_batch).await;
                     };
 
+
+                    println!("errors? {:?}", errors.len());
                     // TODO: propagate the error
-                    for (replies, _err) in errors {
+                    for (replies, err) in errors {
+                        println!("error: {:?}", err);
                         for reply in replies {
                             let _ = reply.send(Err(BatcherError::ParquetWriter.into()));
                         }
@@ -164,7 +170,7 @@ impl<D> Batcher<D> {
                             timers.remove(&timer_key);
 
                             if let Some(namespace_batch) = namespace_batch {
-                                let _ = self.output_sender.send(namespace_batch);
+                                let _ = self.output_sender.send(namespace_batch).await;
                             }
 
                             // TODO: propagate the error
@@ -216,6 +222,7 @@ impl<D> InnerBatcher<D> {
             .or_insert_with(|| {
                 let flush_interval = batch.namespace.flush_interval;
                 let timer_key = delay_queue.insert(namespace.clone(), flush_interval);
+                println!("pushed timer key {:?} {:?}", timer_key, flush_interval);
                 NamespaceBatchState::new(
                     flush_interval,
                     batch.namespace.flush_size.as_u64(),
@@ -292,5 +299,332 @@ impl<D> NamespaceBatchState<D> {
         };
 
         (batch, self.timer_key, errors)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_utils::{fields, generate_test_batch};
+    use bytesize::ByteSize;
+    use datafusion::scalar::ScalarValue;
+    use std::time::Duration;
+    use tokio::sync::mpsc;
+    use tokio::time::timeout;
+    use wings_metadata_core::admin::{
+        Namespace, NamespaceName, SecretName, TenantName, Topic, TopicName,
+    };
+
+    fn create_test_namespace() -> Namespace {
+        let tenant_name = TenantName::new("test-tenant");
+        let namespace_name = NamespaceName::new("test-namespace", tenant_name);
+        Namespace {
+            name: namespace_name,
+            flush_interval: Duration::from_millis(50),
+            flush_size: ByteSize(1000),
+            default_object_store_config: SecretName::new("test"),
+            frozen_object_store_config: None,
+        }
+    }
+
+    fn create_test_topic() -> Topic {
+        let tenant_name = TenantName::new("test-tenant");
+        let namespace_name = NamespaceName::new("test-namespace", tenant_name);
+        let topic_name = TopicName::new("test-topic", namespace_name);
+        Topic {
+            name: topic_name,
+            fields: fields(),
+            partition_key: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn test_batcher_happy_path() {
+        let (output_sender, mut output_receiver) = mpsc::channel(10);
+        let (batcher, input_sender) = Batcher::<()>::with_default_options(output_sender);
+
+        let ct = CancellationToken::new();
+
+        // Start batcher in background
+        let batcher_handle = tokio::spawn({
+            let ct = ct.clone();
+            async move { batcher.run(ct).await }
+        });
+
+        // Create test batch
+        let namespace = create_test_namespace().into();
+        let topic = create_test_topic().into();
+        let records = generate_test_batch(5);
+        let (reply_sender, _reply_receiver) = tokio::sync::oneshot::channel();
+
+        let batch = Batch {
+            namespace,
+            topic,
+            partition: None,
+            records,
+            reply: reply_sender,
+        };
+
+        // Send batch
+        input_sender.send(batch).await.unwrap();
+
+        // Verify we get a successful output after timeout
+        let reply_result = timeout(Duration::from_millis(500), output_receiver.recv()).await;
+        assert!(reply_result.is_ok());
+
+        let reply = reply_result.unwrap().unwrap();
+        assert_eq!(reply.namespace.id(), "test-namespace");
+        assert_eq!(reply.batches.len(), 1);
+
+        // Clean up
+        ct.cancel();
+        let _ = batcher_handle.await;
+    }
+
+    #[tokio::test]
+    async fn test_batcher_partition_validation_error() {
+        let (output_sender, _output_receiver) = mpsc::channel(10);
+        let (batcher, input_sender) = Batcher::<()>::with_default_options(output_sender);
+
+        let ct = CancellationToken::new();
+
+        // Start batcher in background
+        let batcher_handle = tokio::spawn({
+            let ct = ct.clone();
+            async move { batcher.run(ct).await }
+        });
+
+        // Create test batch with partition but topic has no partition key
+        let namespace = create_test_namespace().into();
+        let topic = create_test_topic().into(); // partition_key is None
+        let records = generate_test_batch(5);
+        let (reply_sender, reply_receiver) = tokio::sync::oneshot::channel();
+
+        let batch = Batch {
+            namespace,
+            topic,
+            partition: Some(ScalarValue::Utf8(Some("invalid".to_string()))), // This should cause error
+            records,
+            reply: reply_sender,
+        };
+
+        // Send batch
+        input_sender.send(batch).await.unwrap();
+
+        // Verify we get an error reply
+        let reply_result = timeout(Duration::from_millis(100), reply_receiver).await;
+        assert!(reply_result.is_ok());
+        let reply = reply_result.unwrap().unwrap();
+        assert!(reply.is_err());
+
+        let error = reply.unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("topic does not specify a partition key")
+        );
+
+        // Clean up
+        ct.cancel();
+        let _ = batcher_handle.await;
+    }
+
+    #[tokio::test]
+    async fn test_batcher_namespace_validation_error() {
+        let (output_sender, _output_receiver) = mpsc::channel(10);
+        let (batcher, input_sender) = Batcher::<()>::with_default_options(output_sender);
+
+        let ct = CancellationToken::new();
+
+        // Start batcher in background
+        let batcher_handle = tokio::spawn({
+            let ct = ct.clone();
+            async move { batcher.run(ct).await }
+        });
+
+        // Create test batch with mismatched namespace
+        let namespace = create_test_namespace().into();
+
+        // Create a topic with different namespace
+        let different_tenant = TenantName::new("different-tenant");
+        let different_namespace = NamespaceName::new("different-namespace", different_tenant);
+        let different_topic_name = TopicName::new("test-topic", different_namespace);
+        let mut topic = create_test_topic();
+        topic.name = different_topic_name;
+
+        let records = generate_test_batch(5);
+        let (reply_sender, reply_receiver) = tokio::sync::oneshot::channel();
+
+        let batch = Batch {
+            namespace,
+            topic: topic.into(),
+            partition: None,
+            records,
+            reply: reply_sender,
+        };
+
+        // Send batch
+        input_sender.send(batch).await.unwrap();
+
+        // Verify we get an error reply
+        let reply_result = timeout(Duration::from_millis(100), reply_receiver).await;
+        assert!(reply_result.is_ok());
+        let reply = reply_result.unwrap().unwrap();
+        assert!(reply.is_err());
+
+        let error = reply.unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("topic namespace does not match provided namespace")
+        );
+
+        // Clean up
+        ct.cancel();
+        let _ = batcher_handle.await;
+    }
+
+    #[tokio::test]
+    async fn test_batcher_multiple_batches() {
+        let (output_sender, mut output_receiver) = mpsc::channel(10);
+        let (batcher, input_sender) = Batcher::<()>::with_default_options(output_sender);
+
+        let ct = CancellationToken::new();
+
+        // Start batcher in background
+        let batcher_handle = tokio::spawn({
+            let ct = ct.clone();
+            async move { batcher.run(ct).await }
+        });
+
+        // Send multiple batches
+        for i in 0..3 {
+            let namespace = create_test_namespace().into();
+            let topic = create_test_topic().into();
+            let records = generate_test_batch(i + 1);
+            let (reply_sender, _reply_receiver) = tokio::sync::oneshot::channel();
+
+            let batch = Batch {
+                namespace,
+                topic,
+                partition: None,
+                records,
+                reply: reply_sender,
+            };
+
+            input_sender.send(batch).await.unwrap();
+        }
+
+        // Verify we get a successful output after timeout
+        let reply_result = timeout(Duration::from_millis(500), output_receiver.recv()).await;
+        assert!(reply_result.is_ok());
+
+        let reply = reply_result.unwrap().unwrap();
+        assert_eq!(reply.namespace.id(), "test-namespace");
+        // Only one partition
+        assert_eq!(reply.batches.len(), 1);
+        let partition = reply.batches.first().unwrap();
+        assert_eq!(partition.0.id(), "test-topic");
+        assert!(partition.1.is_none());
+        assert_eq!(partition.2.metadata.len(), 3);
+
+        // Clean up
+        ct.cancel();
+        let _ = batcher_handle.await;
+    }
+
+    #[tokio::test]
+    async fn test_batcher_cancellation() {
+        let (output_sender, _output_receiver) = mpsc::channel(10);
+        let (batcher, _input_sender) = Batcher::<()>::with_default_options(output_sender);
+
+        let ct = CancellationToken::new();
+
+        // Start batcher in background
+        let batcher_handle = tokio::spawn({
+            let ct = ct.clone();
+            async move { batcher.run(ct).await }
+        });
+
+        // Cancel immediately
+        ct.cancel();
+
+        // Verify batcher exits gracefully
+        let result = timeout(Duration::from_millis(100), batcher_handle).await;
+        assert!(result.is_ok());
+        let batcher_result = result.unwrap().unwrap();
+        assert!(batcher_result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_batcher_channel_closed() {
+        let (output_sender, _output_receiver) = mpsc::channel(10);
+        let (batcher, input_sender) = Batcher::<()>::with_default_options(output_sender);
+
+        let ct = CancellationToken::new();
+
+        // Start batcher in background
+        let batcher_handle = tokio::spawn({
+            let ct = ct.clone();
+            async move { batcher.run(ct).await }
+        });
+
+        // Close input channel
+        drop(input_sender);
+
+        // Verify batcher exits gracefully
+        let result = timeout(Duration::from_millis(100), batcher_handle).await;
+        assert!(result.is_ok());
+        let batcher_result = result.unwrap().unwrap();
+        assert!(batcher_result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_batcher_with_partitioned_topic() {
+        let (output_sender, mut output_receiver) = mpsc::channel(10);
+        let (batcher, input_sender) = Batcher::<()>::with_default_options(output_sender);
+
+        let ct = CancellationToken::new();
+
+        // Start batcher in background
+        let batcher_handle = tokio::spawn({
+            let ct = ct.clone();
+            async move { batcher.run(ct).await }
+        });
+
+        // Create topic with partition key
+        let namespace = create_test_namespace().into();
+        let mut topic = create_test_topic();
+        topic.partition_key = Some(0); // First field as partition key
+
+        let records = generate_test_batch(5);
+        let (reply_sender, _reply_receiver) = tokio::sync::oneshot::channel();
+
+        let batch = Batch {
+            namespace,
+            topic: topic.into(),
+            partition: Some(ScalarValue::Int32(Some(123))),
+            records,
+            reply: reply_sender,
+        };
+
+        // Send batch
+        input_sender.send(batch).await.unwrap();
+
+        // Verify we get a successful output after timeout
+        let reply_result = timeout(Duration::from_millis(500), output_receiver.recv()).await;
+        assert!(reply_result.is_ok());
+
+        let reply = reply_result.unwrap().unwrap();
+        assert_eq!(reply.namespace.id(), "test-namespace");
+        assert_eq!(reply.batches.len(), 1);
+        let partition = reply.batches.first().unwrap();
+        assert_eq!(partition.0.id(), "test-topic");
+        assert!(partition.1.is_some());
+        assert_eq!(partition.2.metadata.len(), 1);
+
+        // Clean up
+        ct.cancel();
+        let _ = batcher_handle.await;
     }
 }

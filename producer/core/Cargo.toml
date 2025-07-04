@@ -23,3 +23,6 @@ thiserror.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
 wings-metadata-core = { path = "../../metadata/core" }
+
+[dev-dependencies]
+bytesize.workspace = true

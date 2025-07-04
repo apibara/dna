@@ -113,3 +113,16 @@ There is one root cancellation token, usually created by the main entry point. W
 Cancellation is signaled by calling `cancel` on the cancellation token. This is usually done by the main entry point when the user requests cancellation (e.g. by pressing ctrl-c).
 
 If a service spawns a number of child tasks, it should also cancel them on exit. This is usally done by 1) creating a `child_token` for the current service, 2) creating a `drop_guard` for this new token, and 3) `clone`ing the token for each child task.
+
+When cloning a cancellation token, we use a scoped shadowed variable to avoid naming the token `ct_clone`.
+
+```rust
+pub async fn do_something(ct: CancellationToken) {
+    tokio::spawn({
+        let ct = ct.clone();
+        async move {
+            do_something_else(ct).await;
+        }
+    })
+}
+```

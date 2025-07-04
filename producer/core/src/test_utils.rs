@@ -1,6 +1,6 @@
 use arrow::array::{Int32Array, UInt64Array};
 use arrow::record_batch::RecordBatch;
-use arrow_schema::{DataType, Field, Schema};
+use arrow_schema::{DataType, Field, Fields, Schema};
 use std::sync::Arc;
 
 /// Generate a test batch with the specified number of rows.
@@ -18,12 +18,17 @@ pub fn generate_test_batch(num_rows: usize) -> RecordBatch {
         .expect("Failed to create test batch")
 }
 
-/// Returns the schema for test data.
-pub fn schema() -> Arc<Schema> {
-    Arc::new(Schema::new(vec![
+pub fn fields() -> Fields {
+    vec![
         Field::new("id", DataType::Int32, false),
         Field::new("batch_size", DataType::UInt64, false),
-    ]))
+    ]
+    .into()
+}
+
+/// Returns the schema for test data.
+pub fn schema() -> Arc<Schema> {
+    Arc::new(Schema::new(fields()))
 }
 
 #[cfg(test)]

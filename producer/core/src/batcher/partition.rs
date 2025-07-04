@@ -1,9 +1,6 @@
 use arrow::record_batch::RecordBatch;
 use arrow_schema::SchemaRef;
-use error_stack::ResultExt;
 use parquet::{arrow::ArrowWriter, errors::ParquetError};
-
-use crate::batcher::{BatcherError, BatcherResult};
 
 const DEFAULT_BUFFER_CAPACITY: usize = 8 * 1024 * 1024;
 
