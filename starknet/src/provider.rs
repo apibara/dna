@@ -158,6 +158,7 @@ impl Provider for HttpProvider {
     type Error = HttpProviderError;
 
     #[tracing::instrument(skip(self), err(Debug), level = "DEBUG")]
+    #[allow(clippy::blocks_in_conditions)]
     async fn get_head(&self) -> Result<GlobalBlockId, Self::Error> {
         let hash_and_number = self
             .provider
@@ -172,6 +173,7 @@ impl Provider for HttpProvider {
     }
 
     #[tracing::instrument(skip(self), err(Debug), level = "DEBUG")]
+    #[allow(clippy::blocks_in_conditions)]
     async fn get_block(
         &self,
         id: &BlockId,
@@ -188,6 +190,7 @@ impl Provider for HttpProvider {
     }
 
     #[tracing::instrument(skip(self), err(Debug), level = "DEBUG")]
+    #[allow(clippy::blocks_in_conditions)]
     async fn get_state_update(&self, id: &BlockId) -> Result<v1alpha2::StateUpdate, Self::Error> {
         let block_id: models::BlockId = id.into();
         let state_update = self
@@ -200,6 +203,7 @@ impl Provider for HttpProvider {
     }
 
     #[tracing::instrument(skip(self), fields(hash = %hash), err(Debug), level = "DEBUG")]
+    #[allow(clippy::blocks_in_conditions)]
     async fn get_transaction_receipt(
         &self,
         hash: &v1alpha2::FieldElement,

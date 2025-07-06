@@ -5,7 +5,7 @@ use std::sync::Arc;
 use apibara_core::starknet::v1alpha2;
 use apibara_node::db::{
     libmdbx::{self, Environment, EnvironmentKind, Transaction, RW},
-    MdbxErrorExt, MdbxTransactionExt, TableCursor,
+    MdbxTransactionExt, TableCursor,
 };
 use mockall::automock;
 
@@ -181,7 +181,7 @@ impl<E: EnvironmentKind> StorageReader for DatabaseStorage<E> {
         let block_id = match cursor.last()? {
             None => None,
             Some((number, hash)) => {
-                let hash = (&hash).try_into().map_err(libmdbx::Error::decode_error)?;
+                let hash = (&hash).into();
                 Some(GlobalBlockId::new(number, hash))
             }
         };
@@ -196,9 +196,7 @@ impl<E: EnvironmentKind> StorageReader for DatabaseStorage<E> {
         let mut status_cursor = txn.open_cursor::<tables::BlockStatusTable>()?;
         let mut maybe_block_id = canon_cursor.last()?;
         while let Some((block_num, block_hash)) = maybe_block_id {
-            let block_hash = (&block_hash)
-                .try_into()
-                .map_err(libmdbx::Error::decode_error)?;
+            let block_hash = (&block_hash).into();
             let block_id = GlobalBlockId::new(block_num, block_hash);
             let (_, status) = status_cursor
                 .seek_exact(&block_id)?
@@ -225,9 +223,7 @@ impl<E: EnvironmentKind> StorageReader for DatabaseStorage<E> {
                 Ok(None)
             }
             Some((_, block_hash)) => {
-                let block_hash = (&block_hash)
-                    .try_into()
-                    .map_err(libmdbx::Error::decode_error)?;
+                let block_hash = (&block_hash).into();
                 let block_id = GlobalBlockId::new(number, block_hash);
                 txn.commit()?;
                 Ok(Some(block_id))
