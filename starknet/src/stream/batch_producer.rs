@@ -219,9 +219,7 @@ where
                         };
 
                         let receipt = if filter.include_receipt.unwrap_or(true) {
-                            let mut receipt = receipt.clone();
-                            receipt.events.clear();
-                            Some(receipt)
+                            Some(receipt.clone())
                         } else {
                             None
                         };
