@@ -71,7 +71,7 @@ async fn test_reorg_from_client_pov_websockets() {
 
         let (write, mut read) = ws_stream.split();
         let (mut tx, rx) = futures_channel::mpsc::unbounded();
-        let _ = tokio::spawn(rx.map(Ok).forward(write));
+        tokio::spawn(rx.map(Ok).forward(write));
 
         let configuration_json = serde_json::to_string(&configuration).unwrap();
 
@@ -201,7 +201,7 @@ async fn test_reorg_from_client_pov_websockets() {
 
         let (write, mut read) = ws_stream.split();
         let (mut tx, rx) = futures_channel::mpsc::unbounded();
-        let _ = tokio::spawn(rx.map(Ok).forward(write));
+        tokio::spawn(rx.map(Ok).forward(write));
 
         let configuration_json = serde_json::to_string(&configuration).unwrap();
         tx.send(Message::text(configuration_json)).await.unwrap();

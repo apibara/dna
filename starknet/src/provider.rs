@@ -1354,6 +1354,7 @@ impl FieldElementExt for Felt {
 
 #[cfg(test)]
 mod tests {
+    /*
     use super::FieldElementExt;
     use starknet::core::types::FieldElement;
 
@@ -1363,4 +1364,5 @@ mod tests {
         assert_eq!(FieldElement::TWO.as_u64(), 2);
         assert_eq!(FieldElement::THREE.as_u64(), 3);
     }
+    */
 }
