@@ -5040,8 +5040,3 @@ name = "zeroize"
 version = "1.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ced3678a2879b30306d323f4542626697a464a97c0a07c9aebf7ebca65cd4dde"
-
-[[patch.unused]]
-name = "libffi-sys"
-version = "2.3.0"
-source = "git+https://github.com/fracek/libffi-rs.git?rev=653781aa9b7a7ac1682e7f8cb405a2e90afc341d#653781aa9b7a7ac1682e7f8cb405a2e90afc341d"
