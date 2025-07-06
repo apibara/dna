@@ -1,7 +1,7 @@
 use std::fmt::{Debug, Display};
 
 use apibara_core::{node::v1alpha2::Cursor, starknet::v1alpha2};
-use starknet::core::types::{FieldElement, FromByteArrayError};
+use starknet::core::types::Felt;
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct BlockHash([u8; 32]);
@@ -129,11 +129,9 @@ impl From<&v1alpha2::FieldElement> for BlockHash {
     }
 }
 
-impl TryFrom<&BlockHash> for FieldElement {
-    type Error = FromByteArrayError;
-
-    fn try_from(value: &BlockHash) -> Result<Self, Self::Error> {
-        FieldElement::from_bytes_be(&value.0)
+impl From<&BlockHash> for Felt {
+    fn from(value: &BlockHash) -> Self {
+        Felt::from_bytes_be(&value.0)
     }
 }
 

@@ -1,7 +1,7 @@
 //! Connect to the sequencer gateway.
 use apibara_core::starknet::v1alpha2;
 use starknet::{
-    core::types::{self as models, FieldElement, FromByteArrayError, StarknetError},
+    core::types::{self as models, Felt, StarknetError},
     providers::{
         jsonrpc::{HttpTransport, JsonRpcClient},
         Provider as StarknetProvider, ProviderError as StarknetProviderError,
@@ -61,6 +61,10 @@ pub struct HttpProvider {
 }
 
 #[derive(Debug, thiserror::Error)]
+#[error("failed to parse byte array")]
+pub struct FromByteArrayError;
+
+#[derive(Debug, thiserror::Error)]
 pub enum HttpProviderError {
     #[error("the given block was not found")]
     BlockNotFound,
@@ -74,8 +78,6 @@ pub enum HttpProviderError {
     UnexpectedPendingBlock,
     #[error("expected pending block, but received non pending block")]
     ExpectedPendingBlock,
-    #[error("failed to parse block id")]
-    InvalidBlockId(#[from] FromByteArrayError),
     #[error("failed to parse block hash")]
     InvalidBlockHash(#[from] InvalidBlockHashSize),
 }
@@ -91,7 +93,7 @@ impl HttpProvider {
         &self,
         id: &BlockId,
     ) -> Result<(v1alpha2::BlockStatus, v1alpha2::BlockHeader, BlockBody), HttpProviderError> {
-        let block_id: models::BlockId = id.try_into()?;
+        let block_id: models::BlockId = id.into();
         let block = self
             .provider
             .get_block_with_txs(block_id)
@@ -187,7 +189,7 @@ impl Provider for HttpProvider {
 
     #[tracing::instrument(skip(self), err(Debug), level = "DEBUG")]
     async fn get_state_update(&self, id: &BlockId) -> Result<v1alpha2::StateUpdate, Self::Error> {
-        let block_id: models::BlockId = id.try_into()?;
+        let block_id: models::BlockId = id.into();
         let state_update = self
             .provider
             .get_state_update(block_id)
@@ -202,12 +204,9 @@ impl Provider for HttpProvider {
         &self,
         hash: &v1alpha2::FieldElement,
     ) -> Result<v1alpha2::TransactionReceipt, Self::Error> {
-        let hash: FieldElement = hash
-            .try_into()
-            .map_err(|err| HttpProviderError::Provider(Box::new(err)))?;
         let receipt = self
             .provider
-            .get_transaction_receipt(hash)
+            .get_transaction_receipt::<Felt>(hash.into())
             .await
             .map_err(HttpProviderError::from_provider_error)?
             .to_proto();
@@ -221,20 +220,15 @@ impl BlockId {
     }
 }
 
-impl TryFrom<&BlockId> for models::BlockId {
-    type Error = FromByteArrayError;
-
-    fn try_from(value: &BlockId) -> Result<Self, Self::Error> {
+impl From<&BlockId> for models::BlockId {
+    fn from(value: &BlockId) -> Self {
         use models::{BlockId as SNBlockId, BlockTag};
 
         match value {
-            BlockId::Latest => Ok(SNBlockId::Tag(BlockTag::Latest)),
-            BlockId::Pending => Ok(SNBlockId::Tag(BlockTag::Pending)),
-            BlockId::Hash(hash) => {
-                let hash = hash.try_into()?;
-                Ok(SNBlockId::Hash(hash))
-            }
-            BlockId::Number(number) => Ok(SNBlockId::Number(*number)),
+            BlockId::Latest => SNBlockId::Tag(BlockTag::Latest),
+            BlockId::Pending => SNBlockId::Tag(BlockTag::Pending),
+            BlockId::Hash(hash) => SNBlockId::Hash(hash.into()),
+            BlockId::Number(number) => SNBlockId::Number(*number),
         }
     }
 }
@@ -284,7 +278,7 @@ impl ToProto<v1alpha2::BlockHeader> for models::BlockWithTxs {
 
 impl ToProto<v1alpha2::BlockHeader> for models::PendingBlockWithTxs {
     fn to_proto(&self) -> v1alpha2::BlockHeader {
-        let block_hash = FieldElement::ZERO.into();
+        let block_hash = Felt::ZERO.into();
         let parent_block_hash = self.parent_hash.into();
         let timestamp = pbjson_types::Timestamp {
             nanos: 0,
@@ -1033,53 +1027,40 @@ impl ToProto<v1alpha2::PriceUnit> for models::PriceUnit {
 
 impl ToProto<v1alpha2::ExecutionResources> for models::ExecutionResources {
     fn to_proto(&self) -> v1alpha2::ExecutionResources {
-        let computation = self.computation_resources.to_proto();
-        let data_availability = self.data_resources.to_proto();
+        let data_availability = v1alpha2::DataAvailabilityResources {
+            l1_gas: self.l1_gas,
+            l1_data_gas: self.l1_data_gas,
+        };
 
         v1alpha2::ExecutionResources {
-            computation: Some(computation),
+            computation: None,
             data_availability: Some(data_availability),
         }
     }
 }
 
-impl ToProto<v1alpha2::ComputationResources> for models::ComputationResources {
+impl ToProto<v1alpha2::ComputationResources> for models::ExecutionResources {
     fn to_proto(&self) -> v1alpha2::ComputationResources {
-        let steps = self.steps;
-        let memory_holes = self.memory_holes.unwrap_or_default();
-        let range_check_builtin_applications =
-            self.range_check_builtin_applications.unwrap_or_default();
-        let pedersen_builtin_applications = self.pedersen_builtin_applications.unwrap_or_default();
-        let poseidon_builtin_applications = self.poseidon_builtin_applications.unwrap_or_default();
-        let ec_op_builtin_applications = self.ec_op_builtin_applications.unwrap_or_default();
-        let ecdsa_builtin_applications = self.ecdsa_builtin_applications.unwrap_or_default();
-        let bitwise_builtin_applications = self.bitwise_builtin_applications.unwrap_or_default();
-        let keccak_builtin_applications = self.keccak_builtin_applications.unwrap_or_default();
-        let segment_arena_builtin = self.segment_arena_builtin.unwrap_or_default();
-
         v1alpha2::ComputationResources {
-            steps,
-            memory_holes,
-            range_check_builtin_applications,
-            pedersen_builtin_applications,
-            poseidon_builtin_applications,
-            ec_op_builtin_applications,
-            ecdsa_builtin_applications,
-            bitwise_builtin_applications,
-            keccak_builtin_applications,
-            segment_arena_builtin,
+            steps: 0,
+            memory_holes: 0,
+            range_check_builtin_applications: 0,
+            pedersen_builtin_applications: 0,
+            poseidon_builtin_applications: 0,
+            ec_op_builtin_applications: 0,
+            ecdsa_builtin_applications: 0,
+            bitwise_builtin_applications: 0,
+            keccak_builtin_applications: 0,
+            segment_arena_builtin: 0,
         }
     }
 }
 
-impl ToProto<v1alpha2::DataAvailabilityResources> for models::DataResources {
+impl ToProto<v1alpha2::DataAvailabilityResources> for models::ExecutionResources {
     fn to_proto(&self) -> v1alpha2::DataAvailabilityResources {
-        let l1_gas = self.data_availability.l1_gas;
-        let l1_data_gas = self.data_availability.l1_data_gas;
-
         v1alpha2::DataAvailabilityResources {
-            l1_gas,
-            l1_data_gas,
+            l1_gas: self.l1_gas,
+            l1_data_gas: self.l1_data_gas,
         }
     }
 }
@@ -1114,7 +1095,7 @@ impl ToProto<v1alpha2::Event> for models::Event {
     }
 }
 
-impl<'a> TryFrom<TransactionHash<'a>> for FieldElement {
+impl<'a> TryFrom<TransactionHash<'a>> for Felt {
     type Error = FromByteArrayError;
 
     fn try_from(value: TransactionHash<'a>) -> Result<Self, Self::Error> {
@@ -1124,7 +1105,7 @@ impl<'a> TryFrom<TransactionHash<'a>> for FieldElement {
         }
         let mut buf = [0; 32];
         buf[..hash_len].copy_from_slice(value.0);
-        FieldElement::from_bytes_be(&buf)
+        Ok(Felt::from_bytes_be(&buf))
     }
 }
 
@@ -1212,7 +1193,7 @@ impl ToProto<v1alpha2::StorageEntry> for models::StorageEntry {
     }
 }
 
-impl ToProto<v1alpha2::DeclaredContract> for FieldElement {
+impl ToProto<v1alpha2::DeclaredContract> for Felt {
     fn to_proto(&self) -> v1alpha2::DeclaredContract {
         let class_hash = self.into();
         v1alpha2::DeclaredContract {
@@ -1358,7 +1339,7 @@ trait FieldElementExt {
     fn as_u64(&self) -> u64;
 }
 
-impl FieldElementExt for FieldElement {
+impl FieldElementExt for Felt {
     fn as_u64(&self) -> u64 {
         let bytes = self.to_bytes_be();
         let mut buf = [0; 8];

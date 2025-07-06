@@ -7,7 +7,7 @@ use serde::{
     de::{Deserialize, Deserializer},
     ser::{Serialize, Serializer},
 };
-use starknet::core::types::{FieldElement as Felt, FromByteArrayError};
+use starknet::core::types::Felt;
 
 use super::proto::v1alpha2::*;
 
@@ -150,10 +150,8 @@ impl<'de> Deserialize<'de> for FieldElement {
     }
 }
 
-impl TryFrom<&FieldElement> for Felt {
-    type Error = FromByteArrayError;
-
-    fn try_from(value: &FieldElement) -> Result<Self, Self::Error> {
+impl From<&FieldElement> for Felt {
+    fn from(value: &FieldElement) -> Self {
         Felt::from_bytes_be(&value.to_bytes())
     }
 }

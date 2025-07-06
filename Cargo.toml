@@ -12,19 +12,19 @@ members = [
     "node",
     "sdk",
     "starknet",
-    "script",
-    "sinks/sink-common",
-    "sinks/sink-options-derive",
-    "sinks/sink-options-derive-tests",
-    "sinks/sink-console",
-    "sinks/sink-webhook",
-    "sinks/sink-mongo",
-    "sinks/sink-parquet",
-    "sinks/sink-postgres",
-    "runners/runner-common",
-    "runners/runner-local",
-    "operator",
-    "cli",
+    # "script",
+    # "sinks/sink-common",
+    # "sinks/sink-options-derive",
+    # "sinks/sink-options-derive-tests",
+    # "sinks/sink-console",
+    # "sinks/sink-webhook",
+    # "sinks/sink-mongo",
+    # "sinks/sink-parquet",
+    # "sinks/sink-postgres",
+    # "runners/runner-common",
+    # "runners/runner-local",
+    # "operator",
+    # "cli",
 ]
 
 [workspace.dependencies]
@@ -72,15 +72,14 @@ pbjson-build = "0.5.1"
 pbjson-types = "0.5.1"
 pin-project = "1.0.12"
 prost = "0.11.0"
-reqwest = { version = "0.11.16", default-features = false, features = [
+reqwest = { version = "0.12.22", default-features = false, features = [
     "json",
-    "serde_json",
     "rustls-tls",
 ] }
 regex = "1.9.1"
 serde = "1.0.155"
 serde_json = "1.0.94"
-starknet = { git = "https://github.com/xJonathanLEI/starknet-rs", rev = "7153d0e42" }
+starknet = "0.15.1"
 # starknet = { git = "https://github.com/fracek/starknet-rs", rev = "e6c4a21a7ce5" }
 thiserror = "1.0.32"
 tempfile = "3.3.0"
