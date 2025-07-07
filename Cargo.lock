@@ -3485,6 +3485,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "271414315aff87387382ec3d271b52d7ae78726f5d44ac98b4f4030c91880486"
 
 [[package]]
+name = "wings-ingestor-core"
+version = "0.1.0"
+dependencies = [
+ "arrow",
+ "arrow-schema",
+ "async-trait",
+ "bytes",
+ "bytesize",
+ "datafusion",
+ "error-stack",
+ "futures-util",
+ "parquet",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+ "wings-metadata-core",
+]
+
+[[package]]
 name = "wings-metadata-core"
 version = "0.1.0"
 dependencies = [
@@ -3512,25 +3531,6 @@ dependencies = [
  "object_store",
  "tempfile",
  "tokio",
- "wings-metadata-core",
-]
-
-[[package]]
-name = "wings-producer-core"
-version = "0.1.0"
-dependencies = [
- "arrow",
- "arrow-schema",
- "async-trait",
- "bytes",
- "bytesize",
- "datafusion",
- "error-stack",
- "futures-util",
- "parquet",
- "thiserror",
- "tokio",
- "tokio-util",
  "wings-metadata-core",
 ]
 
