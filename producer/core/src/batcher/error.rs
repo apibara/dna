@@ -1,3 +1,6 @@
+use std::sync::Arc;
+
+use parquet::errors::ParquetError;
 use thiserror::Error;
 
 /// Producer core errors.
@@ -5,8 +8,8 @@ use thiserror::Error;
 pub enum BatcherError {
     #[error("validation error: {message}")]
     Validation { message: &'static str },
-    #[error("parquet writer error")]
-    ParquetWriter,
+    #[error("parquet writer error: {inner}")]
+    ParquetWriter { inner: Arc<ParquetError> },
     #[error("arrow error")]
     Arrow,
     #[error("io error")]

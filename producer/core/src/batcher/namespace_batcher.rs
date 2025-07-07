@@ -1,9 +1,9 @@
 use std::collections::{HashMap, hash_map::Entry};
+use std::sync::Arc;
 use std::time::Duration;
 
 use arrow::record_batch::RecordBatch;
 use datafusion::scalar::ScalarValue;
-use error_stack::ResultExt;
 use futures_util::StreamExt;
 use parquet::errors::ParquetError;
 use tokio::sync::{
@@ -33,6 +33,12 @@ pub struct NamespaceBatch<D> {
         Option<ScalarValue>,
         PartitionBatch<BatchReply<D>>,
     )>,
+}
+
+pub struct RemovedBatch<D> {
+    pub batch: Option<NamespaceBatch<D>>,
+    pub timer_key: delay_queue::Key,
+    pub errors: Vec<(Vec<BatchReply<D>>, ParquetError)>,
 }
 
 /// Tracks the batching state for a single namespace.
@@ -119,20 +125,19 @@ impl<D> Batcher<D> {
                         continue;
                     };
 
-                    let (namespace_batch, errors) = state.expire_namespace(entry.into_inner());
+                    let Some(removed_batch) = state.expire_namespace(entry.into_inner()) else {
+                        continue;
+                    };
 
-                    println!("namespace_batch: {:?}", namespace_batch.is_some());
-                    if let Some(namespace_batch) = namespace_batch {
+                    if let Some(namespace_batch) = removed_batch.batch {
                         let _ = self.output_sender.send(namespace_batch).await;
                     };
 
 
-                    println!("errors? {:?}", errors.len());
-                    // TODO: propagate the error
-                    for (replies, err) in errors {
-                        println!("error: {:?}", err);
+                    for (replies, err) in removed_batch.errors {
+                        let err = Arc::new(err);
                         for reply in replies {
-                            let _ = reply.send(Err(BatcherError::ParquetWriter.into()));
+                            let _ = reply.send(Err(BatcherError::ParquetWriter { inner: err.clone() }.into()));
                         }
                     }
                 }
@@ -159,24 +164,22 @@ impl<D> Batcher<D> {
 
                     match state.write_batch(batch, &mut timers) {
                         Err((reply, err)) => {
-                            let err = Err(err)
-                                .change_context(BatcherError::ParquetWriter)
-                                .attach_printable("failed to add data to Parquet batcher");
-                            let _ = reply.send(err);
+                            let err = BatcherError::ParquetWriter { inner: Arc::new(err) };
+                            let _ = reply.send(Err(err.into()));
                             continue;
                         }
                         Ok(None) => {},
-                        Ok(Some((namespace_batch, timer_key, errors))) => {
-                            timers.remove(&timer_key);
+                        Ok(Some(removed_batch)) => {
+                            timers.remove(&removed_batch.timer_key);
 
-                            if let Some(namespace_batch) = namespace_batch {
+                            if let Some(namespace_batch) = removed_batch.batch {
                                 let _ = self.output_sender.send(namespace_batch).await;
                             }
 
-                            // TODO: propagate the error
-                            for (replies, _err) in errors {
+                            for (replies, err) in removed_batch.errors {
+                                let err = Arc::new(err);
                                 for reply in replies {
-                                    let _ = reply.send(Err(BatcherError::ParquetWriter.into()));
+                                    let _ = reply.send(Err(BatcherError::ParquetWriter { inner: err.clone() }.into()));
                                 }
                             }
                         }
@@ -206,14 +209,7 @@ impl<D> InnerBatcher<D> {
         &mut self,
         batch: Batch<D>,
         delay_queue: &mut DelayQueue<NamespaceName>,
-    ) -> std::result::Result<
-        Option<(
-            Option<NamespaceBatch<D>>,
-            delay_queue::Key,
-            Vec<(Vec<BatchReply<D>>, ParquetError)>,
-        )>,
-        (BatchReply<D>, ParquetError),
-    > {
+    ) -> std::result::Result<Option<RemovedBatch<D>>, (BatchReply<D>, ParquetError)> {
         let namespace = batch.namespace.name.clone();
 
         let batch_state = self
@@ -237,7 +233,9 @@ impl<D> InnerBatcher<D> {
             Entry::Occupied(inner) => inner.into_mut(),
             Entry::Vacant(inner) => match PartitionBatcher::new(batch.topic.schema()) {
                 Ok(batcher) => inner.insert(batcher),
-                Err(err) => return Err((batch.reply, err)),
+                Err(err) => {
+                    return Err((batch.reply, err));
+                }
             },
         };
 
@@ -248,39 +246,22 @@ impl<D> InnerBatcher<D> {
             let Some(state) = self.batches.remove(&namespace) else {
                 return Ok(None);
             };
-            // TODO: fix error handling
-            let (batch, timer_key, errors) = state.into_namespace_batch(namespace);
-            return Ok(Some((batch, timer_key, errors)));
+
+            return Ok(state.remove_namespace_batch(namespace).into());
         }
 
         Ok(None)
     }
 
-    fn expire_namespace(
-        &mut self,
-        namespace: NamespaceName,
-    ) -> (
-        Option<NamespaceBatch<D>>,
-        Vec<(Vec<BatchReply<D>>, ParquetError)>,
-    ) {
-        let Some(state) = self.batches.remove(&namespace) else {
-            return (None, Vec::new());
-        };
+    fn expire_namespace(&mut self, namespace: NamespaceName) -> Option<RemovedBatch<D>> {
+        let state = self.batches.remove(&namespace)?;
 
-        let (batch, _timer_key, errors) = state.into_namespace_batch(namespace);
-        (batch, errors)
+        state.remove_namespace_batch(namespace).into()
     }
 }
 
 impl<D> NamespaceBatchState<D> {
-    pub fn into_namespace_batch(
-        self,
-        namespace: NamespaceName,
-    ) -> (
-        Option<NamespaceBatch<D>>,
-        delay_queue::Key,
-        Vec<(Vec<BatchReply<D>>, ParquetError)>,
-    ) {
+    pub fn remove_namespace_batch(self, namespace: NamespaceName) -> RemovedBatch<D> {
         let mut batches = Vec::with_capacity(self.partitions.len());
         let mut errors = Vec::new();
 
@@ -298,7 +279,11 @@ impl<D> NamespaceBatchState<D> {
             Some(NamespaceBatch { namespace, batches })
         };
 
-        (batch, self.timer_key, errors)
+        RemovedBatch {
+            batch,
+            timer_key: self.timer_key,
+            errors,
+        }
     }
 }
 
