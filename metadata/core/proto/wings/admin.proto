@@ -81,6 +81,10 @@ message DeleteTenantRequest {
 }
 
 message Tenant {
+  // The tenant name.
+  //
+  // Format: tenants/{tenant}
+  string name = 1;
 }
 
 message CreateNamespaceRequest {
@@ -94,9 +98,6 @@ message CreateNamespaceRequest {
 
   // The namespace metadata.
   Namespace namespace = 3;
-
-  // The namespace options.
-  NamespaceOptions options = 4;
 }
 
 message GetNamespaceRequest {
@@ -138,11 +139,22 @@ message DeleteNamespaceRequest {
 }
 
 message Namespace {
+  // The namespace name.
+  //
+  // Format: tenants/{tenant}/namespaces/{namespace}
+  string name = 1;
+
   // The size at which the current segment is flushed to object storage.
-  uint64 flush_size_bytes = 1;
+  uint64 flush_size_bytes = 2;
 
   // The maximum interval at which the current segment is flushed to object storage (in milliseconds).
-  uint64 flush_interval_millis = 2;
+  uint64 flush_interval_millis = 3;
+
+  // The default object store configuration for the namespace.
+  string default_object_store_config = 4;
+
+  // If specified, use this configuration for frozen data.
+  optional string frozen_object_store_config = 5;
 }
 
 message CreateTopicRequest {
@@ -199,18 +211,15 @@ message DeleteTopicRequest {
   bool force = 2;
 }
 
-message NamespaceOptions {
-  // The size at which the current segment is flushed to object storage.
-  uint64 flush_size_bytes = 1;
-
-  // The maximum interval at which the current segment is flushed to object storage (in seconds).
-  uint64 flush_interval_seconds = 2;
-}
-
 message Topic {
-  // The fields in the topic messages (serialized Arrow schema).
-  bytes fields = 1;
-  
+  // The topic name.
+  //
+  // Format: tenants/{tenant}/namespaces/{namespace}/topics/{topic}
+  string name = 1;
+
+  // The fields in the topic messages.
+  bytes fields = 2;
+
   // The index of the field that is used to partition the topic.
-  optional uint32 partition_key = 2;
+  optional uint32 partition_key = 3;
 }

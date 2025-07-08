@@ -14,20 +14,20 @@
 //! # #[tokio::main]
 //! # async fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let service = InMemoryAdminService::new();
-//! let tenant_name = TenantName::new("my-tenant");
+//! let tenant_name = TenantName::new("my-tenant")?;
 //!
 //! // Create a tenant
 //! let tenant = service.create_tenant(tenant_name.clone()).await?;
 //! println!("Created tenant: {}", tenant.name);
 //!
 //! // Create a namespace
-//! let namespace_name = NamespaceName::new("my-namespace", tenant_name.clone());
-//! let namespace_options = NamespaceOptions::new(SecretName::new("default-config"));
+//! let namespace_name = NamespaceName::new("my-namespace", tenant_name.clone())?;
+//! let namespace_options = NamespaceOptions::new(SecretName::new("default-config")?);
 //! let namespace = service.create_namespace(namespace_name.clone(), namespace_options).await?;
 //! println!("Created namespace: {}", namespace.name);
 //!
 //! // Create a topic
-//! let topic_name = TopicName::new("my-topic", namespace_name.clone());
+//! let topic_name = TopicName::new("my-topic", namespace_name.clone())?;
 //! let topic_options = TopicOptions::new(vec![Field::new("key", DataType::Utf8, false)]);
 //! let topic = service.create_topic(topic_name.clone(), topic_options).await?;
 //! println!("Created topic: {}", topic.name);
@@ -478,7 +478,7 @@ mod tests {
     use crate::admin::{NamespaceName, SecretName, TenantName};
 
     async fn create_test_tenant(service: &InMemoryAdminService, tenant_id: &str) -> Tenant {
-        let tenant_name = TenantName::new(tenant_id);
+        let tenant_name = TenantName::new(tenant_id).unwrap();
         service.create_tenant(tenant_name).await.unwrap()
     }
 
@@ -487,12 +487,12 @@ mod tests {
         tenant_id: &str,
         namespace_id: &str,
     ) -> Namespace {
-        let tenant_name = TenantName::new(tenant_id);
-        let namespace_name = NamespaceName::new(namespace_id, tenant_name);
+        let tenant_name = TenantName::new(tenant_id).unwrap();
+        let namespace_name = NamespaceName::new(namespace_id, tenant_name).unwrap();
         service
             .create_namespace(
                 namespace_name,
-                NamespaceOptions::new(SecretName::new("test-config")),
+                NamespaceOptions::new(SecretName::new("test-config").unwrap()),
             )
             .await
             .unwrap()
@@ -504,9 +504,9 @@ mod tests {
         namespace_id: &str,
         topic_id: &str,
     ) -> Topic {
-        let tenant_name = TenantName::new(tenant_id);
-        let namespace_name = NamespaceName::new(namespace_id, tenant_name);
-        let topic_name = TopicName::new(topic_id, namespace_name);
+        let tenant_name = TenantName::new(tenant_id).unwrap();
+        let namespace_name = NamespaceName::new(namespace_id, tenant_name).unwrap();
+        let topic_name = TopicName::new(topic_id, namespace_name).unwrap();
         let topic_options = TopicOptions::new(vec![Field::new("key", DataType::Utf8, false)]);
         service
             .create_topic(topic_name, topic_options)
@@ -517,7 +517,7 @@ mod tests {
     #[tokio::test]
     async fn test_create_tenant() {
         let service = InMemoryAdminService::new();
-        let tenant_name = TenantName::new("test-tenant");
+        let tenant_name = TenantName::new("test-tenant").unwrap();
         let tenant = service.create_tenant(tenant_name.clone()).await.unwrap();
 
         assert_eq!(tenant.name, tenant_name);
@@ -528,7 +528,7 @@ mod tests {
     #[tokio::test]
     async fn test_create_tenant_already_exists() {
         let service = InMemoryAdminService::new();
-        let tenant_name = TenantName::new("test-tenant");
+        let tenant_name = TenantName::new("test-tenant").unwrap();
 
         // Create tenant first time
         service.create_tenant(tenant_name.clone()).await.unwrap();
@@ -546,7 +546,7 @@ mod tests {
     #[tokio::test]
     async fn test_get_tenant() {
         let service = InMemoryAdminService::new();
-        let tenant_name = TenantName::new("test-tenant");
+        let tenant_name = TenantName::new("test-tenant").unwrap();
         let created_tenant = service.create_tenant(tenant_name.clone()).await.unwrap();
 
         let retrieved_tenant = service.get_tenant(tenant_name).await.unwrap();
@@ -556,7 +556,7 @@ mod tests {
     #[tokio::test]
     async fn test_get_tenant_not_found() {
         let service = InMemoryAdminService::new();
-        let tenant_name = TenantName::new("nonexistent");
+        let tenant_name = TenantName::new("nonexistent").unwrap();
 
         let result = service.get_tenant(tenant_name).await;
         assert!(matches!(
@@ -626,7 +626,7 @@ mod tests {
     #[tokio::test]
     async fn test_delete_tenant() {
         let service = InMemoryAdminService::new();
-        let tenant_name = TenantName::new("test-tenant");
+        let tenant_name = TenantName::new("test-tenant").unwrap();
         service.create_tenant(tenant_name.clone()).await.unwrap();
 
         service.delete_tenant(tenant_name.clone()).await.unwrap();
@@ -642,7 +642,7 @@ mod tests {
     #[tokio::test]
     async fn test_delete_tenant_not_found() {
         let service = InMemoryAdminService::new();
-        let tenant_name = TenantName::new("nonexistent");
+        let tenant_name = TenantName::new("nonexistent").unwrap();
 
         let result = service.delete_tenant(tenant_name).await;
         assert!(matches!(
@@ -654,15 +654,15 @@ mod tests {
     #[tokio::test]
     async fn test_delete_tenant_with_namespaces() {
         let service = InMemoryAdminService::new();
-        let tenant_name = TenantName::new("test-tenant");
+        let tenant_name = TenantName::new("test-tenant").unwrap();
         service.create_tenant(tenant_name.clone()).await.unwrap();
 
         // Manually add a namespace to simulate the tenant having namespaces
         // (since we haven't implemented namespace creation yet)
-        let namespace_name = NamespaceName::new("test-namespace", tenant_name.clone());
+        let namespace_name = NamespaceName::new("test-namespace", tenant_name.clone()).unwrap();
         let namespace = Namespace::new(
             namespace_name.clone(),
-            NamespaceOptions::new(SecretName::new("test-config")),
+            NamespaceOptions::new(SecretName::new("test-config").unwrap()),
         );
         {
             let mut store = service.store.write().await;
@@ -683,12 +683,12 @@ mod tests {
         let service = InMemoryAdminService::new();
         create_test_tenant(&service, "test-tenant").await;
 
-        let tenant_name = TenantName::new("test-tenant");
-        let namespace_name = NamespaceName::new("test-namespace", tenant_name.clone());
+        let tenant_name = TenantName::new("test-tenant").unwrap();
+        let namespace_name = NamespaceName::new("test-namespace", tenant_name.clone()).unwrap();
         let namespace = service
             .create_namespace(
                 namespace_name.clone(),
-                NamespaceOptions::new(SecretName::new("test-config")),
+                NamespaceOptions::new(SecretName::new("test-config").unwrap()),
             )
             .await
             .unwrap();
@@ -705,13 +705,13 @@ mod tests {
     #[tokio::test]
     async fn test_create_namespace_tenant_not_found() {
         let service = InMemoryAdminService::new();
-        let tenant_name = TenantName::new("nonexistent-tenant");
-        let namespace_name = NamespaceName::new("test-namespace", tenant_name);
+        let tenant_name = TenantName::new("nonexistent-tenant").unwrap();
+        let namespace_name = NamespaceName::new("test-namespace", tenant_name).unwrap();
 
         let result = service
             .create_namespace(
                 namespace_name,
-                NamespaceOptions::new(SecretName::new("test-config")),
+                NamespaceOptions::new(SecretName::new("test-config").unwrap()),
             )
             .await;
         assert!(matches!(
@@ -725,14 +725,14 @@ mod tests {
         let service = InMemoryAdminService::new();
         create_test_tenant(&service, "test-tenant").await;
 
-        let tenant_name = TenantName::new("test-tenant");
-        let namespace_name = NamespaceName::new("test-namespace", tenant_name);
+        let tenant_name = TenantName::new("test-tenant").unwrap();
+        let namespace_name = NamespaceName::new("test-namespace", tenant_name).unwrap();
 
         // Create namespace first time
         service
             .create_namespace(
                 namespace_name.clone(),
-                NamespaceOptions::new(SecretName::new("test-config")),
+                NamespaceOptions::new(SecretName::new("test-config").unwrap()),
             )
             .await
             .unwrap();
@@ -741,7 +741,7 @@ mod tests {
         let result = service
             .create_namespace(
                 namespace_name,
-                NamespaceOptions::new(SecretName::new("test-config")),
+                NamespaceOptions::new(SecretName::new("test-config").unwrap()),
             )
             .await;
         assert!(matches!(
@@ -755,12 +755,12 @@ mod tests {
         let service = InMemoryAdminService::new();
         create_test_tenant(&service, "test-tenant").await;
 
-        let tenant_name = TenantName::new("test-tenant");
-        let namespace_name = NamespaceName::new("test-namespace", tenant_name);
+        let tenant_name = TenantName::new("test-tenant").unwrap();
+        let namespace_name = NamespaceName::new("test-namespace", tenant_name).unwrap();
         let created_namespace = service
             .create_namespace(
                 namespace_name.clone(),
-                NamespaceOptions::new(SecretName::new("test-config")),
+                NamespaceOptions::new(SecretName::new("test-config").unwrap()),
             )
             .await
             .unwrap();
@@ -772,8 +772,8 @@ mod tests {
     #[tokio::test]
     async fn test_get_namespace_not_found() {
         let service = InMemoryAdminService::new();
-        let tenant_name = TenantName::new("test-tenant");
-        let namespace_name = NamespaceName::new("nonexistent", tenant_name);
+        let tenant_name = TenantName::new("test-tenant").unwrap();
+        let namespace_name = NamespaceName::new("nonexistent", tenant_name).unwrap();
 
         let result = service.get_namespace(namespace_name).await;
         assert!(matches!(
@@ -787,7 +787,7 @@ mod tests {
         let service = InMemoryAdminService::new();
         create_test_tenant(&service, "test-tenant").await;
 
-        let request = ListNamespacesRequest::new(TenantName::new("test-tenant"));
+        let request = ListNamespacesRequest::new(TenantName::new("test-tenant").unwrap());
         let response = service.list_namespaces(request).await.unwrap();
 
         assert!(response.namespaces.is_empty());
@@ -802,7 +802,7 @@ mod tests {
         create_test_namespace(&service, "test-tenant", "namespace-b").await;
         create_test_namespace(&service, "test-tenant", "namespace-c").await;
 
-        let request = ListNamespacesRequest::new(TenantName::new("test-tenant"));
+        let request = ListNamespacesRequest::new(TenantName::new("test-tenant").unwrap());
         let response = service.list_namespaces(request).await.unwrap();
 
         assert_eq!(response.namespaces.len(), 3);
@@ -814,7 +814,7 @@ mod tests {
     #[tokio::test]
     async fn test_list_namespaces_tenant_not_found() {
         let service = InMemoryAdminService::new();
-        let request = ListNamespacesRequest::new(TenantName::new("nonexistent-tenant"));
+        let request = ListNamespacesRequest::new(TenantName::new("nonexistent-tenant").unwrap());
 
         let result = service.list_namespaces(request).await;
         assert!(matches!(
@@ -833,7 +833,7 @@ mod tests {
         create_test_namespace(&service, "tenant-b", "namespace-3").await;
 
         // List namespaces for tenant-a
-        let request = ListNamespacesRequest::new(TenantName::new("tenant-a"));
+        let request = ListNamespacesRequest::new(TenantName::new("tenant-a").unwrap());
         let response = service.list_namespaces(request).await.unwrap();
 
         assert_eq!(response.namespaces.len(), 2);
@@ -841,7 +841,7 @@ mod tests {
         assert_eq!(names, vec!["namespace-1", "namespace-2"]);
 
         // List namespaces for tenant-b
-        let request = ListNamespacesRequest::new(TenantName::new("tenant-b"));
+        let request = ListNamespacesRequest::new(TenantName::new("tenant-b").unwrap());
         let response = service.list_namespaces(request).await.unwrap();
 
         assert_eq!(response.namespaces.len(), 1);
@@ -853,12 +853,12 @@ mod tests {
         let service = InMemoryAdminService::new();
         create_test_tenant(&service, "test-tenant").await;
 
-        let tenant_name = TenantName::new("test-tenant");
-        let namespace_name = NamespaceName::new("test-namespace", tenant_name);
+        let tenant_name = TenantName::new("test-tenant").unwrap();
+        let namespace_name = NamespaceName::new("test-namespace", tenant_name).unwrap();
         service
             .create_namespace(
                 namespace_name.clone(),
-                NamespaceOptions::new(SecretName::new("test-config")),
+                NamespaceOptions::new(SecretName::new("test-config").unwrap()),
             )
             .await
             .unwrap();
@@ -879,8 +879,8 @@ mod tests {
     #[tokio::test]
     async fn test_delete_namespace_not_found() {
         let service = InMemoryAdminService::new();
-        let tenant_name = TenantName::new("test-tenant");
-        let namespace_name = NamespaceName::new("nonexistent", tenant_name);
+        let tenant_name = TenantName::new("test-tenant").unwrap();
+        let namespace_name = NamespaceName::new("nonexistent", tenant_name).unwrap();
 
         let result = service.delete_namespace(namespace_name).await;
         assert!(matches!(
@@ -894,12 +894,12 @@ mod tests {
         let service = InMemoryAdminService::new();
         create_test_tenant(&service, "test-tenant").await;
 
-        let tenant_name = TenantName::new("test-tenant");
-        let namespace_name = NamespaceName::new("test-namespace", tenant_name);
+        let tenant_name = TenantName::new("test-tenant").unwrap();
+        let namespace_name = NamespaceName::new("test-namespace", tenant_name).unwrap();
         service
             .create_namespace(
                 namespace_name.clone(),
-                NamespaceOptions::new(SecretName::new("test-config")),
+                NamespaceOptions::new(SecretName::new("test-config").unwrap()),
             )
             .await
             .unwrap();
@@ -907,7 +907,7 @@ mod tests {
         // Manually add a topic to simulate the namespace having topics
         // (since we haven't implemented topic creation yet)
         use crate::admin::TopicName;
-        let topic_name = TopicName::new("test-topic", namespace_name.clone());
+        let topic_name = TopicName::new("test-topic", namespace_name.clone()).unwrap();
         let topic_options = TopicOptions::new(vec![Field::new("key", DataType::Utf8, false)]);
         let topic = service
             .create_topic(topic_name.clone(), topic_options)
@@ -933,9 +933,9 @@ mod tests {
         create_test_tenant(&service, "test-tenant").await;
         create_test_namespace(&service, "test-tenant", "test-namespace").await;
 
-        let tenant_name = TenantName::new("test-tenant");
-        let namespace_name = NamespaceName::new("test-namespace", tenant_name);
-        let topic_name = TopicName::new("test-topic", namespace_name.clone());
+        let tenant_name = TenantName::new("test-tenant").unwrap();
+        let namespace_name = NamespaceName::new("test-namespace", tenant_name).unwrap();
+        let topic_name = TopicName::new("test-topic", namespace_name.clone()).unwrap();
         let topic_options = TopicOptions::new(vec![Field::new("key", DataType::Utf8, false)]);
         let topic = service
             .create_topic(topic_name.clone(), topic_options)
@@ -954,9 +954,9 @@ mod tests {
     #[tokio::test]
     async fn test_create_topic_namespace_not_found() {
         let service = InMemoryAdminService::new();
-        let tenant_name = TenantName::new("test-tenant");
-        let namespace_name = NamespaceName::new("nonexistent-namespace", tenant_name);
-        let topic_name = TopicName::new("test-topic", namespace_name);
+        let tenant_name = TenantName::new("test-tenant").unwrap();
+        let namespace_name = NamespaceName::new("nonexistent-namespace", tenant_name).unwrap();
+        let topic_name = TopicName::new("test-topic", namespace_name).unwrap();
 
         let topic_options = TopicOptions::new(vec![Field::new("key", DataType::Utf8, false)]);
         let result = service.create_topic(topic_name, topic_options).await;
@@ -972,9 +972,9 @@ mod tests {
         create_test_tenant(&service, "test-tenant").await;
         create_test_namespace(&service, "test-tenant", "test-namespace").await;
 
-        let tenant_name = TenantName::new("test-tenant");
-        let namespace_name = NamespaceName::new("test-namespace", tenant_name);
-        let topic_name = TopicName::new("test-topic", namespace_name);
+        let tenant_name = TenantName::new("test-tenant").unwrap();
+        let namespace_name = NamespaceName::new("test-namespace", tenant_name).unwrap();
+        let topic_name = TopicName::new("test-topic", namespace_name).unwrap();
 
         // Create topic first time
         let topic_options = TopicOptions::new(vec![Field::new("key", DataType::Utf8, false)]);
@@ -997,9 +997,9 @@ mod tests {
         create_test_tenant(&service, "test-tenant").await;
         create_test_namespace(&service, "test-tenant", "test-namespace").await;
 
-        let tenant_name = TenantName::new("test-tenant");
-        let namespace_name = NamespaceName::new("test-namespace", tenant_name);
-        let topic_name = TopicName::new("test-topic", namespace_name);
+        let tenant_name = TenantName::new("test-tenant").unwrap();
+        let namespace_name = NamespaceName::new("test-namespace", tenant_name).unwrap();
+        let topic_name = TopicName::new("test-topic", namespace_name).unwrap();
         let topic_options = TopicOptions::new(vec![Field::new("key", DataType::Utf8, false)]);
         let created_topic = service
             .create_topic(topic_name.clone(), topic_options)
@@ -1013,9 +1013,9 @@ mod tests {
     #[tokio::test]
     async fn test_get_topic_not_found() {
         let service = InMemoryAdminService::new();
-        let tenant_name = TenantName::new("test-tenant");
-        let namespace_name = NamespaceName::new("test-namespace", tenant_name);
-        let topic_name = TopicName::new("nonexistent", namespace_name);
+        let tenant_name = TenantName::new("test-tenant").unwrap();
+        let namespace_name = NamespaceName::new("test-namespace", tenant_name).unwrap();
+        let topic_name = TopicName::new("nonexistent", namespace_name).unwrap();
 
         let result = service.get_topic(topic_name).await;
         assert!(matches!(
@@ -1030,8 +1030,8 @@ mod tests {
         create_test_tenant(&service, "test-tenant").await;
         create_test_namespace(&service, "test-tenant", "test-namespace").await;
 
-        let tenant_name = TenantName::new("test-tenant");
-        let namespace_name = NamespaceName::new("test-namespace", tenant_name);
+        let tenant_name = TenantName::new("test-tenant").unwrap();
+        let namespace_name = NamespaceName::new("test-namespace", tenant_name).unwrap();
         let request = ListTopicsRequest::new(namespace_name);
         let response = service.list_topics(request).await.unwrap();
 
@@ -1048,8 +1048,8 @@ mod tests {
         create_test_topic(&service, "test-tenant", "test-namespace", "topic-b").await;
         create_test_topic(&service, "test-tenant", "test-namespace", "topic-c").await;
 
-        let tenant_name = TenantName::new("test-tenant");
-        let namespace_name = NamespaceName::new("test-namespace", tenant_name);
+        let tenant_name = TenantName::new_unchecked("test-tenant");
+        let namespace_name = NamespaceName::new_unchecked("test-namespace", tenant_name);
         let request = ListTopicsRequest::new(namespace_name);
         let response = service.list_topics(request).await.unwrap();
 
@@ -1066,8 +1066,8 @@ mod tests {
     #[tokio::test]
     async fn test_list_topics_namespace_not_found() {
         let service = InMemoryAdminService::new();
-        let tenant_name = TenantName::new("test-tenant");
-        let namespace_name = NamespaceName::new("nonexistent-namespace", tenant_name);
+        let tenant_name = TenantName::new("test-tenant").unwrap();
+        let namespace_name = NamespaceName::new("nonexistent-namespace", tenant_name).unwrap();
         let request = ListTopicsRequest::new(namespace_name);
 
         let result = service.list_topics(request).await;
@@ -1088,8 +1088,8 @@ mod tests {
         create_test_topic(&service, "test-tenant", "namespace-b", "topic-3").await;
 
         // List topics for namespace-a
-        let tenant_name = TenantName::new("test-tenant");
-        let namespace_a = NamespaceName::new("namespace-a", tenant_name.clone());
+        let tenant_name = TenantName::new_unchecked("test-tenant");
+        let namespace_a = NamespaceName::new_unchecked("namespace-a", tenant_name.clone());
         let request = ListTopicsRequest::new(namespace_a);
         let response = service.list_topics(request).await.unwrap();
 
@@ -1102,7 +1102,7 @@ mod tests {
         assert_eq!(names, vec!["topic-1", "topic-2"]);
 
         // List topics for namespace-b
-        let namespace_b = NamespaceName::new("namespace-b", tenant_name);
+        let namespace_b = NamespaceName::new_unchecked("namespace-b", tenant_name);
         let request = ListTopicsRequest::new(namespace_b);
         let response = service.list_topics(request).await.unwrap();
 
@@ -1116,9 +1116,9 @@ mod tests {
         create_test_tenant(&service, "test-tenant").await;
         create_test_namespace(&service, "test-tenant", "test-namespace").await;
 
-        let tenant_name = TenantName::new("test-tenant");
-        let namespace_name = NamespaceName::new("test-namespace", tenant_name);
-        let topic_name = TopicName::new("test-topic", namespace_name);
+        let tenant_name = TenantName::new("test-tenant").unwrap();
+        let namespace_name = NamespaceName::new("test-namespace", tenant_name).unwrap();
+        let topic_name = TopicName::new("test-topic", namespace_name.clone()).unwrap();
         let topic_options = TopicOptions::new(vec![Field::new("key", DataType::Utf8, false)]);
         service
             .create_topic(topic_name.clone(), topic_options)
@@ -1141,9 +1141,9 @@ mod tests {
     #[tokio::test]
     async fn test_delete_topic_not_found() {
         let service = InMemoryAdminService::new();
-        let tenant_name = TenantName::new("test-tenant");
-        let namespace_name = NamespaceName::new("test-namespace", tenant_name);
-        let topic_name = TopicName::new("nonexistent", namespace_name);
+        let tenant_name = TenantName::new_unchecked("test-tenant");
+        let namespace_name = NamespaceName::new_unchecked("test-namespace", tenant_name);
+        let topic_name = TopicName::new_unchecked("nonexistent", namespace_name);
 
         let result = service.delete_topic(topic_name, false).await;
         assert!(matches!(
@@ -1158,9 +1158,9 @@ mod tests {
         create_test_tenant(&service, "test-tenant").await;
         create_test_namespace(&service, "test-tenant", "test-namespace").await;
 
-        let tenant_name = TenantName::new("test-tenant");
-        let namespace_name = NamespaceName::new("test-namespace", tenant_name);
-        let topic_name = TopicName::new("test-topic", namespace_name);
+        let tenant_name = TenantName::new("test-tenant").unwrap();
+        let namespace_name = NamespaceName::new("test-namespace", tenant_name).unwrap();
+        let topic_name = TopicName::new("test-topic", namespace_name.clone()).unwrap();
         let topic_options = TopicOptions::new(vec![Field::new("key", DataType::Utf8, false)]);
 
         service
@@ -1188,9 +1188,9 @@ mod tests {
         create_test_tenant(&service, "test-tenant").await;
         create_test_namespace(&service, "test-tenant", "test-namespace").await;
 
-        let tenant_name = TenantName::new("test-tenant");
-        let namespace_name = NamespaceName::new("test-namespace", tenant_name);
-        let topic_name = TopicName::new("test-topic", namespace_name);
+        let tenant_name = TenantName::new("test-tenant").unwrap();
+        let namespace_name = NamespaceName::new("test-namespace", tenant_name).unwrap();
+        let topic_name = TopicName::new("test-topic", namespace_name).unwrap();
 
         let fields = vec![
             Field::new("id", DataType::Int64, false),
@@ -1214,9 +1214,9 @@ mod tests {
         create_test_tenant(&service, "test-tenant").await;
         create_test_namespace(&service, "test-tenant", "test-namespace").await;
 
-        let tenant_name = TenantName::new("test-tenant");
-        let namespace_name = NamespaceName::new("test-namespace", tenant_name);
-        let topic_name = TopicName::new("test-topic", namespace_name);
+        let tenant_name = TenantName::new_unchecked("test-tenant");
+        let namespace_name = NamespaceName::new_unchecked("test-namespace", tenant_name);
+        let topic_name = TopicName::new_unchecked("test-topic", namespace_name);
 
         let fields = vec![Field::new("name", DataType::Utf8, false)];
         let topic_options = TopicOptions::new_with_partition_key(fields, Some(5)); // Invalid index
@@ -1234,9 +1234,9 @@ mod tests {
         create_test_tenant(&service, "test-tenant").await;
         create_test_namespace(&service, "test-tenant", "test-namespace").await;
 
-        let tenant_name = TenantName::new("test-tenant");
-        let namespace_name = NamespaceName::new("test-namespace", tenant_name);
-        let topic_name = TopicName::new("test-topic", namespace_name);
+        let tenant_name = TenantName::new_unchecked("test-tenant");
+        let namespace_name = NamespaceName::new_unchecked("test-namespace", tenant_name);
+        let topic_name = TopicName::new_unchecked("test-topic", namespace_name);
 
         let fields = vec![Field::new("data", DataType::Utf8, false)];
         let topic_options = TopicOptions::new(fields);

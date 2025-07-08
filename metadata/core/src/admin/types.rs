@@ -233,7 +233,7 @@ mod tests {
 
     #[test]
     fn test_tenant_creation() {
-        let tenant_name = TenantName::new("test-tenant");
+        let tenant_name = TenantName::new("test-tenant").unwrap();
         let tenant = Tenant::new(tenant_name.clone());
 
         assert_eq!(tenant.name, tenant_name);
@@ -243,9 +243,9 @@ mod tests {
 
     #[test]
     fn test_namespace_creation() {
-        let tenant_name = TenantName::new("test-tenant");
-        let namespace_name = NamespaceName::new("test-namespace", tenant_name.clone());
-        let options = NamespaceOptions::new(SecretName::new("test-config"));
+        let tenant_name = TenantName::new("test-tenant").unwrap();
+        let namespace_name = NamespaceName::new("test-namespace", tenant_name.clone()).unwrap();
+        let options = NamespaceOptions::new(SecretName::new("test-config").unwrap());
         let namespace = Namespace::new(namespace_name.clone(), options.clone());
 
         assert_eq!(namespace.name, namespace_name);
@@ -269,9 +269,9 @@ mod tests {
 
     #[test]
     fn test_topic_creation() {
-        let tenant_name = TenantName::new("test-tenant");
-        let namespace_name = NamespaceName::new("test-namespace", tenant_name);
-        let topic_name = TopicName::new("test-topic", namespace_name.clone());
+        let tenant_name = TenantName::new("test-tenant").unwrap();
+        let namespace_name = NamespaceName::new("test-namespace", tenant_name).unwrap();
+        let topic_name = TopicName::new("test-topic", namespace_name.clone()).unwrap();
         let options = TopicOptions::new(vec![Field::new("test", DataType::Utf8, false)]);
         let topic = Topic::new(topic_name.clone(), options);
 
@@ -288,7 +288,7 @@ mod tests {
 
     #[test]
     fn test_list_namespaces_request() {
-        let tenant_name = TenantName::new("test-tenant");
+        let tenant_name = TenantName::new("test-tenant").unwrap();
         let request = ListNamespacesRequest::new(tenant_name.clone());
 
         assert_eq!(request.parent, tenant_name);
@@ -298,8 +298,8 @@ mod tests {
 
     #[test]
     fn test_list_topics_request() {
-        let tenant_name = TenantName::new("test-tenant");
-        let namespace_name = NamespaceName::new("test-namespace", tenant_name);
+        let tenant_name = TenantName::new("test-tenant").unwrap();
+        let namespace_name = NamespaceName::new("test-namespace", tenant_name).unwrap();
         let request = ListTopicsRequest::new(namespace_name.clone());
 
         assert_eq!(request.parent, namespace_name);
@@ -309,7 +309,7 @@ mod tests {
 
     #[test]
     fn test_secret_name() {
-        let secret_name = SecretName::new("test-secret");
+        let secret_name = SecretName::new("test-secret").unwrap();
 
         assert_eq!(secret_name.id(), "test-secret");
         assert_eq!(secret_name.name(), "secrets/test-secret");
@@ -317,8 +317,8 @@ mod tests {
 
     #[test]
     fn test_namespace_options_with_secrets() {
-        let default_secret = SecretName::new("default-config");
-        let frozen_secret = SecretName::new("frozen-config");
+        let default_secret = SecretName::new("default-config").unwrap();
+        let frozen_secret = SecretName::new("frozen-config").unwrap();
 
         let mut options = NamespaceOptions::new(default_secret.clone());
         options.flush_size = ByteSize::mb(16);
@@ -333,7 +333,7 @@ mod tests {
 
     #[test]
     fn test_namespace_options_new_method() {
-        let secret_name = SecretName::new("my-secret");
+        let secret_name = SecretName::new("my-secret").unwrap();
         let options = NamespaceOptions::new(secret_name.clone());
 
         // Check that the secret is set correctly
@@ -370,9 +370,9 @@ mod tests {
 
     #[test]
     fn test_topic_with_partition_key() {
-        let tenant_name = TenantName::new("test-tenant");
-        let namespace_name = NamespaceName::new("test-namespace", tenant_name);
-        let topic_name = TopicName::new("test-topic", namespace_name.clone());
+        let tenant_name = TenantName::new("test-tenant").unwrap();
+        let namespace_name = NamespaceName::new("test-namespace", tenant_name).unwrap();
+        let topic_name = TopicName::new("test-topic", namespace_name.clone()).unwrap();
 
         let fields = vec![
             Field::new("id", DataType::Int64, false),

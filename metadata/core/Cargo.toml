@@ -12,12 +12,17 @@ path = "src/lib.rs"
 
 [dependencies]
 arrow.workspace = true
+arrow-ipc.workspace = true
 async-trait.workspace = true
+bytes.workspace = true
 bytesize.workspace = true
 dashmap.workspace = true
 datafusion.workspace = true
 error-stack.workspace = true
+flatbuffers.workspace = true
 hex.workspace = true
+http = "1.3.1"
+http-body = "1.0.1"
 object_store.workspace = true
 parquet.workspace = true
 paste.workspace = true

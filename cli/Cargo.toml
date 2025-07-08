@@ -17,4 +17,5 @@ tokio-util = { workspace = true }
 error-stack = { workspace = true }
 thiserror = { workspace = true }
 tonic = { workspace = true }
+tonic-reflection.workspace = true
 wings-metadata-core = { path = "../metadata/core" }

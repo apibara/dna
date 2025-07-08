@@ -3121,6 +3121,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "tonic-reflection"
+version = "0.13.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f9687bd5bfeafebdded2356950f278bba8226f0b32109537c4253406e09aafe1"
+dependencies = [
+ "prost",
+ "prost-types",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+]
+
+[[package]]
 name = "tower"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3622,6 +3635,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tonic",
+ "tonic-reflection",
  "wings-metadata-core",
 ]
 
@@ -3649,12 +3663,17 @@ name = "wings-metadata-core"
 version = "0.1.0"
 dependencies = [
  "arrow",
+ "arrow-ipc",
  "async-trait",
+ "bytes",
  "bytesize",
  "dashmap",
  "datafusion",
  "error-stack",
+ "flatbuffers",
  "hex",
+ "http",
+ "http-body",
  "object_store",
  "parquet",
  "paste",

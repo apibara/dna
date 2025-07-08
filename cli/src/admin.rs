@@ -1,6 +1,11 @@
+use error_stack::ResultExt;
 use tokio_util::sync::CancellationToken;
+use wings_metadata_core::admin::{Admin, TenantName};
 
-use crate::{error::CliResult, remote::RemoteArgs};
+use crate::{
+    error::{CliError, CliResult},
+    remote::RemoteArgs,
+};
 
 #[derive(clap::Subcommand)]
 pub enum AdminCommands {
@@ -42,13 +47,25 @@ impl AdminCommands {
                     "Creating tenant: {} (remote: {})",
                     name, remote.remote_address
                 );
-                let _client = remote.admin_client().await?;
-                todo!("Implement tenant creation")
+
+                let client = remote.admin_client().await?;
+                let tenant_name =
+                    TenantName::new(name).map_err(|e| CliError::InvalidConfiguration {
+                        message: format!("invalid tenant name: {}", e),
+                    })?;
+                let tenant = client
+                    .create_tenant(tenant_name)
+                    .await
+                    .change_context(CliError::Remote)?;
+
+                println!("{}", tenant.name);
+
+                Ok(())
             }
             AdminCommands::ListTenants { remote } => {
                 println!("Listing all tenants (remote: {})", remote.remote_address);
-                let _client = remote.admin_client().await?;
-                todo!("Implement tenant listing")
+                let client = remote.admin_client().await?;
+                todo!();
             }
             AdminCommands::CreateNamespace {
                 tenant,

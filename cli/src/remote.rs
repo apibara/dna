@@ -1,7 +1,7 @@
 use clap::Args;
 use error_stack::{Result, ResultExt};
 use tonic::transport::Channel;
-use wings_metadata_core::protocol::wings::v1::admin_service_client::AdminServiceClient;
+use wings_metadata_core::admin::RemoteAdminService;
 
 use crate::error::CliError;
 
@@ -15,7 +15,7 @@ pub struct RemoteArgs {
 
 impl RemoteArgs {
     /// Create a new gRPC client for the admin service.
-    pub async fn admin_client(&self) -> Result<AdminServiceClient<Channel>, CliError> {
+    pub async fn admin_client(&self) -> Result<RemoteAdminService<Channel>, CliError> {
         let channel = Channel::from_shared(self.remote_address.clone())
             .change_context(CliError::InvalidConfiguration {
                 message: format!("invalid remote address: {}", self.remote_address),
@@ -33,6 +33,6 @@ impl RemoteArgs {
                 )
             })?;
 
-        Ok(AdminServiceClient::new(channel))
+        Ok(RemoteAdminService::new(channel))
     }
 }

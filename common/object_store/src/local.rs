@@ -241,7 +241,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let factory = LocalFileSystemFactory::new(temp_dir.path()).unwrap();
 
-        let secret_name = SecretName::new("test-bucket");
+        let secret_name = SecretName::new("test-bucket").unwrap();
         let store = factory.create_object_store(secret_name).await.unwrap();
 
         // Verify that the store is created successfully
@@ -253,8 +253,8 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let factory = LocalFileSystemFactory::new(temp_dir.path()).unwrap();
 
-        let secret1 = SecretName::new("bucket-1");
-        let secret2 = SecretName::new("bucket-2");
+        let secret1 = SecretName::new("bucket-1").unwrap();
+        let secret2 = SecretName::new("bucket-2").unwrap();
 
         let store1 = factory.create_object_store(secret1).await.unwrap();
         let store2 = factory.create_object_store(secret2).await.unwrap();
@@ -276,7 +276,7 @@ mod tests {
     async fn test_temporary_factory_create_object_store() {
         let factory = TemporaryFileSystemFactory::new().unwrap();
 
-        let secret_name = SecretName::new("temp-bucket");
+        let secret_name = SecretName::new("temp-bucket").unwrap();
         let store = factory.create_object_store(secret_name).await.unwrap();
 
         // Verify that the store is created successfully
@@ -287,7 +287,7 @@ mod tests {
     async fn test_temporary_factory_cleanup() {
         let root_path = {
             let factory = TemporaryFileSystemFactory::new().unwrap();
-            let secret_name = SecretName::new("cleanup-test");
+            let secret_name = SecretName::new("cleanup-test").unwrap();
             let _store = factory.create_object_store(secret_name).await.unwrap();
 
             let path = factory.root_path().to_path_buf();
@@ -306,8 +306,8 @@ mod tests {
     async fn test_temporary_factory_multiple_stores() {
         let factory = TemporaryFileSystemFactory::new().unwrap();
 
-        let secret1 = SecretName::new("temp-bucket-1");
-        let secret2 = SecretName::new("temp-bucket-2");
+        let secret1 = SecretName::new("temp-bucket-1").unwrap();
+        let secret2 = SecretName::new("temp-bucket-2").unwrap();
 
         let store1 = factory.create_object_store(secret1).await.unwrap();
         let store2 = factory.create_object_store(secret2).await.unwrap();

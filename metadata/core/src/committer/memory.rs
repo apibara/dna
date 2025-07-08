@@ -159,8 +159,8 @@ mod tests {
     use crate::admin::TenantName;
 
     fn create_test_namespace() -> NamespaceName {
-        let tenant = TenantName::new("test-tenant");
-        NamespaceName::new("test-namespace", tenant)
+        let tenant = TenantName::new_unchecked("test-tenant");
+        NamespaceName::new_unchecked("test-namespace", tenant)
     }
 
     #[tokio::test]
@@ -442,11 +442,11 @@ mod tests {
     async fn test_multiple_namespaces() {
         let committer = InMemoryBatchCommitter::new();
 
-        let tenant1 = TenantName::new("tenant1");
-        let namespace1 = NamespaceName::new("namespace1", tenant1);
+        let tenant1 = TenantName::new_unchecked("tenant1");
+        let namespace1 = NamespaceName::new_unchecked("namespace1", tenant1);
 
-        let tenant2 = TenantName::new("tenant2");
-        let namespace2 = NamespaceName::new("namespace2", tenant2);
+        let tenant2 = TenantName::new_unchecked("tenant2");
+        let namespace2 = NamespaceName::new_unchecked("namespace2", tenant2);
 
         let batch1 = BatchToCommit {
             topic_id: "topic1".to_string(),
@@ -565,8 +565,8 @@ mod tests {
         let committer = InMemoryBatchCommitter::new();
         let namespace1 = create_test_namespace();
 
-        let tenant2 = TenantName::new("tenant2");
-        let namespace2 = NamespaceName::new("namespace2", tenant2);
+        let tenant2 = TenantName::new_unchecked("tenant2");
+        let namespace2 = NamespaceName::new_unchecked("namespace2", tenant2);
 
         let batch1 = BatchToCommit {
             topic_id: "topic1".to_string(),

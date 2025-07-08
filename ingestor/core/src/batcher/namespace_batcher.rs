@@ -301,21 +301,21 @@ mod tests {
     };
 
     fn create_test_namespace() -> Namespace {
-        let tenant_name = TenantName::new("test-tenant");
-        let namespace_name = NamespaceName::new("test-namespace", tenant_name);
+        let tenant_name = TenantName::new("test-tenant").unwrap();
+        let namespace_name = NamespaceName::new("test-namespace", tenant_name).unwrap();
         Namespace {
             name: namespace_name,
             flush_interval: Duration::from_millis(50),
             flush_size: ByteSize(1000),
-            default_object_store_config: SecretName::new("test"),
+            default_object_store_config: SecretName::new("test").unwrap(),
             frozen_object_store_config: None,
         }
     }
 
     fn create_test_topic() -> Topic {
-        let tenant_name = TenantName::new("test-tenant");
-        let namespace_name = NamespaceName::new("test-namespace", tenant_name);
-        let topic_name = TopicName::new("test-topic", namespace_name);
+        let tenant_name = TenantName::new("test-tenant").unwrap();
+        let namespace_name = NamespaceName::new("test-namespace", tenant_name).unwrap();
+        let topic_name = TopicName::new("test-topic", namespace_name).unwrap();
         Topic {
             name: topic_name,
             fields: fields(),
@@ -431,9 +431,10 @@ mod tests {
         let namespace = create_test_namespace().into();
 
         // Create a topic with different namespace
-        let different_tenant = TenantName::new("different-tenant");
-        let different_namespace = NamespaceName::new("different-namespace", different_tenant);
-        let different_topic_name = TopicName::new("test-topic", different_namespace);
+        let different_tenant = TenantName::new("different-tenant").unwrap();
+        let different_namespace =
+            NamespaceName::new("different-namespace", different_tenant).unwrap();
+        let different_topic_name = TopicName::new("test-topic", different_namespace).unwrap();
         let mut topic = create_test_topic();
         topic.name = different_topic_name;
 

@@ -2,10 +2,15 @@
 
 pub mod error;
 pub mod memory;
+pub mod proto;
+pub mod remote;
+pub mod server;
 pub mod types;
 
 pub use error::{AdminError, AdminResult};
 pub use memory::InMemoryAdminService;
+pub use remote::RemoteAdminService;
+pub use server::AdminService;
 pub use types::*;
 
 use async_trait::async_trait;

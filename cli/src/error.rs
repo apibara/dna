@@ -9,6 +9,10 @@ pub enum CliError {
     Service { message: String },
     #[error("admin API error: {message}")]
     AdminApi { message: String },
+    #[error("remote API error")]
+    Remote,
+    #[error("server error: {message}")]
+    Server { message: String },
 }
 
 pub type CliResult<T> = error_stack::Result<T, CliError>;

@@ -14,9 +14,43 @@ pub enum ResourceError {
     InvalidName { name: String },
     #[error("missing parent resource in name: '{name}'")]
     MissingParent { name: String },
+    #[error(
+        "invalid resource id: '{id}' - must be at least 1 character long, start with lowercase letter, and contain only lowercase letters, numbers, hyphens, and underscores"
+    )]
+    InvalidResourceId { id: String },
 }
 
 pub type ResourceResult<T> = Result<T, ResourceError>;
+
+/// Validate a resource ID according to Wings naming conventions.
+///
+/// Valid resource IDs must:
+/// - Be at least 1 character long
+/// - Start with a lowercase letter [a-z]
+/// - Contain only lowercase letters, numbers, hyphens (-), and underscores (_)
+pub fn validate_resource_id(id: &str) -> ResourceResult<()> {
+    if id.is_empty() {
+        return Err(ResourceError::InvalidResourceId { id: id.to_string() });
+    }
+
+    let mut chars = id.chars();
+
+    // First character must be a lowercase letter
+    if let Some(first_char) = chars.next() {
+        if !first_char.is_ascii_lowercase() {
+            return Err(ResourceError::InvalidResourceId { id: id.to_string() });
+        }
+    }
+
+    // Remaining characters must be lowercase letters, numbers, hyphens, or underscores
+    for ch in chars {
+        if !ch.is_ascii_lowercase() && !ch.is_ascii_digit() && ch != '-' && ch != '_' {
+            return Err(ResourceError::InvalidResourceId { id: id.to_string() });
+        }
+    }
+
+    Ok(())
+}
 
 /// Macro to generate type-safe resource types.
 ///
@@ -49,10 +83,22 @@ macro_rules! resource_type {
 
             impl [<$name Name>] {
                 #[doc = "Create a new " $name " resource identifier."]
-                pub fn new(id: impl Into<String>) -> Self {
-                    Self {
-                        id: id.into(),
-                    }
+                pub fn new(id: impl Into<String>) -> $crate::resource::ResourceResult<Self> {
+                    let id = id.into();
+                    $crate::resource::validate_resource_id(&id)?;
+                    Ok(Self { id })
+                }
+
+                #[doc = "Create a new " $name " resource identifier without validation."]
+                #[doc = ""]
+                #[doc = "# Panics"]
+                #[doc = ""]
+                #[doc = "Panics if the resource ID is invalid."]
+                pub fn new_unchecked(id: impl Into<String>) -> Self {
+                    let id = id.into();
+                    $crate::resource::validate_resource_id(&id)
+                        .expect("resource id must be valid");
+                    Self { id }
                 }
 
                 #[doc = "Get the full resource name."]
@@ -63,12 +109,15 @@ macro_rules! resource_type {
                 #[doc = "Parse a resource name into a " $name " identifier."]
                 pub fn parse(name: &str) -> $crate::resource::ResourceResult<Self> {
                     let expected_prefix = concat!($prefix, "/");
-                    name.strip_prefix(expected_prefix)
-                        .map(|id| Self::new(id.to_string()))
-                        .ok_or_else(|| $crate::resource::ResourceError::InvalidFormat {
+                    if let Some(id) = name.strip_prefix(expected_prefix) {
+                        $crate::resource::validate_resource_id(id)?;
+                        Ok(Self { id: id.to_string() })
+                    } else {
+                        Err($crate::resource::ResourceError::InvalidFormat {
                             expected: format!("{}/{{id}}", $prefix),
                             actual: name.to_string(),
                         })
+                    }
                 }
 
                 #[doc = "Get the resource ID."]
@@ -107,11 +156,22 @@ macro_rules! resource_type {
 
             impl [<$name Name>] {
                 #[doc = "Create a new " $name " resource identifier."]
-                pub fn new(id: impl Into<String>, parent: [<$parent Name>]) -> Self {
-                    Self {
-                        id: id.into(),
-                        parent,
-                    }
+                pub fn new(id: impl Into<String>, parent: [<$parent Name>]) -> $crate::resource::ResourceResult<Self> {
+                    let id = id.into();
+                    $crate::resource::validate_resource_id(&id)?;
+                    Ok(Self { id, parent })
+                }
+
+                #[doc = "Create a new " $name " resource identifier without validation."]
+                #[doc = ""]
+                #[doc = "# Panics"]
+                #[doc = ""]
+                #[doc = "Panics if the resource ID is invalid."]
+                pub fn new_unchecked(id: impl Into<String>, parent: [<$parent Name>]) -> Self {
+                    let id = id.into();
+                    $crate::resource::validate_resource_id(&id)
+                        .expect("resource id must be valid");
+                    Self { id, parent }
                 }
 
                 #[doc = "Get the full resource name."]
@@ -123,14 +183,16 @@ macro_rules! resource_type {
                 pub fn parse(name: &str) -> $crate::resource::ResourceResult<Self> {
                     let parts: Vec<&str> = name.split('/').collect();
                     if parts.len() >= 4 && parts[parts.len() - 2] == $prefix {
-                        let id = parts[parts.len() - 1].to_string();
+                        let id = parts[parts.len() - 1];
+                        $crate::resource::validate_resource_id(id)?;
                         let parent_parts = &parts[..parts.len() - 2];
                         let parent_name = parent_parts.join("/");
-                        [<$parent Name>]::parse(&parent_name)
-                            .map(|parent| Self::new(id, parent))
-                            .map_err(|_| $crate::resource::ResourceError::MissingParent {
+                        match [<$parent Name>]::parse(&parent_name) {
+                            Ok(parent) => Ok(Self { id: id.to_string(), parent }),
+                            Err(_) => Err($crate::resource::ResourceError::MissingParent {
                                 name: name.to_string(),
                             })
+                        }
                     } else {
                         Err($crate::resource::ResourceError::InvalidFormat {
                             expected: format!("{{parent}}/{}/{{id}}", $prefix),
@@ -178,7 +240,7 @@ mod tests {
 
     #[test]
     fn test_tenant_name() {
-        let tenant = TestTenantName::new("test-tenant");
+        let tenant = TestTenantName::new("test-tenant").unwrap();
         assert_eq!(tenant.id(), "test-tenant");
         assert_eq!(tenant.name(), "tenants/test-tenant");
         assert_eq!(tenant.to_string(), "tenants/test-tenant");
@@ -192,8 +254,8 @@ mod tests {
 
     #[test]
     fn test_namespace_name() {
-        let tenant = TestTenantName::new("test-tenant");
-        let namespace = TestNamespaceName::new("test-namespace", tenant.clone());
+        let tenant = TestTenantName::new("test-tenant").unwrap();
+        let namespace = TestNamespaceName::new("test-namespace", tenant.clone()).unwrap();
 
         assert_eq!(namespace.id(), "test-namespace");
         assert_eq!(namespace.parent(), &tenant);
@@ -218,9 +280,9 @@ mod tests {
 
     #[test]
     fn test_topic_name() {
-        let tenant = TestTenantName::new("test-tenant");
-        let namespace = TestNamespaceName::new("test-namespace", tenant);
-        let topic = TestTopicName::new("test-topic", namespace.clone());
+        let tenant = TestTenantName::new("test-tenant").unwrap();
+        let namespace = TestNamespaceName::new("test-namespace", tenant).unwrap();
+        let topic = TestTopicName::new("test-topic", namespace.clone()).unwrap();
 
         assert_eq!(topic.id(), "test-topic");
         assert_eq!(topic.parent(), &namespace);
@@ -279,5 +341,118 @@ mod tests {
 
         let result: Result<TestTopicName, _> = "invalid/path".parse();
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_resource_id_validation() {
+        // Valid IDs
+        assert!(TestTenantName::new("test").unwrap().id() == "test");
+        assert!(TestTenantName::new("test-tenant").unwrap().id() == "test-tenant");
+        assert!(TestTenantName::new("test_tenant").unwrap().id() == "test_tenant");
+        assert!(TestTenantName::new("test123").unwrap().id() == "test123");
+        assert!(TestTenantName::new("a").unwrap().id() == "a");
+        assert!(TestTenantName::new("test-123_abc").unwrap().id() == "test-123_abc");
+    }
+
+    #[test]
+    fn test_invalid_resource_id_new_returns_error() {
+        let result = TestTenantName::new("");
+        assert!(matches!(
+            result,
+            Err(ResourceError::InvalidResourceId { .. })
+        ));
+
+        let result = TestTenantName::new("123test");
+        assert!(matches!(
+            result,
+            Err(ResourceError::InvalidResourceId { .. })
+        ));
+
+        let result = TestTenantName::new("Test");
+        assert!(matches!(
+            result,
+            Err(ResourceError::InvalidResourceId { .. })
+        ));
+
+        let result = TestTenantName::new("testTenant");
+        assert!(matches!(
+            result,
+            Err(ResourceError::InvalidResourceId { .. })
+        ));
+
+        let result = TestTenantName::new("test@tenant");
+        assert!(matches!(
+            result,
+            Err(ResourceError::InvalidResourceId { .. })
+        ));
+
+        let result = TestTenantName::new("test tenant");
+        assert!(matches!(
+            result,
+            Err(ResourceError::InvalidResourceId { .. })
+        ));
+    }
+
+    #[test]
+    #[should_panic(expected = "resource id must be valid")]
+    fn test_invalid_resource_id_new_unchecked_empty() {
+        TestTenantName::new_unchecked("");
+    }
+
+    #[test]
+    #[should_panic(expected = "resource id must be valid")]
+    fn test_invalid_resource_id_new_unchecked_starts_with_number() {
+        TestTenantName::new_unchecked("123test");
+    }
+
+    #[test]
+    #[should_panic(expected = "resource id must be valid")]
+    fn test_invalid_resource_id_new_unchecked_starts_with_uppercase() {
+        TestTenantName::new_unchecked("Test");
+    }
+
+    #[test]
+    #[should_panic(expected = "resource id must be valid")]
+    fn test_invalid_resource_id_new_unchecked_contains_uppercase() {
+        TestTenantName::new_unchecked("testTenant");
+    }
+
+    #[test]
+    #[should_panic(expected = "resource id must be valid")]
+    fn test_invalid_resource_id_new_unchecked_contains_special_chars() {
+        TestTenantName::new_unchecked("test@tenant");
+    }
+
+    #[test]
+    #[should_panic(expected = "resource id must be valid")]
+    fn test_invalid_resource_id_new_unchecked_contains_space() {
+        TestTenantName::new_unchecked("test tenant");
+    }
+
+    #[test]
+    fn test_parse_with_invalid_resource_id() {
+        let result = TestTenantName::parse("tenants/123invalid");
+        assert!(matches!(
+            result,
+            Err(ResourceError::InvalidResourceId { .. })
+        ));
+
+        let result = TestTenantName::parse("tenants/Test");
+        assert!(matches!(
+            result,
+            Err(ResourceError::InvalidResourceId { .. })
+        ));
+
+        let result = TestTenantName::parse("tenants/test@invalid");
+        assert!(matches!(
+            result,
+            Err(ResourceError::InvalidResourceId { .. })
+        ));
+
+        let result = TestTenantName::parse("tenants/");
+        assert!(matches!(
+            result,
+            Err(ResourceError::InvalidResourceId { .. })
+        ));
     }
 }

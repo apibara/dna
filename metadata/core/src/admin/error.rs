@@ -25,6 +25,10 @@ pub enum AdminError {
     TopicAlreadyExists { topic_id: String },
     #[error("invalid topic options: {message}")]
     InvalidTopicOptions { message: String },
+    #[error("invalid topic schema: {inner}")]
+    InvalidTopicSchema {
+        inner: flatbuffers::InvalidFlatbuffer,
+    },
 
     #[error("invalid resource name: {name}")]
     InvalidResourceName { name: String },
@@ -33,8 +37,10 @@ pub enum AdminError {
     #[error("invalid page token: {token}")]
     InvalidPageToken { token: String },
 
-    #[error("internal error")]
-    Internal,
+    #[error("invalid argument: {message}")]
+    InvalidArgument { message: &'static str },
+    #[error("internal error: {message}")]
+    Internal { message: &'static str },
     #[error("operation not supported")]
     NotSupported,
 
