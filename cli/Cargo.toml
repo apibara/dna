@@ -1,0 +1,20 @@
+[package]
+name = "wings"
+version = "0.1.0"
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "wings"
+path = "src/main.rs"
+
+[dependencies]
+clap = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+error-stack = { workspace = true }
+thiserror = { workspace = true }
+tonic = { workspace = true }
+wings-metadata-core = { path = "../metadata/core" }

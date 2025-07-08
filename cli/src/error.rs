@@ -1,0 +1,14 @@
+use thiserror::Error;
+
+/// CLI error types.
+#[derive(Error, Debug)]
+pub enum CliError {
+    #[error("invalid configuration: {message}")]
+    InvalidConfiguration { message: String },
+    #[error("service error: {message}")]
+    Service { message: String },
+    #[error("admin API error: {message}")]
+    AdminApi { message: String },
+}
+
+pub type CliResult<T> = error_stack::Result<T, CliError>;
