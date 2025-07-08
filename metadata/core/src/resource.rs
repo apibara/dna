@@ -255,7 +255,7 @@ mod tests {
     #[test]
     fn test_namespace_name() {
         let tenant = TestTenantName::new("test-tenant").unwrap();
-        let namespace = TestNamespaceName::new("test-namespace", tenant.clone()).unwrap();
+        let namespace = TestNamespaceName::new_unchecked("test-namespace", tenant.clone());
 
         assert_eq!(namespace.id(), "test-namespace");
         assert_eq!(namespace.parent(), &tenant);
@@ -282,7 +282,7 @@ mod tests {
     fn test_topic_name() {
         let tenant = TestTenantName::new("test-tenant").unwrap();
         let namespace = TestNamespaceName::new("test-namespace", tenant).unwrap();
-        let topic = TestTopicName::new("test-topic", namespace.clone()).unwrap();
+        let topic = TestTopicName::new_unchecked("test-topic", namespace.clone());
 
         assert_eq!(topic.id(), "test-topic");
         assert_eq!(topic.parent(), &namespace);

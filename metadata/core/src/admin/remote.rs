@@ -11,10 +11,10 @@ use crate::admin::{
     ListTenantsResponse, ListTopicsRequest, ListTopicsResponse, Namespace, NamespaceName,
     NamespaceOptions, Tenant, TenantName, Topic, TopicName, TopicOptions,
 };
-use crate::protocol::wings::v1::CreateTenantRequest;
+use crate::protocol::wings::v1 as pb;
 use crate::protocol::wings::v1::admin_service_client::AdminServiceClient;
 
-use super::server::tenant_to_proto;
+use super::AdminError;
 
 pub type StdError = Box<dyn std::error::Error + Send + Sync + 'static>;
 
@@ -51,33 +51,58 @@ where
     <T::ResponseBody as Body>::Error: Into<StdError> + Send,
 {
     async fn create_tenant(&self, name: TenantName) -> AdminResult<Tenant> {
-        let request = CreateTenantRequest {
+        let request = pb::CreateTenantRequest {
             tenant_id: name.id().to_string(),
             tenant: None,
         };
 
-        let response = self
-            .client
+        self.client
             .clone()
             .create_tenant(request)
             .await
-            .unwrap()
-            .into_inner();
-
-        let tenant_name = TenantName::parse(&response.name).unwrap();
-        Ok(Tenant::new(tenant_name))
+            .map_err(|status| status_to_admin_error("tenant", status))?
+            .into_inner()
+            .try_into()
     }
 
     async fn get_tenant(&self, name: TenantName) -> AdminResult<Tenant> {
-        todo!("implement get_tenant")
+        let request = pb::GetTenantRequest {
+            name: name.to_string(),
+        };
+
+        self.client
+            .clone()
+            .get_tenant(request)
+            .await
+            .map_err(|status| status_to_admin_error("tenant", status))?
+            .into_inner()
+            .try_into()
     }
 
     async fn list_tenants(&self, request: ListTenantsRequest) -> AdminResult<ListTenantsResponse> {
-        todo!("implement list_tenants")
+        let request = pb::ListTenantsRequest::from(request);
+
+        self.client
+            .clone()
+            .list_tenants(request)
+            .await
+            .map_err(|status| status_to_admin_error("tenant", status))?
+            .into_inner()
+            .try_into()
     }
 
     async fn delete_tenant(&self, name: TenantName) -> AdminResult<()> {
-        todo!("implement delete_tenant")
+        let request = pb::DeleteTenantRequest {
+            name: name.to_string(),
+        };
+
+        self.client
+            .clone()
+            .delete_tenant(request)
+            .await
+            .map_err(|status| status_to_admin_error("tenant", status))?;
+
+        Ok(())
     }
 
     async fn create_namespace(
@@ -85,37 +110,99 @@ where
         name: NamespaceName,
         options: NamespaceOptions,
     ) -> AdminResult<Namespace> {
-        todo!("implement create_namespace")
+        let request = pb::CreateNamespaceRequest {
+            parent: name.parent().to_string(),
+            namespace_id: name.id().to_string(),
+            namespace: pb::Namespace::from(options).into(),
+        };
+
+        self.client
+            .clone()
+            .create_namespace(request)
+            .await
+            .map_err(|status| status_to_admin_error("namespace", status))?
+            .into_inner()
+            .try_into()
     }
 
     async fn get_namespace(&self, name: NamespaceName) -> AdminResult<Namespace> {
-        todo!("implement get_namespace")
+        let request = pb::GetNamespaceRequest {
+            name: name.to_string(),
+        };
+
+        self.client
+            .clone()
+            .get_namespace(request)
+            .await
+            .map_err(|status| status_to_admin_error("namespace", status))?
+            .into_inner()
+            .try_into()
     }
 
     async fn list_namespaces(
         &self,
         request: ListNamespacesRequest,
     ) -> AdminResult<ListNamespacesResponse> {
-        todo!("implement list_namespaces")
+        let request = pb::ListNamespacesRequest::from(request);
+
+        self.client
+            .clone()
+            .list_namespaces(request)
+            .await
+            .map_err(|status| status_to_admin_error("namespace", status))?
+            .into_inner()
+            .try_into()
     }
 
     async fn delete_namespace(&self, name: NamespaceName) -> AdminResult<()> {
-        todo!("implement delete_namespace")
+        let request = pb::DeleteNamespaceRequest {
+            name: name.to_string(),
+        };
+
+        self.client
+            .clone()
+            .delete_namespace(request)
+            .await
+            .map_err(|status| status_to_admin_error("tenant", status))?;
+
+        Ok(())
     }
 
-    async fn create_topic(&self, name: TopicName, options: TopicOptions) -> AdminResult<Topic> {
+    async fn create_topic(&self, _name: TopicName, _options: TopicOptions) -> AdminResult<Topic> {
         todo!("implement create_topic")
     }
 
-    async fn get_topic(&self, name: TopicName) -> AdminResult<Topic> {
+    async fn get_topic(&self, _name: TopicName) -> AdminResult<Topic> {
         todo!("implement get_topic")
     }
 
-    async fn list_topics(&self, request: ListTopicsRequest) -> AdminResult<ListTopicsResponse> {
+    async fn list_topics(&self, _request: ListTopicsRequest) -> AdminResult<ListTopicsResponse> {
         todo!("implement list_topics")
     }
 
-    async fn delete_topic(&self, name: TopicName, force: bool) -> AdminResult<()> {
+    async fn delete_topic(&self, _name: TopicName, _force: bool) -> AdminResult<()> {
         todo!("implement delete_topic")
+    }
+}
+
+fn status_to_admin_error(resource: &'static str, status: tonic::Status) -> AdminError {
+    use tonic::Code;
+
+    match status.code() {
+        Code::NotFound => AdminError::NotFound {
+            resource,
+            message: status.message().to_string(),
+        },
+        Code::AlreadyExists => AdminError::AlreadyExists {
+            resource,
+            message: status.message().to_string(),
+        },
+        Code::InvalidArgument => AdminError::InvalidArgument {
+            resource,
+            message: status.message().to_string(),
+        },
+        _ => AdminError::Internal {
+            message: format!("unknown error from remote service: {}", status.message()),
+        },
     }
 }

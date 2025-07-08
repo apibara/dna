@@ -25,8 +25,10 @@ impl TryFrom<pb::Tenant> for Tenant {
 
     fn try_from(tenant: pb::Tenant) -> AdminResult<Self> {
         let name = TenantName::parse(&tenant.name).change_context(AdminError::InvalidArgument {
-            message: "invalid tenant name format",
+            resource: "tenant",
+            message: "invalid tenant name format".to_string(),
         })?;
+
         Ok(Self { name })
     }
 }
@@ -53,19 +55,22 @@ impl TryFrom<pb::Namespace> for Namespace {
     fn try_from(namespace: pb::Namespace) -> AdminResult<Self> {
         let name =
             NamespaceName::parse(&namespace.name).change_context(AdminError::InvalidArgument {
-                message: "invalid namespace name format",
+                resource: "namespace",
+                message: "invalid namespace name format".to_string(),
             })?;
         let flush_size = ByteSize::b(namespace.flush_size_bytes);
         let flush_interval = Duration::from_millis(namespace.flush_interval_millis);
         let default_object_store_config = SecretName::parse(&namespace.default_object_store_config)
             .change_context(AdminError::InvalidArgument {
-                message: "invalid default object store config name format",
+                resource: "secret",
+                message: "invalid default object store config name format".to_string(),
             })?;
         let frozen_object_store_config = namespace
             .frozen_object_store_config
             .map(|config| {
                 SecretName::parse(&config).change_context(AdminError::InvalidArgument {
-                    message: "invalid frozen object store config name format",
+                    resource: "secret",
+                    message: "invalid frozen object store config name format".to_string(),
                 })
             })
             .transpose()?;
@@ -77,6 +82,52 @@ impl TryFrom<pb::Namespace> for Namespace {
             default_object_store_config,
             frozen_object_store_config,
         })
+    }
+}
+
+impl TryFrom<pb::Namespace> for NamespaceOptions {
+    type Error = Report<AdminError>;
+
+    fn try_from(namespace: pb::Namespace) -> AdminResult<Self> {
+        let flush_size = ByteSize::b(namespace.flush_size_bytes);
+        let flush_interval = Duration::from_millis(namespace.flush_interval_millis);
+
+        let default_object_store_config = SecretName::parse(&namespace.default_object_store_config)
+            .change_context(AdminError::InvalidArgument {
+                resource: "secret",
+                message: "invalid default object store config name format".to_string(),
+            })?;
+
+        let frozen_object_store_config = namespace
+            .frozen_object_store_config
+            .map(|config| {
+                SecretName::parse(&config).change_context(AdminError::InvalidArgument {
+                    resource: "secret",
+                    message: "invalid frozen object store config name format".to_string(),
+                })
+            })
+            .transpose()?;
+
+        Ok(Self {
+            flush_size,
+            flush_interval,
+            default_object_store_config,
+            frozen_object_store_config,
+        })
+    }
+}
+
+impl From<NamespaceOptions> for pb::Namespace {
+    fn from(options: NamespaceOptions) -> Self {
+        Self {
+            name: String::new(),
+            flush_size_bytes: options.flush_size.as_u64(),
+            flush_interval_millis: options.flush_interval.as_millis() as u64,
+            default_object_store_config: options.default_object_store_config.to_string(),
+            frozen_object_store_config: options
+                .frozen_object_store_config
+                .map(|config| config.to_string()),
+        }
     }
 }
 
@@ -100,7 +151,8 @@ impl TryFrom<pb::Topic> for Topic {
 
     fn try_from(topic: pb::Topic) -> AdminResult<Self> {
         let name = TopicName::parse(&topic.name).change_context(AdminError::InvalidArgument {
-            message: "invalid topic name format",
+            resource: "topic",
+            message: "invalid topic name format".to_string(),
         })?;
         let fields = deserialize_fields(&topic.fields)?;
         let partition_key = topic.partition_key.map(|idx| idx as usize);
@@ -113,13 +165,27 @@ impl TryFrom<pb::Topic> for Topic {
     }
 }
 
+impl TryFrom<pb::Topic> for TopicOptions {
+    type Error = Report<AdminError>;
+
+    fn try_from(topic: pb::Topic) -> AdminResult<Self> {
+        let fields = deserialize_fields(&topic.fields)?;
+        let partition_key = topic.partition_key.map(|idx| idx as usize);
+
+        Ok(Self {
+            fields,
+            partition_key,
+        })
+    }
+}
+
 // Request/Response conversions
 
 impl From<ListTenantsRequest> for pb::ListTenantsRequest {
     fn from(request: ListTenantsRequest) -> Self {
         Self {
-            page_size: request.page_size.unwrap_or(100),
-            page_token: request.page_token.unwrap_or_default(),
+            page_size: request.page_size,
+            page_token: request.page_token.clone(),
         }
     }
 }
@@ -127,30 +193,20 @@ impl From<ListTenantsRequest> for pb::ListTenantsRequest {
 impl From<pb::ListTenantsRequest> for ListTenantsRequest {
     fn from(request: pb::ListTenantsRequest) -> Self {
         Self {
-            page_size: if request.page_size == 0 {
-                None
-            } else {
-                Some(request.page_size)
-            },
-            page_token: if request.page_token.is_empty() {
-                None
-            } else {
-                Some(request.page_token)
-            },
+            page_size: request.page_size,
+            page_token: request.page_token.clone(),
         }
     }
 }
 
-impl TryFrom<ListTenantsResponse> for pb::ListTenantsResponse {
-    type Error = Report<AdminError>;
-
-    fn try_from(response: ListTenantsResponse) -> AdminResult<Self> {
+impl From<ListTenantsResponse> for pb::ListTenantsResponse {
+    fn from(response: ListTenantsResponse) -> Self {
         let tenants = response.tenants.into_iter().map(pb::Tenant::from).collect();
 
-        Ok(Self {
+        Self {
             tenants,
             next_page_token: response.next_page_token.unwrap_or_default(),
-        })
+        }
     }
 }
 
@@ -175,15 +231,13 @@ impl TryFrom<pb::ListTenantsResponse> for ListTenantsResponse {
     }
 }
 
-impl TryFrom<ListNamespacesRequest> for pb::ListNamespacesRequest {
-    type Error = Report<AdminError>;
-
-    fn try_from(request: ListNamespacesRequest) -> AdminResult<Self> {
-        Ok(Self {
+impl From<ListNamespacesRequest> for pb::ListNamespacesRequest {
+    fn from(request: ListNamespacesRequest) -> Self {
+        Self {
             parent: request.parent.name(),
-            page_size: request.page_size.unwrap_or(100),
-            page_token: request.page_token.unwrap_or_default(),
-        })
+            page_size: request.page_size,
+            page_token: request.page_token.clone(),
+        }
     }
 }
 
@@ -193,39 +247,30 @@ impl TryFrom<pb::ListNamespacesRequest> for ListNamespacesRequest {
     fn try_from(request: pb::ListNamespacesRequest) -> AdminResult<Self> {
         let parent =
             TenantName::parse(&request.parent).change_context(AdminError::InvalidArgument {
-                message: "invalid parent tenant name format",
+                resource: "tenant",
+                message: "invalid parent tenant name format".to_string(),
             })?;
 
         Ok(Self {
             parent,
-            page_size: if request.page_size == 0 {
-                None
-            } else {
-                Some(request.page_size)
-            },
-            page_token: if request.page_token.is_empty() {
-                None
-            } else {
-                Some(request.page_token)
-            },
+            page_size: request.page_size,
+            page_token: request.page_token.clone(),
         })
     }
 }
 
-impl TryFrom<ListNamespacesResponse> for pb::ListNamespacesResponse {
-    type Error = Report<AdminError>;
-
-    fn try_from(response: ListNamespacesResponse) -> AdminResult<Self> {
+impl From<ListNamespacesResponse> for pb::ListNamespacesResponse {
+    fn from(response: ListNamespacesResponse) -> Self {
         let namespaces = response
             .namespaces
             .into_iter()
             .map(pb::Namespace::from)
             .collect();
 
-        Ok(Self {
+        Self {
             namespaces,
             next_page_token: response.next_page_token.unwrap_or_default(),
-        })
+        }
     }
 }
 
@@ -256,8 +301,8 @@ impl TryFrom<ListTopicsRequest> for pb::ListTopicsRequest {
     fn try_from(request: ListTopicsRequest) -> AdminResult<Self> {
         Ok(Self {
             parent: request.parent.name(),
-            page_size: request.page_size.unwrap_or(100),
-            page_token: request.page_token.unwrap_or_default(),
+            page_size: request.page_size,
+            page_token: request.page_token.clone(),
         })
     }
 }
@@ -268,21 +313,14 @@ impl TryFrom<pb::ListTopicsRequest> for ListTopicsRequest {
     fn try_from(request: pb::ListTopicsRequest) -> AdminResult<Self> {
         let parent =
             NamespaceName::parse(&request.parent).change_context(AdminError::InvalidArgument {
-                message: "invalid parent namespace name format",
+                resource: "namespace",
+                message: "invalid parent namespace name format".to_string(),
             })?;
 
         Ok(Self {
             parent,
-            page_size: if request.page_size == 0 {
-                None
-            } else {
-                Some(request.page_size)
-            },
-            page_token: if request.page_token.is_empty() {
-                None
-            } else {
-                Some(request.page_token)
-            },
+            page_size: request.page_size,
+            page_token: request.page_token.clone(),
         })
     }
 }
@@ -332,8 +370,10 @@ fn serialize_fields(fields: &arrow::datatypes::Fields) -> Vec<u8> {
 }
 
 fn deserialize_fields(data: &[u8]) -> AdminResult<arrow::datatypes::Fields> {
-    let ipc_schema =
-        root_as_schema(data).map_err(|inner| AdminError::InvalidTopicSchema { inner })?;
+    let ipc_schema = root_as_schema(data).map_err(|inner| AdminError::InvalidArgument {
+        resource: "topic",
+        message: format!("invalid topic schema: {}", inner),
+    })?;
     let schema = fb_to_schema(ipc_schema);
     Ok(schema.fields)
 }
@@ -418,8 +458,8 @@ mod tests {
 
         // Domain to protobuf
         let pb_request = pb::ListTenantsRequest::from(domain_request.clone());
-        assert_eq!(pb_request.page_size, 50);
-        assert_eq!(pb_request.page_token, "token123");
+        assert_eq!(pb_request.page_size.unwrap(), 50);
+        assert_eq!(pb_request.page_token.clone().unwrap(), "token123");
 
         // Protobuf to domain
         let converted_request = ListTenantsRequest::from(pb_request);
@@ -432,8 +472,8 @@ mod tests {
 
         // Domain to protobuf
         let pb_request = pb::ListTenantsRequest::from(domain_request.clone());
-        assert_eq!(pb_request.page_size, 100);
-        assert_eq!(pb_request.page_token, "");
+        assert_eq!(pb_request.page_size, Some(100));
+        assert_eq!(pb_request.page_token, None);
 
         // Protobuf to domain
         let converted_request = ListTenantsRequest::from(pb_request);

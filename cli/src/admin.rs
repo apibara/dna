@@ -1,6 +1,9 @@
 use error_stack::ResultExt;
 use tokio_util::sync::CancellationToken;
-use wings_metadata_core::admin::{Admin, TenantName};
+use wings_metadata_core::admin::{
+    Admin, ListNamespacesRequest, ListTenantsRequest, NamespaceName, NamespaceOptions, SecretName,
+    TenantName,
+};
 
 use crate::{
     error::{CliError, CliResult},
@@ -53,6 +56,7 @@ impl AdminCommands {
                     TenantName::new(name).map_err(|e| CliError::InvalidConfiguration {
                         message: format!("invalid tenant name: {}", e),
                     })?;
+
                 let tenant = client
                     .create_tenant(tenant_name)
                     .await
@@ -65,7 +69,17 @@ impl AdminCommands {
             AdminCommands::ListTenants { remote } => {
                 println!("Listing all tenants (remote: {})", remote.remote_address);
                 let client = remote.admin_client().await?;
-                todo!();
+
+                let response = client
+                    .list_tenants(ListTenantsRequest::default())
+                    .await
+                    .change_context(CliError::Remote)?;
+
+                for tenant in response.tenants {
+                    println!("{}", tenant.name);
+                }
+
+                Ok(())
             }
             AdminCommands::CreateNamespace {
                 tenant,
@@ -76,16 +90,57 @@ impl AdminCommands {
                     "Creating namespace '{}' for tenant '{}' (remote: {})",
                     namespace, tenant, remote.remote_address
                 );
-                let _client = remote.admin_client().await?;
-                todo!("Implement namespace creation")
+
+                let client = remote.admin_client().await?;
+
+                let tenant_name =
+                    TenantName::new(tenant).map_err(|e| CliError::InvalidConfiguration {
+                        message: format!("invalid tenant name: {}", e),
+                    })?;
+
+                let namespace_name = NamespaceName::new(namespace, tenant_name).map_err(|e| {
+                    CliError::InvalidConfiguration {
+                        message: format!("invalid namespace name: {}", e),
+                    }
+                })?;
+
+                let secret_name = SecretName::new_unchecked("default");
+
+                let namespace = client
+                    .create_namespace(namespace_name, NamespaceOptions::new(secret_name))
+                    .await
+                    .change_context(CliError::Remote)?;
+
+                println!("{}", namespace.name);
+
+                Ok(())
             }
             AdminCommands::ListNamespaces { tenant, remote } => {
                 println!(
                     "Listing namespaces for tenant: {} (remote: {})",
                     tenant, remote.remote_address
                 );
-                let _client = remote.admin_client().await?;
-                todo!("Implement namespace listing")
+                let client = remote.admin_client().await?;
+
+                let tenant_name =
+                    TenantName::new(tenant).map_err(|e| CliError::InvalidConfiguration {
+                        message: format!("invalid tenant name: {}", e),
+                    })?;
+
+                let response = client
+                    .list_namespaces(ListNamespacesRequest {
+                        parent: tenant_name,
+                        page_size: None,
+                        page_token: None,
+                    })
+                    .await
+                    .change_context(CliError::Remote)?;
+
+                for namespace in response.namespaces {
+                    println!("{}", namespace.name);
+                }
+
+                Ok(())
             }
         }
     }

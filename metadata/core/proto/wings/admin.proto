@@ -59,10 +59,10 @@ message ListTenantsRequest {
   //
   // Default: 100
   // Maximum: 1000.
-  int32 page_size = 1;
+  optional int32 page_size = 1;
 
   // The continuation token.
-  string page_token = 2;
+  optional string page_token = 2;
 }
 
 message ListTenantsResponse {
@@ -117,10 +117,10 @@ message ListNamespacesRequest {
   //
   // Default: 100
   // Maximum: 1000.
-  int32 page_size = 2;
+  optional int32 page_size = 2;
 
   // The continuation token.
-  string page_token = 3;
+  optional string page_token = 3;
 }
 
 message ListNamespacesResponse {
@@ -187,10 +187,10 @@ message ListTopicsRequest {
   //
   // Default: 100
   // Maximum: 1000.
-  int32 page_size = 2;
+  optional int32 page_size = 2;
 
   // The continuation token.
-  string page_token = 3;
+  optional string page_token = 3;
 }
 
 message ListTopicsResponse {
