@@ -3,7 +3,10 @@ use std::{net::SocketAddr, sync::Arc};
 use clap::Args;
 use error_stack::ResultExt;
 use tokio_util::sync::CancellationToken;
-use wings_metadata_core::admin::{AdminService, InMemoryAdminService};
+use wings_metadata_core::admin::{
+    Admin, AdminService, InMemoryAdminService, NamespaceName, NamespaceOptions, SecretName,
+    TenantName,
+};
 
 use crate::error::{CliError, CliResult};
 
@@ -22,8 +25,6 @@ impl DevArgs {
                     message: "failed to parse address".to_string(),
                 })?;
 
-        println!("Starting Wings in development mode on {}", address);
-
         let reflection_service = tonic_reflection::server::Builder::configure()
             .register_encoded_file_descriptor_set(
                 wings_metadata_core::protocol::admin_file_descriptor_set(),
@@ -34,7 +35,24 @@ impl DevArgs {
             })?;
 
         let admin = Arc::new(InMemoryAdminService::default());
+
+        let default_tenant = TenantName::new_unchecked("default");
+        admin
+            .create_tenant(default_tenant.clone())
+            .await
+            .expect("failed to create default tenant");
+
+        let default_namespace = NamespaceName::new_unchecked("default", default_tenant);
+        let default_namespace_options = NamespaceOptions::new(SecretName::new_unchecked("defaul"));
+        admin
+            .create_namespace(default_namespace.clone(), default_namespace_options)
+            .await
+            .expect("failed to create default namespace");
+
         let admin_service = AdminService::new(admin).into_service();
+
+        println!("Starting Wings in development mode on {}", address);
+        println!("Default namespace: {}", default_namespace);
 
         let server = tonic::transport::Server::builder()
             .add_service(reflection_service)
