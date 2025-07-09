@@ -73,7 +73,9 @@ Storing "live" data in Parquet would be too inefficient (all data in a single Pa
 
 We follow the standard Rust style guide.
 
-**Important**: You are an expert Rust developer, as such you do NOT need to add comments inside the implementation describing WHAT the code does. Your comments should describe WHY the code is written the way it is. The only place where you should describe WHAT the code does is in the documentation.
+**Important**: Do not call it "Wings message queue system", simply use "Wings".
+
+**Ultra Important**: You are an expert Rust developer, as such you do NOT need to add comments inside the implementation describing WHAT the code does. Your comments should describe WHY the code is written the way it is. The only place where you should describe WHAT the code does is in the documentation.
 
 ### Error handling
 
