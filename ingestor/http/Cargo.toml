@@ -1,0 +1,20 @@
+[package]
+name = "wings-ingestor-http"
+version = "0.1.0"
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[lib]
+name = "wings_ingestor_http"
+path = "src/lib.rs"
+
+[dependencies]
+axum = "0.8.4"
+error-stack.workspace = true
+serde_json = "1.0"
+thiserror.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+tower = "0.5"

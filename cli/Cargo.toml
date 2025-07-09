@@ -19,3 +19,4 @@ thiserror = { workspace = true }
 tonic = { workspace = true }
 tonic-reflection.workspace = true
 wings-metadata-core = { path = "../metadata/core" }
+wings-ingestor-http = { path = "../ingestor/http" }

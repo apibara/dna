@@ -56,12 +56,18 @@ Storing "live" data in Parquet would be too inefficient (all data in a single Pa
 
 ## Repository organization
 
- - `/common`: code used by multiple components.
- - `/common/object_store`: functions and traits to work with object storage.
- - `/metadata`: the metadata service.
- - `/metadata/core`: functions to work with metadata and in-memory implementation.
- - `/producer`: the producer service.
- - `/producer/core`: functions and traits used by all producer implementations.
+**Common**
+
+ - `common/object_store`: functions and traits to work with object storage.
+ 
+**Metadata**
+ 
+ - `metadata/core`: functions to work with metadata and in-memory implementation.
+ 
+**Ingestor**
+ 
+ - `ingestor/core`: functions and traits used by all ingestor implementations.
+ - `ingestor/http`: ingestor that receives data over HTTP.
 
 ## Style guide
 
