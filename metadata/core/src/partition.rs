@@ -4,9 +4,10 @@
 //! Unlike DataFusion's ScalarValue, PartitionValue only allows a limited set of types
 //! that are suitable for partitioning data.
 
+use std::convert::TryFrom;
+
 use datafusion::scalar::ScalarValue;
 use serde::{Deserialize, Serialize};
-use std::convert::TryFrom;
 use thiserror::Error;
 
 /// Errors that can occur when converting partition values.
@@ -316,7 +317,7 @@ mod tests {
     #[test]
     fn test_try_from_scalar_value_unsupported() {
         // Test unsupported types
-        let scalar = ScalarValue::Float32(Some(3.14));
+        let scalar = ScalarValue::Float32(Some(std::f32::consts::PI));
         let result = PartitionValue::try_from(scalar);
         assert!(result.is_err());
         assert!(matches!(
@@ -324,7 +325,7 @@ mod tests {
             PartitionValueError::UnsupportedScalarType { .. }
         ));
 
-        let scalar = ScalarValue::Float64(Some(2.71828));
+        let scalar = ScalarValue::Float64(Some(std::f64::consts::E));
         let result = PartitionValue::try_from(scalar);
         assert!(result.is_err());
         assert!(matches!(

@@ -3,46 +3,6 @@
 //! This implementation stores all data in memory and is suitable for testing
 //! and development purposes. It uses a RwLock for thread-safe access.
 //!
-//! # Example
-//!
-//! ```rust
-//! use arrow::datatypes::{DataType, Field};
-//! use wings_metadata_core::admin::{
-//!     Admin, InMemoryAdminService, TenantName, NamespaceName, SecretName, NamespaceOptions, TopicName, TopicOptions
-//! };
-//!
-//! # #[tokio::main]
-//! # async fn main() -> Result<(), Box<dyn std::error::Error>> {
-//! let service = InMemoryAdminService::new();
-//! let tenant_name = TenantName::new("my-tenant")?;
-//!
-//! // Create a tenant
-//! let tenant = service.create_tenant(tenant_name.clone()).await?;
-//! println!("Created tenant: {}", tenant.name);
-//!
-//! // Create a namespace
-//! let namespace_name = NamespaceName::new("my-namespace", tenant_name.clone())?;
-//! let namespace_options = NamespaceOptions::new(SecretName::new("default-config")?);
-//! let namespace = service.create_namespace(namespace_name.clone(), namespace_options).await?;
-//! println!("Created namespace: {}", namespace.name);
-//!
-//! // Create a topic
-//! let topic_name = TopicName::new("my-topic", namespace_name.clone())?;
-//! let topic_options = TopicOptions::new(vec![Field::new("key", DataType::Utf8, false)]);
-//! let topic = service.create_topic(topic_name.clone(), topic_options).await?;
-//! println!("Created topic: {}", topic.name);
-//!
-//! // Get the topic
-//! let retrieved = service.get_topic(topic_name.clone()).await?;
-//! assert_eq!(topic, retrieved);
-//!
-//! // Delete resources in reverse order (topic -> namespace -> tenant)
-//! service.delete_topic(topic_name, false).await?;
-//! service.delete_namespace(namespace_name).await?;
-//! service.delete_tenant(tenant_name).await?;
-//! # Ok(())
-//! # }
-//! ```
 
 use std::collections::HashMap;
 use tokio::sync::RwLock;
@@ -98,7 +58,6 @@ impl Admin for InMemoryAdminService {
 
         let tenant_id = name.id().to_string();
 
-        // Check if tenant already exists
         if store.tenants.contains_key(&tenant_id) {
             return Err(error_stack::Report::new(AdminError::AlreadyExists {
                 resource: "tenant",
@@ -106,7 +65,6 @@ impl Admin for InMemoryAdminService {
             }));
         }
 
-        // Create and store the tenant
         let tenant = Tenant::new(name);
         store.tenants.insert(tenant_id, tenant.clone());
 
@@ -171,7 +129,6 @@ impl Admin for InMemoryAdminService {
 
         let tenant_id = name.id();
 
-        // Check if tenant exists
         if !store.tenants.contains_key(tenant_id) {
             return Err(error_stack::Report::new(AdminError::NotFound {
                 resource: "tenant",
@@ -179,7 +136,6 @@ impl Admin for InMemoryAdminService {
             }));
         }
 
-        // Check if tenant has any namespaces
         let has_namespaces = store
             .namespaces
             .values()
@@ -193,7 +149,6 @@ impl Admin for InMemoryAdminService {
             .attach_printable("tenant has namespaces and cannot be deleted"));
         }
 
-        // Delete the tenant
         store.tenants.remove(tenant_id);
         Ok(())
     }
@@ -210,7 +165,6 @@ impl Admin for InMemoryAdminService {
         let namespace_key = name.name();
         let tenant_id = name.parent().id();
 
-        // Check if the parent tenant exists
         if !store.tenants.contains_key(tenant_id) {
             return Err(error_stack::Report::new(AdminError::NotFound {
                 resource: "tenant",
@@ -219,7 +173,6 @@ impl Admin for InMemoryAdminService {
             .attach_printable("parent tenant must exist before creating namespace"));
         }
 
-        // Check if namespace already exists
         if store.namespaces.contains_key(&namespace_key) {
             return Err(error_stack::Report::new(AdminError::AlreadyExists {
                 resource: "namespace",
@@ -227,7 +180,6 @@ impl Admin for InMemoryAdminService {
             }));
         }
 
-        // Create and store the namespace
         let namespace = Namespace::new(name, options);
         store.namespaces.insert(namespace_key, namespace.clone());
 
@@ -258,7 +210,6 @@ impl Admin for InMemoryAdminService {
 
         let tenant_id = request.parent.id();
 
-        // Check if the parent tenant exists
         if !store.tenants.contains_key(tenant_id) {
             return Err(error_stack::Report::new(AdminError::NotFound {
                 resource: "tenant",
@@ -270,12 +221,10 @@ impl Admin for InMemoryAdminService {
         let page_size = request.page_size.unwrap_or(100).clamp(1, 1000) as usize;
         let page_token = request.page_token.as_deref().unwrap_or("");
 
-        // Filter namespaces belonging to the parent tenant
         let mut namespace_keys: Vec<_> = store
             .namespaces
             .keys()
             .filter(|key| {
-                // Parse the namespace name to check if it belongs to this tenant
                 if let Ok(ns_name) = NamespaceName::parse(key) {
                     ns_name.parent().id() == tenant_id
                 } else {
@@ -320,7 +269,6 @@ impl Admin for InMemoryAdminService {
 
         let namespace_key = name.name();
 
-        // Check if namespace exists
         if !store.namespaces.contains_key(&namespace_key) {
             return Err(error_stack::Report::new(AdminError::NotFound {
                 resource: "namespace",
@@ -328,7 +276,6 @@ impl Admin for InMemoryAdminService {
             }));
         }
 
-        // Check if namespace has any topics
         let has_topics = store
             .topics
             .values()
@@ -342,7 +289,6 @@ impl Admin for InMemoryAdminService {
             .attach_printable("namespace has topics and cannot be deleted"));
         }
 
-        // Delete the namespace
         store.namespaces.remove(&namespace_key);
         Ok(())
     }
@@ -406,7 +352,6 @@ impl Admin for InMemoryAdminService {
 
         let namespace_key = request.parent.name();
 
-        // Check if the parent namespace exists
         if !store.namespaces.contains_key(&namespace_key) {
             return Err(error_stack::Report::new(AdminError::NotFound {
                 resource: "namespace",
@@ -418,12 +363,10 @@ impl Admin for InMemoryAdminService {
         let page_size = request.page_size.unwrap_or(100).clamp(1, 1000) as usize;
         let page_token = request.page_token.as_deref().unwrap_or("");
 
-        // Filter topics belonging to the parent namespace
         let mut topic_keys: Vec<_> = store
             .topics
             .keys()
             .filter(|key| {
-                // Parse the topic name to check if it belongs to this namespace
                 if let Ok(topic_name) = TopicName::parse(key) {
                     topic_name.parent().name() == namespace_key
                 } else {
@@ -468,7 +411,6 @@ impl Admin for InMemoryAdminService {
 
         let topic_key = name.name();
 
-        // Check if topic exists
         if !store.topics.contains_key(&topic_key) {
             return Err(error_stack::Report::new(AdminError::NotFound {
                 resource: "topic",
@@ -476,9 +418,6 @@ impl Admin for InMemoryAdminService {
             }));
         }
 
-        // Delete the topic
-        // In a real implementation, we would delete associated data from object storage
-        // when force is true, but for the in-memory implementation we just remove it
         store.topics.remove(&topic_key);
         Ok(())
     }
@@ -544,10 +483,8 @@ mod tests {
         let service = InMemoryAdminService::new();
         let tenant_name = TenantName::new("test-tenant").unwrap();
 
-        // Create tenant first time
         service.create_tenant(tenant_name.clone()).await.unwrap();
 
-        // Try to create the same tenant again
         let result = service.create_tenant(tenant_name).await;
         assert!(matches!(
             result.unwrap_err().current_context(),
@@ -606,7 +543,6 @@ mod tests {
         let response = service.list_tenants(request).await.unwrap();
 
         assert_eq!(response.tenants.len(), 3);
-        // Check that tenants are sorted by ID
         assert_eq!(response.tenants[0].name.id(), "tenant-a");
         assert_eq!(response.tenants[1].name.id(), "tenant-b");
         assert_eq!(response.tenants[2].name.id(), "tenant-c");
@@ -619,7 +555,6 @@ mod tests {
         create_test_tenant(&service, "tenant-b").await;
         create_test_tenant(&service, "tenant-c").await;
 
-        // Get first page with page size 2
         let request = ListTenantsRequest {
             page_size: Some(2),
             page_token: None,
@@ -631,7 +566,6 @@ mod tests {
         assert_eq!(response.tenants[1].name.id(), "tenant-b");
         assert!(response.next_page_token.is_some());
 
-        // Get second page
         let request = ListTenantsRequest {
             page_size: Some(2),
             page_token: response.next_page_token,
@@ -760,7 +694,6 @@ mod tests {
         let tenant_name = TenantName::new("test-tenant").unwrap();
         let namespace_name = NamespaceName::new("test-namespace", tenant_name).unwrap();
 
-        // Create namespace first time
         service
             .create_namespace(
                 namespace_name.clone(),
@@ -844,7 +777,6 @@ mod tests {
         let response = service.list_namespaces(request).await.unwrap();
 
         assert_eq!(response.namespaces.len(), 3);
-        // Check that namespaces are sorted by name
         let names: Vec<_> = response.namespaces.iter().map(|ns| ns.name.id()).collect();
         assert_eq!(names, vec!["namespace-a", "namespace-b", "namespace-c"]);
     }
@@ -1029,7 +961,6 @@ mod tests {
         let namespace_name = NamespaceName::new("test-namespace", tenant_name).unwrap();
         let topic_name = TopicName::new("test-topic", namespace_name).unwrap();
 
-        // Create topic first time
         let topic_options = TopicOptions::new(vec![Field::new("key", DataType::Utf8, false)]);
         service
             .create_topic(topic_name.clone(), topic_options.clone())
@@ -1113,7 +1044,6 @@ mod tests {
         let response = service.list_topics(request).await.unwrap();
 
         assert_eq!(response.topics.len(), 3);
-        // Check that topics are sorted by name
         let names: Vec<_> = response
             .topics
             .iter()
@@ -1236,7 +1166,6 @@ mod tests {
             .await
             .unwrap();
 
-        // Delete with force=true (should work the same as force=false in memory implementation)
         service
             .delete_topic(topic_name.clone(), true)
             .await

@@ -115,7 +115,6 @@ impl BatchCommitter for InMemoryBatchCommitter {
 
         let namespace_key = namespace.name();
 
-        // Get or create the namespace partition map
         let mut partition_map = self.namespaces.entry(namespace_key).or_default();
 
         // Assign offsets to each batch
@@ -133,14 +132,12 @@ impl BatchCommitter for InMemoryBatchCommitter {
             let partition_key =
                 PartitionKey::new(batch.topic_id.clone(), batch.partition_value.clone());
 
-            // Get current offset for this partition (starting from 0)
             let current_offset = partition_map.get(&partition_key).copied().unwrap_or(0);
 
             // Increment offset by batch size
             let new_offset = current_offset + batch.batch_size as u64;
             partition_map.insert(partition_key, new_offset);
 
-            // Create committed batch with the first offset
             committed_batches.push(CommittedBatch {
                 topic_id: batch.topic_id.clone(),
                 partition_value: batch.partition_value.clone(),
@@ -196,7 +193,6 @@ mod tests {
         assert_eq!(committed_batches[0].first_offset, 0);
         assert_eq!(committed_batches[0].batch_size, 10);
 
-        // Check that offset was assigned
         assert_eq!(committer.get_offset(&namespace, "topic1", &None), Some(10));
     }
 
@@ -273,7 +269,6 @@ mod tests {
         let committed_batches = result.unwrap();
         assert_eq!(committed_batches.len(), 3);
 
-        // Check committed batch details
         assert_eq!(committed_batches[0].topic_id, "topic1");
         assert_eq!(
             committed_batches[0].partition_value,

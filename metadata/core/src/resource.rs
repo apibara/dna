@@ -56,19 +56,6 @@ pub fn validate_resource_id(id: &str) -> ResourceResult<()> {
 ///
 /// This macro generates structs for resource names that ensure type safety and
 /// proper hierarchical relationships between resources.
-///
-/// # Examples
-///
-/// ```rust
-/// use wings_metadata_core::resource_type;
-///
-/// // Generate a root resource type
-/// resource_type!(Tenant, "tenants");
-///
-/// // Generate a child resource type
-/// resource_type!(Namespace, "namespaces", Tenant);
-/// resource_type!(Topic, "topics", Namespace);
-/// ```
 #[macro_export]
 macro_rules! resource_type {
     // Root resource (no parent)

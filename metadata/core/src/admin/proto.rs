@@ -1,14 +1,16 @@
 //! Conversions between admin domain types and protobuf types.
 
-use crate::admin::error::{AdminError, AdminResult};
-use crate::admin::types::*;
-use crate::protocol::wings::v1 as pb;
+use std::time::Duration;
+
 use arrow::datatypes::Schema;
 use arrow_ipc::convert::{IpcSchemaEncoder, fb_to_schema};
 use arrow_ipc::root_as_schema;
 use bytesize::ByteSize;
 use error_stack::{Report, ResultExt};
-use std::time::Duration;
+
+use crate::admin::error::{AdminError, AdminResult};
+use crate::admin::types::*;
+use crate::protocol::wings::v1 as pb;
 
 // Tenant conversions
 
@@ -442,7 +444,7 @@ mod tests {
         let domain_topic = Topic::new(topic_name.clone(), options);
 
         // Domain to protobuf
-        let pb_topic = pb::Topic::try_from(domain_topic.clone()).unwrap();
+        let pb_topic = pb::Topic::from(domain_topic.clone());
         assert_eq!(
             pb_topic.name,
             "tenants/test-tenant/namespaces/test-namespace/topics/test-topic"
@@ -499,7 +501,7 @@ mod tests {
         };
 
         // Domain to protobuf
-        let pb_response = pb::ListTenantsResponse::try_from(domain_response.clone()).unwrap();
+        let pb_response = pb::ListTenantsResponse::from(domain_response.clone());
         assert_eq!(pb_response.tenants.len(), 1);
         assert_eq!(pb_response.next_page_token, "next-token");
 

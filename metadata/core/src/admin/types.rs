@@ -1,9 +1,11 @@
 //! Data types for admin operations.
 
-use crate::resource_type;
+use std::{sync::Arc, time::Duration};
+
 use arrow::datatypes::{Fields, Schema, SchemaRef};
 use bytesize::ByteSize;
-use std::{sync::Arc, time::Duration};
+
+use crate::resource_type;
 
 // Define admin-specific resource types
 resource_type!(Tenant, "tenants");
@@ -336,10 +338,8 @@ mod tests {
         let secret_name = SecretName::new("my-secret").unwrap();
         let options = NamespaceOptions::new(secret_name.clone());
 
-        // Check that the secret is set correctly
         assert_eq!(options.default_object_store_config, secret_name);
 
-        // Check that defaults are applied
         assert_eq!(options.flush_size, ByteSize::mb(8));
         assert_eq!(options.flush_interval, Duration::from_millis(250));
         assert_eq!(options.frozen_object_store_config, None);
