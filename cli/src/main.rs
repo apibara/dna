@@ -1,13 +1,13 @@
 use clap::{Parser, Subcommand};
 use tokio_util::sync::CancellationToken;
 
+use crate::{admin::AdminCommands, bench::BenchArgs, dev::DevArgs, error::CliResult};
+
 mod admin;
 mod bench;
 mod dev;
 mod error;
 mod remote;
-
-use crate::{admin::AdminCommands, bench::BenchArgs, dev::DevArgs, error::CliResult};
 
 #[derive(Parser)]
 #[command(name = "wings")]
@@ -43,7 +43,6 @@ async fn main() -> CliResult<()> {
 
     let ct = CancellationToken::new();
 
-    // Handle ctrl-c gracefully
     let ct_clone = ct.clone();
     tokio::spawn(async move {
         let _ = tokio::signal::ctrl_c().await;

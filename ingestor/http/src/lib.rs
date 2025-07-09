@@ -4,24 +4,6 @@
 //!
 //! The server is built using axum and provides
 //! a `/v1/push` endpoint for message ingestion.
-//!
-//! # Example
-//!
-//! ```rust
-//! use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-//! use tokio_util::sync::CancellationToken;
-//! use wings_ingestor_http::HttpIngestor;
-//!
-//! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-//! let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
-//! let ingestor = HttpIngestor::new(addr);
-//! let ct = CancellationToken::new();
-//!
-//! // This would run the server until cancellation
-//! // ingestor.run(ct).await?;
-//! # Ok(())
-//! # }
-//! ```
 
 pub mod error;
 pub mod push;

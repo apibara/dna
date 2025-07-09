@@ -1,7 +1,8 @@
+use std::sync::Arc;
+
 use arrow::array::{Int32Array, UInt64Array};
 use arrow::record_batch::RecordBatch;
 use arrow_schema::{DataType, Field, Fields, Schema};
-use std::sync::Arc;
 
 /// Generate a test batch with the specified number of rows.
 /// The batch contains:

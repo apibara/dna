@@ -24,23 +24,6 @@ use crate::remote::RemoteArgs;
 ///
 /// This command benchmarks the Wings HTTP ingestor by continuously pushing
 /// JSON data to the specified topic until interrupted with Ctrl+C.
-///
-/// # Example Usage
-///
-/// Basic benchmark with default settings:
-/// ```bash
-/// wings bench '{"user_id": 123, "event": "login"}'
-/// ```
-///
-/// Advanced benchmark with custom settings:
-/// ```bash
-/// wings bench '{"temperature": 25.5, "humidity": 60}' \
-///   --batch-size 5000 \
-///   --concurrency 10 \
-///   --partition-value '{"String": "sensor-1"}' \
-///   --namespace production \
-///   --topic sensor-data
-/// ```
 #[derive(Debug, Args)]
 pub struct BenchArgs {
     /// JSON data to push to the topic, or path to file containing JSON data.
@@ -119,7 +102,6 @@ pub struct BenchArgs {
 
 impl BenchArgs {
     pub async fn run(self, ct: CancellationToken) -> CliResult<()> {
-        // Parse the JSON data or load from file
         let json_values = if self.json_data.starts_with('@') {
             let file_path = fs::canonicalize(&self.json_data[1..]).change_context(
                 CliError::InvalidConfiguration {
@@ -161,7 +143,6 @@ impl BenchArgs {
             vec![json_value]
         };
 
-        // Parse partition value if provided
         let partition_value = if let Some(ref partition_str) = self.partition_value {
             let partition_json: Value = serde_json::from_str(partition_str).change_context(
                 CliError::InvalidConfiguration {
@@ -179,10 +160,8 @@ impl BenchArgs {
             None
         };
 
-        // Create admin client
         let admin_client = self.remote.admin_client().await?;
 
-        // Create resource names
         let tenant_name =
             TenantName::new(&self.tenant).change_context(CliError::InvalidConfiguration {
                 message: format!("invalid tenant name: {}", self.tenant),
@@ -200,14 +179,11 @@ impl BenchArgs {
             },
         )?;
 
-        // Ensure topic exists (use first JSON value for schema inference)
         self.ensure_topic_exists(&admin_client, &topic_name, &json_values)
             .await?;
 
-        // Create HTTP client
         let http_client = reqwest::Client::new();
 
-        // Create benchmark data
         let benchmark_data = BenchmarkData::new(
             self.batch_size,
             json_values,
@@ -227,10 +203,8 @@ impl BenchArgs {
         println!("HTTP address: {}", self.http_address);
         println!("Press Ctrl+C to stop");
 
-        // Statistics tracking
         let stats = Arc::new(BenchStats::new());
 
-        // Spawn benchmark tasks
         let mut handles = Vec::new();
         for task_id in 0..self.concurrency {
             let ct = ct.clone();
@@ -256,7 +230,6 @@ impl BenchArgs {
             handles.push(handle);
         }
 
-        // Spawn stats reporting task
         let stats_handle = {
             let stats = stats.clone();
             let ct = ct.clone();
@@ -264,14 +237,12 @@ impl BenchArgs {
             tokio::spawn(async move { stats_reporter(ct, stats).await })
         };
 
-        // Wait for all tasks to complete
         for handle in handles {
             let _ = handle.await;
         }
 
         let _ = stats_handle.await;
 
-        // Print final statistics
         let final_stats = stats.get_stats();
         println!("\nFinal statistics:");
         println!("Total requests: {}", final_stats.total_requests);
@@ -288,11 +259,9 @@ impl BenchArgs {
         topic_name: &TopicName,
         json_values: &[Value],
     ) -> CliResult<()> {
-        // Try to get the topic
         match admin_client.get_topic(topic_name.clone()).await {
             Ok(_) => {
                 println!("Topic {} exists, deleting it", topic_name);
-                // Delete the existing topic
                 admin_client
                     .delete_topic(topic_name.clone(), true)
                     .await
@@ -301,24 +270,19 @@ impl BenchArgs {
                     })?;
             }
             Err(_) => {
-                // Topic doesn't exist, which is fine
                 println!("Topic {} does not exist", topic_name);
             }
         }
 
-        // Infer schema from JSON
         let schema = infer_json_schema_from_iterator(json_values.iter().map(Result::Ok))
             .change_context(CliError::InvalidConfiguration {
                 message: "failed to infer schema from JSON".to_string(),
             })?;
 
-        // Convert Arrow schema to topic fields
         let fields: Vec<Field> = schema.fields().iter().map(|f| (**f).clone()).collect();
 
-        // Create topic options
         let topic_options = TopicOptions::new(fields);
 
-        // Create the topic
         println!("Creating topic {} with schema", topic_name);
         admin_client
             .create_topic(topic_name.clone(), topic_options)

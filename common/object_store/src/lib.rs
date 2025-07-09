@@ -20,20 +20,7 @@ pub use local::{LocalFileSystemFactory, TemporaryFileSystemFactory};
 /// based on configurations referenced by secret names. The actual secret
 /// resolution and object store instantiation is left to the implementor.
 ///
-/// # Example
-///
-/// ```rust,ignore
-/// use wings_object_store::ObjectStoreFactory;
-/// use wings_metadata_core::admin::SecretName;
-///
-/// async fn use_object_store(factory: &dyn ObjectStoreFactory) -> Result<(), object_store::Error> {
-///     let secret_name = SecretName::new("my-s3-config");
-///     let store = factory.create_object_store(secret_name).await?;
-///
-///     // Use the object store...
-///     Ok(())
-/// }
-/// ```
+
 #[async_trait::async_trait]
 pub trait ObjectStoreFactory: Send + Sync {
     /// Create an ObjectStore instance from the configuration referenced by the secret name.

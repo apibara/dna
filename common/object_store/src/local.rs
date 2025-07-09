@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 use object_store::{Error as ObjectStoreError, ObjectStore, local::LocalFileSystem};
 use tempfile::TempDir;
+
 use wings_metadata_core::admin::SecretName;
 
 use crate::ObjectStoreFactory;
@@ -19,23 +20,7 @@ use crate::ObjectStoreFactory;
 /// Each secret name is mapped to a subdirectory within the root path, providing
 /// isolation between different object store configurations.
 ///
-/// # Example
 ///
-/// ```rust,ignore
-/// use wings_object_store::local::LocalFileSystemFactory;
-/// use wings_object_store::ObjectStoreFactory;
-/// use wings_metadata_core::admin::SecretName;
-///
-/// #[tokio::main]
-/// async fn main() -> Result<(), object_store::Error> {
-///     let factory = LocalFileSystemFactory::new("/tmp/object-store")?;
-///     let secret_name = SecretName::new("my-bucket");
-///     let store = factory.create_object_store(secret_name).await?;
-///
-///     // The object store will use /tmp/object-store/my-bucket as its root
-///     Ok(())
-/// }
-/// ```
 pub struct LocalFileSystemFactory {
     root_path: PathBuf,
 }
@@ -126,24 +111,7 @@ impl ObjectStoreFactory for LocalFileSystemFactory {
 /// Each secret name is mapped to a subdirectory within the temporary directory,
 /// providing isolation between different object store configurations.
 ///
-/// # Example
 ///
-/// ```rust,ignore
-/// use wings_object_store::local::TemporaryFileSystemFactory;
-/// use wings_object_store::ObjectStoreFactory;
-/// use wings_metadata_core::admin::SecretName;
-///
-/// #[tokio::main]
-/// async fn main() -> Result<(), object_store::Error> {
-///     let factory = TemporaryFileSystemFactory::new()?;
-///     let secret_name = SecretName::new("my-bucket");
-///     let store = factory.create_object_store(secret_name).await?;
-///
-///     // The object store will use a temporary directory that gets cleaned up
-///     // when the factory is dropped
-///     Ok(())
-/// }
-/// ```
 pub struct TemporaryFileSystemFactory {
     _temp_dir: TempDir,
     local_factory: LocalFileSystemFactory,

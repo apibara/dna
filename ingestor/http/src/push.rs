@@ -17,8 +17,6 @@ use crate::types::{PushRequest, PushResponse};
 pub async fn push_handler(
     JsonExtractor(request): JsonExtractor<PushRequest>,
 ) -> Result<Json<PushResponse>, StatusCode> {
-    // For now, we just log the request and return success
-    // In the future, this will actually process the batches and ingest the data
     println!("Received push request for namespace: {}", request.namespace);
     println!("Number of batches: {}", request.batches.len());
 
