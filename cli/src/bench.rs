@@ -3,6 +3,7 @@
 //! This module provides benchmarking capabilities for the Wings HTTP ingestor,
 //! allowing users to test performance and throughput under various conditions.
 
+use std::fs;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -42,13 +43,18 @@ use crate::remote::RemoteArgs;
 /// ```
 #[derive(Debug, Args)]
 pub struct BenchArgs {
-    /// JSON data to push to the topic.
+    /// JSON data to push to the topic, or path to file containing JSON data.
     ///
     /// This should be a valid JSON object that represents the structure
     /// of the data you want to benchmark. The schema will be automatically
     /// inferred from this JSON and used to create the topic.
     ///
+    /// If the argument starts with '@', it will be treated as a file path
+    /// containing one JSON object per line. The benchmark will cycle through
+    /// these objects when creating batches.
+    ///
     /// Example: '{"user_id": 123, "event": "login", "timestamp": "2024-01-01T00:00:00Z"}'
+    /// Example: '@data.jsonl' (file with one JSON object per line)
     json_data: String,
 
     /// HTTP ingestor address.
@@ -113,12 +119,47 @@ pub struct BenchArgs {
 
 impl BenchArgs {
     pub async fn run(self, ct: CancellationToken) -> CliResult<()> {
-        // Parse the JSON data
-        let json_value: Value = serde_json::from_str(&self.json_data).change_context(
-            CliError::InvalidConfiguration {
-                message: "failed to parse JSON data".to_string(),
-            },
-        )?;
+        // Parse the JSON data or load from file
+        let json_values = if self.json_data.starts_with('@') {
+            let file_path = fs::canonicalize(&self.json_data[1..]).change_context(
+                CliError::InvalidConfiguration {
+                    message: format!("invalid file path: {}", &self.json_data[1..]),
+                },
+            )?;
+
+            let file_content =
+                fs::read_to_string(&file_path).change_context(CliError::InvalidConfiguration {
+                    message: format!("failed to read file: {}", file_path.display()),
+                })?;
+
+            let mut values = Vec::new();
+            for (line_num, line) in file_content.lines().enumerate() {
+                if line.trim().is_empty() {
+                    continue;
+                }
+                let json_value: Value =
+                    serde_json::from_str(line).change_context(CliError::InvalidConfiguration {
+                        message: format!("failed to parse JSON on line {}: {}", line_num + 1, line),
+                    })?;
+                values.push(json_value);
+            }
+
+            if values.is_empty() {
+                return Err(CliError::InvalidConfiguration {
+                    message: "file contains no valid JSON data".to_string(),
+                }
+                .into());
+            }
+
+            values
+        } else {
+            let json_value: Value = serde_json::from_str(&self.json_data).change_context(
+                CliError::InvalidConfiguration {
+                    message: "failed to parse JSON data".to_string(),
+                },
+            )?;
+            vec![json_value]
+        };
 
         // Parse partition value if provided
         let partition_value = if let Some(ref partition_str) = self.partition_value {
@@ -159,8 +200,8 @@ impl BenchArgs {
             },
         )?;
 
-        // Ensure topic exists
-        self.ensure_topic_exists(&admin_client, &topic_name, &json_value)
+        // Ensure topic exists (use first JSON value for schema inference)
+        self.ensure_topic_exists(&admin_client, &topic_name, &json_values)
             .await?;
 
         // Create HTTP client
@@ -169,7 +210,7 @@ impl BenchArgs {
         // Create benchmark data
         let benchmark_data = BenchmarkData::new(
             self.batch_size,
-            json_value,
+            json_values,
             partition_value,
             namespace_name.clone(),
             topic_name.clone(),
@@ -184,10 +225,6 @@ impl BenchArgs {
         println!("Batch size: {}", self.batch_size);
         println!("Partition value: {:?}", benchmark_data.partition_value);
         println!("HTTP address: {}", self.http_address);
-        println!(
-            "Estimated batch size: {} bytes",
-            benchmark_data.batch_size_bytes()
-        );
         println!("Press Ctrl+C to stop");
 
         // Statistics tracking
@@ -249,7 +286,7 @@ impl BenchArgs {
         &self,
         admin_client: &impl Admin,
         topic_name: &TopicName,
-        json_value: &Value,
+        json_values: &[Value],
     ) -> CliResult<()> {
         // Try to get the topic
         match admin_client.get_topic(topic_name.clone()).await {
@@ -270,7 +307,7 @@ impl BenchArgs {
         }
 
         // Infer schema from JSON
-        let schema = infer_json_schema_from_iterator(std::iter::once(Ok(json_value)))
+        let schema = infer_json_schema_from_iterator(json_values.iter().map(Result::Ok))
             .change_context(CliError::InvalidConfiguration {
                 message: "failed to infer schema from JSON".to_string(),
             })?;
@@ -310,15 +347,11 @@ async fn bench_task(
 ) {
     let push_url = format!("{}/v1/push", http_address);
 
-    let batch_size_bytes = benchmark_data.batch_size_bytes();
+    let (request, batch_size_bytes) = benchmark_data.create_push_request();
 
     while !ct.is_cancelled() {
-        let push_request = benchmark_data.create_push_request();
-
-        // Send HTTP request
         let start_time = std::time::Instant::now();
-        let result = http_client.post(&push_url).json(&push_request).send().await;
-
+        let result = http_client.post(&push_url).json(&request).send().await;
         let elapsed = start_time.elapsed();
 
         match result {
@@ -467,7 +500,7 @@ impl BenchStats {
 #[derive(Debug, Clone)]
 struct BenchmarkData {
     batch_size: usize,
-    json_value: Value,
+    json_values: Vec<Value>,
     partition_value: Option<PartitionValue>,
     namespace_name: NamespaceName,
     topic_name: TopicName,
@@ -477,14 +510,14 @@ impl BenchmarkData {
     /// Create a new benchmark data instance.
     fn new(
         batch_size: usize,
-        json_value: Value,
+        json_values: Vec<Value>,
         partition_value: Option<PartitionValue>,
         namespace_name: NamespaceName,
         topic_name: TopicName,
     ) -> Self {
         Self {
             batch_size,
-            json_value,
+            json_values,
             partition_value,
             namespace_name,
             topic_name,
@@ -492,30 +525,32 @@ impl BenchmarkData {
     }
 
     /// Create a new batch with the specified number of records.
-    fn create_batch(&self) -> Batch {
+    fn create_batch(&self) -> (Batch, usize) {
         let mut data = Vec::with_capacity(self.batch_size);
-        for _ in 0..self.batch_size {
-            data.push(self.json_value.clone());
+
+        let mut size = 0;
+        for i in 0..self.batch_size {
+            let json_index = i % self.json_values.len();
+            let json_value = self.json_values[json_index].clone();
+            size += serde_json::to_string(&json_value).unwrap_or_default().len();
+            data.push(json_value);
         }
 
-        Batch {
+        let batch = Batch {
             topic: self.topic_name.id().to_string(),
             partition: self.partition_value.clone(),
             data,
-        }
-    }
-
-    /// Calculate the approximate size of a batch in bytes.
-    fn batch_size_bytes(&self) -> usize {
-        let json_str = serde_json::to_string(&self.json_value).unwrap_or_default();
-        json_str.len() * self.batch_size
+        };
+        (batch, size)
     }
 
     /// Create a push request with the given batches.
-    fn create_push_request(&self) -> PushRequest {
-        PushRequest {
+    fn create_push_request(&self) -> (PushRequest, usize) {
+        let (batch, data_size) = self.create_batch();
+        let request = PushRequest {
             namespace: self.namespace_name.id().to_string(),
-            batches: vec![self.create_batch()],
-        }
+            batches: vec![batch],
+        };
+        (request, data_size)
     }
 }
