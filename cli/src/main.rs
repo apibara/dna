@@ -2,11 +2,12 @@ use clap::{Parser, Subcommand};
 use tokio_util::sync::CancellationToken;
 
 mod admin;
+mod bench;
 mod dev;
 mod error;
 mod remote;
 
-use crate::{admin::AdminCommands, dev::DevArgs, error::CliResult};
+use crate::{admin::AdminCommands, bench::BenchArgs, dev::DevArgs, error::CliResult};
 
 #[derive(Parser)]
 #[command(name = "wings")]
@@ -29,6 +30,11 @@ enum Commands {
         #[command(subcommand)]
         inner: AdminCommands,
     },
+    /// Benchmark the Wings HTTP ingestor
+    Bench {
+        #[clap(flatten)]
+        inner: BenchArgs,
+    },
 }
 
 #[tokio::main]
@@ -47,5 +53,6 @@ async fn main() -> CliResult<()> {
     match cli.command {
         Commands::Dev { inner } => inner.run(ct).await,
         Commands::Admin { inner } => inner.run(ct).await,
+        Commands::Bench { inner } => inner.run(ct).await,
     }
 }

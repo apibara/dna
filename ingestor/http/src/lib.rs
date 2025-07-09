@@ -25,9 +25,11 @@
 
 pub mod error;
 pub mod push;
+pub mod types;
 
 // Re-export the main types for easier importing
 pub use error::{HttpIngestorError, HttpIngestorResult};
+pub use types::{Batch, PushRequest, PushResponse};
 
 use std::net::SocketAddr;
 
@@ -92,11 +94,20 @@ mod tests {
     async fn test_push_endpoint_returns_ok() {
         let app = Router::new().route("/v1/push", post(push_handler));
 
+        let push_request = PushRequest {
+            namespace: "test-namespace".to_string(),
+            batches: vec![Batch {
+                topic: "test-topic".to_string(),
+                partition: None,
+                data: vec![serde_json::json!({"field": "value"})],
+            }],
+        };
+
         let request = Request::builder()
             .method("POST")
             .uri("/v1/push")
             .header("content-type", "application/json")
-            .body(Body::from("{}"))
+            .body(Body::from(serde_json::to_string(&push_request).unwrap()))
             .unwrap();
 
         let response = app.oneshot(request).await.unwrap();
@@ -107,6 +118,7 @@ mod tests {
             .await
             .unwrap();
         let body_str = String::from_utf8(body_bytes.to_vec()).unwrap();
-        assert!(body_str.contains("\"status\":\"ok\""));
+        let response_obj: PushResponse = serde_json::from_str(&body_str).unwrap();
+        assert_eq!(response_obj, PushResponse::new());
     }
 }

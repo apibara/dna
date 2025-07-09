@@ -179,6 +179,16 @@ impl TryFrom<pb::Topic> for TopicOptions {
     }
 }
 
+impl From<TopicOptions> for pb::Topic {
+    fn from(options: TopicOptions) -> Self {
+        pb::Topic {
+            name: String::new(),
+            fields: serialize_fields(&options.fields),
+            partition_key: options.partition_key.map(|idx| idx as u32),
+        }
+    }
+}
+
 // Request/Response conversions
 
 impl From<ListTenantsRequest> for pb::ListTenantsRequest {
@@ -295,15 +305,13 @@ impl TryFrom<pb::ListNamespacesResponse> for ListNamespacesResponse {
     }
 }
 
-impl TryFrom<ListTopicsRequest> for pb::ListTopicsRequest {
-    type Error = Report<AdminError>;
-
-    fn try_from(request: ListTopicsRequest) -> AdminResult<Self> {
-        Ok(Self {
+impl From<ListTopicsRequest> for pb::ListTopicsRequest {
+    fn from(request: ListTopicsRequest) -> Self {
+        Self {
             parent: request.parent.name(),
             page_size: request.page_size,
             page_token: request.page_token.clone(),
-        })
+        }
     }
 }
 

@@ -2,7 +2,6 @@ syntax = "proto3";
 
 package wings.v1;
 
-import "google/longrunning/operations.proto";
 import "google/protobuf/empty.proto";
 
 // AdminService is the service for managing tenants, namespaces, and topics.
@@ -36,7 +35,7 @@ service AdminService {
   // List all topics belonging to a namespace.
   rpc ListTopics(ListTopicsRequest) returns (ListTopicsResponse) {}
   // Delete a topic.
-  rpc DeleteTopic(DeleteTopicRequest) returns (google.longrunning.Operation) {}
+  rpc DeleteTopic(DeleteTopicRequest) returns (google.protobuf.Empty) {}
 }
 
 message CreateTenantRequest {

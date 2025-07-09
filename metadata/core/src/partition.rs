@@ -5,6 +5,7 @@
 //! that are suitable for partitioning data.
 
 use datafusion::scalar::ScalarValue;
+use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 use thiserror::Error;
 
@@ -21,7 +22,7 @@ pub enum PartitionValueError {
 ///
 /// This enum only allows types that are suitable for partitioning data,
 /// providing a more constrained alternative to DataFusion's ScalarValue.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum PartitionValue {
     /// Null value
     Null,

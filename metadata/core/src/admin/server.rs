@@ -257,9 +257,21 @@ impl AdminServiceTrait for AdminService {
 
     async fn delete_topic(
         &self,
-        _request: Request<pb::DeleteTopicRequest>,
-    ) -> Result<Response<crate::protocol::google::longrunning::Operation>, Status> {
-        todo!();
+        request: Request<pb::DeleteTopicRequest>,
+    ) -> Result<Response<()>, Status> {
+        let request = request.into_inner();
+
+        let topic_name = TopicName::parse(&request.name)
+            .map_err(AdminError::InvalidResourceName)
+            .map_err(Into::into)
+            .map_err(admin_error_to_status)?;
+
+        self.admin
+            .delete_topic(topic_name, request.force)
+            .await
+            .map_err(admin_error_to_status)?;
+
+        Ok(Response::new(()))
     }
 }
 

@@ -168,20 +168,61 @@ where
         Ok(())
     }
 
-    async fn create_topic(&self, _name: TopicName, _options: TopicOptions) -> AdminResult<Topic> {
-        todo!("implement create_topic")
+    async fn create_topic(&self, name: TopicName, options: TopicOptions) -> AdminResult<Topic> {
+        let request = pb::CreateTopicRequest {
+            parent: name.parent().to_string(),
+            topic_id: name.id().to_string(),
+            topic: pb::Topic::from(options).into(),
+        };
+
+        self.client
+            .clone()
+            .create_topic(request)
+            .await
+            .map_err(|status| status_to_admin_error("topic", status))?
+            .into_inner()
+            .try_into()
     }
 
-    async fn get_topic(&self, _name: TopicName) -> AdminResult<Topic> {
-        todo!("implement get_topic")
+    async fn get_topic(&self, name: TopicName) -> AdminResult<Topic> {
+        let request = pb::GetTopicRequest {
+            name: name.to_string(),
+        };
+
+        self.client
+            .clone()
+            .get_topic(request)
+            .await
+            .map_err(|status| status_to_admin_error("topic", status))?
+            .into_inner()
+            .try_into()
     }
 
-    async fn list_topics(&self, _request: ListTopicsRequest) -> AdminResult<ListTopicsResponse> {
-        todo!("implement list_topics")
+    async fn list_topics(&self, request: ListTopicsRequest) -> AdminResult<ListTopicsResponse> {
+        let request = pb::ListTopicsRequest::from(request);
+
+        self.client
+            .clone()
+            .list_topics(request)
+            .await
+            .map_err(|status| status_to_admin_error("topic", status))?
+            .into_inner()
+            .try_into()
     }
 
-    async fn delete_topic(&self, _name: TopicName, _force: bool) -> AdminResult<()> {
-        todo!("implement delete_topic")
+    async fn delete_topic(&self, name: TopicName, force: bool) -> AdminResult<()> {
+        let request = pb::DeleteTopicRequest {
+            name: name.to_string(),
+            force,
+        };
+
+        self.client
+            .clone()
+            .delete_topic(request)
+            .await
+            .map_err(|status| status_to_admin_error("topic", status))?;
+
+        Ok(())
     }
 }
 

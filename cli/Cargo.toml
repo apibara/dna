@@ -11,12 +11,20 @@ name = "wings"
 path = "src/main.rs"
 
 [dependencies]
+arrow-json = { workspace = true }
+arrow-schema = { workspace = true }
+bytesize = { workspace = true }
 clap = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 error-stack = { workspace = true }
+reqwest = { version = "0.11", features = [
+    "json",
+    "rustls-tls",
+], default-features = false }
 thiserror = { workspace = true }
 tonic = { workspace = true }
 tonic-reflection.workspace = true
+serde_json = "1.0"
 wings-metadata-core = { path = "../metadata/core" }
 wings-ingestor-http = { path = "../ingestor/http" }
