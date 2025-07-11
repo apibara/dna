@@ -23,6 +23,7 @@ flatbuffers.workspace = true
 hex.workspace = true
 http = "1.3.1"
 http-body = "1.0.1"
+moka.workspace = true
 object_store.workspace = true
 serde.workspace = true
 parquet.workspace = true

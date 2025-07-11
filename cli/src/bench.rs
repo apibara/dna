@@ -54,18 +54,18 @@ pub struct BenchArgs {
     #[arg(long, default_value = "1000")]
     batch_size: usize,
 
-    /// Partition value for the data (JSON format).
+    /// Partition values for the data (JSON format, comma-separated).
     ///
-    /// If specified, all data will be sent to this partition. The value
-    /// should be a JSON representation of a PartitionValue enum variant.
+    /// If specified, one batch will be sent to each partition. The values
+    /// should be a comma-separated list of JSON representations of PartitionValue enum variants.
     ///
     /// Examples:
-    /// - String partition: '{"String": "user-123"}'
-    /// - Integer partition: '{"Int32": 42}'
-    /// - Boolean partition: '{"Boolean": true}'
+    /// - String partitions: '{"String": "user-123"},{"String": "user-456"}'
+    /// - Mixed partitions: '{"String": "user-123"},{"Int32": 42}'
+    /// - Single partition: '{"String": "user-123"}'
     /// - Null partition: '"Null"'
     #[arg(long)]
-    partition_value: Option<String>,
+    partition_values: Option<String>,
 
     /// Number of concurrent tasks to run.
     ///
@@ -143,21 +143,44 @@ impl BenchArgs {
             vec![json_value]
         };
 
-        let partition_value = if let Some(ref partition_str) = self.partition_value {
-            let partition_json: Value = serde_json::from_str(partition_str).change_context(
-                CliError::InvalidConfiguration {
-                    message: "failed to parse partition value JSON".to_string(),
-                },
-            )?;
+        let partition_values = if let Some(ref partition_str) = self.partition_values {
+            let mut values = Vec::new();
+            for partition_part in partition_str.split(',') {
+                let partition_part = partition_part.trim();
+                if partition_part.is_empty() {
+                    continue;
+                }
 
-            let partition_value: PartitionValue = serde_json::from_value(partition_json)
-                .change_context(CliError::InvalidConfiguration {
-                    message: "failed to deserialize partition value".to_string(),
-                })?;
+                let partition_json: Value = serde_json::from_str(partition_part).change_context(
+                    CliError::InvalidConfiguration {
+                        message: format!(
+                            "failed to parse partition value JSON: {}",
+                            partition_part
+                        ),
+                    },
+                )?;
 
-            Some(partition_value)
+                let partition_value: PartitionValue = serde_json::from_value(partition_json)
+                    .change_context(CliError::InvalidConfiguration {
+                        message: format!(
+                            "failed to deserialize partition value: {}",
+                            partition_part
+                        ),
+                    })?;
+
+                values.push(partition_value);
+            }
+
+            if values.is_empty() {
+                return Err(CliError::InvalidConfiguration {
+                    message: "partition_values cannot be empty".to_string(),
+                }
+                .into());
+            }
+
+            values
         } else {
-            None
+            vec![]
         };
 
         let admin_client = self.remote.admin_client().await?;
@@ -187,7 +210,7 @@ impl BenchArgs {
         let benchmark_data = BenchmarkData::new(
             self.batch_size,
             json_values,
-            partition_value,
+            partition_values,
             namespace_name.clone(),
             topic_name.clone(),
         );
@@ -199,7 +222,21 @@ impl BenchArgs {
         println!("Pushing to namespace: {}", namespace_name);
         println!("Topic: {}", topic_name);
         println!("Batch size: {}", self.batch_size);
-        println!("Partition value: {:?}", benchmark_data.partition_value);
+
+        if benchmark_data.partition_values.is_empty() {
+            println!("Partition values: None (single batch per request)");
+        } else {
+            println!("Partition values: {:?}", benchmark_data.partition_values);
+            println!(
+                "Batches per request: {}",
+                benchmark_data.partition_values.len()
+            );
+            println!(
+                "Total records per request: {}",
+                self.batch_size * benchmark_data.partition_values.len()
+            );
+        }
+
         println!("HTTP address: {}", self.http_address);
         println!("Press Ctrl+C to stop");
 
@@ -313,6 +350,14 @@ async fn bench_task(
 
     let (request, batch_size_bytes) = benchmark_data.create_push_request();
 
+    // Calculate total records: batch_size * number of partitions (or 1 if no partitions)
+    let total_records = batch_size
+        * if benchmark_data.partition_values.is_empty() {
+            1
+        } else {
+            benchmark_data.partition_values.len()
+        };
+
     while !ct.is_cancelled() {
         let start_time = std::time::Instant::now();
         let result = http_client.post(&push_url).json(&request).send().await;
@@ -321,7 +366,7 @@ async fn bench_task(
         match result {
             Ok(response) => {
                 if response.status().is_success() {
-                    stats.record_success(batch_size, batch_size_bytes, elapsed);
+                    stats.record_success(total_records, batch_size_bytes, elapsed);
                 } else {
                     stats.record_error();
                     eprintln!(
@@ -465,7 +510,7 @@ impl BenchStats {
 struct BenchmarkData {
     batch_size: usize,
     json_values: Vec<Value>,
-    partition_value: Option<PartitionValue>,
+    partition_values: Vec<PartitionValue>,
     namespace_name: NamespaceName,
     topic_name: TopicName,
 }
@@ -475,21 +520,21 @@ impl BenchmarkData {
     fn new(
         batch_size: usize,
         json_values: Vec<Value>,
-        partition_value: Option<PartitionValue>,
+        partition_values: Vec<PartitionValue>,
         namespace_name: NamespaceName,
         topic_name: TopicName,
     ) -> Self {
         Self {
             batch_size,
             json_values,
-            partition_value,
+            partition_values,
             namespace_name,
             topic_name,
         }
     }
 
-    /// Create a new batch with the specified number of records.
-    fn create_batch(&self) -> (Batch, usize) {
+    /// Create a new batch with the specified number of records for a given partition.
+    fn create_batch(&self, partition_value: Option<PartitionValue>) -> (Batch, usize) {
         let mut data = Vec::with_capacity(self.batch_size);
 
         let mut size = 0;
@@ -502,19 +547,35 @@ impl BenchmarkData {
 
         let batch = Batch {
             topic: self.topic_name.id().to_string(),
-            partition: self.partition_value.clone(),
+            partition: partition_value,
             data,
         };
         (batch, size)
     }
 
-    /// Create a push request with the given batches.
+    /// Create a push request with batches for each partition value.
     fn create_push_request(&self) -> (PushRequest, usize) {
-        let (batch, data_size) = self.create_batch();
+        let mut batches = Vec::new();
+        let mut total_size = 0;
+
+        if self.partition_values.is_empty() {
+            // No partition values specified, create a single batch with no partition
+            let (batch, size) = self.create_batch(None);
+            batches.push(batch);
+            total_size += size;
+        } else {
+            // Create one batch for each partition value
+            for partition_value in &self.partition_values {
+                let (batch, size) = self.create_batch(Some(partition_value.clone()));
+                batches.push(batch);
+                total_size += size;
+            }
+        }
+
         let request = PushRequest {
-            namespace: self.namespace_name.id().to_string(),
-            batches: vec![batch],
+            namespace: self.namespace_name.to_string(),
+            batches,
         };
-        (request, data_size)
+        (request, total_size)
     }
 }

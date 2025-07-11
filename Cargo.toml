@@ -44,6 +44,7 @@ error-stack = "0.5.0"
 flatbuffers = "25.2.10"
 futures-util = "0.3.31"
 hex = "0.4.3"
+moka = { version = "0.12.10", features = ["future"] }
 object_store = "0.12.2"
 parquet = "55.2.0"
 paste = "1.0.15"

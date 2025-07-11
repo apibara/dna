@@ -11,6 +11,9 @@ name = "wings_ingestor_http"
 path = "src/lib.rs"
 
 [dependencies]
+arrow.workspace = true
+arrow-json.workspace = true
+arrow-schema.workspace = true
 axum = "0.8.4"
 error-stack.workspace = true
 serde.workspace = true

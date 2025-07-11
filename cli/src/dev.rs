@@ -4,9 +4,12 @@ use clap::Args;
 use error_stack::ResultExt;
 use tokio_util::sync::CancellationToken;
 use wings_ingestor_http::HttpIngestor;
-use wings_metadata_core::admin::{
-    Admin, AdminService, InMemoryAdminService, NamespaceName, NamespaceOptions, SecretName,
-    TenantName,
+use wings_metadata_core::{
+    admin::{
+        Admin, AdminService, InMemoryAdminService, NamespaceName, NamespaceOptions, SecretName,
+        TenantName,
+    },
+    cache::TopicCache,
 };
 
 use crate::error::{CliError, CliResult};
@@ -44,8 +47,8 @@ impl DevArgs {
 
         {
             let _ct_guard = ct.child_token().drop_guard();
-            let grpc_server_fut = run_grpc_server(admin, metadata_address, ct.clone());
-            let http_ingestor_fut = run_http_ingestor(http_address, ct.clone());
+            let grpc_server_fut = run_grpc_server(admin.clone(), metadata_address, ct.clone());
+            let http_ingestor_fut = run_http_ingestor(admin, http_address, ct.clone());
 
             tokio::select! {
                 _ = grpc_server_fut => (),
@@ -104,8 +107,13 @@ async fn run_grpc_server(
     })
 }
 
-async fn run_http_ingestor(address: SocketAddr, ct: CancellationToken) -> CliResult<()> {
-    let ingestor = HttpIngestor::new(address);
+async fn run_http_ingestor(
+    admin: Arc<InMemoryAdminService>,
+    address: SocketAddr,
+    ct: CancellationToken,
+) -> CliResult<()> {
+    let topic_cache = TopicCache::new(admin);
+    let ingestor = HttpIngestor::new(address, topic_cache);
 
     ingestor.run(ct).await.change_context(CliError::Server {
         message: "error while running http ingestor".to_string(),
