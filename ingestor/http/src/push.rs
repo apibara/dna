@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::HashSet;
 
 use arrow::record_batch::RecordBatch;
 use arrow_json::ReaderBuilder;
@@ -52,23 +52,26 @@ async fn process_push_request(
     println!("Received push request for namespace: {}", namespace_name);
     println!("Number of batches: {}", request.batches.len());
 
-    // Group batches by topic to avoid repeated cache lookups
-    let mut topic_batches: HashMap<String, Vec<&crate::types::Batch>> = HashMap::new();
-    for batch in &request.batches {
-        topic_batches
-            .entry(batch.topic.clone())
-            .or_default()
-            .push(batch);
-    }
-
     // Process each topic's batches
-    for (topic_id, batches) in topic_batches {
+    let mut seen = HashSet::new();
+    for batch in request.batches {
         // Parse topic name
-        let topic_name = TopicName::new(topic_id.clone(), namespace_name.clone()).change_context(
+        let topic_name = TopicName::new(&batch.topic, namespace_name.clone()).change_context(
             HttpIngestorError::TopicParseError {
-                message: format!("invalid topic name: {}", topic_id),
+                message: format!("invalid topic name: {}", batch.topic),
             },
         )?;
+
+        // Check that all batches have distinct (topic, partition).
+        if !seen.insert((topic_name.clone(), batch.partition.clone())) {
+            return Err(HttpIngestorError::InvalidRequest {
+                message: format!(
+                    "duplicate batch for topic {} partition {:?}",
+                    topic_name, batch.partition
+                ),
+            }
+            .into());
+        }
 
         // Get topic definition from cache
         let topic_ref = state
@@ -80,21 +83,20 @@ async fn process_push_request(
             })?;
 
         // Process each batch for this topic
-        for batch in batches {
-            let record_batch = parse_json_to_arrow(&batch.data, topic_ref.schema())
-                .change_context(HttpIngestorError::JsonParseError {
-                    message: format!("failed to parse JSON data for topic: {}", topic_name),
-                })?;
+        let record_batch = parse_json_to_arrow(&batch.data, topic_ref.schema()).change_context(
+            HttpIngestorError::JsonParseError {
+                message: format!("failed to parse JSON data for topic: {}", topic_name),
+            },
+        )?;
 
-            println!(
-                "Parsed batch for topic {} with {} rows",
-                topic_name,
-                record_batch.num_rows()
-            );
+        println!(
+            "Parsed batch for topic {} with {} rows",
+            topic_name,
+            record_batch.num_rows()
+        );
 
-            // TODO: Push the RecordBatch to the inner ingestor
-            // For now, we just log the successful parsing
-        }
+        // TODO: Push the RecordBatch to the inner ingestor
+        // For now, we just log the successful parsing
     }
 
     Ok(PushResponse::new())
