@@ -42,6 +42,7 @@ pub struct SinkConnectorOptions {
     pub stream: StreamConfiguration,
     pub persistence: Persistence,
     pub status_server: StatusServer,
+    pub backoff: Backoff,
 }
 
 pub struct SinkConnector<S>
@@ -65,7 +66,7 @@ where
         Self {
             script,
             sink,
-            backoff: default_backoff(),
+            backoff: options.backoff,
             stream_configuration: options.stream,
             persistence: options.persistence,
             status_server: options.status_server,
@@ -228,13 +229,4 @@ where
             Self::Factory(inner) => inner.start(ct).await,
         }
     }
-}
-
-fn default_backoff() -> Backoff {
-    let retries = 10;
-    let min_delay = Duration::from_secs(3);
-    let max_delay = Duration::from_secs(60);
-    let mut backoff = Backoff::new(retries, min_delay, Some(max_delay));
-    backoff.set_factor(3);
-    backoff
 }

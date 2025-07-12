@@ -1,5 +1,7 @@
 use std::{env, fmt, net::AddrParseError, path::PathBuf, str::FromStr, time::Duration};
 
+use exponential_backoff::Backoff;
+
 use apibara_core::{node::v1alpha2::DataFinality, starknet::v1alpha2};
 use apibara_script::ScriptOptions as IndexerOptions;
 use apibara_sdk::{Configuration, MetadataKey, MetadataMap, MetadataValue, Uri};
@@ -25,6 +27,8 @@ pub struct OptionsFromCli {
     pub connector: ConnectorOptions,
     #[clap(flatten)]
     pub stream: StreamOptions,
+    #[clap(flatten)]
+    pub backoff: BackoffOptions,
 }
 
 /// Options for the connector persistence.
@@ -158,6 +162,27 @@ pub struct StreamConfigurationOptions {
     /// Start streaming data from the specified block.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub starting_block: Option<u64>,
+}
+
+#[derive(Args, Debug, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct BackoffOptions {
+    /// Maximum number of retries before giving up.
+    #[arg(long, env)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub backoff_max_retries: Option<u32>,
+    /// Initial delay between retries in seconds.
+    #[arg(long, env)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub backoff_min_delay_seconds: Option<u64>,
+    /// Maximum delay between retries in seconds.
+    #[arg(long, env)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub backoff_max_delay_seconds: Option<u64>,
+    /// Backoff factor (multiplier for delay after each retry).
+    #[arg(long, env)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub backoff_factor: Option<u32>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
@@ -321,6 +346,21 @@ impl error_stack::Context for ScriptOptionsError {}
 impl fmt::Display for ScriptOptionsError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "invalid script options")
+    }
+}
+
+impl BackoffOptions {
+    pub fn to_backoff(&self) -> Backoff {
+        let retries = self.backoff_max_retries.unwrap_or(10);
+        let min_delay = Duration::from_secs(self.backoff_min_delay_seconds.unwrap_or(3));
+        let max_delay = Duration::from_secs(self.backoff_max_delay_seconds.unwrap_or(60));
+        let mut backoff = Backoff::new(retries, min_delay, max_delay);
+
+        if let Some(factor) = self.backoff_factor {
+            backoff.set_factor(factor);
+        }
+
+        backoff
     }
 }
 

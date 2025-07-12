@@ -88,10 +88,12 @@ where
         .to_status_server()
         .map_err(|err| err.configuration("invalid status server options"))?;
 
+    let backoff = connector_cli_options.backoff.to_backoff();
     let sink_connector_options = SinkConnectorOptions {
         stream,
         persistence,
         status_server,
+        backoff,
     };
 
     let connector = SinkConnector::new(script, sink, sink_connector_options);
