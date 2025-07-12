@@ -545,6 +545,7 @@ dependencies = [
  "async-trait",
  "clap",
  "error-stack",
+ "exponential-backoff",
  "http 0.2.12",
  "jemallocator",
  "prost",

@@ -26,7 +26,7 @@ use crate::{
     status::StatusServer,
 };
 
-use self::{default::DefaultConnector, factory::FactoryConnector, sink::SinkWithBackoff};
+pub use self::{default::DefaultConnector, factory::FactoryConnector, sink::SinkWithBackoff};
 
 #[derive(Debug)]
 pub struct StreamConfiguration {

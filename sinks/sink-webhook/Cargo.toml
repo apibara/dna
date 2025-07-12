@@ -21,6 +21,7 @@ apibara-sink-common = { path = "../sink-common" }
 async-trait.workspace = true
 clap.workspace = true
 error-stack.workspace = true
+exponential-backoff.workspace = true
 http.workspace = true
 prost.workspace = true
 reqwest.workspace = true

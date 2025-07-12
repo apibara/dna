@@ -48,6 +48,7 @@ ctrlc = { version = "3.2.3", features = ["termination"] }
 dirs = "4.0.0"
 dotenvy = "0.15.7"
 error-stack = "0.4.1"
+exponential-backoff = "1.2.0"
 futures = "0.3.23"
 futures-util = "0.3.26"
 governor = "0.6.0"

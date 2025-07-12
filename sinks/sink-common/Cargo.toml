@@ -20,7 +20,7 @@ ctrlc.workspace = true
 dotenvy.workspace = true
 error-stack.workspace = true
 etcd-client = { version = "0.11.1", features = ["tls"] }
-exponential-backoff = "1.2.0"
+exponential-backoff.workspace = true
 futures.workspace = true
 lazy_static.workspace = true
 prost.workspace = true

@@ -1,9 +1,17 @@
+use std::time::Duration;
+
 use apibara_core::node::v1alpha2::{Cursor, DataFinality};
-use apibara_sink_common::{Context, Sink, SinkError};
+use apibara_sink_common::{Context, Sink, SinkError, SinkWithBackoff};
 use apibara_sink_webhook::{SinkWebhookConfiguration, WebhookSink};
 use error_stack::{Result, ResultExt};
+use exponential_backoff::Backoff;
 use http::{HeaderMap, Uri};
 use serde_json::{json, Number, Value};
+use tokio_util::sync::CancellationToken;
+use wiremock::{
+    matchers::{method, path},
+    Mock, ResponseTemplate,
+};
 
 fn new_batch(start_cursor: &Option<Cursor>, end_cursor: &Cursor) -> Value {
     let mut batch = Vec::new();
@@ -44,6 +52,12 @@ async fn test_handle_data() -> Result<(), SinkError> {
         headers: HeaderMap::new(),
         raw: false,
     };
+
+    Mock::given(method("POST"))
+        .and(path("/"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&server)
+        .await;
 
     let mut sink = WebhookSink::new(config);
 
@@ -100,6 +114,12 @@ async fn test_handle_invalidate() -> Result<(), SinkError> {
         raw: false,
     };
 
+    Mock::given(method("POST"))
+        .and(path("/"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&server)
+        .await;
+
     let mut sink = WebhookSink::new(config);
 
     for i in 0..5 {
@@ -139,6 +159,12 @@ async fn test_handle_data_raw() -> Result<(), SinkError> {
         headers: HeaderMap::new(),
         raw: true,
     };
+
+    Mock::given(method("POST"))
+        .and(path("/"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&server)
+        .await;
 
     let mut sink = WebhookSink::new(config);
 
@@ -190,6 +216,12 @@ async fn test_handle_invalidate_raw() -> Result<(), SinkError> {
         raw: true,
     };
 
+    Mock::given(method("POST"))
+        .and(path("/"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&server)
+        .await;
+
     let mut sink = WebhookSink::new(config);
 
     for i in 0..5 {
@@ -217,6 +249,12 @@ async fn test_handle_data_skips_null_values() -> Result<(), SinkError> {
         headers: HeaderMap::new(),
         raw: false,
     };
+
+    Mock::given(method("POST"))
+        .and(path("/"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&server)
+        .await;
 
     let mut sink = WebhookSink::new(config);
 
@@ -246,6 +284,52 @@ async fn test_handle_data_skips_null_values() -> Result<(), SinkError> {
         let requests = server.received_requests().await.unwrap();
         assert_eq!(requests.len(), 1);
     }
+
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore]
+async fn test_handle_data_with_error() -> Result<(), SinkError> {
+    let server = wiremock::MockServer::start().await;
+
+    let config = SinkWebhookConfiguration {
+        target_url: server
+            .uri()
+            .parse::<Uri>()
+            .change_context(SinkError::Runtime)?,
+        headers: HeaderMap::new(),
+        raw: false,
+    };
+
+    Mock::given(method("POST"))
+        .and(path("/"))
+        .respond_with(ResponseTemplate::new(429))
+        .mount(&server)
+        .await;
+
+    let sink = WebhookSink::new(config);
+    let backoff = Backoff::new(3, Duration::from_millis(200), None);
+    let mut sink = SinkWithBackoff::new(sink, backoff);
+
+    let order_key = 123;
+    let cursor = Some(new_cursor(order_key));
+    let end_cursor = new_cursor(order_key + 1);
+    let finality = DataFinality::DataStatusFinalized;
+    let batch = new_batch(&cursor, &end_cursor);
+
+    let ctx = Context {
+        cursor: cursor.clone(),
+        end_cursor: end_cursor.clone(),
+        finality,
+    };
+
+    let ct = CancellationToken::new();
+    let action = sink.handle_data(&ctx, &batch, ct).await;
+    assert!(action.is_err());
+
+    let requests = server.received_requests().await.unwrap();
+    assert_eq!(requests.len() as u64, 4);
 
     Ok(())
 }

@@ -39,6 +39,19 @@ impl WebhookSink {
             .await
             .runtime_error("failed to POST json data")?;
 
+        let status = response.status();
+        if !status.is_success() {
+            let status_code = status.as_u16();
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Failed to read response body".to_string());
+            return Err(SinkError::runtime_error(&format!(
+                "webhook request failed with status {}: {}",
+                status_code, error_text
+            )));
+        }
+
         match response.text().await {
             Ok(text) => {
                 debug!(response = ?text, "call success");
