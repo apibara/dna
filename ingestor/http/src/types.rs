@@ -28,18 +28,14 @@ pub struct Batch {
 /// Response payload for the /v1/push endpoint.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PushResponse {
-    // Empty for now, but defined as a struct to allow for future expansion
+    pub batches: Vec<BatchResponse>,
 }
 
-impl PushResponse {
-    /// Create a new empty push response.
-    pub fn new() -> Self {
-        Self {}
-    }
-}
-
-impl Default for PushResponse {
-    fn default() -> Self {
-        Self::new()
-    }
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "_tag")]
+pub enum BatchResponse {
+    #[serde(rename = "success")]
+    Success { start_offset: u64, end_offset: u64 },
+    #[serde(rename = "error")]
+    Error { message: String },
 }

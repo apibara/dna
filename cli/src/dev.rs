@@ -3,13 +3,14 @@ use std::{net::SocketAddr, sync::Arc};
 use clap::Args;
 use error_stack::ResultExt;
 use tokio_util::sync::CancellationToken;
+use wings_ingestor_core::{BatchIngestor, ingestor::BatchIngestorClient, run_background_ingestor};
 use wings_ingestor_http::HttpIngestor;
 use wings_metadata_core::{
     admin::{
         Admin, AdminService, InMemoryAdminService, NamespaceName, NamespaceOptions, SecretName,
         TenantName,
     },
-    cache::TopicCache,
+    cache::{NamespaceCache, TopicCache},
 };
 
 use crate::error::{CliError, CliResult};
@@ -47,12 +48,22 @@ impl DevArgs {
 
         {
             let _ct_guard = ct.child_token().drop_guard();
-            let grpc_server_fut = run_grpc_server(admin.clone(), metadata_address, ct.clone());
-            let http_ingestor_fut = run_http_ingestor(admin, http_address, ct.clone());
+            let ingestor = BatchIngestor::new();
+            let grpc_server_fut = run_grpc_server(
+                admin.clone(),
+                ingestor.client(),
+                metadata_address,
+                ct.clone(),
+            );
+            let http_ingestor_fut =
+                run_http_ingestor(admin, ingestor.client(), http_address, ct.clone());
+
+            let ingestor_fut = run_background_ingestor(ingestor, ct);
 
             tokio::select! {
                 _ = grpc_server_fut => (),
                 _ = http_ingestor_fut => (),
+                _ = ingestor_fut => (),
             }
         }
 
@@ -81,6 +92,7 @@ async fn new_dev_admin_service() -> (Arc<InMemoryAdminService>, NamespaceName) {
 
 async fn run_grpc_server(
     admin: Arc<InMemoryAdminService>,
+    _batch_ingestor: BatchIngestorClient,
     address: SocketAddr,
     ct: CancellationToken,
 ) -> CliResult<()> {
@@ -109,11 +121,13 @@ async fn run_grpc_server(
 
 async fn run_http_ingestor(
     admin: Arc<InMemoryAdminService>,
+    batch_ingestor: BatchIngestorClient,
     address: SocketAddr,
     ct: CancellationToken,
 ) -> CliResult<()> {
-    let topic_cache = TopicCache::new(admin);
-    let ingestor = HttpIngestor::new(address, topic_cache);
+    let topic_cache = TopicCache::new(admin.clone());
+    let namespace_cache = NamespaceCache::new(admin);
+    let ingestor = HttpIngestor::new(address, topic_cache, namespace_cache, batch_ingestor);
 
     ingestor.run(ct).await.change_context(CliError::Server {
         message: "error while running http ingestor".to_string(),

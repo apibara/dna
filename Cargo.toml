@@ -42,6 +42,7 @@ dashmap = "6.1.0"
 datafusion = "48.0.0"
 error-stack = "0.5.0"
 flatbuffers = "25.2.10"
+futures = "0.3.31"
 futures-util = "0.3.31"
 hex = "0.4.3"
 moka = { version = "0.12.10", features = ["future"] }

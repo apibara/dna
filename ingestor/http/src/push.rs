@@ -4,11 +4,14 @@ use arrow::record_batch::RecordBatch;
 use arrow_json::ReaderBuilder;
 use axum::{Json as JsonExtractor, extract::State, http::StatusCode, response::Json};
 use error_stack::ResultExt;
+use futures::StreamExt;
+use futures::stream::FuturesOrdered;
+use wings_ingestor_core::Batch;
 use wings_metadata_core::admin::{NamespaceName, TopicName};
 
 use crate::HttpIngestorState;
 use crate::error::{HttpIngestorError, HttpIngestorResult};
-use crate::types::{PushRequest, PushResponse};
+use crate::types::{BatchResponse, PushRequest, PushResponse};
 
 /// Handler for the /v1/push endpoint.
 ///
@@ -49,11 +52,19 @@ async fn process_push_request(
         },
     )?;
 
-    println!("Received push request for namespace: {}", namespace_name);
-    println!("Number of batches: {}", request.batches.len());
+    // Get namespace definition from cache
+    let namespace_ref = state
+        .namespace_cache
+        .get(namespace_name.clone())
+        .await
+        .change_context(HttpIngestorError::MetadataError {
+            message: format!("failed to resolve namespace: {}", namespace_name),
+        })?;
 
     // Process each topic's batches
     let mut seen = HashSet::new();
+    let mut writes = FuturesOrdered::new();
+
     for batch in request.batches {
         // Parse topic name
         let topic_name = TopicName::new(&batch.topic, namespace_name.clone()).change_context(
@@ -89,17 +100,30 @@ async fn process_push_request(
             },
         )?;
 
-        println!(
-            "Parsed batch for topic {} with {} rows",
-            topic_name,
-            record_batch.num_rows()
-        );
+        let batch = Batch {
+            namespace: namespace_ref.clone(),
+            topic: topic_ref,
+            partition: batch.partition,
+            records: record_batch,
+        };
 
-        // TODO: Push the RecordBatch to the inner ingestor
-        // For now, we just log the successful parsing
+        writes.push_back(state.batch_ingestion.write(batch));
     }
 
-    Ok(PushResponse::new())
+    let mut batches = Vec::with_capacity(writes.len());
+    while let Some(write_result) = writes.next().await {
+        match write_result {
+            Ok(write_info) => batches.push(BatchResponse::Success {
+                start_offset: write_info.start_offset,
+                end_offset: write_info.end_offset,
+            }),
+            Err(err) => batches.push(BatchResponse::Error {
+                message: err.to_string(),
+            }),
+        }
+    }
+
+    Ok(PushResponse { batches })
 }
 
 /// Parse JSON data into an Arrow RecordBatch using the provided schema.

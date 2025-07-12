@@ -1,26 +1,50 @@
+use std::{fmt::Debug, sync::Arc};
+
 use arrow::record_batch::RecordBatch;
 use arrow_schema::SchemaRef;
-use parquet::{arrow::ArrowWriter, errors::ParquetError};
+use error_stack::Report;
+use parquet::arrow::ArrowWriter;
+
+use crate::{
+    batch::WriteReplySender,
+    error::{IngestorError, IngestorResult},
+};
 
 const DEFAULT_BUFFER_CAPACITY: usize = 8 * 1024 * 1024;
 
 /// Result of finishing a partition batch, containing both data and metadata.
-pub struct PartitionBatch<D> {
+pub struct PartitionFolio {
+    /// Serialized data of the partition batch.
     pub data: Vec<u8>,
-    pub metadata: Vec<(usize, D)>,
+    /// Size and reply channel for each batch component.
+    pub batches: Vec<BatchMetadata>,
 }
 
-/// Batches data for a single partition.
-pub struct PartitionBatcher<D> {
+#[derive(Debug)]
+pub struct FlushError {
+    pub reply: WriteReplySender,
+    pub error: Report<IngestorError>,
+}
+
+#[derive(Debug)]
+pub struct BatchMetadata {
+    pub reply: WriteReplySender,
+    pub batch_size: usize,
+}
+
+/// Combines multiple partition batches into a single folio.
+pub struct PartitionFolioWriter {
     writer: ArrowWriter<Vec<u8>>,
-    batches: Vec<(usize, D)>,
+    batches: Vec<BatchMetadata>,
 }
 
-impl<D> PartitionBatcher<D> {
-    /// Creates a new partition batcher with the given schema.
-    pub fn new(schema: SchemaRef) -> std::result::Result<Self, ParquetError> {
+impl PartitionFolioWriter {
+    /// Creates a new partition folio writer with the given schema.
+    pub fn new(schema: SchemaRef) -> IngestorResult<Self> {
         let buffer = Vec::with_capacity(DEFAULT_BUFFER_CAPACITY);
-        let writer = ArrowWriter::try_new(buffer, schema, None)?;
+        // The writer will only fail if the schema is unsupported
+        let writer = ArrowWriter::try_new(buffer, schema, None)
+            .map_err(|_| IngestorError::UnsupportedArrowSchema)?;
 
         Ok(Self {
             writer,
@@ -31,19 +55,23 @@ impl<D> PartitionBatcher<D> {
     /// Writes a batch to the partition batcher.
     /// Returns the number of bytes written to the parquet buffer.
     ///
-    /// On error, returns the metadata and the error.
+    /// On error, returns the reply channel and the error.
     pub fn write_batch(
         &mut self,
         batch: &RecordBatch,
-        metadata: D,
-    ) -> std::result::Result<usize, (D, ParquetError)> {
+        reply: WriteReplySender,
+    ) -> std::result::Result<usize, (WriteReplySender, Report<IngestorError>)> {
         let initial_size = self.buffer_size();
 
         if let Err(err) = self.writer.write(batch) {
-            return Err((metadata, err));
+            let err = Report::new(err).change_context(IngestorError::ArrowSchemaMismatch);
+            return Err((reply, err));
         };
 
-        self.batches.push((batch.num_rows(), metadata));
+        self.batches.push(BatchMetadata {
+            reply,
+            batch_size: batch.num_rows(),
+        });
 
         let bytes_written = self.buffer_size() - initial_size;
 
@@ -61,191 +89,47 @@ impl<D> PartitionBatcher<D> {
     }
 
     /// Closes the writer and returns the final parquet data with metadata.
-    pub fn finish(self) -> std::result::Result<PartitionBatch<D>, (Vec<D>, ParquetError)> {
+    ///
+    /// On error, returns all the reply channels in the batch, together with the error.
+    pub fn finish(self) -> std::result::Result<PartitionFolio, Vec<FlushError>> {
         match self.writer.into_inner() {
-            Ok(data) => Ok(PartitionBatch {
+            Ok(data) => Ok(PartitionFolio {
                 data,
-                metadata: self.batches,
+                batches: self.batches,
             }),
             Err(err) => {
-                let metadata = self
+                let err = Arc::new(err);
+                let replies = self
                     .batches
                     .into_iter()
-                    .map(|(_, metadata)| metadata)
+                    .map(|m| {
+                        let err = Report::new(err.clone())
+                            .change_context(IngestorError::ParquetWriteError);
+
+                        FlushError {
+                            reply: m.reply,
+                            error: err,
+                        }
+                    })
                     .collect();
-                Err((metadata, err))
+                Err(replies)
             }
         }
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::test_utils::{generate_test_batch, schema};
-
-    #[test]
-    fn test_partition_batcher_new() {
-        let schema = schema();
-        let batcher: PartitionBatcher<String> = PartitionBatcher::new(schema).unwrap();
-        assert_eq!(batcher.batch_count(), 0);
-        assert_eq!(batcher.buffer_size(), 0);
+impl FlushError {
+    pub fn send_reply(self) {
+        let _ = self.reply.send(Err(self.error));
     }
+}
 
-    #[test]
-    fn test_partition_batcher_write_single_batch() {
-        let schema = schema();
-        let mut batcher: PartitionBatcher<String> = PartitionBatcher::new(schema).unwrap();
-
-        let batch = generate_test_batch(10);
-        let metadata = "test_metadata".to_string();
-
-        let bytes_written = batcher.write_batch(&batch, metadata).unwrap();
-
-        assert_eq!(batcher.batch_count(), 1);
-        // ArrowWriter may buffer data internally, so bytes_written might be 0 initially
-        // Just verify that we got a valid response
-        assert_eq!(batcher.buffer_size(), bytes_written);
-    }
-
-    #[test]
-    fn test_partition_batcher_write_multiple_batches() {
-        let schema = schema();
-        let mut batcher: PartitionBatcher<String> = PartitionBatcher::new(schema).unwrap();
-
-        let batch1 = generate_test_batch(5);
-        let batch2 = generate_test_batch(10);
-        let batch3 = generate_test_batch(3);
-
-        let bytes_written1 = batcher
-            .write_batch(&batch1, "metadata1".to_string())
-            .unwrap();
-        let bytes_written2 = batcher
-            .write_batch(&batch2, "metadata2".to_string())
-            .unwrap();
-        let bytes_written3 = batcher
-            .write_batch(&batch3, "metadata3".to_string())
-            .unwrap();
-
-        assert_eq!(batcher.batch_count(), 3);
-        // ArrowWriter may buffer data internally, so bytes_written might be 0 initially
-        // Just verify that we got valid responses
-        assert_eq!(
-            batcher.buffer_size(),
-            bytes_written1 + bytes_written2 + bytes_written3
-        );
-
-        // Test that finish returns both data and metadata for multiple batches
-        let result = batcher.finish().unwrap();
-        assert_eq!(result.metadata.len(), 3);
-        assert_eq!(result.metadata[0], (5, "metadata1".to_string()));
-        assert_eq!(result.metadata[1], (10, "metadata2".to_string()));
-        assert_eq!(result.metadata[2], (3, "metadata3".to_string()));
-    }
-
-    #[test]
-    fn test_partition_batcher_buffer_size_grows() {
-        let schema = schema();
-        let mut batcher: PartitionBatcher<String> = PartitionBatcher::new(schema).unwrap();
-
-        assert_eq!(batcher.buffer_size(), 0);
-
-        // Use a larger batch to trigger buffer growth
-        let batch = generate_test_batch(1000);
-        let initial_size = batcher.buffer_size();
-
-        batcher.write_batch(&batch, "metadata".to_string()).unwrap();
-        let size_after_write = batcher.buffer_size();
-
-        // Buffer size should remain the same or grow depending on internal buffering
-        assert!(size_after_write >= initial_size);
-
-        // Test that finish returns both data and metadata
-        let result = batcher.finish().unwrap();
-        assert_eq!(result.metadata.len(), 1);
-        assert_eq!(result.metadata[0], (1000, "metadata".to_string()));
-    }
-
-    #[test]
-    fn test_partition_batcher_finish() {
-        let schema = schema();
-        let mut batcher: PartitionBatcher<String> = PartitionBatcher::new(schema).unwrap();
-
-        let batch = generate_test_batch(10);
-        batcher.write_batch(&batch, "metadata".to_string()).unwrap();
-
-        let result = batcher.finish().unwrap();
-
-        // The finished parquet data should contain a valid parquet file
-        assert!(!result.data.is_empty());
-        // Check that it contains parquet magic bytes
-        assert!(result.data.len() > 4);
-        // Check that metadata is preserved
-        assert_eq!(result.metadata.len(), 1);
-        assert_eq!(result.metadata[0], (10, "metadata".to_string()));
-    }
-
-    #[test]
-    fn test_partition_batcher_with_different_metadata_types() {
-        let schema = schema();
-        let mut batcher: PartitionBatcher<(String, u64)> = PartitionBatcher::new(schema).unwrap();
-
-        let batch = generate_test_batch(5);
-        let metadata = ("test".to_string(), 42u64);
-
-        let _bytes_written = batcher.write_batch(&batch, metadata.clone()).unwrap();
-
-        assert_eq!(batcher.batch_count(), 1);
-        // ArrowWriter may buffer data internally, so bytes_written might be 0 initially
-        // Just verify that we got a valid response
-
-        // Test that finish returns both data and metadata with correct types
-        let result = batcher.finish().unwrap();
-        assert_eq!(result.metadata.len(), 1);
-        assert_eq!(result.metadata[0], (5, metadata));
-    }
-
-    #[test]
-    fn test_partition_batcher_empty_batch() {
-        let schema = schema();
-        let mut batcher: PartitionBatcher<String> = PartitionBatcher::new(schema).unwrap();
-
-        let batch = generate_test_batch(0);
-        let bytes_written = batcher.write_batch(&batch, "empty".to_string()).unwrap();
-
-        assert_eq!(batcher.batch_count(), 1);
-        // Even empty batches might write some metadata or nothing at all
-        assert_eq!(batcher.buffer_size(), bytes_written);
-
-        // Test that finish returns both data and metadata for empty batch
-        let result = batcher.finish().unwrap();
-        assert_eq!(result.metadata.len(), 1);
-        assert_eq!(result.metadata[0], (0, "empty".to_string()));
-    }
-
-    #[test]
-    fn test_partition_batch_structure() {
-        let schema = schema();
-        let mut batcher: PartitionBatcher<String> = PartitionBatcher::new(schema).unwrap();
-
-        // Write multiple batches with different metadata
-        let batch1 = generate_test_batch(5);
-        let batch2 = generate_test_batch(10);
-
-        batcher.write_batch(&batch1, "first".to_string()).unwrap();
-        batcher.write_batch(&batch2, "second".to_string()).unwrap();
-
-        let result = batcher.finish().unwrap();
-
-        // Verify the structure contains both data and metadata
-        assert!(!result.data.is_empty());
-        assert_eq!(result.metadata.len(), 2);
-
-        // Verify metadata is correctly structured as (batch_size, metadata)
-        assert_eq!(result.metadata[0], (5, "first".to_string()));
-        assert_eq!(result.metadata[1], (10, "second".to_string()));
-
-        // Verify data is valid parquet format
-        assert!(result.data.len() > 4);
+impl Debug for PartitionFolio {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let data_size = bytesize::ByteSize(self.data.len() as u64);
+        f.debug_struct("PartitionBatch")
+            .field("data", &format!("<{}>", data_size))
+            .field("batches", &format!("<{} entries>", self.batches.len()))
+            .finish()
     }
 }

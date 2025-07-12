@@ -4326,6 +4326,7 @@ dependencies = [
  "tokio-util",
  "tonic",
  "tonic-reflection",
+ "wings-ingestor-core",
  "wings-ingestor-http",
  "wings-metadata-core",
 ]
@@ -4342,6 +4343,7 @@ dependencies = [
  "datafusion",
  "error-stack",
  "futures-util",
+ "hex",
  "parquet",
  "thiserror 2.0.12",
  "tokio",
@@ -4358,12 +4360,14 @@ dependencies = [
  "arrow-schema",
  "axum",
  "error-stack",
+ "futures",
  "serde",
  "serde_json",
  "thiserror 2.0.12",
  "tokio",
  "tokio-util",
  "tower",
+ "wings-ingestor-core",
  "wings-metadata-core",
 ]
 
