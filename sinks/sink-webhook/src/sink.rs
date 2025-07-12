@@ -76,6 +76,7 @@ impl Sink for WebhookSink {
     }
 
     #[instrument(skip_all, err(Debug))]
+    #[allow(clippy::blocks_in_conditions)]
     async fn handle_data(
         &mut self,
         ctx: &Context,
@@ -119,6 +120,7 @@ impl Sink for WebhookSink {
     }
 
     #[instrument(skip_all, err(Debug))]
+    #[allow(clippy::blocks_in_conditions)]
     async fn handle_invalidate(&mut self, cursor: &Option<Cursor>) -> Result<(), Self::Error> {
         if self.raw {
             return Ok(());

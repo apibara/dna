@@ -188,6 +188,7 @@ impl Sink for ParquetSink {
     }
 
     #[instrument(skip_all, err(Debug))]
+    #[allow(clippy::blocks_in_conditions)]
     async fn handle_data(
         &mut self,
         ctx: &Context,
@@ -216,11 +217,13 @@ impl Sink for ParquetSink {
     }
 
     #[instrument(skip(self, _cursor), err(Debug))]
+    #[allow(clippy::blocks_in_conditions)]
     async fn handle_invalidate(&mut self, _cursor: &Option<Cursor>) -> Result<(), Self::Error> {
         Ok(())
     }
 
     #[instrument(skip(self), err(Debug))]
+    #[allow(clippy::blocks_in_conditions)]
     async fn handle_heartbeat(&mut self) -> Result<(), Self::Error> {
         // TODO: write to incomplete file.
         Ok(())

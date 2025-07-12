@@ -115,6 +115,7 @@ impl Sink for MongoSink {
     }
 
     #[tracing::instrument(skip_all, err(Debug))]
+    #[allow(clippy::blocks_in_conditions)]
     async fn handle_data(
         &mut self,
         ctx: &Context,
@@ -131,6 +132,7 @@ impl Sink for MongoSink {
     }
 
     #[tracing::instrument(skip_all, err(Debug))]
+    #[allow(clippy::blocks_in_conditions)]
     async fn handle_replace(
         &mut self,
         ctx: &Context,
@@ -182,6 +184,7 @@ impl Sink for MongoSink {
     }
 
     #[tracing::instrument(skip_all, err(Debug))]
+    #[allow(clippy::blocks_in_conditions)]
     async fn handle_invalidate(&mut self, cursor: &Option<Cursor>) -> Result<(), Self::Error> {
         let mut session = self
             .client

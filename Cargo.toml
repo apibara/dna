@@ -11,7 +11,7 @@ members = [
     "observability",
     "node",
     "sdk",
-    "starknet",
+    # "starknet",
     "script",
     "sinks/sink-common",
     "sinks/sink-options-derive",

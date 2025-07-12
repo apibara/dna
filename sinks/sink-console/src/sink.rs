@@ -23,6 +23,7 @@ impl Sink for ConsoleSink {
     }
 
     #[instrument(skip_all, err(Debug), level = "DEBUG")]
+    #[allow(clippy::blocks_in_conditions)]
     async fn handle_data(
         &mut self,
         ctx: &Context,
@@ -39,6 +40,7 @@ impl Sink for ConsoleSink {
     }
 
     #[instrument(skip_all, err(Debug), level = "DEBUG")]
+    #[allow(clippy::blocks_in_conditions)]
     async fn handle_invalidate(&mut self, cursor: &Option<Cursor>) -> Result<(), Self::Error> {
         info!(cursor = %DisplayCursor(cursor), "invalidating cursor");
         Ok(())

@@ -180,10 +180,7 @@ impl<E: EnvironmentKind> StorageReader for DatabaseStorage<E> {
         let mut cursor = txn.open_cursor::<tables::CanonicalChainTable>()?;
         let block_id = match cursor.last()? {
             None => None,
-            Some((number, hash)) => {
-                let hash = (&hash).try_into().map_err(libmdbx::Error::decode_error)?;
-                Some(GlobalBlockId::new(number, hash))
-            }
+            Some((number, hash)) => Some(GlobalBlockId::new(number, hash.into())),
         };
         txn.commit()?;
         Ok(block_id)
@@ -196,10 +193,7 @@ impl<E: EnvironmentKind> StorageReader for DatabaseStorage<E> {
         let mut status_cursor = txn.open_cursor::<tables::BlockStatusTable>()?;
         let mut maybe_block_id = canon_cursor.last()?;
         while let Some((block_num, block_hash)) = maybe_block_id {
-            let block_hash = (&block_hash)
-                .try_into()
-                .map_err(libmdbx::Error::decode_error)?;
-            let block_id = GlobalBlockId::new(block_num, block_hash);
+            let block_id = GlobalBlockId::new(block_num, block_hash.into());
             let (_, status) = status_cursor
                 .seek_exact(&block_id)?
                 .expect("database is in inconsistent state.");
