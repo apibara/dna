@@ -11,7 +11,9 @@ use wings_metadata_core::{
         TenantName,
     },
     cache::{NamespaceCache, TopicCache},
+    committer::InMemoryBatchCommitter,
 };
+use wings_object_store::TemporaryFileSystemFactory;
 
 use crate::error::{CliError, CliResult};
 
@@ -48,7 +50,18 @@ impl DevArgs {
 
         {
             let _ct_guard = ct.child_token().drop_guard();
-            let ingestor = BatchIngestor::new();
+            let object_store_factory =
+                TemporaryFileSystemFactory::new().change_context(CliError::Server {
+                    message: "error creating local temporary directory".to_string(),
+                })?;
+            let batch_committer = InMemoryBatchCommitter::new();
+
+            println!(
+                "Object store root path: {}",
+                object_store_factory.root_path().display()
+            );
+            let ingestor =
+                BatchIngestor::new(Arc::new(object_store_factory), Arc::new(batch_committer));
             let grpc_server_fut = run_grpc_server(
                 admin.clone(),
                 ingestor.client(),
@@ -61,9 +74,15 @@ impl DevArgs {
             let ingestor_fut = run_background_ingestor(ingestor, ct);
 
             tokio::select! {
-                _ = grpc_server_fut => (),
-                _ = http_ingestor_fut => (),
-                _ = ingestor_fut => (),
+                res = grpc_server_fut => {
+                    println!("gRPC server exited with {:?}", res);
+                },
+                res = http_ingestor_fut => {
+                    println!("HTTP ingestor server exited with {:?}", res);
+                },
+                res = ingestor_fut => {
+                    println!("Background ingestor exited with {:?}", res);
+                },
             }
         }
 
@@ -81,7 +100,8 @@ async fn new_dev_admin_service() -> (Arc<InMemoryAdminService>, NamespaceName) {
         .expect("failed to create default tenant");
 
     let default_namespace = NamespaceName::new_unchecked("default", default_tenant);
-    let default_namespace_options = NamespaceOptions::new(SecretName::new_unchecked("defaul"));
+    let default_namespace_options =
+        NamespaceOptions::new(SecretName::new_unchecked("default-bucket"));
     admin
         .create_namespace(default_namespace.clone(), default_namespace_options)
         .await

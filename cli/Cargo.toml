@@ -27,5 +27,6 @@ tonic = { workspace = true }
 tonic-reflection.workspace = true
 serde_json = "1.0"
 wings-metadata-core = { path = "../metadata/core" }
+wings-object-store = { path = "../common/object_store" }
 wings-ingestor-core = { path = "../ingestor/core" }
 wings-ingestor-http = { path = "../ingestor/http" }

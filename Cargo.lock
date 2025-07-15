@@ -3741,6 +3741,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1dccffe3ce07af9386bfd29e80c0ab1a8205a2fc34e4bcd40364df902cfa8f3f"
 
 [[package]]
+name = "ulid"
+version = "1.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "470dbf6591da1b39d43c14523b2b469c86879a53e8b758c8e090a470fe7b1fbe"
+dependencies = [
+ "rand 0.9.1",
+ "web-time",
+]
+
+[[package]]
 name = "unicase"
 version = "2.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4329,6 +4339,7 @@ dependencies = [
  "wings-ingestor-core",
  "wings-ingestor-http",
  "wings-metadata-core",
+ "wings-object-store",
 ]
 
 [[package]]
@@ -4344,11 +4355,14 @@ dependencies = [
  "error-stack",
  "futures-util",
  "hex",
+ "object_store",
  "parquet",
  "thiserror 2.0.12",
  "tokio",
  "tokio-util",
+ "ulid",
  "wings-metadata-core",
+ "wings-object-store",
 ]
 
 [[package]]

@@ -20,10 +20,13 @@ datafusion.workspace = true
 error-stack.workspace = true
 futures-util.workspace = true
 hex.workspace = true
+object_store.workspace = true
 parquet.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
+ulid = "1.2.1"
+wings-object-store = { path = "../../common/object_store" }
 wings-metadata-core = { path = "../../metadata/core" }
 
 [dev-dependencies]

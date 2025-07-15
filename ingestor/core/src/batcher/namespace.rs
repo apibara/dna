@@ -3,7 +3,7 @@ use std::collections::{HashMap, hash_map::Entry};
 use error_stack::Report;
 use tokio_util::time::{DelayQueue, delay_queue};
 use wings_metadata_core::{
-    admin::{NamespaceName, TopicName},
+    admin::{NamespaceName, NamespaceRef, TopicName},
     partition::PartitionValue,
 };
 
@@ -21,7 +21,7 @@ pub struct NamespaceFolioWriter {
 
 #[derive(Debug)]
 pub struct FlushedFolio {
-    pub namespace: NamespaceName,
+    pub namespace: NamespaceRef,
     pub timer_key: delay_queue::Key,
     pub partitions: Vec<PartitionFolioWithMetadata>,
     pub errors: Vec<FlushError>,
@@ -35,6 +35,8 @@ pub struct PartitionFolioWithMetadata {
 }
 
 struct NamespaceFolioState {
+    /// The namespace
+    pub namespace: NamespaceRef,
     /// Size threshold after which to flush the folio
     pub flush_size: u64,
     /// Map from (topic, partition) to the partition folio writer
@@ -61,7 +63,7 @@ impl NamespaceFolioWriter {
             .or_insert_with(|| {
                 let flush_interval = batch.namespace.flush_interval;
                 let timer_key = delay_queue.insert(namespace.clone(), flush_interval);
-                NamespaceFolioState::new(batch.namespace.flush_size.as_u64(), timer_key)
+                NamespaceFolioState::new(batch.namespace, timer_key)
             });
 
         let folio_writer = match folio_state
@@ -83,7 +85,7 @@ impl NamespaceFolioWriter {
                 return Ok(None);
             };
 
-            return Ok(state.finish(namespace).into());
+            return Ok(state.finish().into());
         }
 
         Ok(None)
@@ -93,14 +95,16 @@ impl NamespaceFolioWriter {
     pub fn expire_namespace(&mut self, namespace: NamespaceName) -> Option<FlushedFolio> {
         let state = self.namespaces.remove(&namespace)?;
 
-        state.finish(namespace).into()
+        state.finish().into()
     }
 }
 
 impl NamespaceFolioState {
     /// Creates a new namespace folio writer with the given flush parameters.
-    pub fn new(flush_size: u64, timer_key: delay_queue::Key) -> Self {
+    pub fn new(namespace: NamespaceRef, timer_key: delay_queue::Key) -> Self {
+        let flush_size = namespace.flush_size.as_u64();
         Self {
+            namespace,
             flush_size,
             partitions: HashMap::new(),
             current_size: 0,
@@ -109,7 +113,7 @@ impl NamespaceFolioState {
     }
 
     /// Flushes the namespace folio, ready for the next step.
-    pub fn finish(self, namespace: NamespaceName) -> FlushedFolio {
+    pub fn finish(self) -> FlushedFolio {
         let mut partitions = Vec::with_capacity(self.partitions.len());
         let mut errors = Vec::new();
 
@@ -126,7 +130,7 @@ impl NamespaceFolioState {
         }
 
         FlushedFolio {
-            namespace,
+            namespace: self.namespace,
             timer_key: self.timer_key,
             partitions,
             errors,

@@ -13,6 +13,10 @@ pub enum IngestorError {
     ParquetWriteError,
     #[error("batch validation error: {message}")]
     BatchValidationError { message: String },
+    #[error("object store error: {message}")]
+    ObjectStoreError { message: String },
+    #[error("commit error")]
+    Commit,
 }
 
 pub type IngestorResult<T> = Result<T, IngestorError>;
