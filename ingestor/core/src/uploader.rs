@@ -89,7 +89,7 @@ impl FolioUploader {
             batches.push(BatchToCommit {
                 topic_id: partition.topic.clone(),
                 partition_value: partition.partition.clone(),
-                num_rows,
+                num_messages: num_rows,
                 offset_bytes,
                 batch_size_bytes,
             })

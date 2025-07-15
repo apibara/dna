@@ -11,7 +11,7 @@ use wings_metadata_core::{
         TenantName,
     },
     cache::{NamespaceCache, TopicCache},
-    committer::InMemoryBatchCommitter,
+    offset_registry::InMemoryOffsetRegistry,
 };
 use wings_object_store::TemporaryFileSystemFactory;
 
@@ -54,7 +54,7 @@ impl DevArgs {
                 TemporaryFileSystemFactory::new().change_context(CliError::Server {
                     message: "error creating local temporary directory".to_string(),
                 })?;
-            let batch_committer = InMemoryBatchCommitter::new();
+            let batch_committer = InMemoryOffsetRegistry::new();
 
             println!(
                 "Object store root path: {}",
