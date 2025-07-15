@@ -1,11 +1,11 @@
-use std::{path::PathBuf, sync::Arc};
+use std::sync::Arc;
 
 use bytes::BytesMut;
 use error_stack::ResultExt;
 use object_store::{PutMode, PutOptions, PutPayload};
 use wings_metadata_core::{
     admin::{NamespaceName, NamespaceRef},
-    committer::BatchToCommit,
+    offset_registry::BatchToCommit,
 };
 use wings_object_store::ObjectStoreFactory;
 

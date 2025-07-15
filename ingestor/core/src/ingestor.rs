@@ -4,7 +4,7 @@ use error_stack::ResultExt;
 use futures_util::{StreamExt, stream::FuturesUnordered};
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::{sync::CancellationToken, time::DelayQueue};
-use wings_metadata_core::committer::FolioCommitter;
+use wings_metadata_core::offset_registry::OffsetRegistry;
 use wings_object_store::ObjectStoreFactory;
 
 use crate::{
@@ -18,7 +18,7 @@ pub struct BatchIngestor {
     tx: mpsc::Sender<BatchWithReply>,
     rx: mpsc::Receiver<BatchWithReply>,
     uploader: FolioUploader,
-    committer: Arc<dyn FolioCommitter>,
+    offset_registry: Arc<dyn OffsetRegistry>,
 }
 
 #[derive(Clone)]
@@ -41,7 +41,7 @@ pub async fn run_background_ingestor(
 impl BatchIngestor {
     pub fn new(
         object_store_factory: Arc<dyn ObjectStoreFactory>,
-        committer: Arc<dyn FolioCommitter>,
+        offset_registry: Arc<dyn OffsetRegistry>,
     ) -> Self {
         let (tx, rx) = mpsc::channel(100);
         let uploader = FolioUploader::new_ulid(object_store_factory);
@@ -50,7 +50,7 @@ impl BatchIngestor {
             tx,
             rx,
             uploader,
-            committer,
+            offset_registry,
         }
     }
 
@@ -65,7 +65,7 @@ impl BatchIngestor {
         let mut folio_timer = DelayQueue::new();
         let mut folio_writer = NamespaceFolioWriter::default();
         let folio_uploader = Arc::new(self.uploader);
-        let committer = self.committer;
+        let committer = self.offset_registry;
         let mut upload_tasks = FuturesUnordered::new();
 
         loop {
@@ -82,7 +82,7 @@ impl BatchIngestor {
                         continue;
                     };
 
-                    // TODO: why does `remove` panic? The key should be there.
+                    // Try to remove any duplicate timer keys.
                     folio_timer.try_remove(&folio.timer_key);
                     let folio_to_upload = folio.reply_with_errors_and_continue();
                     upload_tasks.push(upload_and_commit_folio(folio_uploader.clone(), committer.clone(), folio_to_upload));
@@ -137,13 +137,13 @@ impl BatchIngestorClient {
 
 async fn upload_and_commit_folio(
     uploader: Arc<FolioUploader>,
-    committer: Arc<dyn FolioCommitter>,
+    offset_registry: Arc<dyn OffsetRegistry>,
     folio: FolioToUpload,
 ) {
     let uploaded = uploader.upload_folio(folio).await.unwrap();
     // Create file
     // Upload file
-    let committed = committer
+    let committed = offset_registry
         .commit_folio(uploaded.namespace, uploaded.file_ref, &uploaded.batches)
         .await
         .change_context(IngestorError::Commit)
