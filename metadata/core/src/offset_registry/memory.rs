@@ -47,7 +47,6 @@ struct BatchInfo {
     pub file_ref: String,
     pub offset_bytes: u64,
     pub size_bytes: u64,
-    pub num_messages: u32,
     pub end_offset: u64,
 }
 
@@ -83,9 +82,9 @@ impl OffsetRegistry for InMemoryOffsetRegistry {
 
         let mut seen_partitions = HashSet::new();
         for batch in batches {
-            if !seen_partitions.insert((batch.topic_id.clone(), batch.partition_value.clone())) {
+            if !seen_partitions.insert((batch.topic_name.clone(), batch.partition_value.clone())) {
                 bail!(OffsetRegistryError::DuplicatePartitionValue(
-                    batch.topic_id.clone(),
+                    batch.topic_name.clone(),
                     batch.partition_value.clone(),
                 ));
             }
@@ -95,7 +94,7 @@ impl OffsetRegistry for InMemoryOffsetRegistry {
 
         for batch in batches {
             let partition_key =
-                PartitionKey::new(batch.topic_id.clone(), batch.partition_value.clone());
+                PartitionKey::new(batch.topic_name.clone(), batch.partition_value.clone());
 
             let partition_state = namespace_state
                 .partitions
@@ -113,7 +112,6 @@ impl OffsetRegistry for InMemoryOffsetRegistry {
                 file_ref: file_ref.clone(),
                 offset_bytes: batch.offset_bytes,
                 size_bytes: batch.batch_size_bytes,
-                num_messages: batch.num_messages,
                 end_offset,
             };
 
@@ -121,7 +119,7 @@ impl OffsetRegistry for InMemoryOffsetRegistry {
             partition_state.next_offset = end_offset + 1;
 
             committed_batches.push(CommittedBatch {
-                topic_id: batch.topic_id.clone(),
+                topic_id: batch.topic_name.clone(),
                 partition_value: batch.partition_value.clone(),
                 start_offset,
                 end_offset,
@@ -228,7 +226,7 @@ mod tests {
         batch_size_bytes: u64,
     ) -> BatchToCommit {
         BatchToCommit {
-            topic_id,
+            topic_name: topic_id,
             partition_value,
             num_messages,
             offset_bytes,

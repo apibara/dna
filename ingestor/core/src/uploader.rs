@@ -1,17 +1,17 @@
 use std::sync::Arc;
 
-use bytes::BytesMut;
-use error_stack::ResultExt;
+use bytes::{Bytes, BytesMut};
+use error_stack::{ResultExt, report};
 use object_store::{PutMode, PutOptions, PutPayload};
-use wings_metadata_core::{
-    admin::{NamespaceName, NamespaceRef},
-    offset_registry::BatchToCommit,
-};
+use wings_metadata_core::admin::{NamespaceName, NamespaceRef};
 use wings_object_store::ObjectStoreFactory;
 
 use crate::{
-    batcher::namespace::PartitionFolioWithMetadata,
     error::{IngestorError, IngestorResult},
+    types::{
+        NamespaceFolio, ReplyWithError, SerializedPartitionFolioMetadata,
+        UploadedNamespaceFolioMetadata,
+    },
 };
 
 /// Trait for generating unique IDs for folios.
@@ -19,23 +19,10 @@ pub trait FolioIdGenerator {
     fn generate_id(&self) -> String;
 }
 
-/// A folio ready for upload.
-#[derive(Debug)]
-pub struct FolioToUpload {
-    pub namespace: NamespaceRef,
-    pub partitions: Vec<PartitionFolioWithMetadata>,
-}
-
 #[derive(Clone)]
 pub struct FolioUploader {
     pub id_generator: Arc<dyn FolioIdGenerator>,
     pub object_store_factory: Arc<dyn ObjectStoreFactory>,
-}
-
-pub struct UploadedFolio {
-    pub namespace: NamespaceName,
-    pub file_ref: String,
-    pub batches: Vec<BatchToCommit>,
 }
 
 /// Generates unique IDs using the ULID algorithm.
@@ -57,8 +44,81 @@ impl FolioUploader {
         FolioUploader::new(Arc::new(UlidFolioIdGenerator), object_store_factory)
     }
 
-    pub async fn upload_folio(&self, folio: FolioToUpload) -> IngestorResult<UploadedFolio> {
-        let secret_name = &folio.namespace.default_object_store_config;
+    pub fn new_folio_id(&self, namespace: &NamespaceName) -> String {
+        let folio_id = self.id_generator.generate_id();
+        format!("{}/folio/{}", namespace, folio_id)
+    }
+
+    pub async fn upload_folio(
+        &self,
+        folio: NamespaceFolio,
+    ) -> std::result::Result<UploadedNamespaceFolioMetadata, Vec<ReplyWithError>> {
+        // TODO: we probably want to add some metadata at the end of the file to make them
+        // inspectable.
+        let estimated_file_size = folio.partitions.iter().fold(0, |acc, p| acc + p.data.len());
+
+        let mut content = BytesMut::with_capacity(estimated_file_size);
+        let mut partition_metadata = Vec::with_capacity(folio.partitions.len());
+
+        for partition in folio.partitions {
+            let offset_bytes = content.len() as _;
+            let size_bytes = partition.data.len() as _;
+            content.extend_from_slice(&partition.data);
+            let num_messages = partition
+                .batches
+                .iter()
+                .fold(0, |acc, b| acc + b.num_messages);
+            partition_metadata.push(SerializedPartitionFolioMetadata {
+                topic_name: partition.topic_name,
+                partition_value: partition.partition_value,
+                num_messages,
+                offset_bytes,
+                size_bytes,
+                batches: partition.batches,
+            });
+        }
+
+        let file_ref = self.new_folio_id(&folio.namespace.name);
+
+        match self
+            .upload_to_namespace(folio.namespace.clone(), file_ref.clone(), content.freeze())
+            .await
+        {
+            Ok(_) => Ok(UploadedNamespaceFolioMetadata {
+                namespace: folio.namespace,
+                file_ref,
+                partitions: partition_metadata,
+            }),
+            Err(err) => {
+                let error = err
+                    .downcast_ref::<IngestorError>()
+                    .cloned()
+                    .unwrap_or_else(|| IngestorError::ObjectStoreError {
+                        message: "failed to upload folio".to_string(),
+                    });
+
+                let replies = partition_metadata
+                    .into_iter()
+                    .flat_map(|p| {
+                        p.batches.into_iter().map(|b| ReplyWithError {
+                            reply: b.reply,
+                            error: report!(error.clone()),
+                        })
+                    })
+                    .collect::<Vec<_>>();
+
+                Err(replies)
+            }
+        }
+    }
+
+    async fn upload_to_namespace(
+        &self,
+        namespace: NamespaceRef,
+        file_ref: String,
+        data: Bytes,
+    ) -> IngestorResult<()> {
+        let secret_name = &namespace.default_object_store_config;
 
         let object_store = self
             .object_store_factory
@@ -68,37 +128,10 @@ impl FolioUploader {
                 message: format!("could not create object store from secret {}", secret_name),
             })?;
 
-        let folio_id = self.id_generator.generate_id();
-        let path = format!("{}/folio/{}", folio.namespace.name, folio_id);
-
-        // TODO: estimate size before initializing content
-        let mut content = BytesMut::new();
-        let mut batches = Vec::with_capacity(folio.partitions.len());
-
-        // TODO: sort by (topic, partition)
-        for partition in folio.partitions {
-            let offset_bytes = content.len() as _;
-            let batch_size_bytes = partition.folio.data.len() as _;
-            content.extend_from_slice(&partition.folio.data);
-            let num_rows = partition
-                .folio
-                .batches
-                .iter()
-                .fold(0, |acc, m| acc + m.batch_size as u32);
-
-            batches.push(BatchToCommit {
-                topic_id: partition.topic.clone(),
-                partition_value: partition.partition.clone(),
-                num_messages: num_rows,
-                offset_bytes,
-                batch_size_bytes,
-            })
-        }
-
         object_store
             .put_opts(
-                &path.clone().into(),
-                PutPayload::from_static(&[0; 512]),
+                &file_ref.into(),
+                PutPayload::from_bytes(data),
                 PutOptions {
                     mode: PutMode::Create,
                     ..Default::default()
@@ -109,12 +142,7 @@ impl FolioUploader {
                 message: format!("could not create object store from secret {}", secret_name),
             })?;
 
-        // TODO: must return the initial batch metadata (per partition) to then return the correct offsets
-        Ok(UploadedFolio {
-            namespace: folio.namespace.name.clone(),
-            file_ref: path,
-            batches,
-        })
+        Ok(())
     }
 }
 

@@ -6,7 +6,7 @@ use crate::{admin::TopicName, partition::PartitionValue};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BatchToCommit {
     /// The topic id of the batch to commit.
-    pub topic_id: TopicName,
+    pub topic_name: TopicName,
     /// The partition value, if any.
     pub partition_value: Option<PartitionValue>,
     /// The number of messages in the batch.

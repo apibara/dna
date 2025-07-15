@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use error_stack::ResultExt;
+use error_stack::{ResultExt, report};
 use futures_util::{StreamExt, stream::FuturesUnordered};
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::{sync::CancellationToken, time::DelayQueue};
@@ -11,7 +11,11 @@ use crate::{
     batch::{Batch, WriteInfo, WriteReplySender},
     batcher::NamespaceFolioWriter,
     error::{IngestorError, IngestorResult},
-    uploader::{FolioToUpload, FolioUploader},
+    types::{
+        CommittedNamespaceFolioMetadata, CommittedPartitionFolioMetadata, NamespaceFolio,
+        ReplyWithError,
+    },
+    uploader::FolioUploader,
 };
 
 pub struct BatchIngestor {
@@ -64,7 +68,7 @@ impl BatchIngestor {
         let _ct_guard = ct.child_token().drop_guard();
         let mut folio_timer = DelayQueue::new();
         let mut folio_writer = NamespaceFolioWriter::default();
-        let folio_uploader = Arc::new(self.uploader);
+        let folio_uploader = self.uploader;
         let committer = self.offset_registry;
         let mut upload_tasks = FuturesUnordered::new();
 
@@ -78,14 +82,18 @@ impl BatchIngestor {
                         continue;
                     };
 
-                    let Some(folio) = folio_writer.expire_namespace(entry.into_inner()) else {
+                    let Some((folio, errors)) = folio_writer.expire_namespace(entry.into_inner()) else {
                         continue;
                     };
 
                     // Try to remove any duplicate timer keys.
                     folio_timer.try_remove(&folio.timer_key);
-                    let folio_to_upload = folio.reply_with_errors_and_continue();
-                    upload_tasks.push(upload_and_commit_folio(folio_uploader.clone(), committer.clone(), folio_to_upload));
+
+                    for error in errors {
+                        error.send();
+                    }
+
+                    upload_tasks.push(upload_and_commit_folio(folio_uploader.clone(), committer.clone(), folio));
                 }
                 batch_with_reply = self.rx.recv() => {
                     let Some(BatchWithReply { batch, reply }) = batch_with_reply else {
@@ -99,20 +107,32 @@ impl BatchIngestor {
 
                     match folio_writer.write_batch(batch, reply, &mut folio_timer) {
                         Ok(None) => {},
-                        Ok(Some(folio)) => {
+                        Ok(Some((folio, errors))) => {
                             folio_timer.remove(&folio.timer_key);
-                            let folio_to_upload = folio.reply_with_errors_and_continue();
-                            upload_tasks.push(upload_and_commit_folio(folio_uploader.clone(), committer.clone(), folio_to_upload));
+
+                            for error in errors {
+                                error.send();
+                            }
+
+                            upload_tasks.push(upload_and_commit_folio(folio_uploader.clone(), committer.clone(), folio));
                         }
-                        Err((reply, error)) => {
-                            let _ = reply.send(Err(error));
+                        Err(error) => {
+                            error.send();
                         }
                     }
                 }
                 task = upload_tasks.next(), if !upload_tasks.is_empty() => {
-                    let Some(_) = task else {
-                        break;
-                    };
+                    match task {
+                        None => break,
+                        Some(Ok(committed_namespace)) => {
+                            reply_with_committed_offset(committed_namespace);
+                        }
+                        Some(Err(errors)) => {
+                            for error in errors {
+                                error.send();
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -136,18 +156,85 @@ impl BatchIngestorClient {
 }
 
 async fn upload_and_commit_folio(
-    uploader: Arc<FolioUploader>,
+    uploader: FolioUploader,
     offset_registry: Arc<dyn OffsetRegistry>,
-    folio: FolioToUpload,
-) {
-    let uploaded = uploader.upload_folio(folio).await.unwrap();
-    // Create file
-    // Upload file
-    let committed = offset_registry
-        .commit_folio(uploaded.namespace, uploaded.file_ref, &uploaded.batches)
+    folio: NamespaceFolio,
+) -> std::result::Result<CommittedNamespaceFolioMetadata, Vec<ReplyWithError>> {
+    let uploaded = uploader.upload_folio(folio).await?;
+
+    let mut batches_to_commit = Vec::new();
+    let mut batch_context = Vec::new();
+    for partition in uploaded.partitions.into_iter() {
+        let (batch, context) = partition.into_batch_to_commit();
+        batch_context.push((
+            batch.topic_name.clone(),
+            batch.partition_value.clone(),
+            context,
+        ));
+        batches_to_commit.push(batch);
+    }
+
+    let commits = match offset_registry
+        .commit_folio(
+            uploaded.namespace.name.clone(),
+            uploaded.file_ref,
+            &batches_to_commit,
+        )
         .await
-        .change_context(IngestorError::Commit)
-        .unwrap();
-    // Commit file
-    println!("Committed {:?}", committed);
+    {
+        Ok(commits) => commits,
+        Err(_err) => {
+            // TODO: we need to propagate the error.
+            let error = IngestorError::CommitError {
+                message: "failed to commit folio".to_string(),
+            };
+
+            let replies = batch_context
+                .into_iter()
+                .flat_map(|p| {
+                    p.2.into_iter().map(|b| ReplyWithError {
+                        reply: b.reply,
+                        error: report!(error.clone()),
+                    })
+                })
+                .collect::<Vec<_>>();
+
+            return Err(replies);
+        }
+    };
+
+    let committed_partitions = commits
+        .into_iter()
+        .zip(batch_context.into_iter())
+        .map(|(committed, (topic_name, partition_value, batches))| {
+            CommittedPartitionFolioMetadata {
+                topic_name,
+                partition_value,
+                start_offset: committed.start_offset,
+                end_offset: committed.end_offset,
+                batches,
+            }
+        })
+        .collect::<Vec<_>>();
+
+    Ok(CommittedNamespaceFolioMetadata {
+        namespace: uploaded.namespace,
+        partitions: committed_partitions,
+    })
+}
+
+fn reply_with_committed_offset(committed_namespace: CommittedNamespaceFolioMetadata) {
+    for partition in committed_namespace.partitions.into_iter() {
+        let mut current_offset = partition.start_offset;
+        for batch in partition.batches.into_iter() {
+            let start_offset = current_offset;
+            let end_offset = current_offset + (batch.num_messages as u64) - 1;
+            let _ = batch.reply.send(Ok(WriteInfo {
+                start_offset,
+                end_offset,
+            }));
+            current_offset = end_offset + 1;
+        }
+        assert_eq!(partition.end_offset, current_offset - 1);
+    }
 }

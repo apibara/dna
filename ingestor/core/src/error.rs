@@ -15,8 +15,8 @@ pub enum IngestorError {
     BatchValidationError { message: String },
     #[error("object store error: {message}")]
     ObjectStoreError { message: String },
-    #[error("commit error")]
-    Commit,
+    #[error("commit error: {message}")]
+    CommitError { message: String },
 }
 
 pub type IngestorResult<T> = Result<T, IngestorError>;

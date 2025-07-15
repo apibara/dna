@@ -2,6 +2,7 @@ pub mod batch;
 pub mod batcher;
 pub mod error;
 pub mod ingestor;
+pub mod types;
 pub mod uploader;
 
 #[cfg(test)]
