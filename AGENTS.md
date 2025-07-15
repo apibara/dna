@@ -48,6 +48,18 @@ As we mentioned before, long-term storage is handled by Parquet files uploaded o
 
 Storing "live" data in Parquet would be too inefficient (all data in a single Parquet file must have the same schema). Wings stores live data from multiple topics and partitions in the same binary file to reduce S3 operations.
 
+Partition columns are not physically stored in the Parquet files, but they are encoded in the file path. As such, topics can only be partitioned by a single column.
+
+## Vocabulary
+
+**Batch**: a batch is a group of messages (same topic and partition) pushed at the same time.
+
+**Folio**: a folio is a collection of messages (by namespace). Data in a folio is grouped and sorted by topic and partition and contains data from multiple batches.
+
+**Segment**: a segment file is a Parquet file containing compacted data from a single topic and partition.
+
+**Segment's generation**: a segment's generation is the number of times it has been compacted.
+
 ## Commands
 
 - `cargo check`: Check the project for errors.
