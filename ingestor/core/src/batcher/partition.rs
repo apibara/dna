@@ -3,7 +3,10 @@ use std::sync::Arc;
 use arrow::record_batch::RecordBatch;
 use arrow_schema::SchemaRef;
 use error_stack::Report;
-use parquet::arrow::ArrowWriter;
+use parquet::{
+    arrow::ArrowWriter,
+    file::{metadata::KeyValue, properties::WriterProperties},
+};
 use wings_metadata_core::{admin::TopicName, partition::PartitionValue};
 
 use crate::{
@@ -22,10 +25,24 @@ pub struct PartitionFolioWriter {
 
 impl PartitionFolioWriter {
     /// Creates a new partition folio writer with the given schema.
-    pub fn new(schema: SchemaRef) -> IngestorResult<Self> {
+    pub fn new(
+        topic_name: TopicName,
+        partition_value: Option<PartitionValue>,
+        schema: SchemaRef,
+    ) -> IngestorResult<Self> {
+        // Add topic name and partition key to the metadata to help with debugging and troubleshooting.
+        let partition_value = partition_value.map(|v| v.to_string());
+        let kv_metadata = vec![
+            KeyValue::new("WINGS:topic-name".to_string(), topic_name.to_string()),
+            KeyValue::new("WINGS:partition-value".to_string(), partition_value),
+        ];
+        let write_properties = WriterProperties::builder()
+            .set_key_value_metadata(kv_metadata.into())
+            .build();
+
         let buffer = Vec::with_capacity(DEFAULT_BUFFER_CAPACITY);
         // The writer will only fail if the schema is unsupported
-        let writer = ArrowWriter::try_new(buffer, schema, None)
+        let writer = ArrowWriter::try_new(buffer, schema, write_properties.into())
             .map_err(|_| IngestorError::UnsupportedArrowSchema)?;
 
         Ok(Self {

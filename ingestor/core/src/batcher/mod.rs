@@ -54,13 +54,19 @@ impl NamespaceFolioWriter {
 
         let folio_writer = match folio_state
             .partitions
-            .entry((batch.topic.name.clone(), batch.partition))
+            .entry((batch.topic.name.clone(), batch.partition.clone()))
         {
             Entry::Occupied(inner) => inner.into_mut(),
-            Entry::Vacant(inner) => match PartitionFolioWriter::new(batch.topic.schema()) {
-                Ok(writer) => inner.insert(writer),
-                Err(error) => return Err(ReplyWithError { reply, error }),
-            },
+            Entry::Vacant(inner) => {
+                match PartitionFolioWriter::new(
+                    batch.topic.name.clone(),
+                    batch.partition,
+                    batch.topic.schema(),
+                ) {
+                    Ok(writer) => inner.insert(writer),
+                    Err(error) => return Err(ReplyWithError { reply, error }),
+                }
+            }
         };
 
         let written = folio_writer.write_batch(&batch.records, reply)?;
