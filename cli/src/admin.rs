@@ -1,9 +1,11 @@
+use std::time::Duration;
+
 use arrow::datatypes::{DataType, Field};
 use error_stack::ResultExt;
 use tokio_util::sync::CancellationToken;
 use wings_metadata_core::admin::{
-    Admin, ListNamespacesRequest, ListTenantsRequest, ListTopicsRequest, NamespaceName,
-    NamespaceOptions, SecretName, TenantName, TopicName, TopicOptions,
+    Admin, ListNamespacesRequest, ListTenantsRequest, ListTopicsRequest, Namespace, NamespaceName,
+    NamespaceOptions, SecretName, Tenant, TenantName, Topic, TopicName, TopicOptions,
 };
 
 use crate::{
@@ -27,10 +29,14 @@ pub enum AdminCommands {
     },
     /// Create a new namespace
     CreateNamespace {
-        /// Tenant name
-        tenant: String,
         /// Namespace name
         namespace: String,
+        /// Flush interval in milliseconds
+        #[arg(long)]
+        flush_millis: Option<u64>,
+        /// Flush size in megabytes
+        #[arg(long)]
+        flush_mib: Option<u64>,
         #[clap(flatten)]
         remote: RemoteArgs,
     },
@@ -76,11 +82,6 @@ impl AdminCommands {
     pub async fn run(self, _ct: CancellationToken) -> CliResult<()> {
         match self {
             AdminCommands::CreateTenant { name, remote } => {
-                println!(
-                    "Creating tenant: {} (remote: {})",
-                    name, remote.remote_address
-                );
-
                 let client = remote.admin_client().await?;
                 let tenant_name =
                     TenantName::new(name).change_context(CliError::InvalidConfiguration {
@@ -92,12 +93,11 @@ impl AdminCommands {
                     .await
                     .change_context(CliError::Remote)?;
 
-                println!("{}", tenant.name);
+                print_tenant(&tenant);
 
                 Ok(())
             }
             AdminCommands::ListTenants { remote } => {
-                println!("Listing all tenants (remote: {})", remote.remote_address);
                 let client = remote.admin_client().await?;
 
                 let response = client
@@ -106,55 +106,52 @@ impl AdminCommands {
                     .change_context(CliError::Remote)?;
 
                 for tenant in response.tenants {
-                    println!("{}", tenant.name);
+                    print_tenant(&tenant);
                 }
 
                 Ok(())
             }
             AdminCommands::CreateNamespace {
-                tenant,
                 namespace,
+                flush_millis,
+                flush_mib,
                 remote,
             } => {
-                println!(
-                    "Creating namespace '{}' for tenant '{}' (remote: {})",
-                    namespace, tenant, remote.remote_address
-                );
-
                 let client = remote.admin_client().await?;
 
-                let tenant_name =
-                    TenantName::new(tenant).change_context(CliError::InvalidConfiguration {
-                        message: "invalid tenant name".to_string(),
-                    })?;
-
-                let namespace_name = NamespaceName::new(namespace, tenant_name).change_context(
+                let namespace_name = NamespaceName::parse(&namespace).change_context(
                     CliError::InvalidConfiguration {
-                        message: "invalid namespace name".to_string(),
+                        message: format!("invalid namespace name: {namespace}"),
                     },
                 )?;
 
                 let secret_name = SecretName::new_unchecked("default");
 
+                let mut options = NamespaceOptions::new(secret_name);
+
+                if let Some(millis) = flush_millis {
+                    options.flush_interval = Duration::from_millis(millis);
+                }
+
+                if let Some(mib) = flush_mib {
+                    options.flush_size = bytesize::ByteSize::mib(mib);
+                }
+
                 let namespace = client
-                    .create_namespace(namespace_name, NamespaceOptions::new(secret_name))
+                    .create_namespace(namespace_name, options)
                     .await
                     .change_context(CliError::Remote)?;
 
-                println!("{}", namespace.name);
+                print_namespace(&namespace);
 
                 Ok(())
             }
             AdminCommands::ListNamespaces { tenant, remote } => {
-                println!(
-                    "Listing namespaces for tenant: {} (remote: {})",
-                    tenant, remote.remote_address
-                );
                 let client = remote.admin_client().await?;
 
                 let tenant_name =
-                    TenantName::new(tenant).change_context(CliError::InvalidConfiguration {
-                        message: "invalid tenant name".to_string(),
+                    TenantName::parse(&tenant).change_context(CliError::InvalidConfiguration {
+                        message: format!("invalid tenant name: {tenant}"),
                     })?;
 
                 let response = client
@@ -167,7 +164,7 @@ impl AdminCommands {
                     .change_context(CliError::Remote)?;
 
                 for namespace in response.namespaces {
-                    println!("{}", namespace.name);
+                    print_namespace(&namespace);
                 }
 
                 Ok(())
@@ -178,11 +175,6 @@ impl AdminCommands {
                 partition,
                 remote,
             } => {
-                println!(
-                    "Creating topic '{}' with fields: {:?} (remote: {})",
-                    name, fields, remote.remote_address
-                );
-
                 let client = remote.admin_client().await?;
 
                 // Parse topic name
@@ -218,15 +210,11 @@ impl AdminCommands {
                     .await
                     .change_context(CliError::Remote)?;
 
-                println!("{}", topic.name);
+                print_topic(&topic);
 
                 Ok(())
             }
             AdminCommands::ListTopics { namespace, remote } => {
-                println!(
-                    "Listing topics for namespace: {} (remote: {})",
-                    namespace, remote.remote_address
-                );
                 let client = remote.admin_client().await?;
 
                 let namespace_name = NamespaceName::parse(&namespace).change_context(
@@ -241,14 +229,7 @@ impl AdminCommands {
                     .change_context(CliError::Remote)?;
 
                 for topic in response.topics {
-                    println!("{}", topic.name);
-                    println!("  Fields:");
-                    for field in topic.fields.iter() {
-                        println!("    {}: {}", field.name(), field.data_type());
-                    }
-                    if let Some(partition_key) = topic.partition_key {
-                        println!("  Partition key: {}", topic.fields[partition_key].name());
-                    }
+                    print_topic(&topic);
                 }
 
                 Ok(())
@@ -258,11 +239,6 @@ impl AdminCommands {
                 force,
                 remote,
             } => {
-                println!(
-                    "Deleting topic: {} (force: {}, remote: {})",
-                    name, force, remote.remote_address
-                );
-
                 let client = remote.admin_client().await?;
 
                 let topic_name =
@@ -275,7 +251,7 @@ impl AdminCommands {
                     .await
                     .change_context(CliError::Remote)?;
 
-                println!("Topic '{}' deleted successfully", name);
+                println!("Deleted topic '{}'", name);
 
                 Ok(())
             }
@@ -335,4 +311,32 @@ fn parse_fields(fields: &[String]) -> Result<Vec<Field>, CliError> {
     }
 
     Ok(parsed_fields)
+}
+
+fn print_tenant(tenant: &Tenant) {
+    println!("{}", tenant.name);
+}
+
+fn print_namespace(namespace: &Namespace) {
+    println!("{}", namespace.name);
+    println!("  flush interval: {:?}", namespace.flush_interval);
+    println!("  flush size: {}", namespace.flush_size);
+    println!(
+        "  object store secret: {}",
+        namespace.default_object_store_config
+    );
+    if let Some(ref secret) = namespace.frozen_object_store_config {
+        println!("  frozen object store secret: {}", secret);
+    }
+}
+
+fn print_topic(topic: &Topic) {
+    println!("{}", topic.name);
+    if let Some(partition_key) = topic.partition_key {
+        println!("  partition key: {}", topic.fields[partition_key].name());
+    }
+    println!("  fields:");
+    for field in topic.fields.iter() {
+        println!("  - {}: {}", field.name(), field.data_type());
+    }
 }

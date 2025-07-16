@@ -13,6 +13,12 @@ pub enum CliError {
     Remote,
     #[error("server error: {message}")]
     Server { message: String },
+    #[error("invalid arguments")]
+    InvalidArguments,
+    #[error("I/O error")]
+    IoError,
+    #[error("invalid JSON")]
+    InvalidJson,
 }
 
 pub type CliResult<T> = error_stack::Result<T, CliError>;
