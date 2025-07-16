@@ -11,6 +11,7 @@ name = "wings"
 path = "src/main.rs"
 
 [dependencies]
+arrow = { workspace = true }
 arrow-json = { workspace = true }
 arrow-schema = { workspace = true }
 bytesize = { workspace = true }

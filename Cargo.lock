@@ -4324,6 +4324,7 @@ checksum = "271414315aff87387382ec3d271b52d7ae78726f5d44ac98b4f4030c91880486"
 name = "wings"
 version = "0.1.0"
 dependencies = [
+ "arrow",
  "arrow-json",
  "arrow-schema",
  "bytesize",

@@ -7,6 +7,8 @@ mod admin;
 mod bench;
 mod dev;
 mod error;
+mod http_client;
+mod push;
 mod remote;
 
 #[derive(Parser)]
