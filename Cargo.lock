@@ -4330,6 +4330,7 @@ dependencies = [
  "bytesize",
  "clap",
  "error-stack",
+ "hex",
  "reqwest",
  "serde_json",
  "thiserror 2.0.12",

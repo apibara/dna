@@ -2,10 +2,7 @@
 
 use serde_json::Value;
 use wings_ingestor_http::types::{Batch, PushRequest, PushResponse};
-use wings_metadata_core::{
-    admin::{NamespaceName, TopicName},
-    partition::PartitionValue,
-};
+use wings_metadata_core::{admin::NamespaceName, partition::PartitionValue};
 
 /// A client for pushing messages to Wings over HTTP.
 #[derive(Debug, Clone)]

@@ -2,7 +2,7 @@
 
 use std::{sync::Arc, time::Duration};
 
-use arrow::datatypes::{Fields, Schema, SchemaRef};
+use arrow::datatypes::{FieldRef, Fields, Schema, SchemaRef};
 use bytesize::ByteSize;
 
 use crate::resource_type;
@@ -90,6 +90,10 @@ impl Topic {
         };
         let fields = self.fields.filter_leaves(|idx, _| idx != partition_index);
         Arc::new(Schema::new(fields))
+    }
+
+    pub fn partition_column(&self) -> Option<&FieldRef> {
+        self.partition_key.map(|idx| &self.fields[idx])
     }
 }
 

@@ -1,11 +1,16 @@
+use arrow_schema::DataType;
 use clap::Parser;
 use error_stack::{ResultExt, report};
 use serde_json::Value;
-use wings_metadata_core::admin::{Admin, NamespaceName};
+use tonic::transport::Channel;
+use wings_metadata_core::{
+    admin::{Admin, NamespaceName, RemoteAdminService, TopicName},
+    partition::PartitionValue,
+};
 
 use crate::{
     error::{CliError, CliResult},
-    http_client::HttpPushClient,
+    http_client::{HttpPushClient, PushRequestBuilder},
     remote::RemoteArgs,
 };
 
@@ -35,7 +40,6 @@ pub struct PushArgs {
 impl PushArgs {
     pub async fn run(self, _ct: tokio_util::sync::CancellationToken) -> CliResult<()> {
         let admin = self.remote.admin_client().await?;
-        let batches = self.parse_batches()?;
 
         let namespace_name = NamespaceName::parse(&self.namespace).change_context(
             CliError::InvalidConfiguration {
@@ -43,17 +47,39 @@ impl PushArgs {
             },
         )?;
 
-        let client = HttpPushClient::new(self.http_address, namespace_name);
+        let client = HttpPushClient::new(&self.http_address, namespace_name.clone());
 
-        let mut request = client.push();
+        // let batches = self.parse_batches()?;
+        let request = self
+            .parse_batches_to_request(namespace_name, &admin, &client)
+            .await?;
+        /*
         for batch in batches.into_iter() {
+            let topic_name = TopicName::new(&batch.topic, namespace_name.clone())
+                .change_context(CliError::InvalidArguments)
+                .attach_printable_lazy(|| format!("invalid topic name: {}", batch.topic))?;
+
             let topic_request = request.topic(batch.topic);
             request = if let Some(partition_value) = batch.partition_value {
-                todo!()
+                let topic =
+                    admin
+                        .get_topic(topic_name)
+                        .await
+                        .change_context(CliError::AdminApi {
+                            message: "failed to get topic".to_string(),
+                        })?;
+                let partition_column = topic
+                    .partition_column()
+                    .ok_or(report!(CliError::InvalidArguments))?;
+                let partition_value =
+                    convert_partition_value(partition_value, partition_column.data_type())
+                        .change_context(CliError::InvalidArguments)?;
+                topic_request.partitioned(partition_value, batch.messages)
             } else {
                 topic_request.unpartitioned(batch.messages)
             };
         }
+        */
 
         let response = request.send().await.change_context(CliError::Server {
             message: "failed to push data".to_string(),
@@ -64,10 +90,15 @@ impl PushArgs {
         Ok(())
     }
 
-    fn parse_batches(&self) -> CliResult<Vec<Batch>> {
-        let mut batches = Vec::new();
+    async fn parse_batches_to_request(
+        &self,
+        namespace_name: NamespaceName,
+        admin: &RemoteAdminService<Channel>,
+        client: &HttpPushClient,
+    ) -> CliResult<PushRequestBuilder> {
         let mut i = 0;
 
+        let mut request = client.push();
         while i < self.batches.len() {
             let remaining = self.batches.len() - i;
 
@@ -76,22 +107,37 @@ impl PushArgs {
                     .attach_printable("Each batch requires at least topic_id and payload"));
             }
 
-            let topic = &self.batches[i];
+            let topic_id = &self.batches[i];
+            let topic_name = TopicName::new(topic_id, namespace_name.clone())
+                .change_context(CliError::InvalidArguments)
+                .attach_printable_lazy(|| format!("invalid topic name: {}", topic_id))?;
+
+            let topic = admin
+                .get_topic(topic_name)
+                .await
+                .change_context(CliError::AdminApi {
+                    message: "failed to get topic".to_string(),
+                })?;
+
+            let partition_column = topic.partition_column();
+
             let next_arg = &self.batches[i + 1];
 
-            // Check if next_arg is a partition value or payload
-            let (partition_value, payload_index) = if next_arg.starts_with('@')
-                || next_arg.starts_with('{')
-                || next_arg.starts_with('[')
+            // Check what's the next argument based on whether the topic has a partition column
+            let (partition_value, payload_index) = if let Some(partition_column) = partition_column
             {
-                // Next arg is payload, no partition value provided
-                (None, i + 1)
-            } else if remaining >= 3 {
-                // Next arg is partition value, followed by payload
-                (Some(next_arg.clone()), i + 2)
+                if remaining >= 3 {
+                    // Next arg is partition value, followed by payload
+                    let partition_value =
+                        convert_partition_value(next_arg, partition_column.data_type())
+                            .change_context(CliError::InvalidArguments)?;
+                    (Some(partition_value), i + 2)
+                } else {
+                    return Err(report!(crate::error::CliError::InvalidArguments)
+                        .attach_printable("Missing payload after partition value"));
+                }
             } else {
-                return Err(report!(crate::error::CliError::InvalidArguments)
-                    .attach_printable("Missing payload after partition value"));
+                (None, i + 1)
             };
 
             if payload_index >= self.batches.len() {
@@ -102,16 +148,17 @@ impl PushArgs {
             let payload_str = &self.batches[payload_index];
             let messages = self.parse_payload(payload_str)?;
 
-            batches.push(Batch {
-                topic: topic.clone(),
-                partition_value,
-                messages,
-            });
+            let topic_request = request.topic(topic_id.clone());
+            request = if let Some(partition_value) = partition_value {
+                topic_request.partitioned(partition_value, messages)
+            } else {
+                topic_request.unpartitioned(messages)
+            };
 
             i = payload_index + 1;
         }
 
-        Ok(batches)
+        Ok(request)
     }
 
     fn parse_payload(&self, payload_str: &str) -> CliResult<Vec<Value>> {
@@ -150,9 +197,81 @@ impl PushArgs {
     }
 }
 
-#[derive(Debug)]
-struct Batch {
-    topic: String,
-    partition_value: Option<String>,
-    messages: Vec<Value>,
+/// Convert a string partition value to the appropriate type based on the Arrow DataType
+fn convert_partition_value(value: &str, data_type: &DataType) -> CliResult<PartitionValue> {
+    match data_type {
+        DataType::UInt8 => {
+            let parsed = value
+                .parse::<u8>()
+                .change_context(CliError::InvalidArguments)
+                .attach_printable_lazy(|| format!("Invalid u8 partition value: {}", value))?;
+            Ok(PartitionValue::UInt8(parsed))
+        }
+        DataType::UInt16 => {
+            let parsed = value
+                .parse::<u16>()
+                .change_context(CliError::InvalidArguments)
+                .attach_printable_lazy(|| format!("Invalid u16 partition value: {}", value))?;
+            Ok(PartitionValue::UInt16(parsed))
+        }
+        DataType::UInt32 => {
+            let parsed = value
+                .parse::<u32>()
+                .change_context(CliError::InvalidArguments)
+                .attach_printable_lazy(|| format!("Invalid u32 partition value: {}", value))?;
+            Ok(PartitionValue::UInt32(parsed))
+        }
+        DataType::UInt64 => {
+            let parsed = value
+                .parse::<u64>()
+                .change_context(CliError::InvalidArguments)
+                .attach_printable_lazy(|| format!("Invalid u64 partition value: {}", value))?;
+            Ok(PartitionValue::UInt64(parsed))
+        }
+        DataType::Int8 => {
+            let parsed = value
+                .parse::<i8>()
+                .change_context(CliError::InvalidArguments)
+                .attach_printable_lazy(|| format!("Invalid i8 partition value: {}", value))?;
+            Ok(PartitionValue::Int8(parsed))
+        }
+        DataType::Int16 => {
+            let parsed = value
+                .parse::<i16>()
+                .change_context(CliError::InvalidArguments)
+                .attach_printable_lazy(|| format!("Invalid i16 partition value: {}", value))?;
+            Ok(PartitionValue::Int16(parsed))
+        }
+        DataType::Int32 => {
+            let parsed = value
+                .parse::<i32>()
+                .change_context(CliError::InvalidArguments)
+                .attach_printable_lazy(|| format!("Invalid i32 partition value: {}", value))?;
+            Ok(PartitionValue::Int32(parsed))
+        }
+        DataType::Int64 => {
+            let parsed = value
+                .parse::<i64>()
+                .change_context(CliError::InvalidArguments)
+                .attach_printable_lazy(|| format!("Invalid i64 partition value: {}", value))?;
+            Ok(PartitionValue::Int64(parsed))
+        }
+        DataType::Utf8 | DataType::LargeUtf8 => Ok(PartitionValue::String(value.to_string())),
+        DataType::Binary | DataType::LargeBinary => {
+            // Handle hex encoding for binary data
+            if value.starts_with("0x") {
+                let bytes = hex::decode(&value[2..])
+                    .change_context(CliError::InvalidArguments)
+                    .attach_printable_lazy(|| format!("Invalid hex partition value: {}", value))?;
+                Ok(PartitionValue::Bytes(bytes))
+            } else {
+                let bytes = hex::decode(value)
+                    .change_context(CliError::InvalidArguments)
+                    .attach_printable_lazy(|| format!("Invalid hex partition value: {}", value))?;
+                Ok(PartitionValue::Bytes(bytes))
+            }
+        }
+        _ => Err(CliError::InvalidArguments)
+            .attach_printable_lazy(|| format!("Unsupported partition key type: {:?}", data_type)),
+    }
 }
