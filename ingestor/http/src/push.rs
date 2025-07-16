@@ -94,7 +94,8 @@ async fn process_push_request(
             })?;
 
         // Process each batch for this topic
-        let record_batch = parse_json_to_arrow(&batch.data, topic_ref.schema()).change_context(
+        let schema = topic_ref.schema_without_partition_column();
+        let record_batch = parse_json_to_arrow(&batch.data, schema).change_context(
             HttpIngestorError::JsonParseError {
                 message: format!("failed to parse JSON data for topic: {}", topic_name),
             },

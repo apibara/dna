@@ -83,6 +83,14 @@ impl Topic {
     pub fn schema(&self) -> SchemaRef {
         Arc::new(Schema::new(self.fields.clone()))
     }
+
+    pub fn schema_without_partition_column(&self) -> SchemaRef {
+        let Some(partition_index) = self.partition_key else {
+            return self.schema();
+        };
+        let fields = self.fields.filter_leaves(|idx, _| idx != partition_index);
+        Arc::new(Schema::new(fields))
+    }
 }
 
 /// Options for creating a namespace.

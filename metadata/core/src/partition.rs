@@ -6,6 +6,7 @@
 
 use std::convert::TryFrom;
 
+use arrow::datatypes::DataType;
 use datafusion::scalar::ScalarValue;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -77,6 +78,23 @@ impl PartitionValue {
             PartitionValue::String(_) => "string",
             PartitionValue::Bytes(_) => "bytes",
             PartitionValue::Boolean(_) => "boolean",
+        }
+    }
+
+    pub fn data_type(&self) -> DataType {
+        match self {
+            PartitionValue::Null => DataType::Null,
+            PartitionValue::Int8(_) => DataType::Int8,
+            PartitionValue::Int16(_) => DataType::Int16,
+            PartitionValue::Int32(_) => DataType::Int32,
+            PartitionValue::Int64(_) => DataType::Int64,
+            PartitionValue::UInt8(_) => DataType::UInt8,
+            PartitionValue::UInt16(_) => DataType::UInt16,
+            PartitionValue::UInt32(_) => DataType::UInt32,
+            PartitionValue::UInt64(_) => DataType::UInt64,
+            PartitionValue::String(_) => DataType::Utf8,
+            PartitionValue::Bytes(_) => DataType::Binary,
+            PartitionValue::Boolean(_) => DataType::Boolean,
         }
     }
 }

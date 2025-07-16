@@ -67,6 +67,10 @@ pub struct BenchArgs {
     #[arg(long)]
     partition_values: Option<String>,
 
+    /// The partition column name. This column will be added to the schema.
+    #[arg(long, default_value = "my_partition")]
+    partition_column_name: String,
+
     /// Number of concurrent tasks to run.
     ///
     /// Each task will continuously send batches of data to the HTTP ingestor.
@@ -202,18 +206,19 @@ impl BenchArgs {
             },
         )?;
 
-        self.ensure_topic_exists(&admin_client, &topic_name, &json_values)
+        let benchmark_data = BenchmarkData {
+            batch_size: self.batch_size,
+            json_values,
+            partition_column: self.partition_column_name.clone(),
+            partition_values,
+            namespace_name: namespace_name.clone(),
+            topic_name: topic_name.clone(),
+        };
+
+        self.ensure_topic_exists(&admin_client, &benchmark_data)
             .await?;
 
         let http_client = reqwest::Client::new();
-
-        let benchmark_data = BenchmarkData::new(
-            self.batch_size,
-            json_values,
-            partition_values,
-            namespace_name.clone(),
-            topic_name.clone(),
-        );
 
         println!(
             "Starting benchmark with {} concurrent tasks",
@@ -293,9 +298,9 @@ impl BenchArgs {
     async fn ensure_topic_exists(
         &self,
         admin_client: &impl Admin,
-        topic_name: &TopicName,
-        json_values: &[Value],
+        benchmark_data: &BenchmarkData,
     ) -> CliResult<()> {
+        let topic_name = benchmark_data.topic_name.clone();
         match admin_client.get_topic(topic_name.clone()).await {
             Ok(_) => {
                 println!("Topic {} exists, deleting it", topic_name);
@@ -311,17 +316,34 @@ impl BenchArgs {
             }
         }
 
-        let schema = infer_json_schema_from_iterator(json_values.iter().map(Result::Ok))
-            .change_context(CliError::InvalidConfiguration {
-                message: "failed to infer schema from JSON".to_string(),
-            })?;
+        let schema =
+            infer_json_schema_from_iterator(benchmark_data.json_values.iter().map(Result::Ok))
+                .change_context(CliError::InvalidConfiguration {
+                    message: "failed to infer schema from JSON".to_string(),
+                })?;
 
-        let fields: Vec<Field> = schema.fields().iter().map(|f| (**f).clone()).collect();
+        let mut fields: Vec<Field> = if let Some(value) = benchmark_data.partition_values.first() {
+            vec![Field::new(
+                benchmark_data.partition_column.clone(),
+                value.data_type(),
+                false,
+            )]
+        } else {
+            vec![]
+        };
 
-        let topic_options = TopicOptions::new(fields);
+        for field in schema.fields() {
+            fields.push(field.as_ref().clone());
+        }
+
+        let topic_options = if benchmark_data.partition_values.is_empty() {
+            TopicOptions::new(fields)
+        } else {
+            TopicOptions::new_with_partition_key(fields, 0.into())
+        };
 
         println!("Creating topic {} with schema", topic_name);
-        admin_client
+        let topic = admin_client
             .create_topic(topic_name.clone(), topic_options)
             .await
             .change_context(CliError::AdminApi {
@@ -329,6 +351,7 @@ impl BenchArgs {
             })?;
 
         println!("Topic {} created successfully", topic_name);
+        println!("Topic {:?}", topic);
         Ok(())
     }
 }
@@ -510,29 +533,13 @@ impl BenchStats {
 struct BenchmarkData {
     batch_size: usize,
     json_values: Vec<Value>,
+    partition_column: String,
     partition_values: Vec<PartitionValue>,
     namespace_name: NamespaceName,
     topic_name: TopicName,
 }
 
 impl BenchmarkData {
-    /// Create a new benchmark data instance.
-    fn new(
-        batch_size: usize,
-        json_values: Vec<Value>,
-        partition_values: Vec<PartitionValue>,
-        namespace_name: NamespaceName,
-        topic_name: TopicName,
-    ) -> Self {
-        Self {
-            batch_size,
-            json_values,
-            partition_values,
-            namespace_name,
-            topic_name,
-        }
-    }
-
     /// Create a new batch with the specified number of records for a given partition.
     fn create_batch(&self, partition_value: Option<PartitionValue>) -> (Batch, usize) {
         let mut data = Vec::with_capacity(self.batch_size);
