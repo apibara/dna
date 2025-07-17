@@ -61,7 +61,7 @@ impl NamespaceFolioWriter {
                 match PartitionFolioWriter::new(
                     batch.topic.name.clone(),
                     batch.partition,
-                    batch.topic.schema(),
+                    batch.topic.schema_without_partition_column(),
                 ) {
                     Ok(writer) => inner.insert(writer),
                     Err(error) => return Err(ReplyWithError { reply, error }),
