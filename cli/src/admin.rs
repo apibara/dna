@@ -125,7 +125,7 @@ impl AdminCommands {
                     },
                 )?;
 
-                let secret_name = SecretName::new_unchecked("default");
+                let secret_name = SecretName::new_unchecked("default-bucket");
 
                 let mut options = NamespaceOptions::new(secret_name);
 
