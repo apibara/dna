@@ -1,7 +1,10 @@
 //! HTTP client for pushing messages to Wings.
 
+use error_stack::{Result, ResultExt, report};
+use reqwest::StatusCode;
 use serde_json::Value;
-use wings_ingestor_http::types::{Batch, PushRequest, PushResponse};
+use thiserror::Error;
+use wings_ingestor_http::types::{Batch, ErrorResponse, PushRequest, PushResponse};
 use wings_metadata_core::{admin::NamespaceName, partition::PartitionValue};
 
 /// A client for pushing messages to Wings over HTTP.
@@ -10,6 +13,14 @@ pub struct HttpPushClient {
     client: reqwest::Client,
     base_url: String,
     namespace: NamespaceName,
+}
+
+#[derive(Error, Debug, Clone)]
+pub enum HttpPushClientError {
+    #[error("client error")]
+    Client,
+    #[error("response error: {0} {1}")]
+    Response(StatusCode, String),
 }
 
 impl HttpPushClient {
@@ -62,7 +73,7 @@ impl PushRequestBuilder {
     }
 
     /// Send the push request to the server.
-    pub async fn send(self) -> Result<PushResponse, reqwest::Error> {
+    pub async fn send(self) -> Result<PushResponse, HttpPushClientError> {
         let request = PushRequest {
             namespace: self.namespace.to_string(),
             batches: self.batches,
@@ -75,10 +86,23 @@ impl PushRequestBuilder {
             .post(&url)
             .json(&request)
             .send()
-            .await?
-            .error_for_status()?;
+            .await
+            .change_context(HttpPushClientError::Client)?;
 
-        response.json::<PushResponse>().await
+        if response.status().is_success() {
+            return response
+                .json::<PushResponse>()
+                .await
+                .change_context(HttpPushClientError::Client);
+        }
+
+        let status = response.status();
+        let body = response
+            .json::<ErrorResponse>()
+            .await
+            .change_context(HttpPushClientError::Client)?;
+
+        Err(report!(HttpPushClientError::Response(status, body.message)))
     }
 
     fn add_batch(&mut self, batch: Batch) {

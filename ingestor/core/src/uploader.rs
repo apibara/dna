@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use bytes::{Bytes, BytesMut};
-use error_stack::{ResultExt, report};
+use error_stack::report;
 use object_store::{PutMode, PutOptions, PutPayload};
 use wings_metadata_core::admin::{NamespaceName, NamespaceRef};
 use wings_object_store::ObjectStoreFactory;
@@ -93,8 +93,8 @@ impl FolioUploader {
                 let error = err
                     .downcast_ref::<IngestorError>()
                     .cloned()
-                    .unwrap_or_else(|| IngestorError::ObjectStoreError {
-                        message: "failed to upload folio".to_string(),
+                    .unwrap_or_else(|| {
+                        IngestorError::Internal(format!("failed to upload folio: {err}"))
                     });
 
                 let replies = partition_metadata
@@ -124,8 +124,8 @@ impl FolioUploader {
             .object_store_factory
             .create_object_store(secret_name.clone())
             .await
-            .change_context(IngestorError::ObjectStoreError {
-                message: format!("could not create object store from secret {}", secret_name),
+            .map_err(|err| {
+                IngestorError::Internal(format!("failed to create object store client: {err}"))
             })?;
 
         object_store
@@ -138,9 +138,7 @@ impl FolioUploader {
                 },
             )
             .await
-            .change_context(IngestorError::ObjectStoreError {
-                message: format!("could not create object store from secret {}", secret_name),
-            })?;
+            .map_err(|err| IngestorError::Internal(format!("failed to upload folio: {err}")))?;
 
         Ok(())
     }

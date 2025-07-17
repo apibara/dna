@@ -1,22 +1,27 @@
 use error_stack::Result;
 use thiserror::Error;
 
+/// Ingestor error types.
+///
+/// The message associated with an error is forwarded to the client,
+/// for this reason it should contain information that is useful to the user.
 #[derive(Error, Debug, Clone)]
 pub enum IngestorError {
-    #[error("channel closed")]
-    ChannelClosed,
-    #[error("unsupported arrow schema")]
-    UnsupportedArrowSchema,
-    #[error("arrow schema mismatch")]
-    ArrowSchemaMismatch,
-    #[error("parquet write error")]
-    ParquetWriteError,
-    #[error("batch validation error: {message}")]
-    BatchValidationError { message: String },
-    #[error("object store error: {message}")]
-    ObjectStoreError { message: String },
-    #[error("commit error: {message}")]
-    CommitError { message: String },
+    /// Internal server error.
+    ///
+    /// This errors are used when something goes wrong internally.
+    #[error("internal server error: {0}")]
+    Internal(String),
+    /// Schema error.
+    ///
+    /// This is for errors related to the topic's schema.
+    #[error("schema error: {0}")]
+    Schema(String),
+    /// Validation error.
+    ///
+    /// This errors are used when a precondition is not met.
+    #[error("validation error: {0}")]
+    Validation(String),
 }
 
 pub type IngestorResult<T> = Result<T, IngestorError>;

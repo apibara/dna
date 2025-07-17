@@ -31,6 +31,12 @@ pub struct PushResponse {
     pub batches: Vec<BatchResponse>,
 }
 
+/// Response payload for errors.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ErrorResponse {
+    pub message: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "_tag")]
 pub enum BatchResponse {

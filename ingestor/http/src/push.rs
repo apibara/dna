@@ -1,9 +1,13 @@
 use std::collections::HashSet;
 
+use arrow::compute::concat_batches;
+use arrow::datatypes::SchemaRef;
 use arrow::record_batch::RecordBatch;
 use arrow_json::ReaderBuilder;
+use arrow_schema::ArrowError;
+use axum::response::{IntoResponse, Response};
 use axum::{Json as JsonExtractor, extract::State, http::StatusCode, response::Json};
-use error_stack::ResultExt;
+use error_stack::{Report, bail};
 use futures::StreamExt;
 use futures::stream::FuturesOrdered;
 use wings_ingestor_core::Batch;
@@ -11,7 +15,7 @@ use wings_metadata_core::admin::{NamespaceName, TopicName};
 
 use crate::HttpIngestorState;
 use crate::error::{HttpIngestorError, HttpIngestorResult};
-use crate::types::{BatchResponse, PushRequest, PushResponse};
+use crate::types::{BatchResponse, ErrorResponse, PushRequest, PushResponse};
 
 /// Handler for the /v1/push endpoint.
 ///
@@ -30,13 +34,10 @@ use crate::types::{BatchResponse, PushRequest, PushResponse};
 pub async fn push_handler(
     State(state): State<HttpIngestorState>,
     JsonExtractor(request): JsonExtractor<PushRequest>,
-) -> Result<Json<PushResponse>, StatusCode> {
+) -> impl IntoResponse {
     match process_push_request(&state, request).await {
-        Ok(response) => Ok(Json(response)),
-        Err(error) => {
-            eprintln!("Push handler error: {}", error);
-            Err(map_error_to_status_code(&error))
-        }
+        Ok(response) => Json(response).into_response(),
+        Err(err) => map_error_to_response(err),
     }
 }
 
@@ -46,19 +47,22 @@ async fn process_push_request(
     request: PushRequest,
 ) -> HttpIngestorResult<PushResponse> {
     // Parse namespace name
-    let namespace_name = NamespaceName::parse(&request.namespace).change_context(
-        HttpIngestorError::NamespaceParseError {
-            message: format!("invalid namespace format: {}", request.namespace),
-        },
-    )?;
+    let namespace_name = NamespaceName::parse(&request.namespace).map_err(|err| {
+        HttpIngestorError::BadRequest(format!(
+            "invalid namespace format: {} {err}",
+            request.namespace,
+        ))
+    })?;
 
     // Get namespace definition from cache
     let namespace_ref = state
         .namespace_cache
         .get(namespace_name.clone())
         .await
-        .change_context(HttpIngestorError::MetadataError {
-            message: format!("failed to resolve namespace: {}", namespace_name),
+        .map_err(|err| {
+            HttpIngestorError::Internal(format!(
+                "failed to resolve namespace: {namespace_name} {err}"
+            ))
         })?;
 
     // Process each topic's batches
@@ -67,21 +71,16 @@ async fn process_push_request(
 
     for batch in request.batches {
         // Parse topic name
-        let topic_name = TopicName::new(&batch.topic, namespace_name.clone()).change_context(
-            HttpIngestorError::TopicParseError {
-                message: format!("invalid topic name: {}", batch.topic),
-            },
-        )?;
+        let topic_name = TopicName::new(&batch.topic, namespace_name.clone()).map_err(|err| {
+            HttpIngestorError::BadRequest(format!("invalid topic name: {} {err}", batch.topic))
+        })?;
 
         // Check that all batches have distinct (topic, partition).
         if !seen.insert((topic_name.clone(), batch.partition.clone())) {
-            return Err(HttpIngestorError::InvalidRequest {
-                message: format!(
-                    "duplicate batch for topic {} partition {:?}",
-                    topic_name, batch.partition
-                ),
-            }
-            .into());
+            bail!(HttpIngestorError::BadRequest(format!(
+                "duplicate batch for topic {} partition {:?}",
+                topic_name, batch.partition
+            )));
         }
 
         // Get topic definition from cache
@@ -89,17 +88,23 @@ async fn process_push_request(
             .topic_cache
             .get(topic_name.clone())
             .await
-            .change_context(HttpIngestorError::MetadataError {
-                message: format!("failed to resolve topic: {}", topic_name),
+            .map_err(|err| {
+                HttpIngestorError::Internal(format!("failed to resolve topic: {topic_name} {err}"))
             })?;
 
         // Process each batch for this topic
+        if batch.data.is_empty() {
+            bail!(HttpIngestorError::BadRequest(
+                "no data provided".to_string()
+            ));
+        }
+
         let schema = topic_ref.schema_without_partition_column();
-        let record_batch = parse_json_to_arrow(&batch.data, schema).change_context(
-            HttpIngestorError::JsonParseError {
-                message: format!("failed to parse JSON data for topic: {}", topic_name),
-            },
-        )?;
+        let record_batch = parse_json_to_arrow(schema, &batch.data).map_err(|err| {
+            HttpIngestorError::BadRequest(format!(
+                "failed to parse JSON data for topic {topic_name}: {err}"
+            ))
+        })?;
 
         let batch = Batch {
             namespace: namespace_ref.clone(),
@@ -129,16 +134,9 @@ async fn process_push_request(
 
 /// Parse JSON data into an Arrow RecordBatch using the provided schema.
 fn parse_json_to_arrow(
+    schema: SchemaRef,
     json_data: &[serde_json::Value],
-    schema: arrow::datatypes::SchemaRef,
-) -> HttpIngestorResult<RecordBatch> {
-    if json_data.is_empty() {
-        return Err(HttpIngestorError::JsonParseError {
-            message: "no data provided".to_string(),
-        }
-        .into());
-    }
-
+) -> std::result::Result<RecordBatch, ArrowError> {
     // Convert JSON values to JSON strings for arrow-json
     let json_strings: Vec<String> = json_data.iter().map(|v| v.to_string()).collect();
 
@@ -147,35 +145,28 @@ fn parse_json_to_arrow(
     let cursor = std::io::Cursor::new(json_bytes);
 
     // Use arrow-json to parse the JSON into a RecordBatch
-    let mut reader = ReaderBuilder::new(schema).build(cursor).change_context(
-        HttpIngestorError::JsonParseError {
-            message: "failed to create JSON reader".to_string(),
-        },
-    )?;
+    let reader = ReaderBuilder::new(schema.clone()).build(cursor)?;
 
-    let record_batch = reader
-        .next()
-        .ok_or_else(|| HttpIngestorError::JsonParseError {
-            message: "no data in JSON reader".to_string(),
-        })?
-        .change_context(HttpIngestorError::JsonParseError {
-            message: "failed to read JSON data".to_string(),
-        })?;
+    let mut batches = Vec::default();
+    for batch in reader {
+        let batch = batch?;
+        batches.push(batch);
+    }
 
-    Ok(record_batch)
+    concat_batches(&schema, batches.iter())
 }
 
-/// Map HttpIngestorError to appropriate HTTP status code.
-fn map_error_to_status_code(error: &error_stack::Report<HttpIngestorError>) -> StatusCode {
-    match error.current_context() {
-        HttpIngestorError::NamespaceParseError { .. } => StatusCode::BAD_REQUEST,
-        HttpIngestorError::TopicParseError { .. } => StatusCode::BAD_REQUEST,
-        HttpIngestorError::TopicNotFound { .. } => StatusCode::NOT_FOUND,
-        HttpIngestorError::JsonParseError { .. } => StatusCode::BAD_REQUEST,
-        HttpIngestorError::InvalidRequest { .. } => StatusCode::BAD_REQUEST,
-        HttpIngestorError::MetadataError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
-        HttpIngestorError::Internal { .. } => StatusCode::INTERNAL_SERVER_ERROR,
-        HttpIngestorError::BindError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
-        HttpIngestorError::ServerError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
-    }
+fn map_error_to_response(error: Report<HttpIngestorError>) -> Response {
+    let status_code = match error.current_context() {
+        HttpIngestorError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        HttpIngestorError::BadRequest(_) => StatusCode::BAD_REQUEST,
+        HttpIngestorError::NotFound(_) => StatusCode::NOT_FOUND,
+        _ => StatusCode::INTERNAL_SERVER_ERROR,
+    };
+
+    let response = Json(ErrorResponse {
+        message: error.to_string(),
+    });
+
+    (status_code, response).into_response()
 }

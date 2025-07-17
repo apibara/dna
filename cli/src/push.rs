@@ -3,6 +3,7 @@ use clap::Parser;
 use error_stack::{ResultExt, report};
 use serde_json::Value;
 use tonic::transport::Channel;
+use wings_ingestor_http::types::BatchResponse;
 use wings_metadata_core::{
     admin::{Admin, NamespaceName, RemoteAdminService, TopicName},
     partition::PartitionValue,
@@ -53,39 +54,24 @@ impl PushArgs {
         let request = self
             .parse_batches_to_request(namespace_name, &admin, &client)
             .await?;
-        /*
-        for batch in batches.into_iter() {
-            let topic_name = TopicName::new(&batch.topic, namespace_name.clone())
-                .change_context(CliError::InvalidArguments)
-                .attach_printable_lazy(|| format!("invalid topic name: {}", batch.topic))?;
-
-            let topic_request = request.topic(batch.topic);
-            request = if let Some(partition_value) = batch.partition_value {
-                let topic =
-                    admin
-                        .get_topic(topic_name)
-                        .await
-                        .change_context(CliError::AdminApi {
-                            message: "failed to get topic".to_string(),
-                        })?;
-                let partition_column = topic
-                    .partition_column()
-                    .ok_or(report!(CliError::InvalidArguments))?;
-                let partition_value =
-                    convert_partition_value(partition_value, partition_column.data_type())
-                        .change_context(CliError::InvalidArguments)?;
-                topic_request.partitioned(partition_value, batch.messages)
-            } else {
-                topic_request.unpartitioned(batch.messages)
-            };
-        }
-        */
 
         let response = request.send().await.change_context(CliError::Server {
             message: "failed to push data".to_string(),
         })?;
 
-        println!("XX {:?}", response);
+        for batch in response.batches {
+            match batch {
+                BatchResponse::Success {
+                    start_offset,
+                    end_offset,
+                } => {
+                    println!("SUCCESS {start_offset} - {end_offset}");
+                }
+                BatchResponse::Error { message } => {
+                    println!("ERROR: {message}");
+                }
+            }
+        }
 
         Ok(())
     }
@@ -162,9 +148,8 @@ impl PushArgs {
     }
 
     fn parse_payload(&self, payload_str: &str) -> CliResult<Vec<Value>> {
-        if payload_str.starts_with('@') {
+        if let Some(file_path) = payload_str.strip_prefix('@') {
             // File path mode
-            let file_path = &payload_str[1..];
             let content = std::fs::read_to_string(file_path)
                 .change_context(crate::error::CliError::IoError)
                 .attach_printable_lazy(|| format!("Failed to read file: {}", file_path))?;
@@ -204,74 +189,74 @@ fn convert_partition_value(value: &str, data_type: &DataType) -> CliResult<Parti
             let parsed = value
                 .parse::<u8>()
                 .change_context(CliError::InvalidArguments)
-                .attach_printable_lazy(|| format!("Invalid u8 partition value: {}", value))?;
+                .attach_printable_lazy(|| format!("Invalid u8 partition value: {value}"))?;
             Ok(PartitionValue::UInt8(parsed))
         }
         DataType::UInt16 => {
             let parsed = value
                 .parse::<u16>()
                 .change_context(CliError::InvalidArguments)
-                .attach_printable_lazy(|| format!("Invalid u16 partition value: {}", value))?;
+                .attach_printable_lazy(|| format!("Invalid u16 partition value: {value}"))?;
             Ok(PartitionValue::UInt16(parsed))
         }
         DataType::UInt32 => {
             let parsed = value
                 .parse::<u32>()
                 .change_context(CliError::InvalidArguments)
-                .attach_printable_lazy(|| format!("Invalid u32 partition value: {}", value))?;
+                .attach_printable_lazy(|| format!("Invalid u32 partition value: {value}"))?;
             Ok(PartitionValue::UInt32(parsed))
         }
         DataType::UInt64 => {
             let parsed = value
                 .parse::<u64>()
                 .change_context(CliError::InvalidArguments)
-                .attach_printable_lazy(|| format!("Invalid u64 partition value: {}", value))?;
+                .attach_printable_lazy(|| format!("Invalid u64 partition value: {value}"))?;
             Ok(PartitionValue::UInt64(parsed))
         }
         DataType::Int8 => {
             let parsed = value
                 .parse::<i8>()
                 .change_context(CliError::InvalidArguments)
-                .attach_printable_lazy(|| format!("Invalid i8 partition value: {}", value))?;
+                .attach_printable_lazy(|| format!("Invalid i8 partition value: {value}"))?;
             Ok(PartitionValue::Int8(parsed))
         }
         DataType::Int16 => {
             let parsed = value
                 .parse::<i16>()
                 .change_context(CliError::InvalidArguments)
-                .attach_printable_lazy(|| format!("Invalid i16 partition value: {}", value))?;
+                .attach_printable_lazy(|| format!("Invalid i16 partition value: {value}"))?;
             Ok(PartitionValue::Int16(parsed))
         }
         DataType::Int32 => {
             let parsed = value
                 .parse::<i32>()
                 .change_context(CliError::InvalidArguments)
-                .attach_printable_lazy(|| format!("Invalid i32 partition value: {}", value))?;
+                .attach_printable_lazy(|| format!("Invalid i32 partition value: {value}"))?;
             Ok(PartitionValue::Int32(parsed))
         }
         DataType::Int64 => {
             let parsed = value
                 .parse::<i64>()
                 .change_context(CliError::InvalidArguments)
-                .attach_printable_lazy(|| format!("Invalid i64 partition value: {}", value))?;
+                .attach_printable_lazy(|| format!("Invalid i64 partition value: {value}"))?;
             Ok(PartitionValue::Int64(parsed))
         }
         DataType::Utf8 | DataType::LargeUtf8 => Ok(PartitionValue::String(value.to_string())),
         DataType::Binary | DataType::LargeBinary => {
             // Handle hex encoding for binary data
-            if value.starts_with("0x") {
-                let bytes = hex::decode(&value[2..])
+            if let Some(stripped) = value.strip_prefix("0x") {
+                let bytes = hex::decode(stripped)
                     .change_context(CliError::InvalidArguments)
-                    .attach_printable_lazy(|| format!("Invalid hex partition value: {}", value))?;
+                    .attach_printable_lazy(|| format!("Invalid hex partition value: {value}"))?;
                 Ok(PartitionValue::Bytes(bytes))
             } else {
                 let bytes = hex::decode(value)
                     .change_context(CliError::InvalidArguments)
-                    .attach_printable_lazy(|| format!("Invalid hex partition value: {}", value))?;
+                    .attach_printable_lazy(|| format!("Invalid hex partition value: {value}"))?;
                 Ok(PartitionValue::Bytes(bytes))
             }
         }
         _ => Err(CliError::InvalidArguments)
-            .attach_printable_lazy(|| format!("Unsupported partition key type: {:?}", data_type)),
+            .attach_printable_lazy(|| format!("Unsupported partition key type: {data_type:?}")),
     }
 }

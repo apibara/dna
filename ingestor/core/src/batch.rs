@@ -27,22 +27,18 @@ pub type WriteReplySender = oneshot::Sender<IngestorResult<WriteInfo>>;
 impl Batch {
     pub fn validate(&self) -> IngestorResult<()> {
         if self.topic.partition_key.is_none() && self.partition.is_some() {
-            return Err(report!(IngestorError::BatchValidationError {
-                message: format!(
-                    "topic {} does not specify a partition key but batch contains partition data",
-                    self.topic.name
-                )
-            }));
+            return Err(report!(IngestorError::Validation(format!(
+                "topic {} does not specify a partition key but batch contains partition data",
+                self.topic.name
+            ))));
         }
 
         if self.topic.name.parent() != &self.namespace.name {
-            return Err(report!(IngestorError::BatchValidationError {
-                message: format!(
-                    "topic namespace {} does not match provided namespace {}",
-                    self.topic.name.parent(),
-                    self.namespace.name
-                )
-            }));
+            return Err(report!(IngestorError::Validation(format!(
+                "topic namespace {} does not match provided namespace {}",
+                self.topic.name.parent(),
+                self.namespace.name
+            ))));
         }
 
         Ok(())

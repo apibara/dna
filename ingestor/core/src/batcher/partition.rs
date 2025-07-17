@@ -1,8 +1,6 @@
-use std::sync::Arc;
-
 use arrow::record_batch::RecordBatch;
 use arrow_schema::SchemaRef;
-use error_stack::Report;
+use error_stack::report;
 use parquet::{
     arrow::ArrowWriter,
     file::{metadata::KeyValue, properties::WriterProperties},
@@ -43,7 +41,7 @@ impl PartitionFolioWriter {
         let buffer = Vec::with_capacity(DEFAULT_BUFFER_CAPACITY);
         // The writer will only fail if the schema is unsupported
         let writer = ArrowWriter::try_new(buffer, schema, write_properties.into())
-            .map_err(|_| IngestorError::UnsupportedArrowSchema)?;
+            .map_err(|err| IngestorError::Schema(err.to_string()))?;
 
         Ok(Self {
             writer,
@@ -63,7 +61,7 @@ impl PartitionFolioWriter {
         let initial_size = self.buffer_size();
 
         if let Err(err) = self.writer.write(batch) {
-            let error = Report::new(err).change_context(IngestorError::ArrowSchemaMismatch);
+            let error = report!(IngestorError::Schema(err.to_string()));
             return Err(ReplyWithError { reply, error });
         };
 
@@ -98,17 +96,14 @@ impl PartitionFolioWriter {
                 batches: self.batches,
             }),
             Err(err) => {
-                let err = Arc::new(err);
                 let replies = self
                     .batches
                     .into_iter()
                     .map(|m| {
-                        let err = Report::new(err.clone())
-                            .change_context(IngestorError::ParquetWriteError);
-
+                        let error = report!(IngestorError::Internal(err.to_string()));
                         ReplyWithError {
                             reply: m.reply,
-                            error: err,
+                            error,
                         }
                     })
                     .collect();

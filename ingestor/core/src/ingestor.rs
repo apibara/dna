@@ -148,10 +148,13 @@ impl BatchIngestorClient {
         self.tx
             .send(BatchWithReply { batch, reply: tx })
             .await
-            .or_else(|err| Err(err).change_context(IngestorError::ChannelClosed))?;
+            .or_else(|err| {
+                Err(err).change_context(IngestorError::Internal("channel closed".to_string()))
+            })?;
 
-        rx.await
-            .or_else(|err| Err(err).change_context(IngestorError::ChannelClosed))?
+        rx.await.or_else(|err| {
+            Err(err).change_context(IngestorError::Internal("channel closed".to_string()))
+        })?
     }
 }
 
@@ -183,11 +186,8 @@ async fn upload_and_commit_folio(
         .await
     {
         Ok(commits) => commits,
-        Err(_err) => {
-            // TODO: we need to propagate the error.
-            let error = IngestorError::CommitError {
-                message: "failed to commit folio".to_string(),
-            };
+        Err(err) => {
+            let error = IngestorError::Internal(format!("failed to commit folio: {err}"));
 
             let replies = batch_context
                 .into_iter()
