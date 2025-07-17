@@ -3,6 +3,7 @@ use thiserror::Error;
 use crate::{
     admin::{NamespaceName, TopicName},
     partition::PartitionValue,
+    resource::ResourceError,
 };
 
 /// Errors that can occur during batch committer operations.
@@ -18,6 +19,10 @@ pub enum OffsetRegistryError {
     InvalidOffsetRange,
     #[error("internal error: {0}")]
     Internal(String),
+    #[error("invalid argument: {0}")]
+    InvalidArgument(String),
+    #[error("invalid resource name")]
+    InvalidResourceName(#[from] ResourceError),
 }
 
 pub type OffsetRegistryResult<T> = error_stack::Result<T, OffsetRegistryError>;

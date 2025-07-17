@@ -119,7 +119,7 @@ impl OffsetRegistry for InMemoryOffsetRegistry {
             partition_state.next_offset = end_offset + 1;
 
             committed_batches.push(CommittedBatch {
-                topic_id: batch.topic_name.clone(),
+                topic_name: batch.topic_name.clone(),
                 partition_value: batch.partition_value.clone(),
                 start_offset,
                 end_offset,
@@ -286,7 +286,7 @@ mod tests {
 
         // Verify the committed batch has correct offsets
         assert_eq!(result.len(), 1);
-        assert_eq!(result[0].topic_id, topic);
+        assert_eq!(result[0].topic_name, topic);
         assert_eq!(result[0].partition_value, partition.clone());
         assert_eq!(result[0].start_offset, 0);
         assert_eq!(result[0].end_offset, 9); // 10 messages, 0-based
@@ -434,13 +434,13 @@ mod tests {
         assert_eq!(result.len(), 2);
 
         // Verify first batch
-        assert_eq!(result[0].topic_id, topic1);
+        assert_eq!(result[0].topic_name, topic1);
         assert_eq!(result[0].partition_value, partition1.clone());
         assert_eq!(result[0].start_offset, 0);
         assert_eq!(result[0].end_offset, 4); // 5 messages, 0-based
 
         // Verify second batch
-        assert_eq!(result[1].topic_id, topic2);
+        assert_eq!(result[1].topic_name, topic2);
         assert_eq!(result[1].partition_value, partition2.clone());
         assert_eq!(result[1].start_offset, 0);
         assert_eq!(result[1].end_offset, 9); // 10 messages, 0-based
@@ -601,7 +601,7 @@ mod tests {
 
         // Verify the committed batch
         assert_eq!(result.len(), 1);
-        assert_eq!(result[0].topic_id, topic);
+        assert_eq!(result[0].topic_name, topic);
         assert_eq!(result[0].partition_value, partition_value);
         // The exact offset might vary depending on previous test execution,
         // so we just check that start_offset equals end_offset for a single message

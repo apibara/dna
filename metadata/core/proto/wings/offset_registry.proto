@@ -1,0 +1,76 @@
+syntax = "proto3";
+
+package wings.v1;
+
+import "google/protobuf/empty.proto";
+
+service OffsetRegistryService {
+  rpc CommitFolio(CommitFolioRequest) returns (CommitFolioResponse);
+  rpc OffsetLocation(OffsetLocationRequest) returns (OffsetLocationResponse);
+}
+
+
+message CommitFolioRequest {
+  string namespace = 1;
+  string file_ref = 2;
+  repeated BatchToCommit batches = 3;
+}
+
+message CommitFolioResponse {
+  repeated CommittedBatch batches = 1;
+}
+
+message OffsetLocationRequest {
+  string topic = 1;
+  uint64 offset = 2;
+  optional PartitionValue partition = 3;
+}
+
+message OffsetLocationResponse {
+  oneof location {
+    FolioLocation folio_location = 1;
+  }
+}
+
+message BatchToCommit {
+  string topic = 1;
+  optional PartitionValue partition = 2;
+  uint32 num_messages = 3;
+  uint64 offset_bytes = 4;
+  uint64 batch_size_bytes = 5;
+}
+
+message CommittedBatch {
+  string topic = 1;
+  optional PartitionValue partition = 2;
+  uint64 start_offset = 3;
+  uint64 end_offset = 4;
+}
+
+message FolioLocation {
+  string file_ref = 1;
+  uint64 offset_bytes = 2;
+  uint64 size_bytes = 3;
+  uint64 start_offset = 4;
+  uint64 end_offset = 5;
+}
+
+message PartitionValue {
+  oneof value {
+    google.protobuf.Empty null_value = 1;
+
+    int32 int8_value = 2;
+    int32 int16_value = 3;
+    int32 int32_value = 4;
+    int64 int64_value = 5;
+
+    uint32 uint8_value = 6;
+    uint32 uint16_value = 7;
+    uint32 uint32_value = 8;
+    uint64 uint64_value = 9;
+
+    string string_value = 10;
+    bytes bytes_value = 11;
+    bool bool_value = 12;
+  }
+}

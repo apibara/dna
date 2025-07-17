@@ -2,6 +2,9 @@
 
 pub mod error;
 pub mod memory;
+pub mod proto;
+pub mod remote;
+pub mod server;
 pub mod types;
 
 pub use error::{OffsetRegistryError, OffsetRegistryResult};

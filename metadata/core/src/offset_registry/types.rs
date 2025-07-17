@@ -21,7 +21,7 @@ pub struct BatchToCommit {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CommittedBatch {
     /// The topic id of the batch that was committed.
-    pub topic_id: TopicName,
+    pub topic_name: TopicName,
     /// The partition value, if any.
     pub partition_value: Option<PartitionValue>,
     /// The first assigned offset of the batch.
