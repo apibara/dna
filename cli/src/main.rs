@@ -1,9 +1,11 @@
 use clap::{Parser, Subcommand};
+use debug_data::DebugDataArgs;
 use tokio_util::sync::CancellationToken;
 
 use crate::{admin::AdminCommands, dev::DevArgs, error::CliResult, push::PushArgs};
 
 mod admin;
+mod debug_data;
 mod dev;
 mod error;
 mod http_client;
@@ -36,6 +38,10 @@ enum Commands {
         #[clap(flatten)]
         inner: PushArgs,
     },
+    DebugData {
+        #[clap(flatten)]
+        inner: DebugDataArgs,
+    },
 }
 
 #[tokio::main]
@@ -54,5 +60,6 @@ async fn main() -> CliResult<()> {
         Commands::Dev { inner } => inner.run(ct).await,
         Commands::Admin { inner } => inner.run(ct).await,
         Commands::Push { inner } => inner.run(ct).await,
+        Commands::DebugData { inner } => inner.run(ct).await,
     }
 }

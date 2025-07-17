@@ -9,6 +9,8 @@ pub enum CliError {
     Service { message: String },
     #[error("admin API error: {message}")]
     AdminApi { message: String },
+    #[error("object store error: {message}")]
+    ObjectStore { message: String },
     #[error("remote API error")]
     Remote,
     #[error("server error: {message}")]

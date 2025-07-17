@@ -2,6 +2,7 @@ use arrow_schema::DataType;
 use clap::Parser;
 use error_stack::{ResultExt, report};
 use serde_json::Value;
+use tokio_util::sync::CancellationToken;
 use tonic::transport::Channel;
 use wings_ingestor_http::types::BatchResponse;
 use wings_metadata_core::{
@@ -39,7 +40,7 @@ pub struct PushArgs {
 }
 
 impl PushArgs {
-    pub async fn run(self, _ct: tokio_util::sync::CancellationToken) -> CliResult<()> {
+    pub async fn run(self, _ct: CancellationToken) -> CliResult<()> {
         let admin = self.remote.admin_client().await?;
 
         let namespace_name = NamespaceName::parse(&self.namespace).change_context(
@@ -183,7 +184,7 @@ impl PushArgs {
 }
 
 /// Convert a string partition value to the appropriate type based on the Arrow DataType
-fn convert_partition_value(value: &str, data_type: &DataType) -> CliResult<PartitionValue> {
+pub fn convert_partition_value(value: &str, data_type: &DataType) -> CliResult<PartitionValue> {
     match data_type {
         DataType::UInt8 => {
             let parsed = value

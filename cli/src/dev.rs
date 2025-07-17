@@ -11,7 +11,7 @@ use wings_metadata_core::{
         TenantName,
     },
     cache::{NamespaceCache, TopicCache},
-    offset_registry::InMemoryOffsetRegistry,
+    offset_registry::{InMemoryOffsetRegistry, server::OffsetRegistryService},
 };
 use wings_object_store::TemporaryFileSystemFactory;
 
@@ -54,16 +54,20 @@ impl DevArgs {
                 TemporaryFileSystemFactory::new().change_context(CliError::Server {
                     message: "error creating local temporary directory".to_string(),
                 })?;
-            let batch_committer = InMemoryOffsetRegistry::new();
+
+            let offset_registry = Arc::new(InMemoryOffsetRegistry::new());
 
             println!(
                 "Object store root path: {}",
                 object_store_factory.root_path().display()
             );
+
             let ingestor =
-                BatchIngestor::new(Arc::new(object_store_factory), Arc::new(batch_committer));
+                BatchIngestor::new(Arc::new(object_store_factory), offset_registry.clone());
+
             let grpc_server_fut = run_grpc_server(
                 admin.clone(),
+                offset_registry,
                 ingestor.client(),
                 metadata_address,
                 ct.clone(),
@@ -112,6 +116,7 @@ async fn new_dev_admin_service() -> (Arc<InMemoryAdminService>, NamespaceName) {
 
 async fn run_grpc_server(
     admin: Arc<InMemoryAdminService>,
+    offset_registry: Arc<InMemoryOffsetRegistry>,
     _batch_ingestor: BatchIngestorClient,
     address: SocketAddr,
     ct: CancellationToken,
@@ -126,10 +131,12 @@ async fn run_grpc_server(
         })?;
 
     let admin_service = AdminService::new(admin).into_service();
+    let offset_registry_service = OffsetRegistryService::new(offset_registry).into_service();
 
     let server = tonic::transport::Server::builder()
         .add_service(reflection_service)
         .add_service(admin_service)
+        .add_service(offset_registry_service)
         .serve_with_shutdown(address, async move {
             ct.cancelled().await;
         });
