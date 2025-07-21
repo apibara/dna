@@ -26,8 +26,8 @@ thiserror.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
 ulid = "1.2.1"
-wings-object-store = { path = "../../common/object_store" }
-wings-metadata-core = { path = "../../metadata/core" }
+wings-object-store = { path = "../wings_object_store" }
+wings-metadata-core = { path = "../wings_metadata_core" }
 
 [dev-dependencies]
 bytesize.workspace = true

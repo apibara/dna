@@ -14,7 +14,7 @@ path = "src/lib.rs"
 async-trait.workspace = true
 object_store.workspace = true
 tempfile = "3.0"
-wings-metadata-core = { path = "../../metadata/core" }
+wings-metadata-core = { path = "../wings_metadata_core" }
 
 [dev-dependencies]
 tokio.workspace = true
