@@ -12,6 +12,7 @@ members = [
     "wings_ingestor_http",
     "wings_metadata_core",
     "wings_object_store",
+    "wings_server_http",
 ]
 
 [profile.maxperf]

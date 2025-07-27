@@ -1,5 +1,6 @@
 use std::{net::SocketAddr, sync::Arc};
 
+use axum::Router;
 use clap::Args;
 use error_stack::ResultExt;
 use tokio_util::sync::CancellationToken;
@@ -14,6 +15,7 @@ use wings_metadata_core::{
     offset_registry::{InMemoryOffsetRegistry, server::OffsetRegistryService},
 };
 use wings_object_store::TemporaryFileSystemFactory;
+use wings_server_http::HttpServer;
 
 use crate::error::{CliError, CliResult};
 
@@ -154,9 +156,27 @@ async fn run_http_ingestor(
 ) -> CliResult<()> {
     let topic_cache = TopicCache::new(admin.clone());
     let namespace_cache = NamespaceCache::new(admin);
-    let ingestor = HttpIngestor::new(address, topic_cache, namespace_cache, batch_ingestor);
 
-    ingestor.run(ct).await.change_context(CliError::Server {
-        message: "error while running http ingestor".to_string(),
+    let app = {
+        let ingestor = HttpIngestor::new(topic_cache, namespace_cache, batch_ingestor);
+        let server = HttpServer::new();
+
+        Router::new()
+            .merge(ingestor.into_router())
+            .merge(server.into_router())
+    };
+
+    let listener = tokio::net::TcpListener::bind(&address)
+        .await
+        .change_context(CliError::Server {
+            message: format!("failed to bind address {address}"),
+        })?;
+
+    let server = axum::serve(listener, app).with_graceful_shutdown(async move {
+        ct.cancelled().await;
+    });
+
+    server.await.change_context(CliError::Server {
+        message: "server failed to run".to_string(),
     })
 }

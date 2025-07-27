@@ -14,6 +14,7 @@ path = "src/main.rs"
 arrow.workspace = true
 arrow-json.workspace = true
 arrow-schema.workspace = true
+axum.workspace = true
 bytesize.workspace = true
 clap.workspace = true
 error-stack.workspace = true
@@ -28,7 +29,8 @@ tonic.workspace = true
 tonic-reflection.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
-wings-metadata-core = { path = "../wings_metadata_core" }
-wings-object-store = { path = "../wings_object_store" }
 wings-ingestor-core = { path = "../wings_ingestor_core" }
 wings-ingestor-http = { path = "../wings_ingestor_http" }
+wings-metadata-core = { path = "../wings_metadata_core" }
+wings-object-store = { path = "../wings_object_store" }
+wings-server-http = { path = "../wings_server_http" }

@@ -4327,6 +4327,7 @@ dependencies = [
  "arrow",
  "arrow-json",
  "arrow-schema",
+ "axum",
  "bytesize",
  "clap",
  "error-stack",
@@ -4342,6 +4343,7 @@ dependencies = [
  "wings-ingestor-http",
  "wings-metadata-core",
  "wings-object-store",
+ "wings-server-http",
 ]
 
 [[package]]
@@ -4424,6 +4426,25 @@ dependencies = [
  "object_store",
  "tempfile",
  "tokio",
+ "wings-metadata-core",
+]
+
+[[package]]
+name = "wings-server-http"
+version = "0.1.0"
+dependencies = [
+ "arrow",
+ "arrow-json",
+ "arrow-schema",
+ "axum",
+ "error-stack",
+ "futures",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.12",
+ "tokio",
+ "tokio-util",
+ "tower",
  "wings-metadata-core",
 ]
 

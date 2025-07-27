@@ -1,0 +1,26 @@
+[package]
+name = "wings-server-http"
+version = "0.1.0"
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[lib]
+name = "wings_server_http"
+path = "src/lib.rs"
+
+[dependencies]
+arrow.workspace = true
+arrow-json.workspace = true
+arrow-schema.workspace = true
+axum.workspace = true
+error-stack.workspace = true
+futures.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+tower.workspace = true
+wings-metadata-core = { path = "../wings_metadata_core" }
