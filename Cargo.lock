@@ -817,16 +817,32 @@ dependencies = [
 name = "apibara-dna-protocol"
 version = "0.1.0"
 dependencies = [
- "error-stack",
  "hex",
  "pin-project",
  "prost",
  "prost-types",
  "serde",
  "serde_json",
+ "snafu",
  "tokio-stream",
  "tonic",
  "tonic-build",
+]
+
+[[package]]
+name = "apibara-dna-sdk"
+version = "2.0.0"
+dependencies = [
+ "apibara-dna-protocol",
+ "pin-project",
+ "prost",
+ "prost-types",
+ "serde",
+ "snafu",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+ "tracing",
 ]
 
 [[package]]
@@ -6338,6 +6354,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3c5e1a9a646d36c3599cd173a41282daf47c44583ad367b8e6837255952e5c67"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "snafu"
+version = "0.8.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "320b01e011bf8d5d7a4a4a4be966d9160968935849c83b918827f6a435e7f627"
+dependencies = [
+ "snafu-derive",
+]
+
+[[package]]
+name = "snafu-derive"
+version = "0.8.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1961e2ef424c1424204d3a5d6975f934f56b6d50ff5732382d84ebf460e147f7"
+dependencies = [
+ "heck",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.100",
 ]
 
 [[package]]

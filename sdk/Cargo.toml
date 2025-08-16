@@ -1,27 +1,28 @@
 [package]
-name = "apibara-dna-protocol"
-version = "0.1.0"
+name = "apibara-dna-sdk"
+version = "2.0.0"
 edition.workspace = true
 authors.workspace = true
 repository.workspace = true
 license.workspace = true
 
 [lib]
-name = "apibara_dna_protocol"
+name = "apibara_dna_sdk"
 path = "src/lib.rs"
 
+[features]
+default = ["evm", "starknet"]
+evm = []
+starknet = []
+
 [dependencies]
-hex.workspace = true
+apibara-dna-protocol = { path = "../protocol" }
 pin-project.workspace = true
 prost.workspace = true
 prost-types.workspace = true
 serde.workspace = true
-snafu.workspace = true
 tonic.workspace = true
+tokio.workspace = true
 tokio-stream.workspace = true
-
-[dev-dependencies]
-serde_json.workspace = true
-
-[build-dependencies]
-tonic-build.workspace = true
+tracing.workspace = true
+snafu.workspace = true

@@ -1,5 +1,3 @@
-use error_stack::{report, Result, ResultExt};
-
 use crate::helpers::{
     from_be_bytes_slice, impl_from_to_bytes, impl_scalar_helpers, impl_scalar_traits,
 };

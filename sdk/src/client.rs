@@ -1,24 +1,33 @@
-use std::{fmt, pin::Pin, task::Poll, time::Duration};
+use std::{pin::Pin, task::Poll, time::Duration};
 
-use pin_project::pin_project;
-use tokio_stream::{Stream, StreamExt, Timeout};
-use tonic::{service::interceptor::InterceptedService, transport::Channel, IntoRequest, Streaming};
-
-use crate::dna::stream::{
+use apibara_dna_protocol::dna::stream::{
     dna_stream_client::DnaStreamClient, stream_data_response, StatusRequest, StatusResponse,
     StreamDataRequest, StreamDataResponse,
 };
+use pin_project::pin_project;
+use snafu::Snafu;
+use tokio_stream::{Elapsed, Stream, StreamExt, Timeout};
+use tonic::{service::interceptor::InterceptedService, transport::Channel, Streaming};
 
-use super::MetadataInterceptor;
+use crate::{interceptor::MetadataInterceptor, StreamClientBuilder};
 
-pub type StreamMessage = stream_data_response::Message;
+type StreamMessage = stream_data_response::Message;
 
-#[derive(Debug)]
+/// Error type for the data stream client.
+#[derive(Debug, Snafu)]
 pub enum DataStreamError {
-    Timeout,
-    Tonic(tonic::Status),
+    /// Error caused by the gRPC client.
+    #[snafu(display("gRPC client error"))]
+    Tonic { source: tonic::Status },
+    /// Timeout error. The client did not receive a message in the specified time.
+    #[snafu(display("gRPC stream timeout: {elapsed}"))]
+    Timeout { elapsed: Elapsed },
+    /// The response does not contain any message.
+    #[snafu(display("Received empty message in response"))]
+    EmptyMessageInResponse,
 }
 
+/// A DNA stream returned by [StreamClient::stream_data].
 #[derive(Debug)]
 #[pin_project]
 pub struct DataStream {
@@ -26,7 +35,7 @@ pub struct DataStream {
     inner: Pin<Box<Timeout<Streaming<StreamDataResponse>>>>,
 }
 
-/// Data stream client.
+/// A DNA stream client.
 #[derive(Clone)]
 pub struct StreamClient {
     inner: DnaStreamClient<InterceptedService<Channel, MetadataInterceptor>>,
@@ -34,6 +43,11 @@ pub struct StreamClient {
 }
 
 impl StreamClient {
+    /// Create a new [StreamClientBuilder] to configure the client.
+    pub fn builder() -> StreamClientBuilder {
+        StreamClientBuilder::new()
+    }
+
     pub(crate) fn new(
         inner: DnaStreamClient<InterceptedService<Channel, MetadataInterceptor>>,
         timeout: Duration,
@@ -42,10 +56,22 @@ impl StreamClient {
     }
 
     /// Start streaming data from the server.
+    ///
+    /// If not already set, the heartbeat interval is set to half of the timeout
+    /// duration.
     pub async fn stream_data(
         &mut self,
-        request: impl IntoRequest<StreamDataRequest>,
+        request: impl Into<StreamDataRequest>,
     ) -> Result<DataStream, tonic::Status> {
+        let mut request: StreamDataRequest = request.into();
+        if request.heartbeat_interval.is_none() {
+            let heartbeat = prost_types::Duration {
+                seconds: (self.timeout.as_secs() / 2) as _,
+                nanos: 0,
+            };
+            request.heartbeat_interval = Some(heartbeat);
+        }
+
         let response = self.inner.stream_data(request).await?;
         let inner = response.into_inner().timeout(self.timeout);
         Ok(DataStream {
@@ -74,33 +100,18 @@ impl Stream for DataStream {
             Poll::Pending => Poll::Pending,
             Poll::Ready(None) => Poll::Ready(None),
             Poll::Ready(Some(response_or_timeout)) => match response_or_timeout {
-                Err(_elapsed) => Poll::Ready(Some(Err(DataStreamError::Timeout))),
-                Ok(Err(tonic_error)) => Poll::Ready(Some(Err(DataStreamError::Tonic(tonic_error)))),
+                Err(elapsed) => Poll::Ready(Some(Err(DataStreamError::Timeout { elapsed }))),
+                Ok(Err(tonic_error)) => Poll::Ready(Some(Err(DataStreamError::Tonic {
+                    source: tonic_error,
+                }))),
                 Ok(Ok(response)) => {
                     if let Some(message) = response.message {
                         Poll::Ready(Some(Ok(message)))
                     } else {
-                        let error = tonic::Status::data_loss("missing message in response");
-                        Poll::Ready(Some(Err(DataStreamError::Tonic(error))))
+                        Poll::Ready(Some(Err(DataStreamError::EmptyMessageInResponse)))
                     }
                 }
             },
-        }
-    }
-}
-
-impl error_stack::Context for DataStreamError {}
-
-impl fmt::Display for DataStreamError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            DataStreamError::Timeout => write!(f, "data stream timeout"),
-            DataStreamError::Tonic(status) => write!(
-                f,
-                "data stream error: {} - {}",
-                status.code(),
-                status.message()
-            ),
         }
     }
 }

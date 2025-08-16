@@ -1,13 +1,16 @@
-use error_stack::{Result, ResultExt};
 use tonic::{
-    metadata::{AsciiMetadataValue, KeyAndValueRef, MetadataMap},
+    metadata::{AsciiMetadataValue, KeyAndValueRef},
     service::Interceptor,
 };
 
-use super::error::StreamClientError;
+pub use tonic::metadata::{errors::InvalidMetadataValue, MetadataMap};
 
+/// A metadata key.
 pub type MetadataKey = tonic::metadata::MetadataKey<tonic::metadata::Ascii>;
+/// A metadata value.
 pub type MetadataValue = tonic::metadata::MetadataValue<tonic::metadata::Ascii>;
+
+pub const AUTHORIZATION_HEADER: &str = "authorization";
 
 #[derive(Default, Clone)]
 pub struct MetadataInterceptor {
@@ -19,18 +22,12 @@ impl MetadataInterceptor {
         Self { metadata }
     }
 
-    pub fn insert_meta(&mut self, key: MetadataKey, value: MetadataValue) -> Option<MetadataValue> {
-        self.metadata.insert(key, value)
-    }
-
     pub fn insert_bearer_token(
         &mut self,
         token: String,
-    ) -> Result<Option<MetadataValue>, StreamClientError> {
-        let token = AsciiMetadataValue::try_from(format!("Bearer {token}"))
-            .change_context(StreamClientError)
-            .attach_printable("failed to format authorization metadata value")?;
-        Ok(self.metadata.insert("authorization", token))
+    ) -> Result<Option<MetadataValue>, InvalidMetadataValue> {
+        let token = AsciiMetadataValue::try_from(format!("Bearer {token}"))?;
+        Ok(self.metadata.insert(AUTHORIZATION_HEADER, token))
     }
 }
 
@@ -38,7 +35,7 @@ impl Interceptor for MetadataInterceptor {
     fn call(
         &mut self,
         mut request: tonic::Request<()>,
-    ) -> std::result::Result<tonic::Request<()>, tonic::Status> {
+    ) -> Result<tonic::Request<()>, tonic::Status> {
         let req_meta = request.metadata_mut();
 
         for kv in self.metadata.iter() {

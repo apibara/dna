@@ -23,9 +23,7 @@ macro_rules! impl_scalar_helpers {
                 // number is too big
                 let size = bytes.len();
                 if size > $size {
-                    return Err(report!(crate::error::DecodeError)).attach_printable_lazy(|| {
-                        format!("{} bytes is too big", stringify!($typ))
-                    });
+                    return Err(crate::error::DecodeError::SizeTooBig);
                 }
                 let mut bytes_array = [0u8; $size];
                 bytes_array[$size - size..].copy_from_slice(bytes);
@@ -38,28 +36,20 @@ macro_rules! impl_scalar_helpers {
     ($typ:ident) => {
         impl $typ {
             pub fn from_hex(s: &str) -> Result<Self, crate::error::DecodeError> {
+                use crate::error::DecodeFromHexSnafu;
+                use snafu::ResultExt;
                 // must be at least 0x
                 if !s.starts_with("0x") {
-                    return Err(report!(crate::error::DecodeError)).attach_printable_lazy(|| {
-                        format!("missing 0x prefix in {}", stringify!($typ))
-                    });
+                    return Err(crate::error::DecodeError::Missing0xPrefix);
                 }
 
                 // hex requires the string to be even-sized. If it's not, we copy it and add a leading 0.
                 let bytes = if s.len() % 2 == 1 {
                     let even_sized = format!("0{}", &s[2..]);
-                    hex::decode(even_sized)
-                        .change_context(crate::error::DecodeError)
-                        .attach_printable_lazy(|| {
-                            format!("failed to decode {} scalar", stringify!($typ))
-                        })?
+                    hex::decode(even_sized).context(DecodeFromHexSnafu {})?
                 } else {
                     // skip 0x prefix
-                    hex::decode(&s[2..])
-                        .change_context(crate::error::DecodeError)
-                        .attach_printable_lazy(|| {
-                            format!("failed to decode {} scalar", stringify!($typ))
-                        })?
+                    hex::decode(&s[2..]).context(DecodeFromHexSnafu {})?
                 };
 
                 Self::from_slice(&bytes)

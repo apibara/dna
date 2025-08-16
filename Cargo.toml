@@ -13,6 +13,7 @@ members = [
     "protocol",
     "common",
     "benchmark",
+    "sdk",
     # Chains
     "beaconchain",
     "evm",
@@ -83,6 +84,7 @@ roaring = "0.10.6"
 serde = { version = "1.0.205", features = ["derive"] }
 serde_json = "1.0.122"
 serde_with = "3.9.0"
+snafu = "0.8.6"
 tempfile = "3.13.0"
 tempdir = "0.3.7"
 testcontainers = "0.22.0"
@@ -90,7 +92,12 @@ time = { version = "0.3.36", features = ["formatting", "local-offset"] }
 tokio = { version = "1.38", features = ["full"] }
 tokio-stream = { version = "0.1.15", features = ["sync", "net"] }
 tokio-util = "0.7.11"
-tonic = { version = "0.12.1", features = ["tls", "tls-roots", "prost"] }
+tonic = { version = "0.12.1", features = [
+    "tls",
+    "tls-roots",
+    "tls-native-roots",
+    "prost",
+] }
 tonic-build = "0.12.2"
 tonic-health = "0.12.2"
 tonic-reflection = "0.12.2"
