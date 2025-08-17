@@ -1,5 +1,4 @@
 pub mod beaconchain;
-pub mod client;
 pub mod dna;
 pub mod error;
 pub mod evm;

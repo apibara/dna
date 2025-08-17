@@ -6,6 +6,8 @@ pub mod stream {
         ser::{Serialize, SerializeStruct, Serializer},
     };
 
+    pub type DnaMessage = stream_data_response::Message;
+
     tonic::include_proto!("dna.v2.stream");
 
     pub const DNA_STREAM_DESCRIPTOR_SET: &[u8] =
@@ -81,6 +83,17 @@ pub mod stream {
     }
 
     impl Cursor {
+        /// Creates a new cursor that streams data from the specified block number.
+        pub fn new_with_block_number(block_number: u64) -> Option<Self> {
+            if block_number == 0 {
+                return None;
+            }
+            Some(Self {
+                order_key: block_number.saturating_sub(1),
+                unique_key: Vec::new(),
+            })
+        }
+
         pub fn new_finalized(order_key: u64) -> Self {
             Self {
                 order_key,

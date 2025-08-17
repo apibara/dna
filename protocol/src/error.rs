@@ -1,10 +1,12 @@
-#[derive(Debug)]
-pub struct DecodeError;
+use snafu::Snafu;
 
-impl std::fmt::Display for DecodeError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "failed to decode scalar")
-    }
+#[derive(Debug, Snafu)]
+#[snafu(visibility(pub))]
+pub enum DecodeError {
+    #[snafu(display("Size too big"))]
+    SizeTooBig,
+    #[snafu(display("Missing 0x prefix"))]
+    Missing0xPrefix,
+    #[snafu(display("Failed to decode from hex"))]
+    DecodeFromHex { source: hex::FromHexError },
 }
-
-impl error_stack::Context for DecodeError {}
