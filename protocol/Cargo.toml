@@ -1,6 +1,9 @@
 [package]
 name = "apibara-dna-protocol"
-version = "0.1.0"
+version = "2.0.0"
+description = "Low-level Apibara DNA gRPC types."
+readme = "README.md"
+homepage = "https://www.apibara.com/docs"
 edition.workspace = true
 authors.workspace = true
 repository.workspace = true
