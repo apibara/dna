@@ -1,8 +1,10 @@
 use std::{sync::Arc, time::Duration};
 
+use backon::{ExponentialBuilder, Retryable};
 use error_stack::{Report, Result, ResultExt};
 use reqwest::header::{HeaderMap, HeaderValue};
 use starknet::providers::{jsonrpc::HttpTransport, JsonRpcClient, Provider};
+use tracing::warn;
 use url::Url;
 
 use super::models;
@@ -33,6 +35,8 @@ pub struct StarknetProviderOptions {
     pub timeout: Duration,
     /// Request headers.
     pub headers: HeaderMap<HeaderValue>,
+    /// Exponential backoff configuration.
+    pub exponential_backoff: ExponentialBuilder,
 }
 
 #[derive(Clone)]
@@ -69,7 +73,15 @@ impl StarknetProvider {
     ) -> Result<models::MaybePendingBlockWithTxHashes, StarknetProviderError> {
         let starknet_block_id: starknet::core::types::BlockId = block_id.into();
 
-        let request = self.client.get_block_with_tx_hashes(starknet_block_id);
+        let request = (|| async {
+            self.client
+                .get_block_with_tx_hashes(starknet_block_id)
+                .await
+        })
+        .retry(self.options.exponential_backoff)
+        .notify(|err, duration| {
+            warn!(duration = ?duration, error = %err, "get_block_with_tx_hashes failed");
+        });
         let Ok(response) = tokio::time::timeout(self.options.timeout, request).await else {
             return Err(StarknetProviderError::Timeout)
                 .attach_printable("failed to get block with transaction hashes")
@@ -88,7 +100,11 @@ impl StarknetProvider {
     ) -> Result<models::MaybePendingBlockWithReceipts, StarknetProviderError> {
         let starknet_block_id: starknet::core::types::BlockId = block_id.into();
 
-        let request = self.client.get_block_with_receipts(starknet_block_id);
+        let request = (|| async { self.client.get_block_with_receipts(starknet_block_id).await })
+            .retry(self.options.exponential_backoff)
+            .notify(|err, duration| {
+                warn!(duration = ?duration, error = %err, "get_block_with_receipts failed");
+            });
         let Ok(response) = tokio::time::timeout(self.options.timeout, request).await else {
             return Err(StarknetProviderError::Timeout)
                 .attach_printable("failed to get block with receipts")
@@ -107,7 +123,11 @@ impl StarknetProvider {
     ) -> Result<models::MaybePendingStateUpdate, StarknetProviderError> {
         let starknet_block_id: starknet::core::types::BlockId = block_id.into();
 
-        let request = self.client.get_state_update(starknet_block_id);
+        let request = (|| async { self.client.get_state_update(starknet_block_id).await })
+            .retry(self.options.exponential_backoff)
+            .notify(|err, duration| {
+                warn!(duration = ?duration, error = %err, "get_state_update failed");
+            });
         let Ok(response) = tokio::time::timeout(self.options.timeout, request).await else {
             return Err(StarknetProviderError::Timeout)
                 .attach_printable("failed to get block state update")
@@ -126,7 +146,15 @@ impl StarknetProvider {
     ) -> Result<Vec<models::TransactionTraceWithHash>, StarknetProviderError> {
         let starknet_block_id: starknet::core::types::BlockId = block_id.into();
 
-        let request = self.client.trace_block_transactions(starknet_block_id);
+        let request = (|| async {
+            self.client
+                .trace_block_transactions(starknet_block_id)
+                .await
+        })
+        .retry(self.options.exponential_backoff)
+        .notify(|err, duration| {
+            warn!(duration = ?duration, error = %err, "trace_block_transactions failed");
+        });
         let Ok(response) = tokio::time::timeout(self.options.timeout, request).await else {
             return Err(StarknetProviderError::Timeout)
                 .attach_printable("failed to get block traces")

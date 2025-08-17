@@ -3,6 +3,7 @@ use std::{sync::Arc, time::Duration};
 use alloy_primitives::BlockHash;
 use alloy_provider::{ext::TraceApi, network::Ethereum, Provider, ProviderBuilder};
 use alloy_rpc_client::ClientBuilder;
+use backon::{ExponentialBuilder, Retryable};
 use error_stack::{Report, Result, ResultExt};
 use reqwest::header::{HeaderMap, HeaderValue};
 use url::Url;
@@ -25,6 +26,8 @@ pub struct JsonRpcProviderOptions {
     pub timeout: Duration,
     /// Request headers.
     pub headers: HeaderMap<HeaderValue>,
+    /// Exponential backoff options.
+    pub exponential_backoff: ExponentialBuilder,
 }
 
 pub trait ProviderWithTraceApi: Provider<Ethereum> + TraceApi<Ethereum> {}
@@ -61,26 +64,30 @@ impl JsonRpcProvider {
         &self,
         block_id: BlockId,
     ) -> Result<models::BlockWithTxHashes, JsonRpcProviderError> {
-        let request = match block_id {
-            BlockId::Number(number) => self
-                .provider
-                .client()
-                .request::<_, Option<models::BlockWithTxHashes>>(
-                    "eth_getBlockByNumber",
-                    (number, false),
-                )
-                .boxed(),
-            BlockId::Hash(hash) => {
-                let hash = BlockHash::from(hash);
-                self.provider
-                    .client()
-                    .request::<_, Option<models::BlockWithTxHashes>>(
-                        "eth_getBlockByHash",
-                        (hash, false),
-                    )
-                    .boxed()
+        let request = (|| async {
+            match block_id {
+                BlockId::Number(number) => {
+                    self.provider
+                        .client()
+                        .request::<_, Option<models::BlockWithTxHashes>>(
+                            "eth_getBlockByNumber",
+                            (number, false),
+                        )
+                        .await
+                }
+                BlockId::Hash(hash) => {
+                    let hash = BlockHash::from(hash);
+                    self.provider
+                        .client()
+                        .request::<_, Option<models::BlockWithTxHashes>>(
+                            "eth_getBlockByHash",
+                            (hash, false),
+                        )
+                        .await
+                }
             }
-        };
+        })
+        .retry(self.options.exponential_backoff);
 
         let Ok(response) = tokio::time::timeout(self.options.timeout, request).await else {
             return Err(JsonRpcProviderError::Timeout)
@@ -97,7 +104,8 @@ impl JsonRpcProvider {
         &self,
         block_id: BlockId,
     ) -> Result<models::Block, JsonRpcProviderError> {
-        let request = self.provider.get_block(block_id).full();
+        let request = (|| async { self.provider.get_block(block_id).full().await })
+            .retry(self.options.exponential_backoff);
 
         let Ok(response) = tokio::time::timeout(self.options.timeout, request).await else {
             return Err(JsonRpcProviderError::Timeout)
@@ -114,7 +122,8 @@ impl JsonRpcProvider {
         &self,
         block_id: BlockId,
     ) -> Result<Vec<models::TransactionReceipt>, JsonRpcProviderError> {
-        let request = self.provider.get_block_receipts(block_id);
+        let request = (|| async { self.provider.get_block_receipts(block_id).await })
+            .retry(self.options.exponential_backoff);
 
         let Ok(response) = tokio::time::timeout(self.options.timeout, request).await else {
             return Err(JsonRpcProviderError::Timeout)
@@ -131,10 +140,13 @@ impl JsonRpcProvider {
         &self,
         block_id: BlockId,
     ) -> Result<Vec<models::TraceResultsWithTransactionHash>, JsonRpcProviderError> {
-        let request = self
-            .provider
-            .trace_replay_block_transactions(block_id)
-            .trace();
+        let request = (|| async {
+            self.provider
+                .trace_replay_block_transactions(block_id)
+                .trace()
+                .await
+        })
+        .retry(self.options.exponential_backoff);
 
         let Ok(response) = tokio::time::timeout(self.options.timeout, request).await else {
             return Err(JsonRpcProviderError::Timeout)

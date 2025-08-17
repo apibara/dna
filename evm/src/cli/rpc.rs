@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use backon::ExponentialBuilder;
 use clap::Args;
 use error_stack::{Result, ResultExt};
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
@@ -68,9 +69,12 @@ impl RpcArgs {
             headers
         };
 
+        let timeout = Duration::from_secs(self.rpc_timeout_sec);
+        let max_delay = Duration::from_secs(self.rpc_timeout_sec / 2);
         let options = JsonRpcProviderOptions {
-            timeout: Duration::from_secs(self.rpc_timeout_sec),
+            timeout,
             headers,
+            exponential_backoff: ExponentialBuilder::default().with_max_delay(max_delay),
         };
 
         JsonRpcProvider::new(url, options).change_context(EvmError)
