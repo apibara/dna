@@ -18,6 +18,7 @@ path = "src/bin.rs"
 apibara-observability = { path = "../observability" }
 apibara-dna-common = { path = "../common" }
 apibara-dna-protocol = { path = "../protocol" }
+backon.workspace = true
 byte-unit.workspace = true
 clap.workspace = true
 ctrlc.workspace = true
