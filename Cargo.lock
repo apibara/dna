@@ -791,6 +791,7 @@ dependencies = [
  "apibara-dna-common",
  "apibara-dna-protocol",
  "apibara-observability",
+ "backon",
  "byte-unit",
  "clap",
  "ctrlc",
