@@ -11,7 +11,7 @@ use url::Url;
 
 use crate::{
     core::{BlockHash, GlobalBlockId, InvalidBlockHashSize},
-    db::BlockBody,
+    db::{BlockBody, BlockReceipts},
 };
 
 #[derive(Debug, Clone)]
@@ -49,10 +49,7 @@ pub trait Provider {
     async fn get_state_update(&self, id: &BlockId) -> Result<v1alpha2::StateUpdate, Self::Error>;
 
     /// Get receipt for a specific transaction.
-    async fn get_transaction_receipt(
-        &self,
-        hash: &v1alpha2::FieldElement,
-    ) -> Result<v1alpha2::TransactionReceipt, Self::Error>;
+    async fn get_block_receipts(&self, id: &BlockId) -> Result<BlockReceipts, Self::Error>;
 }
 
 /// StarkNet RPC provider over HTTP.
@@ -202,19 +199,32 @@ impl Provider for HttpProvider {
         Ok(state_update)
     }
 
-    #[tracing::instrument(skip(self), fields(hash = %hash), err(Debug), level = "DEBUG")]
+    #[tracing::instrument(skip(self), err(Debug), level = "DEBUG")]
     #[allow(clippy::blocks_in_conditions)]
-    async fn get_transaction_receipt(
-        &self,
-        hash: &v1alpha2::FieldElement,
-    ) -> Result<v1alpha2::TransactionReceipt, Self::Error> {
-        let receipt = self
+    async fn get_block_receipts(&self, id: &BlockId) -> Result<BlockReceipts, Self::Error> {
+        let block_id: models::BlockId = id.into();
+        let block = self
             .provider
-            .get_transaction_receipt::<Felt>(hash.into())
+            .get_block_with_receipts(block_id)
             .await
-            .map_err(HttpProviderError::from_provider_error)?
-            .to_proto();
-        Ok(receipt)
+            .map_err(HttpProviderError::from_provider_error)?;
+
+        match block {
+            models::MaybePendingBlockWithReceipts::Block(ref block) => {
+                if id.is_pending() {
+                    return Err(HttpProviderError::UnexpectedPendingBlock);
+                }
+                let body = block.to_proto();
+                Ok(body)
+            }
+            models::MaybePendingBlockWithReceipts::PendingBlock(ref block) => {
+                if !id.is_pending() {
+                    return Err(HttpProviderError::ExpectedPendingBlock);
+                }
+                let body = block.to_proto();
+                Ok(body)
+            }
+        }
     }
 }
 
@@ -358,6 +368,38 @@ impl ToProto<BlockBody> for models::PendingBlockWithTxs {
             })
             .collect();
         BlockBody { transactions }
+    }
+}
+
+impl ToProto<BlockReceipts> for models::BlockWithReceipts {
+    fn to_proto(&self) -> BlockReceipts {
+        let receipts = self
+            .transactions
+            .iter()
+            .enumerate()
+            .map(|(idx, tx)| {
+                let mut proto = tx.receipt.to_proto();
+                proto.transaction_index = idx as u64;
+                proto
+            })
+            .collect();
+        BlockReceipts { receipts }
+    }
+}
+
+impl ToProto<BlockReceipts> for models::PendingBlockWithReceipts {
+    fn to_proto(&self) -> BlockReceipts {
+        let receipts = self
+            .transactions
+            .iter()
+            .enumerate()
+            .map(|(idx, tx)| {
+                let mut proto = tx.receipt.to_proto();
+                proto.transaction_index = idx as u64;
+                proto
+            })
+            .collect();
+        BlockReceipts { receipts }
     }
 }
 

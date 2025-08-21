@@ -78,7 +78,7 @@ where
             }
 
             // TODO: would be better if we exponentially backed off.
-            tokio::time::sleep(Duration::from_secs(10)).await;
+            tokio::time::sleep(Duration::from_secs(3)).await;
         }
     }
 }
