@@ -832,7 +832,7 @@ dependencies = [
 
 [[package]]
 name = "apibara-dna-sdk"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "apibara-dna-protocol",
  "pin-project",

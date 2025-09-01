@@ -1,6 +1,6 @@
 [package]
 name = "apibara-dna-sdk"
-version = "2.0.0"
+version = "2.0.1"
 description = "The SDK to connect and stream data from Apibara DNA services."
 readme = "README.md"
 homepage = "https://www.apibara.com/docs"
