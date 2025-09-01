@@ -16,12 +16,12 @@ pub enum BearerTokenError {
     #[snafu(display("{message}"))]
     External {
         message: String,
-        source: Box<dyn std::error::Error>,
+        source: Box<dyn std::error::Error + Send + Sync>,
     },
 }
 
 /// An object that provides a bearer token to authenticate with the DNA server.
-pub trait BearerTokenProvider {
+pub trait BearerTokenProvider: Send + Sync {
     /// Get the bearer token.
     ///
     /// Notice that this method is _not_ async. If you need to fetch the token
