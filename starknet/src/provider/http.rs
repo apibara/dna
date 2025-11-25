@@ -80,7 +80,7 @@ impl StarknetProvider {
         })
         .retry(self.options.exponential_backoff)
         .notify(|err, duration| {
-            warn!(duration = ?duration, error = %err, "get_block_with_tx_hashes failed");
+            warn!(duration = ?duration, error = %err, block_id = ?block_id, "get_block_with_tx_hashes failed");
         });
         let Ok(response) = tokio::time::timeout(self.options.timeout, request).await else {
             return Err(StarknetProviderError::Timeout)
@@ -103,7 +103,7 @@ impl StarknetProvider {
         let request = (|| async { self.client.get_block_with_receipts(starknet_block_id).await })
             .retry(self.options.exponential_backoff)
             .notify(|err, duration| {
-                warn!(duration = ?duration, error = %err, "get_block_with_receipts failed");
+                warn!(duration = ?duration, error = %err, block_id = ?block_id, "get_block_with_receipts failed");
             });
         let Ok(response) = tokio::time::timeout(self.options.timeout, request).await else {
             return Err(StarknetProviderError::Timeout)
@@ -126,7 +126,7 @@ impl StarknetProvider {
         let request = (|| async { self.client.get_state_update(starknet_block_id).await })
             .retry(self.options.exponential_backoff)
             .notify(|err, duration| {
-                warn!(duration = ?duration, error = %err, "get_state_update failed");
+                warn!(duration = ?duration, error = %err, block_id = ?block_id, "get_state_update failed");
             });
         let Ok(response) = tokio::time::timeout(self.options.timeout, request).await else {
             return Err(StarknetProviderError::Timeout)
@@ -153,7 +153,7 @@ impl StarknetProvider {
         })
         .retry(self.options.exponential_backoff)
         .notify(|err, duration| {
-            warn!(duration = ?duration, error = %err, "trace_block_transactions failed");
+            warn!(duration = ?duration, error = %err, block_id = ?block_id, "trace_block_transactions failed");
         });
         let Ok(response) = tokio::time::timeout(self.options.timeout, request).await else {
             return Err(StarknetProviderError::Timeout)
