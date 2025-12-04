@@ -23,6 +23,7 @@ pub fn convert_block_header(block: &models::BlockWithReceipts) -> starknet::Bloc
         timestamp: timestamp.into(),
         l1_data_gas_price: block.l1_gas_price.to_proto().into(),
         l1_gas_price: block.l1_gas_price.to_proto().into(),
+        l2_gas_price: block.l2_gas_price.to_proto().into(),
         l1_data_availability_mode: block.l1_da_mode.to_proto(),
     }
 }
@@ -46,6 +47,7 @@ pub fn convert_pending_block_header(
         timestamp: timestamp.into(),
         l1_data_gas_price: block.l1_gas_price.to_proto().into(),
         l1_gas_price: block.l1_gas_price.to_proto().into(),
+        l2_gas_price: block.l2_gas_price.to_proto().into(),
         l1_data_availability_mode: block.l1_da_mode.to_proto(),
     }
 }
