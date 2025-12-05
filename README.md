@@ -11,52 +11,6 @@ Access (DNA) protocol and the integrations built on top of it.\
 The protocol enables developers to easily and efficiently stream any onchain
 data directly into their application.
 
-### Stream
-
-Stream data directly from the node into your application. DNA enables you to get
-exactly the data you need using _filters_. Filters are a collection of rules
-that are applied to each block to select what data to send in the stream.
-
-### Transform
-
-Data is transformed evaluating a Javascript or Typescript function on each batch
-of data. The resulting data is automatically sent and synced with the target
-integration.
-
-### Integrate
-
-We provide a collection of integrations that send data directly where it's
-needed. Our integrations support all data from genesis block to the current
-pending block and they ensure data is kept up-to-date.
-
--   **Webhook**: call an HTTP endpoint for each batch of data.
--   **PostgreSQL**: stream data into a specific table, keeping it up-to-date on
-    new blocks and chain reorganizations.
--   **MongoDB**: store data into a specific collection, keeping it up-to-date on
-    new blocks and chain reorganizations.
--   **Parquet**: generate Parquet files to be used for data analysis.
-
-## Getting started
-
-You can get started using Apibara by installing the official CLI tool.
-We provide [detailed instructions in the official documentation](https://www.apibara.com/docs).
-
-## Docker images
-
-We publish docker images on quay.io. Images are available for both the x86_64
-and aarch64 architectures.
-
-**Sinks**
-
--   [MongoDB](https://quay.io/repository/apibara/sink-mongo?tab=tags)
--   [PostgreSQL](https://quay.io/repository/apibara/sink-postgres?tab=tags)
--   [Parquet](https://quay.io/repository/apibara/sink-parquet?tab=tags)
--   [Webhook](https://quay.io/repository/apibara/sink-webhook?tab=tags)
-
-**Server**
-
--   [Starknet DNA](https://quay.io/repository/apibara/starknet?tab=tags)
-
 ## Contributing
 
 We are open to contributions.
@@ -100,16 +54,6 @@ These platforms are not supported.
     Subsystem for Linux (WSL)](https://learn.microsoft.com/en-us/windows/wsl/).
 -   macos-x86_64 - given the slowness of CI runners for this platform, we cannot
     provide builds for it.
-
-## Project Structure
-
-The project is comprised of several crates, refer to their READMEs to learn more
-about each one of them.
-
--   `core`: types shared by all other crates.
--   `starknet`: StarkNet source node.
--   `sdk`: connect to streams using Rust.
--   `sinks`: contains the code for all sinks.
 
 ## License
 

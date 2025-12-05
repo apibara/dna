@@ -50,6 +50,8 @@ message BlockHeader {
   ResourcePrice l1_data_gas_price = 9;
   // L1 data availability mode.
   L1DataAvailabilityMode l1_data_availability_mode = 10;
+  // Price of L2 gas in the block.
+  ResourcePrice l2_gas_price = 11;
 }
 
 // A transaction.
