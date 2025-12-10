@@ -1,6 +1,6 @@
 [package]
 name = "apibara-starknet"
-version = "1.7.2"
+version = "1.7.3"
 edition.workspace = true
 authors.workspace = true
 repository.workspace = true
