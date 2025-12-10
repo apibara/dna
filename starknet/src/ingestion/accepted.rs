@@ -1,5 +1,8 @@
 //! Ingest accepted block data.
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use apibara_node::db::libmdbx::EnvironmentKind;
 use tokio_util::sync::CancellationToken;
@@ -235,6 +238,9 @@ where
 
     #[tracing::instrument(skip(self))]
     async fn advance_finalized(&mut self) -> Result<(), BlockIngestionError> {
+        let start = Instant::now();
+        let timeout = Duration::from_secs(3);
+
         while let Some(new_finalized) = self
             .refresh_finalized_block_status(self.finalized.map(|b| b.number() + 1).unwrap_or(0))
             .await?
@@ -244,6 +250,10 @@ where
                 finalized = %new_finalized,
                 "updated finalized block"
             );
+
+            if start.elapsed() > timeout {
+                break;
+            }
         }
 
         if let Some(finalized) = self.finalized {
