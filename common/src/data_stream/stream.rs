@@ -11,7 +11,7 @@ use futures::FutureExt;
 use tokio::sync::mpsc;
 use tokio_stream::{wrappers::ReceiverStream, StreamExt};
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error};
+use tracing::{debug, error, Instrument};
 
 use crate::{
     block_store::BlockStoreReader,
@@ -96,6 +96,7 @@ impl DataStream {
         Ok(())
     }
 
+    #[tracing::instrument(name = "data_stream_tick", skip_all, level = "debug")]
     async fn tick(
         &mut self,
         tx: &mpsc::Sender<DataStreamMessage>,
@@ -277,6 +278,7 @@ impl DataStream {
         }
     }
 
+    #[tracing::instrument(name = "data_stream_tick_single", skip_all, level = "debug")]
     async fn tick_single(
         &mut self,
         cursor: Cursor,
@@ -334,7 +336,13 @@ impl DataStream {
                 },
             });
 
-            let Some(Ok(permit)) = ct.run_until_cancelled(tx.reserve()).await else {
+            let Some(Ok(permit)) = ct
+                .run_until_cancelled(
+                    tx.reserve()
+                        .instrument(tracing::debug_span!("data_stream_reserve")),
+                )
+                .await
+            else {
                 return Ok(());
             };
 
@@ -481,6 +489,7 @@ impl DataStream {
         Ok(())
     }
 
+    #[tracing::instrument(name = "data_stream_filter_fragment", skip_all, level = "debug")]
     async fn filter_fragment(
         &self,
         fragment_access: FragmentAccess<'_>,
