@@ -558,7 +558,7 @@ where
                 .change_context(IngestionError::Model)?;
 
             if self.chain_builder.segment_size()
-                == self.options.chain_segment_size + self.options.chain_segment_upload_offset_size
+                >= self.options.chain_segment_size + self.options.chain_segment_upload_offset_size
             {
                 let segment = self
                     .chain_builder
