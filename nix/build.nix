@@ -1,38 +1,53 @@
-{ pkgs, crane, workspaceDir, crates }:
+{ pkgs
+, crane
+, workspaceDir
+, crates
+,
+}:
 let
   rustToolchain = (pkgs.rust-bin.fromRustupToolchainFile ../rust-toolchain.toml).override {
-    extensions = [ "rust-src" "rust-analyzer" ];
+    extensions = [
+      "rust-src"
+      "rust-analyzer"
+    ];
   };
 
   craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
 
   src = pkgs.lib.cleanSourceWith {
     src = craneLib.path workspaceDir;
-    filter = path: type:
+    filter =
+      path: type:
       (builtins.match ".*proto$" path != null) # include protobufs
       || (craneLib.filterCargoSources path type); # include rust/cargo
   };
 
   buildArgs = ({
-    nativeBuildInputs = with pkgs; [
-      cargo-nextest
-      cargo-flamegraph
-      cargo-edit
+    nativeBuildInputs =
+      with pkgs;
+      [
+        cargo-nextest
+        cargo-flamegraph
+        cargo-edit
 
-      clang
-      cmake
-      llvmPackages.libclang.lib
-      libllvm
-      pkg-config
-      protobuf
-      rustToolchain
-      openssl.dev
-    ] ++ pkgs.lib.optional stdenv.isDarwin (with pkgs.darwin.apple_sdk.frameworks; [
-      CoreFoundation
-      CoreServices
-      Security
-      SystemConfiguration
-    ]);
+        clang
+        cmake
+        llvmPackages.libclang.lib
+        libllvm
+        pkg-config
+        protobuf
+        rustToolchain
+        openssl.dev
+      ]
+      ++ pkgs.lib.optional stdenv.isDarwin (
+        with pkgs.darwin.apple_sdk.frameworks;
+        [
+          CoreFoundation
+          CoreServices
+          Security
+          SystemConfiguration
+        ]
+      );
 
     # used by bindgen
     LIBCLANG_PATH = pkgs.lib.makeLibraryPath [
@@ -40,76 +55,99 @@ let
     ];
   });
 
-  commonArgs = (buildArgs // {
-    inherit src;
-  });
+  commonArgs = (
+    buildArgs
+    // {
+      inherit src;
+    }
+  );
 
   # Shared cargo artifacts.
-  cargoArtifacts = craneLib.buildDepsOnly (commonArgs // {
-    pname = "apibara";
-    version = "0.0.0";
-  });
+  cargoArtifacts = craneLib.buildDepsOnly (
+    commonArgs
+    // {
+      pname = "apibara";
+      version = "0.0.0";
+    }
+  );
 
-  allCrates = craneLib.buildPackage (commonArgs // {
-    inherit cargoArtifacts;
-    pname = "apibara";
-    version = "0.0.0";
-    doCheck = false;
-  });
+  allCrates = craneLib.buildPackage (
+    commonArgs
+    // {
+      inherit cargoArtifacts;
+      pname = "apibara";
+      version = "0.0.0";
+      doCheck = false;
+    }
+  );
 
   # cargo fmt --check
-  cargoFmt = craneLib.cargoFmt (commonArgs // {
-    inherit cargoArtifacts;
-    pname = "apibara";
-    version = "0.0.0";
-  });
+  cargoFmt = craneLib.cargoFmt (
+    commonArgs
+    // {
+      inherit cargoArtifacts;
+      pname = "apibara";
+      version = "0.0.0";
+    }
+  );
 
   # cargo clippy
-  cargoClippy = craneLib.cargoClippy (commonArgs // {
-    inherit cargoArtifacts;
-    pname = "apibara";
-    version = "0.0.0";
-  });
+  cargoClippy = craneLib.cargoClippy (
+    commonArgs
+    // {
+      inherit cargoArtifacts;
+      pname = "apibara";
+      version = "0.0.0";
+    }
+  );
 
   # Build unit tests.
-  unitTests = craneLib.cargoNextest (commonArgs // {
-    inherit cargoArtifacts;
-    pname = "apibara";
-    version = "0.0.0";
-    cargoNextestExtraArgs = "-E 'kind(lib)'";
-  });
+  unitTests = craneLib.cargoNextest (
+    commonArgs
+    // {
+      inherit cargoArtifacts;
+      pname = "apibara";
+      version = "0.0.0";
+      cargoNextestExtraArgs = "-E 'kind(lib)'";
+    }
+  );
 
   # Create nextest archive.
-  integrationTestsArchive = craneLib.mkCargoDerivation (commonArgs // {
-    inherit cargoArtifacts;
-    pname = "apibara-nextest-archive";
-    version = "0.0.0";
-    doCheck = true;
+  integrationTestsArchive = craneLib.mkCargoDerivation (
+    commonArgs
+    // {
+      inherit cargoArtifacts;
+      pname = "apibara-nextest-archive";
+      version = "0.0.0";
+      doCheck = true;
 
-    nativeBuildInputs = (commonArgs.nativeBuildInputs or [ ]) ++ [ pkgs.cargo-nextest ];
+      nativeBuildInputs = (commonArgs.nativeBuildInputs or [ ]) ++ [ pkgs.cargo-nextest ];
 
-    buildPhaseCargoCommand = ''
-      mkdir -p $out
-      cargo nextest --version
-    '';
+      buildPhaseCargoCommand = ''
+        mkdir -p $out
+        cargo nextest --version
+      '';
 
-    # Work around Nextest bug: https://github.com/nextest-rs/nextest/issues/267
-    preCheck = pkgs.lib.optionalString pkgs.stdenv.isDarwin ''
-      export DYLD_FALLBACK_LIBRARY_PATH=$(${pkgs.rustc}/bin/rustc --print sysroot)/lib
-    '';
+      # Work around Nextest bug: https://github.com/nextest-rs/nextest/issues/267
+      preCheck = pkgs.lib.optionalString pkgs.stdenv.isDarwin ''
+        export DYLD_FALLBACK_LIBRARY_PATH=$(${pkgs.rustc}/bin/rustc --print sysroot)/lib
+      '';
 
-    checkPhaseCargoCommand = ''
-      cargo nextest -P ci archive --cargo-profile $CARGO_PROFILE --workspace --archive-format tar-zst --archive-file $out/archive.tar.zst
-    '';
-  });
+      checkPhaseCargoCommand = ''
+        cargo nextest -P ci archive --cargo-profile $CARGO_PROFILE --workspace --archive-format tar-zst --archive-file $out/archive.tar.zst
+      '';
+    }
+  );
 
-  /* Build a crate from a path, optionally overriding the binary name.
+  /*
+    Build a crate from a path, optionally overriding the binary name.
 
     Arguments:
 
      - `path`: create path, e.g. `./sinks/sink-postgres`.
-   */
-  buildCrate = { path }:
+  */
+  buildCrate =
+    { path }:
     let
       manifest = builtins.fromTOML (builtins.readFile (path + "/Cargo.toml"));
     in
@@ -139,42 +177,41 @@ let
   # Use patchelf to change the interpreter.
   binariesUniversal =
     let
-      mkUniversal = name: crate:
-        {
-          inherit name;
-          value = pkgs.stdenv.mkDerivation {
-            name = "${name}";
-            buildInputs = [
-              pkgs.patchelf
-              crate.out
-            ];
-            phases = [ "installPhase" ];
-            installPhase =
-              if pkgs.stdenv.isLinux then
-                let
-                  interpreter =
-                    if pkgs.system == "x86_64-linux" then
-                      "/lib64/ld-linux-x86-64.so.2"
-                    else
-                      "/lib/ld-linux-aarch64.so.1";
-                in
-                ''
-                  mkdir -p $out/bin
-                  for bin in ${crate.out}/bin/*; do
-                    cp --no-preserve=mode $bin $out/bin
-                  done
-                  for bin in $out/bin/*; do
-                    chmod +x $bin
-                    patchelf --set-interpreter ${interpreter} $bin
-                  done
-                ''
-              else
-                ''
-                  mkdir -p $out/bin
-                  cp -r ${crate.out}/bin $out
-                '';
-          };
+      mkUniversal = name: crate: {
+        inherit name;
+        value = pkgs.stdenv.mkDerivation {
+          name = "${name}";
+          buildInputs = [
+            pkgs.patchelf
+            crate.out
+          ];
+          phases = [ "installPhase" ];
+          installPhase =
+            if pkgs.stdenv.isLinux then
+              let
+                interpreter =
+                  if pkgs.system == "x86_64-linux" then
+                    "/lib64/ld-linux-x86-64.so.2"
+                  else
+                    "/lib/ld-linux-aarch64.so.1";
+              in
+              ''
+                mkdir -p $out/bin
+                for bin in ${crate.out}/bin/*; do
+                  cp --no-preserve=mode $bin $out/bin
+                done
+                for bin in $out/bin/*; do
+                  chmod +x $bin
+                  patchelf --set-interpreter ${interpreter} $bin
+                done
+              ''
+            else
+              ''
+                mkdir -p $out/bin
+                cp -r ${crate.out}/bin $out
+              '';
         };
+      };
     in
     pkgs.lib.attrsets.mapAttrs' mkUniversal binariesNix;
 
@@ -200,29 +237,40 @@ let
 
   images =
     let
-      mkImage = name: crate: pkgs.dockerTools.buildImage {
-        inherit name;
-        # we're publishing images, so make it less confusing
-        tag = "latest";
-        created = "now";
-        copyToRoot = with pkgs.dockerTools; [
-          usrBinEnv
-          binSh
-          caCertificates
-        ];
-        config = {
-          Entrypoint = [
-            "${crate.out}/bin/apibara-${name}"
+      mkImage =
+        name: crate:
+        pkgs.dockerTools.buildImage {
+          inherit name;
+          # we're publishing images, so make it less confusing
+          tag = "latest";
+          created = "now";
+          copyToRoot = with pkgs.dockerTools; [
+            usrBinEnv
+            binSh
+            caCertificates
           ];
-          ExposedPorts = crate.meta.ports;
-          Labels = ({
-            "org.opencontainers.image.source" = "https://github.com/apibara/dna";
-            "org.opencontainers.image.licenses" = "Apache-2.0";
-          } // (if crate.meta.description != null then { "org.opencontainers.image.description" = crate.meta.description; } else { }));
+          config = {
+            Entrypoint = [
+              "${crate.out}/bin/apibara-${name}"
+            ];
+            ExposedPorts = crate.meta.ports;
+            Labels = (
+              {
+                "org.opencontainers.image.source" = "https://github.com/apibara/dna";
+                "org.opencontainers.image.licenses" = "Apache-2.0";
+              }
+              // (
+                if crate.meta.description != null then
+                  { "org.opencontainers.image.description" = crate.meta.description; }
+                else
+                  { }
+              )
+            );
+          };
         };
-      };
 
-      mkDockerArchive = name: crate:
+      mkDockerArchive =
+        name: crate:
         let
           image = mkImage name crate;
         in
@@ -250,11 +298,18 @@ in
   };
 
   shell = {
-    default = pkgs.mkShell (buildArgs // {
-      inputsFrom = [
-        allCrates
-      ];
-    });
+    default = pkgs.mkShell (
+      buildArgs
+      // {
+        inputsFrom = [
+          allCrates
+        ];
+
+        buildInputs = with pkgs; [
+          cargo-edit
+        ];
+      }
+    );
 
     # Integration tests require an internet connection, which is
     # not available inside the Nix build environment.
@@ -271,20 +326,27 @@ in
             -E 'kind(test)'
         '';
       in
-      pkgs.mkShell (buildArgs // {
-        inputsFrom = [
-          integrationTestsArchive
-        ];
+      pkgs.mkShell (
+        buildArgs
+        // {
+          inputsFrom = [
+            integrationTestsArchive
+          ];
 
-        nativeBuildInputs = (integrationTestsArchive.nativeBuildInputs or [ ]) ++ [ runTests ];
+          nativeBuildInputs = (integrationTestsArchive.nativeBuildInputs or [ ]) ++ [ runTests ];
 
-        ARCHIVE_PATH = "${integrationTestsArchive}/archive.tar.zst";
-      });
+          ARCHIVE_PATH = "${integrationTestsArchive}/archive.tar.zst";
+        }
+      );
   };
 
-  packages = binariesUniversal // binariesArchive // images // {
-    all-crates = allCrates;
-    unit-tests = unitTests;
-    integration-tests-archive = integrationTestsArchive;
-  };
+  packages =
+    binariesUniversal
+    // binariesArchive
+    // images
+    // {
+      all-crates = allCrates;
+      unit-tests = unitTests;
+      integration-tests-archive = integrationTestsArchive;
+    };
 }
