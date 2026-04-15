@@ -6,7 +6,7 @@ use std::{
 
 use clap::Subcommand;
 use error_stack::{Result, ResultExt};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use tracing::info;
 
 use crate::{
@@ -62,20 +62,6 @@ pub enum DebugRpcCommand {
         #[arg(long)]
         json: Option<PathBuf>,
     },
-}
-
-/// Data needed to assemble a block.
-#[derive(Serialize, Deserialize)]
-pub(crate) enum JsonBlock {
-    Missed { slot: u64 },
-    Proposed(ProposedBlock),
-}
-
-#[derive(Serialize, Deserialize)]
-pub(crate) struct ProposedBlock {
-    pub block: models::BeaconBlock,
-    pub blob_sidecars: Vec<models::BlobSidecar>,
-    pub validators: Vec<models::Validator>,
 }
 
 impl DebugRpcCommand {
