@@ -217,7 +217,7 @@ impl FallibleModelExt for models::Signed<models::TxEip4844Variant> {
     }
 }
 
-impl ModelExt for models::PrimitiveSignature {
+impl ModelExt for models::Signature {
     type Proto = beaconchain::Signature;
 
     fn to_proto(&self) -> Self::Proto {
