@@ -9,7 +9,7 @@ license.workspace = true
 [dependencies]
 error-stack.workspace = true
 futures.workspace = true
-nu-ansi-term = "0.50.1"
+nu-ansi-term = "0.50.3"
 mixtrics.workspace = true
 opentelemetry.workspace = true
 opentelemetry-otlp.workspace = true
