@@ -52,7 +52,7 @@ impl JsonRpcProvider {
         }
 
         let client = ClientBuilder::default().http(url);
-        let provider = ProviderBuilder::default().on_client(client);
+        let provider = ProviderBuilder::default().connect_client(client);
 
         Ok(Self {
             provider: Arc::new(provider),
