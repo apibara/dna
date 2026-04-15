@@ -913,7 +913,7 @@ pub mod testing {
 
             let url: Url = format!("http://localhost:{port}").parse().unwrap();
             let client = ClientBuilder::default().http(url);
-            let provider = ProviderBuilder::default().on_client(client);
+            let provider = ProviderBuilder::default().connect_client(client);
 
             Arc::new(provider)
         }
