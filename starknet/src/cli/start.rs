@@ -15,14 +15,6 @@ pub struct StartCommand {
     #[clap(flatten)]
     start: StartArgs,
 
-    /// Do NOT ingest and serve pending blocks.
-    #[arg(
-        long = "starknet.no-ingest-pending",
-        env = "STARKNET_NO_INGEST_PENDING",
-        default_value = "false"
-    )]
-    no_ingest_pending: bool,
-
     /// Ingest traces.
     #[arg(
         long = "starknet.ingest-traces",
@@ -37,7 +29,7 @@ impl StartCommand {
         info!("Starting Starknet DNA server");
         let provider = self.rpc.to_starknet_provider()?;
         let starknet_ingestion_options = StarknetBlockIngestionOptions {
-            ingest_pending: !self.no_ingest_pending,
+            ingest_pending: false,
             ingest_traces: self.ingest_traces,
         };
         let starknet_chain = StarknetChainSupport::new(provider, starknet_ingestion_options);
