@@ -6,7 +6,7 @@ use clap::Args;
 use error_stack::{Result, ResultExt};
 use foyer::{
     BlockEngineConfig, CacheEntry, Compression, DeviceBuilder, FsDeviceBuilder, HybridCache,
-    HybridCacheBuilder, HybridGetOrFetch, RecoverMode, S3FifoConfig,
+    HybridCacheBuilder, HybridGetOrFetch, PsyncIoEngineConfig, RecoverMode, S3FifoConfig,
 };
 
 #[derive(Debug)]
@@ -184,6 +184,7 @@ impl FileCacheArgs {
                 .with_weighter(|_: &String, bytes: &Bytes| bytes.len())
                 .storage()
                 .with_compression(compression)
+                .with_io_engine_config(PsyncIoEngineConfig::new())
                 .with_engine_config(
                     BlockEngineConfig::new(device)
                         .with_block_size(block_size as _)
@@ -234,6 +235,7 @@ impl FileCacheArgs {
                 .with_weighter(|_: &String, bytes: &Bytes| bytes.len())
                 .storage()
                 .with_compression(compression)
+                .with_io_engine_config(PsyncIoEngineConfig::new())
                 .with_engine_config(
                     BlockEngineConfig::new(device)
                         .with_block_size(block_size as _)
