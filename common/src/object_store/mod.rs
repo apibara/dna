@@ -42,9 +42,10 @@ pub struct GetOptions {
 }
 
 /// How to put an object.
-#[derive(Clone, Debug)]
+#[derive(Default, Clone, Debug)]
 pub enum PutMode {
     /// Overwrite the object if it exists.
+    #[default]
     Overwrite,
     /// Create the object only if it doesn't exist.
     Create,
@@ -242,11 +243,5 @@ impl ObjectStore {
 impl From<String> for ObjectETag {
     fn from(value: String) -> Self {
         Self(value)
-    }
-}
-
-impl Default for PutMode {
-    fn default() -> Self {
-        Self::Overwrite
     }
 }

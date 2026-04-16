@@ -70,7 +70,7 @@ pub struct EtcdArgs {
     /// The etcd password.
     #[arg(long = "etcd.password", env = "DNA_ETCD_PASSWORD")]
     pub etcd_password: Option<String>,
-    /// The etcd auth token TTL in secondls.
+    /// The etcd auth token TTL in seconds.
     #[arg(
         long = "etcd.auth-token-ttl",
         env = "DNA_ETCD_AUTH_TOKEN_TTL",

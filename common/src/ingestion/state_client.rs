@@ -382,7 +382,7 @@ pub mod testing {
     use apibara_etcd::EtcdClient;
     use futures::Future;
     use testcontainers::{
-        core::{ContainerPort, WaitFor},
+        core::{wait::LogWaitStrategy, ContainerPort, WaitFor},
         ContainerAsync, Image,
     };
 
@@ -402,7 +402,9 @@ pub mod testing {
         }
 
         fn ready_conditions(&self) -> Vec<WaitFor> {
-            Vec::default()
+            vec![WaitFor::log(LogWaitStrategy::stdout_or_stderr(
+                "serving client traffic insecurely",
+            ))]
         }
 
         fn env_vars(

@@ -11,10 +11,11 @@ use crate::{
 
 pub type FilterId = u32;
 
-#[derive(Debug, Clone)]
+#[derive(Default, Debug, Clone)]
 pub enum HeaderFilter {
     Always,
     OnData,
+    #[default]
     OnDataOrOnNewBlock,
 }
 
@@ -138,11 +139,5 @@ impl error_stack::Context for FilterError {}
 impl std::fmt::Display for FilterError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "failed to filter block")
-    }
-}
-
-impl Default for HeaderFilter {
-    fn default() -> Self {
-        Self::OnDataOrOnNewBlock
     }
 }

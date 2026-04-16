@@ -46,7 +46,10 @@ async fn init_minio() -> (ContainerAsync<MinIO>, ObjectStore) {
 
 async fn init_etcd_server() -> (ContainerAsync<EtcdServer>, EtcdClient) {
     let etcd_server = etcd_server_container().start().await.unwrap();
-    let etcd_client = etcd_server.etcd_client().await;
+    let mut etcd_client = etcd_server.etcd_client().await;
+
+    let st = etcd_client.status().await.unwrap();
+    println!("{:?}", st);
 
     (etcd_server, etcd_client)
 }
@@ -61,13 +64,13 @@ async fn init_anvil() -> (ContainerAsync<AnvilServer>, Arc<AnvilProvider>) {
 async fn init_file_cache() -> FileCache {
     let general = HybridCacheBuilder::default()
         .memory(1024 * 1024)
-        .storage(foyer::Engine::Large)
+        .storage()
         .build()
         .await
         .expect("failed to create file cache");
     let index = HybridCacheBuilder::default()
         .memory(1024 * 1024)
-        .storage(foyer::Engine::Large)
+        .storage()
         .build()
         .await
         .expect("failed to create file cache");

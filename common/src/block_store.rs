@@ -2,7 +2,6 @@ use anyhow::{anyhow, Context};
 use apibara_observability::{Counter, KeyValue};
 use bytes::Bytes;
 use error_stack::{Result, ResultExt};
-use foyer::FetchState;
 
 use crate::{
     chain::PendingBlockInfo,
@@ -69,7 +68,6 @@ impl BlockStoreReader {
         level = "debug"
     )]
     pub fn get_block(&self, cursor: &Cursor) -> FileFetch {
-        let current_span = tracing::Span::current();
         let key = format_block_key(cursor);
 
         self.metrics.block_count.add(1, &[]);
@@ -86,17 +84,8 @@ impl BlockStoreReader {
                 }
             }
         };
-        let entry = self.file_cache.general.fetch(key, fetch_block);
 
-        match entry.state() {
-            FetchState::Miss => current_span.record("cache_hit", 0),
-            _ => {
-                self.metrics.block_cache_hit.add(1, &[]);
-                current_span.record("cache_hit", 1)
-            }
-        };
-
-        entry
+        self.file_cache.general.get_or_fetch(&key, fetch_block)
     }
 
     #[tracing::instrument(
@@ -106,7 +95,6 @@ impl BlockStoreReader {
         level = "debug"
     )]
     pub fn get_pending_block(&self, cursor: &Cursor, generation: u64) -> FileFetch {
-        let current_span = tracing::Span::current();
         let key = format_pending_block_key(cursor.number, generation);
 
         self.metrics.pending_block_count.add(1, &[]);
@@ -125,17 +113,8 @@ impl BlockStoreReader {
                 }
             }
         };
-        let entry = self.file_cache.general.fetch(key, fetch_block);
 
-        match entry.state() {
-            FetchState::Miss => current_span.record("cache_hit", 0),
-            _ => {
-                self.metrics.pending_block_cache_hit.add(1, &[]);
-                current_span.record("cache_hit", 1)
-            }
-        };
-
-        entry
+        self.file_cache.general.get_or_fetch(&key, fetch_block)
     }
 
     pub fn get_index_segment(&self, first_cursor: &Cursor) -> FileFetch {
@@ -173,19 +152,7 @@ impl BlockStoreReader {
             }
         };
 
-        let entry = self.file_cache.general.fetch(key, fetch_segment);
-
-        match entry.state() {
-            FetchState::Miss => current_span.record("cache_hit", 0),
-            _ => {
-                self.metrics
-                    .segment_cache_hit
-                    .add(1, &[KeyValue::new("name", name)]);
-                current_span.record("cache_hit", 1)
-            }
-        };
-
-        entry
+        self.file_cache.general.get_or_fetch(&key, fetch_segment)
     }
 
     #[tracing::instrument(
@@ -195,7 +162,6 @@ impl BlockStoreReader {
         level = "debug"
     )]
     pub fn get_group(&self, cursor: &Cursor) -> FileFetch {
-        let current_span = tracing::Span::current();
         let key = format_group_key(cursor);
 
         self.metrics.group_count.add(1, &[]);
@@ -212,17 +178,8 @@ impl BlockStoreReader {
                 }
             }
         };
-        let entry = self.file_cache.index.fetch(key, fetch_group);
 
-        match entry.state() {
-            FetchState::Miss => current_span.record("cache_hit", 0),
-            _ => {
-                self.metrics.group_cache_hit.add(1, &[]);
-                current_span.record("cache_hit", 1)
-            }
-        };
-
-        entry
+        self.file_cache.index.get_or_fetch(&key, fetch_group)
     }
 }
 

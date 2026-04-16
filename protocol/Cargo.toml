@@ -21,10 +21,11 @@ prost-types.workspace = true
 serde.workspace = true
 snafu.workspace = true
 tonic.workspace = true
+tonic-prost.workspace = true
 tokio-stream.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true
 
 [build-dependencies]
-tonic-build.workspace = true
+tonic-prost-build.workspace = true

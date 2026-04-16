@@ -49,65 +49,61 @@ clap = { version = "4.6.0", features = [
     "unstable-styles",
 ] }
 ctrlc = { version = "3.5.2", features = ["termination"] }
-dirs = "5.0.1"
-duration-str = "0.12.0"
+dirs = "6.0.0"
+duration-str = "0.21.0"
 error-stack = "0.5.0"
 etcd-client = { version = "0.14.1", features = ["tls", "tls-roots"] }
-foyer = { version = "0.14.1" }
+foyer = { version = "0.22.3" }
 futures = "0.3.32"
 futures-buffered = "0.2.13"
 futures-util = "0.3.32"
 hex = { version = "0.4.3", features = ["serde"] }
 memmap2 = "0.9.10"
 mimalloc = "0.1.48"
-mixtrics = { version = "0.0.3", features = ["opentelemetry"] }
-opentelemetry = { version = "0.27", features = ["trace", "metrics"] }
-opentelemetry_sdk = { version = "0.27", features = [
+mixtrics = { version = "0.2.3", features = ["opentelemetry"] }
+opentelemetry = { version = "0.31", features = ["trace", "metrics"] }
+opentelemetry_sdk = { version = "0.31", features = [
     "trace",
     "metrics",
     "rt-tokio",
 ] }
-opentelemetry-otlp = { version = "0.27", features = [
+opentelemetry-otlp = { version = "0.31", features = [
     "trace",
     "metrics",
     "grpc-tonic",
 ] }
 pin-project = "1.1.11"
-prost = "0.13.5"
-prost-types = "0.13.5"
-rand = "0.8.5"
-reqwest = { version = "0.12.28", default-features = false, features = [
+prost = "0.14.3"
+prost-types = "0.14.3"
+rand = "0.10.1"
+reqwest = { version = "0.13.2", default-features = false, features = [
     "json",
-    "rustls-tls",
+    "default-tls"
 ] }
 rkyv = { version = "0.8.15", features = ["unaligned"] }
-roaring = "0.10.12"
+roaring = "0.11.3"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 serde_with = "3.18.0"
-snafu = "0.8.9"
+snafu = "0.9.0"
 tempfile = "3.27.0"
 tempdir = "0.3.7"
-testcontainers = "0.22.0"
+testcontainers = "0.27.2"
 time = { version = "0.3.47", features = ["formatting", "local-offset"] }
 tokio = { version = "1.52", features = ["full"] }
 tokio-stream = { version = "0.1.18", features = ["sync", "net"] }
 tokio-util = "0.7.18"
-tonic = { version = "0.12.3", features = [
-    "tls",
-    "tls-roots",
-    "tls-native-roots",
-    "prost",
-] }
-tonic-build = "0.12.3"
-tonic-health = "0.12.3"
-tonic-reflection = "0.12.3"
+tonic = { version = "0.14.5", features = ["tls-native-roots"] }
+tonic-health = "0.14.5"
+tonic-reflection = "0.14.5"
+tonic-prost = "0.14.5"
+tonic-prost-build = "0.14.5"
 tracing = { version = "0.1.44", features = [
     "max_level_trace",
     "release_max_level_debug",
     "valuable",
 ] }
-tracing-opentelemetry = "0.28"
+tracing-opentelemetry = "0.32"
 tracing-subscriber = { version = "0.3.23", features = [
     "std",
     "env-filter",

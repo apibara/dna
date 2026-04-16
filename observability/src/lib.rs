@@ -12,8 +12,8 @@ use opentelemetry::trace::TracerProvider as _;
 use opentelemetry::{global, InstrumentationScope};
 use opentelemetry_otlp::{MetricExporter, SpanExporter};
 use opentelemetry_sdk::metrics::{MeterProviderBuilder, PeriodicReader};
-use opentelemetry_sdk::resource::{ResourceDetector, SdkProvidedResourceDetector};
-use opentelemetry_sdk::trace::TracerProvider;
+use opentelemetry_sdk::trace::SdkTracerProvider;
+use opentelemetry_sdk::Resource;
 use tracing::Subscriber;
 
 pub use opentelemetry::metrics::{ObservableCounter, ObservableGauge};
@@ -105,7 +105,7 @@ where
     let otel_env_filter =
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("INFO"));
 
-    let resource = SdkProvidedResourceDetector.detect(Duration::from_secs(1));
+    let resource = Resource::builder().build();
     let instrumentation_lib = InstrumentationScope::builder(package_name.clone())
         .with_version(version.clone())
         .build();
@@ -116,9 +116,9 @@ where
         .change_context(OpenTelemetryInitError)
         .attach_printable("failed to create span exporter")?;
 
-    let trace_provider = TracerProvider::builder()
+    let trace_provider = SdkTracerProvider::builder()
         .with_resource(resource.clone())
-        .with_batch_exporter(span_exporter, opentelemetry_sdk::runtime::Tokio)
+        .with_batch_exporter(span_exporter)
         .build();
 
     let tracer = trace_provider.tracer_with_scope(instrumentation_lib.clone());
@@ -129,13 +129,12 @@ where
         .change_context(OpenTelemetryInitError)
         .attach_printable("failed to create metrics exporter")?;
 
-    let metrics_reader =
-        PeriodicReader::builder(metrics_exporter, opentelemetry_sdk::runtime::Tokio)
-            .with_interval(Duration::from_secs(10))
-            .build();
+    let metrics_reader = PeriodicReader::builder(metrics_exporter)
+        .with_interval(Duration::from_secs(10))
+        .build();
 
     let meter_provider = MeterProviderBuilder::default()
-        .with_resource(resource.clone())
+        .with_resource(resource)
         .with_reader(metrics_reader)
         .build();
 
