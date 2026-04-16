@@ -27,20 +27,20 @@ lto = "fat"
 incremental = false
 
 [workspace.dependencies]
-alloy-consensus = { version = "0.13.0", features = ["k256"] }
-alloy-eips = "0.13.0"
-alloy-rpc-client = "0.13.0"
-alloy-primitives = "0.8"
-alloy-provider = { version = "0.13.0", features = ["trace-api"] }
-alloy-rpc-types = "0.13.0"
-alloy-rpc-types-trace = "0.13.0"
-alloy-rpc-types-beacon = "0.13.0"
-alloy-transport = "0.13.0"
-alloy-transport-http = "0.13.0"
-backon = { version = "1.5.2", features = ["std", "tokio-sleep"] }
-bytes = { version = "1.7.1", features = ["serde"] }
-byte-unit = "5.1.4"
-clap = { version = "4.5.13", features = [
+alloy-consensus = { version = "2.0.0", features = ["k256"] }
+alloy-eips = "2.0.0"
+alloy-rpc-client = "2.0.0"
+alloy-primitives = "1.5"
+alloy-provider = { version = "2.0.0", features = ["trace-api"] }
+alloy-rpc-types = "2.0.0"
+alloy-rpc-types-trace = "2.0.0"
+alloy-rpc-types-beacon = "2.0.0"
+alloy-transport = "2.0.0"
+alloy-transport-http = "2.0.0"
+backon = { version = "1.6.0", features = ["std", "tokio-sleep"] }
+bytes = { version = "1.11.1", features = ["serde"] }
+byte-unit = "5.2.0"
+clap = { version = "4.6.0", features = [
     "derive",
     "env",
     "cargo",
@@ -48,71 +48,67 @@ clap = { version = "4.5.13", features = [
     "color",
     "unstable-styles",
 ] }
-ctrlc = { version = "3.4.5", features = ["termination"] }
-dirs = "5.0.1"
-duration-str = "0.12.0"
+ctrlc = { version = "3.5.2", features = ["termination"] }
+dirs = "6.0.0"
+duration-str = "0.21.0"
 error-stack = "0.5.0"
-etcd-client = { version = "0.14.0", features = ["tls", "tls-roots"] }
-foyer = { version = "0.14.1" }
-futures = "0.3.30"
-futures-buffered = "0.2.9"
-futures-util = "0.3.30"
+etcd-client = { version = "0.14.1", features = ["tls", "tls-roots"] }
+foyer = { version = "0.22.3" }
+futures = "0.3.32"
+futures-buffered = "0.2.13"
+futures-util = "0.3.32"
 hex = { version = "0.4.3", features = ["serde"] }
-memmap2 = "0.9.4"
-mimalloc = "0.1.43"
-mixtrics = { version = "0.0.3", features = ["opentelemetry"] }
-opentelemetry = { version = "0.27", features = ["trace", "metrics"] }
-opentelemetry_sdk = { version = "0.27", features = [
+memmap2 = "0.9.10"
+mimalloc = "0.1.48"
+mixtrics = { version = "0.2.3", features = ["opentelemetry"] }
+opentelemetry = { version = "0.31", features = ["trace", "metrics"] }
+opentelemetry_sdk = { version = "0.31", features = [
     "trace",
     "metrics",
     "rt-tokio",
 ] }
-opentelemetry-otlp = { version = "0.27", features = [
+opentelemetry-otlp = { version = "0.31", features = [
     "trace",
     "metrics",
     "grpc-tonic",
 ] }
-pin-project = "1.1.5"
-prost = "0.13.1"
-prost-types = "0.13.1"
-rand = "0.8.5"
-reqwest = { version = "0.12.5", default-features = false, features = [
+pin-project = "1.1.11"
+prost = "0.14.3"
+prost-types = "0.14.3"
+rand = "0.10.1"
+reqwest = { version = "0.13.2", default-features = false, features = [
     "json",
-    "rustls-tls",
+    "default-tls"
 ] }
-rkyv = { version = "0.8.8", features = ["unaligned"] }
-roaring = "0.10.6"
-serde = { version = "1.0.205", features = ["derive"] }
-serde_json = "1.0.122"
-serde_with = "3.9.0"
-snafu = "0.8.6"
-tempfile = "3.13.0"
+rkyv = { version = "0.8.15", features = ["unaligned"] }
+roaring = "0.11.3"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+serde_with = "3.18.0"
+snafu = "0.9.0"
+tempfile = "3.27.0"
 tempdir = "0.3.7"
-testcontainers = "0.22.0"
-time = { version = "0.3.36", features = ["formatting", "local-offset"] }
-tokio = { version = "1.38", features = ["full"] }
-tokio-stream = { version = "0.1.15", features = ["sync", "net"] }
-tokio-util = "0.7.11"
-tonic = { version = "0.12.1", features = [
-    "tls",
-    "tls-roots",
-    "tls-native-roots",
-    "prost",
-] }
-tonic-build = "0.12.2"
-tonic-health = "0.12.2"
-tonic-reflection = "0.12.2"
-tracing = { version = "0.1.40", features = [
+testcontainers = "0.27.2"
+time = { version = "0.3.47", features = ["formatting", "local-offset"] }
+tokio = { version = "1.52", features = ["full"] }
+tokio-stream = { version = "0.1.18", features = ["sync", "net"] }
+tokio-util = "0.7.18"
+tonic = { version = "0.14.5", features = ["tls-native-roots"] }
+tonic-health = "0.14.5"
+tonic-reflection = "0.14.5"
+tonic-prost = "0.14.5"
+tonic-prost-build = "0.14.5"
+tracing = { version = "0.1.44", features = [
     "max_level_trace",
     "release_max_level_debug",
     "valuable",
 ] }
-tracing-opentelemetry = "0.28"
-tracing-subscriber = { version = "0.3.18", features = [
+tracing-opentelemetry = "0.32"
+tracing-subscriber = { version = "0.3.23", features = [
     "std",
     "env-filter",
     "json",
 ] }
 valuable = "0.1"
 url = "2.5"
-zstd = "0.13.2"
+zstd = "0.13.3"

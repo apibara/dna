@@ -8,18 +8,18 @@ fn main() -> Result<()> {
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
     println!("cargo:rerun-if-changed=proto");
 
-    tonic_build::configure()
+    tonic_prost_build::configure()
         .build_client(true)
         .build_server(true)
-        .skip_debug("StreamDataRequest")
-        .bytes([".dna.v2.stream.Data.data"])
+        .skip_debug(["StreamDataRequest"])
+        .bytes(".dna.v2.stream.Data.data")
         .file_descriptor_set_path(out_dir.join(DNA_STREAM_DESCRIPTOR_FILE))
         .compile_protos(&["proto/dna/v2/stream.proto"], &["proto/dna/"])?;
 
     /*
      * EVM
      */
-    tonic_build::configure()
+    tonic_prost_build::configure()
         .build_client(true)
         .build_server(true)
         .file_descriptor_set_path(out_dir.join(EVM_DESCRIPTOR_FILE))
@@ -31,10 +31,11 @@ fn main() -> Result<()> {
     /*
      * Starknet
      */
-    tonic_build::configure()
+    tonic_prost_build::configure()
         .build_client(true)
         .build_server(true)
         .boxed(".starknet.v2.InvokeTransactionTrace.execute_invocation.success")
+        .boxed(".starknet.v2.L1HandlerTransactionTrace.execute_invocation.success")
         .boxed(".starknet.v2.TransactionTrace.trace_root.deploy_account")
         .file_descriptor_set_path(out_dir.join(STARKNET_DESCRIPTOR_FILE))
         .compile_protos(
@@ -48,7 +49,7 @@ fn main() -> Result<()> {
     /*
      * Beacon Chain
      */
-    tonic_build::configure()
+    tonic_prost_build::configure()
         .build_client(true)
         .build_server(true)
         .file_descriptor_set_path(out_dir.join(STARKNET_DESCRIPTOR_FILE))

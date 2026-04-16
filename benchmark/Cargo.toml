@@ -27,6 +27,6 @@ hex.workspace = true
 prost.workspace = true
 tonic.workspace = true
 tokio.workspace = true
-tokio-stream = { version = "0.1.15", features = ["sync", "net"] }
+tokio-stream = { version = "0.1.18", features = ["sync", "net"] }
 tokio-util.workspace = true
 tracing.workspace = true

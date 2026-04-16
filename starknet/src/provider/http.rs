@@ -3,7 +3,7 @@ use std::{sync::Arc, time::Duration};
 use backon::{ExponentialBuilder, Retryable};
 use error_stack::{Report, Result, ResultExt};
 use reqwest::header::{HeaderMap, HeaderValue};
-use starknet::providers::{jsonrpc::HttpTransport, JsonRpcClient, Provider};
+use starknet_rust::providers::{jsonrpc::HttpTransport, JsonRpcClient, Provider};
 use tracing::warn;
 use url::Url;
 
@@ -70,8 +70,8 @@ impl StarknetProvider {
     pub async fn get_block_with_tx_hashes(
         &self,
         block_id: &BlockId,
-    ) -> Result<models::MaybePendingBlockWithTxHashes, StarknetProviderError> {
-        let starknet_block_id: starknet::core::types::BlockId = block_id.into();
+    ) -> Result<models::MaybePreConfirmedBlockWithTxHashes, StarknetProviderError> {
+        let starknet_block_id: starknet_rust::core::types::BlockId = block_id.into();
 
         let request = (|| async {
             self.client
@@ -97,10 +97,10 @@ impl StarknetProvider {
     pub async fn get_block_with_receipts(
         &self,
         block_id: &BlockId,
-    ) -> Result<models::MaybePendingBlockWithReceipts, StarknetProviderError> {
-        let starknet_block_id: starknet::core::types::BlockId = block_id.into();
+    ) -> Result<models::MaybePreConfirmedBlockWithReceipts, StarknetProviderError> {
+        let starknet_block_id: starknet_rust::core::types::BlockId = block_id.into();
 
-        let request = (|| async { self.client.get_block_with_receipts(starknet_block_id).await })
+        let request = (|| async { self.client.get_block_with_receipts(starknet_block_id, None).await })
             .retry(self.options.exponential_backoff)
             .notify(|err, duration| {
                 warn!(duration = ?duration, error = %err, block_id = ?block_id, "get_block_with_receipts failed");
@@ -120,8 +120,8 @@ impl StarknetProvider {
     pub async fn get_state_update(
         &self,
         block_id: &BlockId,
-    ) -> Result<models::MaybePendingStateUpdate, StarknetProviderError> {
-        let starknet_block_id: starknet::core::types::BlockId = block_id.into();
+    ) -> Result<models::MaybePreConfirmedStateUpdate, StarknetProviderError> {
+        let starknet_block_id: starknet_rust::core::types::BlockId = block_id.into();
 
         let request = (|| async { self.client.get_state_update(starknet_block_id).await })
             .retry(self.options.exponential_backoff)
@@ -144,11 +144,12 @@ impl StarknetProvider {
         &self,
         block_id: &BlockId,
     ) -> Result<Vec<models::TransactionTraceWithHash>, StarknetProviderError> {
-        let starknet_block_id: starknet::core::types::BlockId = block_id.into();
+        let starknet_block_id: starknet_rust::core::types::ConfirmedBlockId =
+            block_id.try_into()?;
 
         let request = (|| async {
             self.client
-                .trace_block_transactions(starknet_block_id)
+                .trace_block_transactions(starknet_block_id, None)
                 .await
         })
         .retry(self.options.exponential_backoff)
@@ -161,10 +162,16 @@ impl StarknetProvider {
                 .attach_printable_lazy(|| format!("block id: {block_id:?}"));
         };
 
-        response
+        match response
             .or_else(convert_error)
             .attach_printable("failed to get block traces")
-            .attach_printable_lazy(|| format!("block id: {block_id:?}"))
+            .attach_printable_lazy(|| format!("block id: {block_id:?}"))?
+        {
+            models::TraceBlockTransactionsResult::Traces(traces) => Ok(traces),
+            models::TraceBlockTransactionsResult::TracesWithInitialReads { traces, .. } => {
+                Ok(traces)
+            }
+        }
     }
 }
 
@@ -181,24 +188,42 @@ impl std::fmt::Display for StarknetProviderError {
     }
 }
 
-impl From<&BlockId> for starknet::core::types::BlockId {
+impl From<&BlockId> for starknet_rust::core::types::BlockId {
     fn from(v: &BlockId) -> Self {
         match v {
-            BlockId::Head => {
-                starknet::core::types::BlockId::Tag(starknet::core::types::BlockTag::Latest)
-            }
-            BlockId::Pending => {
-                starknet::core::types::BlockId::Tag(starknet::core::types::BlockTag::Pending)
-            }
-            BlockId::Number(number) => starknet::core::types::BlockId::Number(*number),
-            BlockId::Hash(hash) => starknet::core::types::BlockId::Hash(*hash),
+            BlockId::Head => starknet_rust::core::types::BlockId::Tag(
+                starknet_rust::core::types::BlockTag::Latest,
+            ),
+            BlockId::Pending => starknet_rust::core::types::BlockId::Tag(
+                starknet_rust::core::types::BlockTag::PreConfirmed,
+            ),
+            BlockId::Number(number) => starknet_rust::core::types::BlockId::Number(*number),
+            BlockId::Hash(hash) => starknet_rust::core::types::BlockId::Hash(*hash),
         }
     }
 }
 
-fn convert_error<T>(err: starknet::providers::ProviderError) -> Result<T, StarknetProviderError> {
-    use starknet::core::types::StarknetError as SNError;
-    use starknet::providers::ProviderError;
+impl TryFrom<&BlockId> for starknet_rust::core::types::ConfirmedBlockId {
+    type Error = Report<StarknetProviderError>;
+
+    fn try_from(v: &BlockId) -> std::result::Result<Self, Self::Error> {
+        match v {
+            BlockId::Head => Ok(starknet_rust::core::types::ConfirmedBlockId::Latest),
+            BlockId::Pending => Err(StarknetProviderError::Request)
+                .attach_printable("expected a confirmed block id, got pending"),
+            BlockId::Number(number) => Ok(starknet_rust::core::types::ConfirmedBlockId::Number(
+                *number,
+            )),
+            BlockId::Hash(hash) => Ok(starknet_rust::core::types::ConfirmedBlockId::Hash(*hash)),
+        }
+    }
+}
+
+fn convert_error<T>(
+    err: starknet_rust::providers::ProviderError,
+) -> Result<T, StarknetProviderError> {
+    use starknet_rust::core::types::StarknetError as SNError;
+    use starknet_rust::providers::ProviderError;
 
     match err {
         ProviderError::StarknetError(SNError::BlockNotFound) => {

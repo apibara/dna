@@ -232,17 +232,25 @@ message TransactionReceiptMeta {
 }
 
 message ExecutionSucceeded {}
-message ExecutionReverted { string reason = 1; }
+message ExecutionReverted {
+  string reason = 1;
+}
 
 message InvokeTransactionReceipt {}
 
-message L1HandlerTransactionReceipt { bytes message_hash = 1; }
+message L1HandlerTransactionReceipt {
+  bytes message_hash = 1;
+}
 
 message DeclareTransactionReceipt {}
 
-message DeployTransactionReceipt { FieldElement contract_address = 1; }
+message DeployTransactionReceipt {
+  FieldElement contract_address = 1;
+}
 
-message DeployAccountTransactionReceipt { FieldElement contract_address = 1; }
+message DeployAccountTransactionReceipt {
+  FieldElement contract_address = 1;
+}
 
 // Transaction events.
 message Event {
@@ -501,6 +509,10 @@ message DeployAccountTransactionTrace {
 
 message L1HandlerTransactionTrace {
   FunctionInvocation function_invocation = 2;
+  oneof execute_invocation {
+    FunctionInvocation success = 3;
+    ExecutionReverted reverted = 4;
+  }
 }
 
 message FunctionInvocation {

@@ -1,31 +1,30 @@
-use std::{path::PathBuf, str::FromStr, sync::Arc};
+use std::{path::PathBuf, str::FromStr};
 
 use apibara_observability::mixtrics_registry;
 use bytes::Bytes;
 use clap::Args;
 use error_stack::{Result, ResultExt};
 use foyer::{
-    AdmissionPicker, AdmitAllPicker, CacheEntry, Compression, DirectFsDeviceOptions, Engine,
-    HybridCache, HybridCacheBuilder, HybridFetch, LargeEngineOptions, RateLimitPicker, RecoverMode,
-    RuntimeOptions, S3FifoConfig, TokioRuntimeOptions,
+    BlockEngineConfig, CacheEntry, Compression, DeviceBuilder, FsDeviceBuilder, HybridCache,
+    HybridCacheBuilder, HybridGetOrFetch, RecoverMode, S3FifoConfig,
 };
 
 #[derive(Debug)]
 pub enum FileCacheError {
     Config,
-    Foyer(anyhow::Error),
+    Foyer(foyer::Error),
 }
 
 /// A cache with the content of remote files.
 #[derive(Clone)]
 pub struct FileCache {
-    /// Cache used for group inedx files.
+    /// Cache used for group index files.
     pub index: HybridCache<String, Bytes>,
     /// Cache used fora all other files.
     pub general: HybridCache<String, Bytes>,
 }
 
-pub type FileFetch = HybridFetch<String, Bytes>;
+pub type FileFetch = HybridGetOrFetch<String, Bytes>;
 
 pub type CachedFile = CacheEntry<String, Bytes>;
 
@@ -41,13 +40,13 @@ pub struct FileCacheArgs {
         default_value = "10Gi"
     )]
     pub cache_data_disk_size: String,
-    /// Size of the direct fs files (data cache).
+    /// Size of the direct fs blocks (data cache).
     #[clap(
-        long = "cache.data-file-size",
-        env = "DNA_CACHE_DATA_FILE_SIZE",
-        default_value = "1Gi"
+        long = "cache.data-block-size",
+        env = "DNA_CACHE_DATA_BLOCK_SIZE",
+        default_value = "128Mi"
     )]
-    pub cache_data_file_size: String,
+    pub cache_data_block_size: String,
     /// Size of the in-memory data cache.
     #[clap(
         long = "cache.data-memory-size",
@@ -62,13 +61,13 @@ pub struct FileCacheArgs {
         default_value = "10Gi"
     )]
     pub cache_index_disk_size: String,
-    /// Size of the direct fs files (index cache).
+    /// Size of the direct fs blocks (index cache).
     #[clap(
-        long = "cache.index-file-size",
-        env = "DNA_CACHE_INDEX_FILE_SIZE",
-        default_value = "1Gi"
+        long = "cache.index-block-size",
+        env = "DNA_CACHE_INDEX_BLOCK_SIZE",
+        default_value = "128Mi"
     )]
-    pub cache_index_file_size: String,
+    pub cache_index_block_size: String,
     /// Size of the in-memory index cache.
     #[clap(
         long = "cache.index-memory-size",
@@ -76,24 +75,6 @@ pub struct FileCacheArgs {
         default_value = "2Gi"
     )]
     pub cache_index_memory_size: String,
-    /// Cache worker threads for reading.
-    ///
-    /// Data and index cache use the same number of threads.
-    #[clap(
-        long = "cache.runtime-read-threads",
-        env = "DNA_CACHE_RUNTIME_READ_THREADS",
-        default_value = "4"
-    )]
-    pub cache_runtime_read_threads: usize,
-    /// Cache worker threads for writing.
-    ///
-    /// Data and index cache use the same number of threads.
-    #[clap(
-        long = "cache.runtime-write-threads",
-        env = "DNA_CACHE_RUNTIME_WRITE_THREADS",
-        default_value = "4"
-    )]
-    pub cache_runtime_write_threads: usize,
     /// Set how fast items can be inserted into the cache.
     ///
     /// This value is in bytes per second, e.g. `100Mi` to insert data at 100 MiB per second.
@@ -166,18 +147,6 @@ impl FileCacheArgs {
             .as_u64();
 
         let general = {
-            let admission_picker: Arc<dyn AdmissionPicker<Key = String>> =
-                if let Some(rate_limit) = self.cache_admission_rate_limit.as_ref() {
-                    let rate_limit = byte_unit::Byte::from_str(rate_limit)
-                        .change_context(FileCacheError::Config)
-                        .attach_printable("failed to parse admission rate limit")
-                        .attach_printable_lazy(|| format!("rate limit: {}", rate_limit))?
-                        .as_u64();
-                    Arc::new(RateLimitPicker::new(rate_limit as usize))
-                } else {
-                    Arc::new(AdmitAllPicker::default())
-                };
-
             let max_size_memory_bytes = byte_unit::Byte::from_str(&self.cache_data_memory_size)
                 .change_context(FileCacheError::Config)
                 .attach_printable("failed to parse in memory data cache size")
@@ -194,41 +163,32 @@ impl FileCacheArgs {
                 })?
                 .as_u64();
 
-            let file_size = byte_unit::Byte::from_str(&self.cache_data_file_size)
+            let block_size = byte_unit::Byte::from_str(&self.cache_data_block_size)
                 .change_context(FileCacheError::Config)
-                .attach_printable("failed to parse data cache file size")
-                .attach_printable_lazy(|| format!("file size: {}", self.cache_data_file_size))?
+                .attach_printable("failed to parse on disk data block size")
+                .attach_printable_lazy(|| {
+                    format!("data cache block size: {}", self.cache_data_block_size)
+                })?
                 .as_u64();
 
-            HybridCacheBuilder::new()
+            let device = FsDeviceBuilder::new(cache_dir.join("general"))
+                .with_capacity(max_size_disk_bytes as _)
+                .build()
+                .map_err(FileCacheError::Foyer)?;
+
+            HybridCacheBuilder::<String, Bytes>::new()
                 .with_name("general")
                 .with_metrics_registry(mixtrics_registry("file_cache"))
-                .memory(max_size_memory_bytes as usize)
+                .memory(max_size_memory_bytes as _)
                 .with_eviction_config(S3FifoConfig::default())
                 .with_weighter(|_: &String, bytes: &Bytes| bytes.len())
-                .storage(Engine::Large)
+                .storage()
                 .with_compression(compression)
-                .with_admission_picker(admission_picker)
-                .with_runtime_options(RuntimeOptions::Separated {
-                    read_runtime_options: TokioRuntimeOptions {
-                        worker_threads: self.cache_runtime_read_threads,
-                        max_blocking_threads: self.cache_runtime_read_threads * 2,
-                    },
-                    write_runtime_options: TokioRuntimeOptions {
-                        worker_threads: self.cache_runtime_write_threads,
-                        max_blocking_threads: self.cache_runtime_write_threads * 2,
-                    },
-                })
-                .with_large_object_disk_cache_options(
-                    LargeEngineOptions::new()
+                .with_engine_config(
+                    BlockEngineConfig::new(device)
+                        .with_block_size(block_size as _)
                         .with_flushers(self.cache_flusher_count)
-                        .with_buffer_pool_size(flush_buffer_pool_size as usize),
-                )
-                .with_flush(self.cache_flush)
-                .with_device_options(
-                    DirectFsDeviceOptions::new(cache_dir.join("general"))
-                        .with_capacity(max_size_disk_bytes as usize)
-                        .with_file_size(file_size as usize),
+                        .with_buffer_pool_size(flush_buffer_pool_size as _),
                 )
                 .with_recover_mode(RecoverMode::Quiet)
                 .build()
@@ -237,18 +197,6 @@ impl FileCacheArgs {
         }?;
 
         let index = {
-            let admission_picker: Arc<dyn AdmissionPicker<Key = String>> =
-                if let Some(rate_limit) = self.cache_admission_rate_limit.as_ref() {
-                    let rate_limit = byte_unit::Byte::from_str(rate_limit)
-                        .change_context(FileCacheError::Config)
-                        .attach_printable("failed to parse admission rate limit")
-                        .attach_printable_lazy(|| format!("rate limit: {}", rate_limit))?
-                        .as_u64();
-                    Arc::new(RateLimitPicker::new(rate_limit as usize))
-                } else {
-                    Arc::new(AdmitAllPicker::default())
-                };
-
             let max_size_memory_bytes = byte_unit::Byte::from_str(&self.cache_index_memory_size)
                 .change_context(FileCacheError::Config)
                 .attach_printable("failed to parse in memory index cache size")
@@ -265,43 +213,32 @@ impl FileCacheArgs {
                 })?
                 .as_u64();
 
-            let file_size = byte_unit::Byte::from_str(&self.cache_index_file_size)
+            let block_size = byte_unit::Byte::from_str(&self.cache_index_block_size)
                 .change_context(FileCacheError::Config)
-                .attach_printable("failed to parse index cache file size")
+                .attach_printable("failed to parse on disk index block size")
                 .attach_printable_lazy(|| {
-                    format!("index file size: {}", self.cache_index_file_size)
+                    format!("data cache block size: {}", self.cache_index_block_size)
                 })?
                 .as_u64();
 
-            HybridCacheBuilder::new()
+            let device = FsDeviceBuilder::new(cache_dir.join("general"))
+                .with_capacity(max_size_disk_bytes as usize)
+                .build()
+                .map_err(FileCacheError::Foyer)?;
+
+            HybridCacheBuilder::<String, Bytes>::new()
                 .with_name("index")
                 .with_metrics_registry(mixtrics_registry("file_cache"))
                 .memory(max_size_memory_bytes as usize)
                 .with_eviction_config(S3FifoConfig::default())
                 .with_weighter(|_: &String, bytes: &Bytes| bytes.len())
-                .storage(Engine::Large)
+                .storage()
                 .with_compression(compression)
-                .with_admission_picker(admission_picker)
-                .with_runtime_options(RuntimeOptions::Separated {
-                    read_runtime_options: TokioRuntimeOptions {
-                        worker_threads: self.cache_runtime_read_threads,
-                        max_blocking_threads: self.cache_runtime_read_threads * 2,
-                    },
-                    write_runtime_options: TokioRuntimeOptions {
-                        worker_threads: self.cache_runtime_write_threads,
-                        max_blocking_threads: self.cache_runtime_write_threads * 2,
-                    },
-                })
-                .with_large_object_disk_cache_options(
-                    LargeEngineOptions::new()
+                .with_engine_config(
+                    BlockEngineConfig::new(device)
+                        .with_block_size(block_size as _)
                         .with_flushers(self.cache_flusher_count)
-                        .with_buffer_pool_size(flush_buffer_pool_size as usize),
-                )
-                .with_flush(self.cache_flush)
-                .with_device_options(
-                    DirectFsDeviceOptions::new(cache_dir.join("index"))
-                        .with_capacity(max_size_disk_bytes as usize)
-                        .with_file_size(file_size as usize),
+                        .with_buffer_pool_size(flush_buffer_pool_size as _),
                 )
                 .with_recover_mode(RecoverMode::Quiet)
                 .build()

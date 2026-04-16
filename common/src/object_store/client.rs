@@ -9,7 +9,7 @@ use super::{
 #[derive(Clone)]
 pub enum ObjectStoreClient {
     AwsS3(AwsS3Client),
-    AzureBlob(AzureBlobClient),
+    AzureBlob(Box<AzureBlobClient>),
 }
 
 impl ObjectStoreClient {
@@ -84,6 +84,6 @@ impl From<AwsS3Client> for ObjectStoreClient {
 
 impl From<AzureBlobClient> for ObjectStoreClient {
     fn from(client: AzureBlobClient) -> Self {
-        Self::AzureBlob(client)
+        Self::AzureBlob(client.into())
     }
 }

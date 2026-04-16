@@ -2,7 +2,7 @@ pub use alloy_consensus::{
     EthereumTxEnvelope, Signed, TxEip1559, TxEip2930, TxEip4844, TxEip4844Variant,
     TxEip4844WithSidecar, TxEip7702, TxEnvelope, TxLegacy,
 };
-pub use alloy_primitives::{Address, Bloom, ChainId, PrimitiveSignature, TxKind, B256, U128, U256};
+pub use alloy_primitives::{Address, Bloom, ChainId, Signature, TxKind, B256, U128, U256};
 pub use alloy_rpc_types::{
     AccessList, AccessListItem, Block, Header, Log, Transaction, TransactionReceipt, Withdrawal,
 };

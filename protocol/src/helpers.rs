@@ -5,12 +5,6 @@ macro_rules! impl_scalar_traits {
                 write!(f, "{}", self.to_hex())
             }
         }
-
-        impl std::hash::Hash for $typ {
-            fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-                self.to_bytes().hash(state);
-            }
-        }
     };
 }
 

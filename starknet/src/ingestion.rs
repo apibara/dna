@@ -30,7 +30,7 @@ use crate::{
         RECEIPT_FRAGMENT_NAME, STORAGE_DIFF_FRAGMENT_ID, STORAGE_DIFF_FRAGMENT_NAME,
         TRACE_FRAGMENT_ID, TRACE_FRAGMENT_NAME, TRANSACTION_FRAGMENT_ID, TRANSACTION_FRAGMENT_NAME,
     },
-    proto::{convert_block_header, convert_pending_block_header, ModelExt},
+    proto::{convert_block_header, ModelExt},
     provider::{models, BlockExt, BlockId, StarknetProvider, StarknetProviderErrorExt},
 };
 
@@ -157,7 +157,7 @@ impl BlockIngestion for StarknetBlockIngestion {
             }
         };
 
-        let models::MaybePendingBlockWithTxHashes::Block(block) = block else {
+        let models::MaybePreConfirmedBlockWithTxHashes::Block(block) = block else {
             return Err(IngestionError::RpcRequest)
                 .attach_printable("unexpected pending block")
                 .attach_printable_lazy(|| format!("block number: {}", block_number));
@@ -182,116 +182,11 @@ impl BlockIngestion for StarknetBlockIngestion {
     )]
     async fn ingest_pending_block(
         &self,
-        parent: &Cursor,
-        generation: u64,
+        _parent: &Cursor,
+        _generation: u64,
     ) -> Result<Option<(PendingBlockInfo, Block)>, IngestionError> {
-        let block_id = BlockId::Pending;
-
-        let block = match self.provider.get_block_with_receipts(&block_id).await {
-            Ok(block) => block,
-            Err(err) if err.is_not_found() => {
-                return Ok(None);
-            }
-            Err(err) => {
-                return Err(err)
-                    .change_context(IngestionError::RpcRequest)
-                    .attach_printable("failed to get pending block");
-            }
-        };
-
-        let models::MaybePendingBlockWithReceipts::PendingBlock(block) = block else {
-            return Err(IngestionError::RpcRequest)
-                .attach_printable("unexpected non-pending block");
-        };
-
-        let block_parent_hash = Hash(block.parent_hash.to_bytes_be().to_vec());
-
-        if block_parent_hash != parent.hash {
-            return Ok(None);
-        }
-
-        let state_update = tokio::spawn({
-            let provider = self.provider.clone();
-            let block_id = block_id.clone();
-            async move {
-                provider
-                    .get_state_update(&block_id)
-                    .await
-                    .change_context(IngestionError::RpcRequest)
-            }
-        });
-
-        let transaction_traces = tokio::spawn({
-            let provider = self.provider.clone();
-            let block_id = block_id.clone();
-            let should_ingest = self.options.ingest_traces;
-            async move {
-                if should_ingest {
-                    provider
-                        .get_block_transaction_traces(&block_id)
-                        .await
-                        .change_context(IngestionError::RpcRequest)
-                } else {
-                    Ok(Vec::default())
-                }
-            }
-        });
-
-        let models::MaybePendingStateUpdate::PendingUpdate(state_update) = state_update
-            .await
-            .change_context(IngestionError::RpcRequest)??
-        else {
-            return Err(IngestionError::RpcRequest)
-                .attach_printable("unexpected non-pending state update");
-        };
-
-        let transaction_traces = transaction_traces
-            .await
-            .change_context(IngestionError::RpcRequest)??;
-
-        let pending_block_info = PendingBlockInfo {
-            number: parent.number + 1,
-            generation,
-            parent: parent.hash.clone(),
-        };
-
-        let header_fragment = {
-            let header = convert_pending_block_header(&block, pending_block_info.number);
-            HeaderFragment {
-                data: header.encode_to_vec(),
-            }
-        };
-
-        let body_ingestion_result =
-            collect_block_body_and_index(&block.transactions, &transaction_traces)?;
-
-        let state_update_ingestion_result =
-            collect_state_update_body_and_index(&state_update.state_diff)?;
-
-        let mut body_fragments = body_ingestion_result.body;
-        let mut index_fragments = body_ingestion_result.index;
-        let mut join_fragments = body_ingestion_result.join;
-
-        body_fragments.extend(state_update_ingestion_result.body);
-        index_fragments.extend(state_update_ingestion_result.index);
-        join_fragments.extend(state_update_ingestion_result.join);
-
-        let index_group = IndexGroupFragment {
-            indexes: index_fragments,
-        };
-
-        let join_group = JoinGroupFragment {
-            joins: join_fragments,
-        };
-
-        let block = Block {
-            header: header_fragment,
-            index: index_group,
-            body: body_fragments,
-            join: join_group,
-        };
-
-        Ok(Some((pending_block_info, block)))
+        // Pending block ingestion is not supported by the Starknet provider since the parent block hash is not available anymore
+        Ok(None)
     }
 
     #[tracing::instrument(
@@ -321,7 +216,7 @@ impl BlockIngestion for StarknetBlockIngestion {
             }
         };
 
-        let models::MaybePendingBlockWithReceipts::Block(block) = block else {
+        let models::MaybePreConfirmedBlockWithReceipts::Block(block) = block else {
             return Err(IngestionError::RpcRequest)
                 .attach_printable("unexpected pending block")
                 .attach_printable_lazy(|| format!("block number: {}", block_number));
@@ -357,7 +252,7 @@ impl BlockIngestion for StarknetBlockIngestion {
             }
         });
 
-        let models::MaybePendingStateUpdate::Update(state_update) = state_update
+        let models::MaybePreConfirmedStateUpdate::Update(state_update) = state_update
             .await
             .change_context(IngestionError::RpcRequest)??
         else {

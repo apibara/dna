@@ -93,7 +93,7 @@ impl BeaconChainBlockIngestion {
             let provider = self.provider.clone();
             let block_id = original_block_id.clone();
             let should_ingest = self.options.sample_validators > 0
-                && block_number % self.options.sample_validators == 0;
+                && block_number.is_multiple_of(self.options.sample_validators);
             async move {
                 if should_ingest {
                     match provider.get_validators(block_id.clone()).await {

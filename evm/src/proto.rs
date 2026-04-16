@@ -320,7 +320,7 @@ impl ModelExt for models::Log {
     }
 }
 
-impl ModelExt for models::PrimitiveSignature {
+impl ModelExt for models::Signature {
     type Proto = evm::Signature;
 
     fn to_proto(&self) -> Self::Proto {

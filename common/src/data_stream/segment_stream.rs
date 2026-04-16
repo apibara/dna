@@ -2,7 +2,6 @@ use std::collections::{HashMap, HashSet};
 
 use apibara_observability::{KeyValue, RecordRequest};
 use error_stack::{Result, ResultExt};
-use foyer::FetchState;
 use futures::TryStreamExt;
 use futures_buffered::FuturesOrderedBounded;
 use roaring::RoaringBitmap;
@@ -99,12 +98,11 @@ impl SegmentStream {
                         async move {
                             let group_cursor = Cursor::new_finalized(next_group_to_fetch);
                             let entry = store.get_group(&group_cursor);
-                            let cache_hit = entry.state() == FetchState::Hit;
                             let entry = entry
                                 .record_request(group_download_metrics)
                                 .await
                                 .map_err(FileCacheError::Foyer)?;
-                            Ok::<_, FileCacheError>((group_cursor, entry, cache_hit))
+                            Ok::<_, FileCacheError>((group_cursor, entry))
                         }
                     });
 
@@ -113,7 +111,7 @@ impl SegmentStream {
 
                 let expected_group_cursor = Cursor::new_finalized(current_block_number);
 
-                let (fetched_group_cursor, group_entry, cache_hit) = group_queue
+                let (fetched_group_cursor, group_entry) = group_queue
                     .try_next()
                     .record_request(self.metrics.group_wait.clone())
                     .await
@@ -126,10 +124,6 @@ impl SegmentStream {
                 if expected_group_cursor != fetched_group_cursor {
                     return Err(DataStreamError).attach_printable("expected and fetched group cursors do not match")
                         .attach_printable_lazy(|| format!("expected: {expected_group_cursor}, fetched: {fetched_group_cursor}"));
-                }
-
-                if cache_hit {
-                    self.metrics.group_cache_hit.add(1, &[]);
                 }
 
                 let group = unsafe {

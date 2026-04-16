@@ -3,7 +3,7 @@ use std::{collections::HashMap, time::Instant};
 use apibara_observability::RecordedRequest;
 use bytes::Bytes;
 use error_stack::{Result, ResultExt};
-use foyer::CacheEntry;
+use foyer::HybridCacheEntry;
 use roaring::RoaringBitmap;
 
 use crate::{
@@ -18,7 +18,7 @@ use crate::{
 
 use super::{fragment_access::FragmentAccessError, DataStreamMetrics};
 
-pub type FileEntry = CacheEntry<String, Bytes>;
+pub type FileEntry = HybridCacheEntry<String, Bytes>;
 
 pub struct SegmentAccessFetch {
     first_block: u64,
