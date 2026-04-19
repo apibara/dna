@@ -871,7 +871,9 @@ dependencies = [
  "apibara-observability",
  "backon",
  "byte-unit",
+ "bytes",
  "clap",
+ "crc32fast",
  "ctrlc",
  "error-stack",
  "futures",
@@ -891,6 +893,7 @@ dependencies = [
  "tonic 0.14.5",
  "tracing",
  "url",
+ "zstd",
 ]
 
 [[package]]
