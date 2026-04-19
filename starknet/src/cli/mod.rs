@@ -1,3 +1,4 @@
+mod canon;
 mod dbg;
 mod rpc;
 mod start;
@@ -7,7 +8,7 @@ use dbg::DebugPrefetchCommand;
 use error_stack::Result;
 use tokio_util::sync::CancellationToken;
 
-use crate::error::StarknetError;
+use crate::{cli::canon::CanonCommand, error::StarknetError};
 
 use self::{dbg::DebugRpcCommand, start::StartCommand};
 
@@ -31,6 +32,12 @@ pub enum Command {
     #[command(name = "dbg-prefetch")]
     /// Debug the prefetch module.
     DebugPrefetch(Box<DebugPrefetchCommand>),
+    /// Interact with canonical chain segments.
+    #[command(name = "canon")]
+    Canon {
+        #[clap(subcommand)]
+        command: CanonCommand,
+    },
 }
 
 impl Cli {
@@ -39,6 +46,7 @@ impl Cli {
             Command::Start(command) => command.run(ct).await,
             Command::DebugRpc { command } => command.run().await,
             Command::DebugPrefetch(command) => command.run(ct).await,
+            Command::Canon { command } => command.run().await,
         }
     }
 }
