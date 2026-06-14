@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use apibara_dna_common::{
     chain::{BlockInfo, PendingBlockInfo},
@@ -7,7 +7,9 @@ use apibara_dna_common::{
         JoinFragment, JoinGroupFragment,
     },
     index::{BitmapIndexBuilder, ScalarValue},
-    ingestion::{BlockIngestion, BoxedNewHeadsStream, IngestionError},
+    ingestion::{
+        BlockIngestion, BoxedNewHeadsStream, BoxedPendingBlockUpdateStream, IngestionError,
+    },
     join::{JoinToManyIndexBuilder, JoinToOneIndexBuilder},
     Cursor, Hash,
 };
@@ -15,6 +17,7 @@ use apibara_dna_protocol::starknet;
 use error_stack::{Report, Result, ResultExt};
 // use futures::StreamExt;
 use prost::Message;
+use tokio::sync::Mutex;
 use tokio_stream::StreamExt as TokioStreamExt;
 use tracing::{info, Instrument};
 
@@ -33,10 +36,11 @@ use crate::{
         RECEIPT_FRAGMENT_NAME, STORAGE_DIFF_FRAGMENT_ID, STORAGE_DIFF_FRAGMENT_NAME,
         TRACE_FRAGMENT_ID, TRACE_FRAGMENT_NAME, TRANSACTION_FRAGMENT_ID, TRANSACTION_FRAGMENT_NAME,
     },
+    live::{LiveAssemblerInsert, StarknetLiveAssembler},
     proto::{convert_block_header, convert_pre_confirmed_block_header, ModelExt},
     provider::{
-        models, BlockExt, BlockId, StarknetProvider, StarknetProviderError,
-        StarknetProviderErrorExt,
+        models, BlockExt, BlockId, StarknetLiveTransactionsStream, StarknetProvider,
+        StarknetProviderError, StarknetProviderErrorExt,
     },
     NewHeadsStream,
 };
@@ -45,12 +49,14 @@ use crate::{
 pub struct StarknetBlockIngestionOptions {
     pub ingest_pending: bool,
     pub ingest_traces: bool,
+    pub live_ingestion_enabled: bool,
 }
 
 pub struct StarknetBlockIngestion {
     provider: StarknetProvider,
     ws_url: Option<String>,
     options: StarknetBlockIngestionOptions,
+    live_assembler: Arc<Mutex<StarknetLiveAssembler>>,
 }
 
 impl StarknetBlockIngestion {
@@ -63,14 +69,15 @@ impl StarknetBlockIngestion {
             provider,
             ws_url,
             options,
+            live_assembler: Arc::new(Mutex::new(StarknetLiveAssembler::new())),
         }
     }
 }
 
-struct BlockIngestionResult {
-    body: Vec<BodyFragment>,
-    index: Vec<IndexFragment>,
-    join: Vec<JoinFragment>,
+pub(crate) struct BlockIngestionResult {
+    pub(crate) body: Vec<BodyFragment>,
+    pub(crate) index: Vec<IndexFragment>,
+    pub(crate) join: Vec<JoinFragment>,
 }
 
 impl BlockIngestion for StarknetBlockIngestion {
@@ -103,6 +110,61 @@ impl BlockIngestion for StarknetBlockIngestion {
         {
             use futures::StreamExt;
             Ok(stream.boxed())
+        }
+    }
+
+    #[tracing::instrument("starknet_pending_block_updates_stream", skip_all, err(Debug))]
+    async fn pending_block_updates_stream(
+        &self,
+    ) -> Result<BoxedPendingBlockUpdateStream, IngestionError> {
+        if !self.options.ingest_pending || !self.options.live_ingestion_enabled {
+            use futures::StreamExt;
+            return Ok(futures::stream::pending().boxed());
+        }
+
+        let Some(url) = self.ws_url.as_ref() else {
+            use futures::StreamExt;
+            return Ok(futures::stream::pending().boxed());
+        };
+
+        info!("subscribing to live starknet transaction receipts");
+
+        let assembler = self.live_assembler.clone();
+        let stream = StarknetLiveTransactionsStream::connect(url)
+            .await
+            .change_context(IngestionError::RpcRequest)
+            .attach_printable("failed to connect to starknet live ws")?
+            .timeout(Duration::from_secs(60));
+
+        {
+            use futures::StreamExt;
+
+            let stream = futures::StreamExt::then(stream, move |message| {
+                let assembler = assembler.clone();
+                async move {
+                    match message {
+                        Ok(Ok(message)) => {
+                            let mut assembler = assembler.lock().await;
+                            let insert = assembler.push_message(message);
+                            if insert == LiveAssemblerInsert::Duplicate
+                                || assembler.pending_block_numbers().is_empty()
+                            {
+                                None
+                            } else {
+                                Some(Ok(()))
+                            }
+                        }
+                        Ok(Err(err)) => Some(Err(err).change_context(IngestionError::RpcRequest)),
+                        Err(err) => Some(
+                            Err(err)
+                                .change_context(StarknetProviderError::Timeout)
+                                .change_context(IngestionError::RpcRequest),
+                        ),
+                    }
+                }
+            });
+
+            Ok(futures::StreamExt::filter_map(stream, |message| async move { message }).boxed())
         }
     }
 
@@ -181,6 +243,24 @@ impl BlockIngestion for StarknetBlockIngestion {
         parent: &Cursor,
         generation: u64,
     ) -> Result<Option<(PendingBlockInfo, Block)>, IngestionError> {
+        if self.options.live_ingestion_enabled {
+            let number = parent.number + 1;
+            let live_block = {
+                let assembler = self.live_assembler.lock().await;
+                assembler.build_pending_block(number)?
+            };
+
+            if let Some(live_block) = live_block {
+                let block_info = PendingBlockInfo {
+                    number: live_block.block_number,
+                    generation,
+                    parent: parent.hash.clone(),
+                };
+
+                return Ok(Some((block_info, live_block.block)));
+            }
+        }
+
         let block_id = BlockId::Pending;
 
         let block = match self.provider.get_block_with_receipts(&block_id).await {
@@ -411,6 +491,10 @@ impl BlockIngestion for StarknetBlockIngestion {
             })
         })?;
 
+        if self.options.live_ingestion_enabled {
+            self.live_assembler.lock().await.prune_through_block(number);
+        }
+
         Ok((block_info, block))
     }
 }
@@ -421,14 +505,44 @@ impl Clone for StarknetBlockIngestion {
             provider: self.provider.clone(),
             ws_url: self.ws_url.clone(),
             options: self.options.clone(),
+            live_assembler: self.live_assembler.clone(),
         }
     }
 }
 
-fn collect_block_body_and_index(
+pub(crate) fn collect_block_body_and_index(
     transactions: &[models::TransactionWithReceipt],
     transaction_traces: &[models::TransactionTraceWithHash],
 ) -> Result<BlockIngestionResult, IngestionError> {
+    let transaction_contents = transactions
+        .iter()
+        .map(|transaction| &transaction.transaction)
+        .collect::<Vec<_>>();
+    let receipts = transactions
+        .iter()
+        .map(|transaction| &transaction.receipt)
+        .collect::<Vec<_>>();
+
+    collect_block_records_body_and_index(&receipts, Some(&transaction_contents), transaction_traces)
+}
+
+pub(crate) fn collect_receipts_body_and_index(
+    receipts: &[models::TransactionReceipt],
+) -> Result<BlockIngestionResult, IngestionError> {
+    let receipts = receipts.iter().collect::<Vec<_>>();
+
+    collect_block_records_body_and_index(&receipts, None, &[])
+}
+
+fn collect_block_records_body_and_index(
+    receipts: &[&models::TransactionReceipt],
+    transactions: Option<&[&models::TransactionContent]>,
+    transaction_traces: &[models::TransactionTraceWithHash],
+) -> Result<BlockIngestionResult, IngestionError> {
+    if let Some(transactions) = transactions {
+        debug_assert_eq!(receipts.len(), transactions.len());
+    }
+
     let mut block_transactions = Vec::new();
     let mut block_receipts = Vec::new();
     let mut block_events = Vec::new();
@@ -475,19 +589,16 @@ fn collect_block_body_and_index(
         block_traces.push(trace);
     }
 
-    for (transaction_index, transaction_with_receipt) in transactions.iter().enumerate() {
+    for (transaction_index, receipt) in receipts.iter().enumerate() {
         let transaction_index = transaction_index as u32;
-        let transaction_hash = transaction_with_receipt
-            .receipt
-            .transaction_hash()
-            .to_proto();
+        let transaction_hash = receipt.transaction_hash().to_proto();
 
-        let transaction_status = match transaction_with_receipt.receipt.execution_result() {
+        let transaction_status = match receipt.execution_result() {
             models::ExecutionResult::Succeeded => starknet::TransactionStatus::Succeeded,
             models::ExecutionResult::Reverted { .. } => starknet::TransactionStatus::Reverted,
         };
 
-        let events = match &transaction_with_receipt.receipt {
+        let events = match receipt {
             models::TransactionReceipt::Invoke(rx) => &rx.events,
             models::TransactionReceipt::L1Handler(rx) => &rx.events,
             models::TransactionReceipt::Declare(rx) => &rx.events,
@@ -507,8 +618,10 @@ fn collect_block_body_and_index(
             event.transaction_status = transaction_status as i32;
             event.event_index_in_transaction = event_index_in_transaction as u32;
 
-            join_transaction_to_events.insert(transaction_index, event.event_index);
-            join_event_to_transaction.insert(event.event_index, transaction_index);
+            if transactions.is_some() {
+                join_transaction_to_events.insert(transaction_index, event.event_index);
+                join_event_to_transaction.insert(event.event_index, transaction_index);
+            }
             join_event_to_receipt.insert(event.event_index, transaction_index);
             if !block_traces.is_empty() {
                 join_event_to_trace.insert(event.event_index, transaction_index);
@@ -549,7 +662,7 @@ fn collect_block_body_and_index(
             block_events.push(event);
         }
 
-        let messages = match &transaction_with_receipt.receipt {
+        let messages = match receipt {
             models::TransactionReceipt::Invoke(rx) => &rx.messages_sent,
             models::TransactionReceipt::L1Handler(rx) => &rx.messages_sent,
             models::TransactionReceipt::Declare(rx) => &rx.messages_sent,
@@ -566,8 +679,10 @@ fn collect_block_body_and_index(
             message.transaction_status = transaction_status as i32;
             message.message_index_in_transaction = message_index_in_transaction as u32;
 
-            join_transaction_to_messages.insert(transaction_index, message.message_index);
-            join_message_to_transaction.insert(message.message_index, transaction_index);
+            if transactions.is_some() {
+                join_transaction_to_messages.insert(transaction_index, message.message_index);
+                join_message_to_transaction.insert(message.message_index, transaction_index);
+            }
             join_message_to_receipt.insert(message.message_index, transaction_index);
             if !block_traces.is_empty() {
                 join_message_to_trace.insert(message.message_index, transaction_index);
@@ -616,45 +731,51 @@ fn collect_block_body_and_index(
             }
         }
 
-        let mut transaction = transaction_with_receipt.transaction.to_proto();
-        set_transaction_meta(
-            &mut transaction,
-            transaction_hash,
-            transaction_index,
-            transaction_status,
-        );
+        if let Some(transaction_content) =
+            transactions.and_then(|transactions| transactions.get(transaction_index as usize))
+        {
+            let mut transaction = transaction_content.to_proto();
+            set_transaction_meta(
+                &mut transaction,
+                transaction_hash,
+                transaction_index,
+                transaction_status,
+            );
 
-        use starknet::transaction::Transaction;
-        let transaction_type = match transaction.transaction {
-            Some(Transaction::InvokeV0(_)) => Some(TransactionType::InvokeV0),
-            Some(Transaction::InvokeV1(_)) => Some(TransactionType::InvokeV1),
-            Some(Transaction::InvokeV3(_)) => Some(TransactionType::InvokeV3),
-            Some(Transaction::Deploy(_)) => Some(TransactionType::Deploy),
-            Some(Transaction::DeclareV0(_)) => Some(TransactionType::DeclareV0),
-            Some(Transaction::DeclareV1(_)) => Some(TransactionType::DeclareV1),
-            Some(Transaction::DeclareV2(_)) => Some(TransactionType::DeclareV2),
-            Some(Transaction::DeclareV3(_)) => Some(TransactionType::DeclareV3),
-            Some(Transaction::L1Handler(_)) => Some(TransactionType::L1Handler),
-            Some(Transaction::DeployAccountV1(_)) => Some(TransactionType::DeployAccountV1),
-            Some(Transaction::DeployAccountV3(_)) => Some(TransactionType::DeployAccountV3),
-            None => None,
-        };
+            use starknet::transaction::Transaction;
+            let transaction_type = match transaction.transaction {
+                Some(Transaction::InvokeV0(_)) => Some(TransactionType::InvokeV0),
+                Some(Transaction::InvokeV1(_)) => Some(TransactionType::InvokeV1),
+                Some(Transaction::InvokeV3(_)) => Some(TransactionType::InvokeV3),
+                Some(Transaction::Deploy(_)) => Some(TransactionType::Deploy),
+                Some(Transaction::DeclareV0(_)) => Some(TransactionType::DeclareV0),
+                Some(Transaction::DeclareV1(_)) => Some(TransactionType::DeclareV1),
+                Some(Transaction::DeclareV2(_)) => Some(TransactionType::DeclareV2),
+                Some(Transaction::DeclareV3(_)) => Some(TransactionType::DeclareV3),
+                Some(Transaction::L1Handler(_)) => Some(TransactionType::L1Handler),
+                Some(Transaction::DeployAccountV1(_)) => Some(TransactionType::DeployAccountV1),
+                Some(Transaction::DeployAccountV3(_)) => Some(TransactionType::DeployAccountV3),
+                None => None,
+            };
 
-        if let Some(transaction_type) = transaction_type {
-            index_transaction_by_type.insert(transaction_type.to_scalar_value(), transaction_index);
+            if let Some(transaction_type) = transaction_type {
+                index_transaction_by_type
+                    .insert(transaction_type.to_scalar_value(), transaction_index);
+            }
+
+            index_transaction_by_status.insert(
+                ScalarValue::Int32(transaction_status as i32),
+                transaction_index,
+            );
+
+            join_transaction_to_receipt.insert(transaction_index, transaction_index);
+
+            block_transactions.push(transaction);
         }
 
-        index_transaction_by_status.insert(
-            ScalarValue::Int32(transaction_status as i32),
-            transaction_index,
-        );
-
-        let mut receipt = transaction_with_receipt.receipt.to_proto();
+        let mut receipt = receipt.to_proto();
         set_receipt_transaction_index(&mut receipt, transaction_index);
 
-        join_transaction_to_receipt.insert(transaction_index, transaction_index);
-
-        block_transactions.push(transaction);
         block_receipts.push(receipt);
     }
 
@@ -1010,7 +1131,7 @@ fn collect_block_body_and_index(
     })
 }
 
-fn collect_state_update_body_and_index(
+pub(crate) fn collect_state_update_body_and_index(
     state_diff: &models::StateDiff,
 ) -> Result<BlockIngestionResult, IngestionError> {
     let mut block_storage_diffs = Vec::new();

@@ -42,7 +42,7 @@ time.workspace = true
 tonic.workspace = true
 tokio.workspace = true
 tokio-stream.workspace = true
-tokio-tungstenite = { version = "0.26.0", features = ["native-tls"] }
+tokio-tungstenite = { version = "0.26.0", features = ["rustls-tls-native-roots"] }
 tokio-util.workspace = true
 tracing.workspace = true
 url.workspace = true

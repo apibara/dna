@@ -7,4 +7,7 @@ pub use self::http::{
     StarknetProviderOptions,
 };
 pub use self::models::BlockExt;
-pub use self::ws::{NewHeadMessage, NewHeadsStream};
+pub use self::ws::{
+    NewHeadMessage, NewHeadsStream, NewTransactionMessage, NewTransactionReceiptMessage,
+    StarknetLiveMessage, StarknetLiveTransactionsStream,
+};

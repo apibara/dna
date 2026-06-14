@@ -1,13 +1,20 @@
-use std::sync::Arc;
+use std::{
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
 
 use alloy_rpc_types::BlockNumberOrTag;
 use apibara_etcd::EtcdClient;
 use error_stack::{Result, ResultExt};
 use foyer::HybridCacheBuilder;
+use futures::StreamExt;
 use testcontainers::{runners::AsyncRunner, ContainerAsync};
 
 use apibara_dna_common::{
-    chain::BlockInfo,
+    chain::{BlockInfo, PendingBlockInfo},
     file_cache::FileCache,
     fragment,
     ingestion::{
@@ -24,6 +31,8 @@ use apibara_dna_common::{
 use testing::{
     anvil_server_container, AnvilProvider, AnvilProviderExt, AnvilServer, AnvilServerExt,
 };
+use tokio::sync::{mpsc, Mutex};
+use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::CancellationToken;
 
 async fn get_test_head(provider: &std::sync::Arc<AnvilProvider>) -> apibara_dna_common::Cursor {
@@ -273,6 +282,61 @@ async fn test_ingestion_advances_as_head_changes() {
 
     let ingested = state_client.get_ingested().await.unwrap();
     assert!(ingested.is_some());
+}
+
+#[tokio::test]
+async fn test_ingestion_queues_pending_from_push_update_without_poll_interval() {
+    let (_minio, object_store) = init_minio().await;
+    let (_etcd_server, etcd_client) = init_etcd_server().await;
+    let (_anvil_server, anvil_provider) = init_anvil().await;
+
+    let file_cache = init_file_cache().await;
+    let (_pending_tx, pending_rx) = mpsc::channel(4);
+    let pending_ingest_count = Arc::new(AtomicUsize::new(0));
+
+    let block_ingestion = PendingTestBlockIngestion {
+        provider: anvil_provider,
+        pending_rx: Arc::new(Mutex::new(Some(pending_rx))),
+        pending_ingest_count: pending_ingest_count.clone(),
+    };
+
+    let options = IngestionServiceOptions {
+        pending_refresh_interval: Duration::from_secs(60 * 60),
+        ..Default::default()
+    };
+
+    let mut service = IngestionService::new(
+        block_ingestion,
+        etcd_client,
+        object_store,
+        file_cache,
+        options,
+        IngestionMetrics::default(),
+    );
+
+    let starting_state = service.initialize().await.unwrap();
+    let state = starting_state.take_ingest().unwrap();
+
+    _pending_tx.send(Ok(())).await.unwrap();
+    let ct = CancellationToken::new();
+    let state = service.tick_ingest(state, ct.clone()).await.unwrap();
+    let state = state.take_ingest().unwrap();
+
+    assert_eq!(service.task_queue_len(), 1);
+
+    _pending_tx.send(Ok(())).await.unwrap();
+    let state = service.tick_ingest(state, ct).await.unwrap();
+    let state = state.take_ingest().unwrap();
+
+    assert_eq!(service.task_queue_len(), 1);
+
+    let join_result = service.task_queue_next().await;
+    service
+        .tick_with_task_result(state, join_result)
+        .await
+        .unwrap();
+
+    assert_eq!(pending_ingest_count.load(Ordering::SeqCst), 1);
 }
 
 #[tokio::test]
@@ -806,6 +870,13 @@ struct TestBlockIngestion {
     provider: Arc<AnvilProvider>,
 }
 
+#[derive(Clone)]
+struct PendingTestBlockIngestion {
+    provider: Arc<AnvilProvider>,
+    pending_rx: Arc<Mutex<Option<mpsc::Receiver<Result<(), IngestionError>>>>>,
+    pending_ingest_count: Arc<AtomicUsize>,
+}
+
 impl BlockIngestion for TestBlockIngestion {
     async fn get_head_cursor(&self) -> Result<Cursor, IngestionError> {
         let header = self.provider.get_header(BlockNumberOrTag::Latest).await;
@@ -861,6 +932,97 @@ impl BlockIngestion for TestBlockIngestion {
         };
 
         Ok((info, block))
+    }
+}
+
+impl BlockIngestion for PendingTestBlockIngestion {
+    fn supports_pending(&self) -> bool {
+        true
+    }
+
+    async fn get_head_cursor(&self) -> Result<Cursor, IngestionError> {
+        let header = self.provider.get_header(BlockNumberOrTag::Latest).await;
+        let hash = Hash(header.hash.to_vec());
+        Ok(Cursor::new(header.number, hash))
+    }
+
+    async fn get_finalized_cursor(&self) -> Result<Cursor, IngestionError> {
+        let header = self.provider.get_header(BlockNumberOrTag::Finalized).await;
+        let hash = Hash(header.hash.to_vec());
+        Ok(Cursor::new(header.number, hash))
+    }
+
+    async fn get_block_info_by_number(&self, number: u64) -> Result<BlockInfo, IngestionError> {
+        let Some(header) = self
+            .provider
+            .get_maybe_header(BlockNumberOrTag::Number(number))
+            .await
+        else {
+            return Err(IngestionError::BlockNotFound).attach_printable("missing block");
+        };
+        let hash = Hash(header.hash.to_vec());
+        let parent_hash = Hash(header.parent_hash.to_vec());
+
+        Ok(BlockInfo {
+            number,
+            hash,
+            parent: parent_hash,
+        })
+    }
+
+    async fn ingest_block_by_number(
+        &self,
+        number: u64,
+    ) -> Result<(BlockInfo, fragment::Block), IngestionError> {
+        let info = self.get_block_info_by_number(number).await?;
+        Ok((info, empty_block()))
+    }
+
+    async fn ingest_pending_block(
+        &self,
+        parent: &Cursor,
+        generation: u64,
+    ) -> Result<Option<(PendingBlockInfo, fragment::Block)>, IngestionError> {
+        self.pending_ingest_count.fetch_add(1, Ordering::SeqCst);
+
+        Ok(Some((
+            PendingBlockInfo {
+                number: parent.number + 1,
+                generation,
+                parent: parent.hash.clone(),
+            },
+            empty_block(),
+        )))
+    }
+
+    async fn pending_block_updates_stream(
+        &self,
+    ) -> Result<apibara_dna_common::ingestion::BoxedPendingBlockUpdateStream, IngestionError> {
+        let mut pending_rx = self.pending_rx.lock().await;
+        let Some(rx) = pending_rx.take() else {
+            return Ok(futures::stream::pending().boxed());
+        };
+
+        Ok(ReceiverStream::new(rx).boxed())
+    }
+}
+
+fn empty_block() -> fragment::Block {
+    let header = fragment::HeaderFragment {
+        data: Vec::default(),
+    };
+    let index = fragment::IndexGroupFragment {
+        indexes: Vec::default(),
+    };
+    let join = fragment::JoinGroupFragment {
+        joins: Vec::default(),
+    };
+
+    fragment::Block {
+        header,
+        index,
+        join,
+        body: Vec::default(),
     }
 }
 

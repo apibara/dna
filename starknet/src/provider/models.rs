@@ -11,12 +11,13 @@ pub use starknet_rust::core::types::{
     InvokeTransactionContent, InvokeTransactionReceipt, InvokeTransactionTrace,
     InvokeTransactionV0Content, InvokeTransactionV1Content, InvokeTransactionV3Content,
     L1DataAvailabilityMode, L1HandlerTransactionContent, L1HandlerTransactionReceipt,
-    L1HandlerTransactionTrace, MaybePreConfirmedBlockWithReceipts,
+    L1HandlerTransactionTrace, L2TransactionStatus, MaybePreConfirmedBlockWithReceipts,
     MaybePreConfirmedBlockWithTxHashes, MaybePreConfirmedStateUpdate, MsgToL1, NonceUpdate,
-    PreConfirmedBlockWithReceipts, PreConfirmedStateUpdate, PriceUnit, ReplacedClassItem,
-    ResourceBounds, ResourceBoundsMapping, ResourcePrice, StateDiff, StateUpdate, StorageEntry,
-    TraceBlockTransactionsResult, TransactionContent, TransactionReceipt, TransactionTrace,
-    TransactionTraceWithHash, TransactionWithReceipt,
+    PreConfirmedBlockWithReceipts, PreConfirmedStateUpdate, PriceUnit, ReceiptBlock,
+    ReplacedClassItem, ResourceBounds, ResourceBoundsMapping, ResourcePrice, StateDiff,
+    StateUpdate, StorageEntry, TraceBlockTransactionsResult, Transaction, TransactionContent,
+    TransactionFinalityStatus, TransactionReceipt, TransactionReceiptWithBlockInfo,
+    TransactionTrace, TransactionTraceWithHash, TransactionWithL2Status, TransactionWithReceipt,
 };
 
 pub trait BlockExt {

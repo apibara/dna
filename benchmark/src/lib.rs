@@ -1,18 +1,25 @@
 use std::{
+    collections::HashMap,
     str::FromStr,
     time::{Duration, Instant},
 };
 
 use apibara_dna_protocol::{
-    dna::stream::{dna_stream_client::DnaStreamClient, Cursor, StreamDataRequest},
+    dna::stream::{
+        dna_stream_client::DnaStreamClient, stream_data_response, Cursor, DataFinality,
+        StreamDataRequest,
+    },
     evm, starknet,
 };
 use byte_unit::Byte;
 use clap::{Args, Parser, Subcommand};
 use error_stack::{Result, ResultExt};
-use futures::{StreamExt, TryStreamExt};
+use futures::{SinkExt, StreamExt, TryStreamExt};
 use prost::Message;
+use serde_json::Value;
+use tokio::sync::mpsc;
 use tokio::task::JoinSet;
+use tokio_tungstenite::tungstenite::Message as WsMessage;
 use tokio_util::sync::CancellationToken;
 use tonic::{metadata::AsciiMetadataValue, IntoRequest};
 use tracing::{info, warn};
@@ -33,6 +40,8 @@ pub enum Command {
     Evm(CommonArgs),
     /// Benchmark the Starknet DNA stream.
     Starknet(CommonArgs),
+    /// Compare direct Starknet subscribeEvents latency with DNA pending stream latency.
+    StarknetLiveLatency(StarknetLiveLatencyArgs),
 }
 
 #[derive(Args, Debug, Clone)]
@@ -56,6 +65,34 @@ pub struct CommonArgs {
     pub concurrency: usize,
 }
 
+#[derive(Args, Debug, Clone)]
+pub struct StarknetLiveLatencyArgs {
+    /// Direct Starknet WebSocket RPC URL.
+    #[clap(long, default_value = "ws://64.34.87.87:9545/ws/rpc/v0_10")]
+    pub direct_ws_url: String,
+    /// DNA stream URL.
+    #[clap(long, default_value = "http://localhost:7007")]
+    pub stream_url: String,
+    /// Bearer token used for DNA stream authentication.
+    #[clap(long)]
+    pub bearer_token: Option<String>,
+    /// Death Mountain GameCore contract address.
+    #[clap(long)]
+    pub game_core_address: String,
+    /// GameEvent selector key, for example sn_keccak(\"GameEvent\") padded as a felt hex string.
+    #[clap(long)]
+    pub game_event_key: String,
+    /// Optional keyed-layout adventurer id. If omitted, all GameEvent events are matched.
+    #[clap(long)]
+    pub adventurer_id: Option<String>,
+    /// Benchmark duration in seconds.
+    #[clap(long, default_value = "120")]
+    pub duration_secs: u64,
+    /// Stop once this many matching events have been observed.
+    #[clap(long, default_value = "20")]
+    pub min_samples: usize,
+}
+
 impl Cli {
     pub async fn run(self, ct: CancellationToken) -> Result<(), BenchmarkError> {
         match self.command {
@@ -63,6 +100,7 @@ impl Cli {
             Command::Starknet(args) => {
                 run_benchmark::<starknet::Filter, StarknetStats>(args, ct).await
             }
+            Command::StarknetLiveLatency(args) => run_starknet_live_latency(args, ct).await,
         }
     }
 }
@@ -192,6 +230,413 @@ where
     stats.print_summary();
 
     Ok(())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct EventIdentity {
+    transaction_hash: String,
+    event_index_in_transaction: u32,
+    from_address: String,
+    keys: Vec<String>,
+    data: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+struct EventObservation {
+    identity: EventIdentity,
+    seen_at: Instant,
+    block_number: Option<u64>,
+    finality: String,
+    event_index: Option<u32>,
+}
+
+#[derive(Debug, Default)]
+struct EventMatchState {
+    direct: Option<EventObservation>,
+    dna: Option<EventObservation>,
+    printed: bool,
+}
+
+async fn run_starknet_live_latency(
+    args: StarknetLiveLatencyArgs,
+    ct: CancellationToken,
+) -> Result<(), BenchmarkError> {
+    let (direct_tx, mut direct_rx) = mpsc::channel(1024);
+    let (dna_tx, mut dna_rx) = mpsc::channel(1024);
+
+    let direct_task = tokio::spawn(run_direct_subscribe_events(
+        args.clone(),
+        direct_tx,
+        ct.clone(),
+    ));
+    let dna_task = tokio::spawn(run_dna_starknet_events(args.clone(), dna_tx, ct.clone()));
+
+    println!(
+        "txHash,blockNumber,eventIndex,finality,directSubscribeEventsSeenMs,dnaStreamSeenMs,dnaMinusSubscribeEventsMs"
+    );
+
+    let start = Instant::now();
+    let deadline = tokio::time::sleep(Duration::from_secs(args.duration_secs));
+    tokio::pin!(deadline);
+
+    let mut matches = HashMap::<EventIdentity, EventMatchState>::new();
+    let mut latencies = Vec::<i128>::new();
+
+    loop {
+        tokio::select! {
+            _ = ct.cancelled() => break,
+            _ = &mut deadline => break,
+            Some(observation) = direct_rx.recv() => {
+                record_observation(observation, true, start, &mut matches, &mut latencies);
+            }
+            Some(observation) = dna_rx.recv() => {
+                record_observation(observation, false, start, &mut matches, &mut latencies);
+            }
+            else => break,
+        }
+
+        if latencies.len() >= args.min_samples {
+            break;
+        }
+    }
+
+    ct.cancel();
+    direct_task.abort();
+    dna_task.abort();
+    finish_latency_task(direct_task, "direct subscribeEvents").await?;
+    finish_latency_task(dna_task, "DNA stream").await?;
+
+    print_latency_summary(&latencies);
+
+    Ok(())
+}
+
+async fn finish_latency_task(
+    task: tokio::task::JoinHandle<Result<(), BenchmarkError>>,
+    label: &str,
+) -> Result<(), BenchmarkError> {
+    match task.await {
+        Ok(result) => result,
+        Err(err) if err.is_cancelled() => Ok(()),
+        Err(err) => Err(err)
+            .change_context(BenchmarkError)
+            .attach_printable_lazy(|| format!("{label} task failed")),
+    }
+}
+
+fn record_observation(
+    observation: EventObservation,
+    is_direct: bool,
+    start: Instant,
+    matches: &mut HashMap<EventIdentity, EventMatchState>,
+    latencies: &mut Vec<i128>,
+) {
+    let state = matches.entry(observation.identity.clone()).or_default();
+
+    if is_direct {
+        if state.direct.is_none() {
+            state.direct = Some(observation);
+        }
+    } else if state.dna.is_none() {
+        state.dna = Some(observation);
+    }
+
+    let (Some(direct), Some(dna)) = (&state.direct, &state.dna) else {
+        return;
+    };
+
+    if state.printed {
+        return;
+    }
+
+    state.printed = true;
+
+    let latency_ms = signed_duration_ms(dna.seen_at, direct.seen_at);
+    latencies.push(latency_ms);
+
+    let block_number = dna.block_number.or(direct.block_number).unwrap_or_default();
+    let event_index = dna.event_index.unwrap_or_default();
+    let direct_seen_ms = signed_duration_ms(direct.seen_at, start);
+    let dna_seen_ms = signed_duration_ms(dna.seen_at, start);
+
+    println!(
+        "{},{},{},{},{},{},{}",
+        dna.identity.transaction_hash,
+        block_number,
+        event_index,
+        dna.finality,
+        direct_seen_ms,
+        dna_seen_ms,
+        latency_ms
+    );
+}
+
+fn print_latency_summary(latencies: &[i128]) {
+    if latencies.is_empty() {
+        println!("summary,count=0,p95DnaMinusSubscribeEventsMs=");
+        return;
+    }
+
+    let mut sorted = latencies.to_vec();
+    sorted.sort_unstable();
+    let p95_index = ((sorted.len() * 95).div_ceil(100)).saturating_sub(1);
+    let p95 = sorted[p95_index];
+    let max = sorted[sorted.len() - 1];
+
+    println!(
+        "summary,count={},p95DnaMinusSubscribeEventsMs={},maxDnaMinusSubscribeEventsMs={}",
+        sorted.len(),
+        p95,
+        max
+    );
+}
+
+fn signed_duration_ms(later: Instant, earlier: Instant) -> i128 {
+    if later >= earlier {
+        later.duration_since(earlier).as_millis() as i128
+    } else {
+        -(earlier.duration_since(later).as_millis() as i128)
+    }
+}
+
+async fn run_direct_subscribe_events(
+    args: StarknetLiveLatencyArgs,
+    tx: mpsc::Sender<EventObservation>,
+    ct: CancellationToken,
+) -> Result<(), BenchmarkError> {
+    let (ws_stream, _) = tokio_tungstenite::connect_async(&args.direct_ws_url)
+        .await
+        .change_context(BenchmarkError)
+        .attach_printable("failed to connect direct Starknet websocket")?;
+    let (mut write, mut read) = ws_stream.split();
+
+    let mut keys = vec![vec![normalize_hex_result(&args.game_event_key)?]];
+    if let Some(adventurer_id) = &args.adventurer_id {
+        keys.push(vec![normalize_hex_result(adventurer_id)?]);
+    }
+
+    let subscribe = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "starknet_subscribeEvents",
+        "params": {
+            "from_address": normalize_hex_result(&args.game_core_address)?,
+            "keys": keys,
+            "finality_status": "PRE_CONFIRMED"
+        }
+    });
+
+    write
+        .send(WsMessage::Text(subscribe.to_string().into()))
+        .await
+        .change_context(BenchmarkError)
+        .attach_printable("failed to send starknet_subscribeEvents request")?;
+
+    while !ct.is_cancelled() {
+        tokio::select! {
+            _ = ct.cancelled() => break,
+            message = read.next() => {
+                let Some(message) = message else {
+                    break;
+                };
+                let message = message
+                    .change_context(BenchmarkError)
+                    .attach_printable("direct Starknet websocket read failed")?;
+                let WsMessage::Text(text) = message else {
+                    continue;
+                };
+
+                if let Some(observation) = parse_direct_event(&text) {
+                    if tx.send(observation).await.is_err() {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+async fn run_dna_starknet_events(
+    args: StarknetLiveLatencyArgs,
+    tx: mpsc::Sender<EventObservation>,
+    ct: CancellationToken,
+) -> Result<(), BenchmarkError> {
+    let mut client = DnaStreamClient::connect(args.stream_url.clone())
+        .await
+        .change_context(BenchmarkError)
+        .attach_printable("failed to connect DNA stream")?;
+
+    let game_core_address = starknet::FieldElement::from_hex(&args.game_core_address)
+        .change_context(BenchmarkError)
+        .attach_printable("failed to parse game core address")?;
+    let game_event_key = starknet::FieldElement::from_hex(&args.game_event_key)
+        .change_context(BenchmarkError)
+        .attach_printable("failed to parse game event key")?;
+    let adventurer_id = args
+        .adventurer_id
+        .as_deref()
+        .map(starknet::FieldElement::from_hex)
+        .transpose()
+        .change_context(BenchmarkError)
+        .attach_printable("failed to parse adventurer id")?;
+
+    let mut event_keys = vec![starknet::Key {
+        value: Some(game_event_key),
+    }];
+    if let Some(adventurer_id) = adventurer_id {
+        event_keys.push(starknet::Key {
+            value: Some(adventurer_id),
+        });
+    }
+
+    let filter = starknet::Filter {
+        header: starknet::HeaderFilter::OnData as i32,
+        events: vec![starknet::EventFilter {
+            address: Some(game_core_address),
+            keys: event_keys,
+            strict: Some(false),
+            include_receipt: Some(true),
+            include_transaction: Some(false),
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+
+    let mut request = StreamDataRequest {
+        finality: Some(DataFinality::Pending as i32),
+        filter: vec![filter.encode_to_vec()],
+        ..Default::default()
+    }
+    .into_request();
+
+    if let Some(bearer_token) = args.bearer_token {
+        let authorization_value = format!("Bearer {bearer_token}");
+        let authorization_value = AsciiMetadataValue::from_str(&authorization_value)
+            .change_context(BenchmarkError)
+            .attach_printable("failed to parse authorization value")?;
+        request
+            .metadata_mut()
+            .insert("authorization", authorization_value);
+    }
+
+    let stream = client
+        .stream_data(request)
+        .await
+        .change_context(BenchmarkError)
+        .attach_printable("failed to start DNA stream")?
+        .into_inner()
+        .take_until(async move { ct.cancelled().await });
+    tokio::pin!(stream);
+
+    while let Some(message) = stream.try_next().await.change_context(BenchmarkError)? {
+        let Some(stream_data_response::Message::Data(data)) = message.message else {
+            continue;
+        };
+
+        let finality = DataFinality::try_from(data.finality)
+            .map(|f| format!("{f:?}"))
+            .unwrap_or_else(|_| format!("UNKNOWN({})", data.finality));
+
+        for block_bytes in data.data {
+            let block = starknet::Block::decode(block_bytes.as_ref())
+                .change_context(BenchmarkError)
+                .attach_printable("failed to decode Starknet DNA block")?;
+            let block_number = block.header.as_ref().map(|header| header.block_number);
+
+            for event in block.events {
+                if let Some(identity) = dna_event_identity(&event) {
+                    let observation = EventObservation {
+                        identity,
+                        seen_at: Instant::now(),
+                        block_number,
+                        finality: finality.clone(),
+                        event_index: Some(event.event_index),
+                    };
+
+                    if tx.send(observation).await.is_err() {
+                        return Ok(());
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn parse_direct_event(text: &str) -> Option<EventObservation> {
+    let value: Value = serde_json::from_str(text).ok()?;
+    if value.get("method").and_then(Value::as_str)? != "starknet_subscriptionEvents" {
+        return None;
+    }
+
+    let result = value.get("params")?.get("result")?;
+
+    let transaction_hash = normalize_hex_value(result.get("transaction_hash")?.as_str()?)?;
+    let event_index_in_transaction = result.get("event_index")?.as_u64()?.try_into().ok()?;
+    let from_address = normalize_hex_value(result.get("from_address")?.as_str()?)?;
+    let keys = normalize_hex_array(result.get("keys")?)?;
+    let data = normalize_hex_array(result.get("data")?)?;
+    let block_number = result.get("block_number").and_then(Value::as_u64);
+    let finality = result
+        .get("finality_status")
+        .and_then(Value::as_str)
+        .unwrap_or("UNKNOWN")
+        .to_string();
+
+    Some(EventObservation {
+        identity: EventIdentity {
+            transaction_hash,
+            event_index_in_transaction,
+            from_address,
+            keys,
+            data,
+        },
+        seen_at: Instant::now(),
+        block_number,
+        finality,
+        event_index: None,
+    })
+}
+
+fn dna_event_identity(event: &starknet::Event) -> Option<EventIdentity> {
+    Some(EventIdentity {
+        transaction_hash: event.transaction_hash.as_ref()?.to_hex(),
+        event_index_in_transaction: event.event_index_in_transaction,
+        from_address: event.from_address.as_ref()?.to_hex(),
+        keys: event
+            .keys
+            .iter()
+            .map(starknet::FieldElement::to_hex)
+            .collect(),
+        data: event
+            .data
+            .iter()
+            .map(starknet::FieldElement::to_hex)
+            .collect(),
+    })
+}
+
+fn normalize_hex_array(value: &Value) -> Option<Vec<String>> {
+    value
+        .as_array()?
+        .iter()
+        .map(|item| normalize_hex_value(item.as_str()?))
+        .collect()
+}
+
+fn normalize_hex_result(value: &str) -> Result<String, BenchmarkError> {
+    Ok(starknet::FieldElement::from_hex(value)
+        .change_context(BenchmarkError)?
+        .to_hex())
+}
+
+fn normalize_hex_value(value: &str) -> Option<String> {
+    starknet::FieldElement::from_hex(value)
+        .ok()
+        .map(|felt| felt.to_hex())
 }
 
 trait Stats {

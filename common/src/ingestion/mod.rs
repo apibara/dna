@@ -17,7 +17,8 @@ pub use self::cli::IngestionArgs;
 pub use self::error::{IngestionError, IngestionErrorExt};
 pub use self::metrics::IngestionMetrics;
 pub use self::service::{
-    BlockIngestion, BoxedNewHeadsStream, IngestionService, IngestionServiceOptions,
+    BlockIngestion, BoxedNewHeadsStream, BoxedPendingBlockUpdateStream, IngestionService,
+    IngestionServiceOptions,
 };
 pub use self::state_client::{
     IngestionStateClient, IngestionStateClientError, IngestionStateUpdate, FINALIZED_KEY,

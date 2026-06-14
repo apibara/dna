@@ -11,13 +11,18 @@ use ingestion::StarknetBlockIngestion;
 use provider::StarknetProvider;
 
 pub use ingestion::StarknetBlockIngestionOptions;
-pub use provider::{NewHeadMessage, NewHeadsStream};
+pub use live::{LiveAssemblerInsert, LivePendingBlock, StarknetLiveAssembler};
+pub use provider::{
+    NewHeadMessage, NewHeadsStream, NewTransactionMessage, NewTransactionReceiptMessage,
+    StarknetLiveMessage, StarknetLiveTransactionsStream,
+};
 
 pub mod cli;
 pub mod error;
 pub mod filter;
 pub mod fragment;
 pub mod ingestion;
+pub mod live;
 pub mod proto;
 pub mod provider;
 

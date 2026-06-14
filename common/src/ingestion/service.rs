@@ -32,6 +32,8 @@ use super::{error::IngestionError, metrics::IngestionMetrics, state_client::Inge
 
 pub type BoxedNewHeadsStream =
     Pin<Box<dyn Stream<Item = Result<Cursor, IngestionError>> + Send + 'static>>;
+pub type BoxedPendingBlockUpdateStream =
+    Pin<Box<dyn Stream<Item = Result<(), IngestionError>> + Send + 'static>>;
 
 pub trait BlockIngestion: Clone {
     fn supports_pending(&self) -> bool {
@@ -64,6 +66,12 @@ pub trait BlockIngestion: Clone {
     fn new_heads_stream(
         &self,
     ) -> impl Future<Output = Result<BoxedNewHeadsStream, IngestionError>> + Send {
+        async { Ok(futures::stream::pending().boxed()) }
+    }
+
+    fn pending_block_updates_stream(
+        &self,
+    ) -> impl Future<Output = Result<BoxedPendingBlockUpdateStream, IngestionError>> + Send {
         async { Ok(futures::stream::pending().boxed()) }
     }
 }
@@ -142,6 +150,8 @@ pub struct IngestState {
     head_refresh_interval: Interval,
     finalized_refresh_interval: Interval,
     new_heads_stream: Pin<Box<dyn Stream<Item = Result<Cursor, IngestionError>> + Send>>,
+    pending_block_updates_stream:
+        Pin<Box<dyn Stream<Item = Result<(), IngestionError>> + Send + 'static>>,
 }
 
 impl fmt::Debug for IngestState {
@@ -159,6 +169,7 @@ impl fmt::Debug for IngestState {
                 &self.finalized_refresh_interval,
             )
             .field("new_heads_stream", &"<stream>")
+            .field("pending_block_updates_stream", &"<stream>")
             .finish()
     }
 }
@@ -307,6 +318,8 @@ where
                 info!(cursor = %starting_cursor, "uploaded genesis block");
 
                 let new_heads_stream = self.ingestion.new_heads_stream().await;
+                let pending_block_updates_stream =
+                    self.ingestion.pending_block_updates_stream().await;
 
                 Ok(IngestionState::Ingest(IngestState {
                     queued_block_number: starting_cursor.number,
@@ -324,12 +337,15 @@ where
                         self.options.finalized_refresh_interval,
                     ),
                     new_heads_stream,
+                    pending_block_updates_stream,
                 }))
             }
             IngestionStartAction::Resume(starting_cursor) => {
                 current_span.record("starting_block", starting_cursor.number);
 
                 let new_heads_stream = self.ingestion.new_heads_stream().await;
+                let pending_block_updates_stream =
+                    self.ingestion.pending_block_updates_stream().await;
 
                 Ok(IngestionState::Ingest(IngestState {
                     queued_block_number: starting_cursor.number,
@@ -347,6 +363,7 @@ where
                         self.options.finalized_refresh_interval,
                     ),
                     new_heads_stream,
+                    pending_block_updates_stream,
                 }))
             }
         }
@@ -355,7 +372,7 @@ where
     /// A single tick of ingestion.
     ///
     /// This is equivalent to `viewStep` in the Quint spec.
-    async fn tick_ingest(
+    pub async fn tick_ingest(
         &mut self,
         mut state: IngestState,
         ct: CancellationToken,
@@ -389,6 +406,30 @@ where
                     None => {
                         warn!("new heads stream ended, reconnecting");
                         state.new_heads_stream = self.ingestion.new_heads_stream().await;
+                        Ok(IngestionState::Ingest(state))
+                    }
+                }
+            }
+
+            result = state.pending_block_updates_stream.next(), if self.ingestion.supports_pending() => {
+                match result {
+                    Some(Ok(())) => {
+                        current_span.record("action", "pending_block_update_stream");
+
+                        // Reset the backup pending refresher because the push path already
+                        // scheduled a pending block refresh.
+                        state.pending_refresh_interval.reset();
+
+                        self.tick_refresh_pending(state).await
+                    }
+                    Some(Err(err)) => {
+                        warn!(error = ?err, "pending block update stream error, reconnecting");
+                        state.pending_block_updates_stream = self.ingestion.pending_block_updates_stream().await;
+                        Ok(IngestionState::Ingest(state))
+                    }
+                    None => {
+                        warn!("pending block update stream ended, reconnecting");
+                        state.pending_block_updates_stream = self.ingestion.pending_block_updates_stream().await;
                         Ok(IngestionState::Ingest(state))
                     }
                 }
@@ -753,6 +794,7 @@ where
         info!(new_head = %new_head_candidate, "recovered from a chain reorganization");
 
         let new_heads_stream = self.ingestion.new_heads_stream().await;
+        let pending_block_updates_stream = self.ingestion.pending_block_updates_stream().await;
 
         Ok(IngestionState::Ingest(IngestState {
             finalized: state.finalized,
@@ -766,6 +808,7 @@ where
                 self.options.finalized_refresh_interval,
             ),
             new_heads_stream,
+            pending_block_updates_stream,
         }))
     }
 
@@ -873,6 +916,16 @@ where
             Ok(stream) => stream,
             Err(e) => {
                 tracing::warn!("failed to get new heads stream: {:?}", e);
+                futures::stream::pending().boxed()
+            }
+        }
+    }
+
+    async fn pending_block_updates_stream(&self) -> BoxedPendingBlockUpdateStream {
+        match self.ingestion.pending_block_updates_stream().await {
+            Ok(stream) => stream,
+            Err(e) => {
+                tracing::warn!("failed to get pending block updates stream: {:?}", e);
                 futures::stream::pending().boxed()
             }
         }

@@ -34,6 +34,14 @@ pub struct StartCommand {
         default_value = "false"
     )]
     ingest_pre_confirmed: bool,
+
+    /// Ingest pre-confirmed transaction and receipt data from Starknet WebSocket subscriptions.
+    #[arg(
+        long = "starknet.ws-live-ingestion-enabled",
+        env = "STARKNET_WS_LIVE_INGESTION_ENABLED",
+        default_value = "false"
+    )]
+    ws_live_ingestion_enabled: bool,
 }
 
 impl StartCommand {
@@ -41,8 +49,9 @@ impl StartCommand {
         info!("Starting Starknet DNA server");
         let provider = self.rpc.to_starknet_provider()?;
         let starknet_ingestion_options = StarknetBlockIngestionOptions {
-            ingest_pending: self.ingest_pre_confirmed,
+            ingest_pending: self.ingest_pre_confirmed || self.ws_live_ingestion_enabled,
             ingest_traces: self.ingest_traces,
+            live_ingestion_enabled: self.ws_live_ingestion_enabled,
         };
         let starknet_chain =
             StarknetChainSupport::new(provider, self.ws_url, starknet_ingestion_options);
